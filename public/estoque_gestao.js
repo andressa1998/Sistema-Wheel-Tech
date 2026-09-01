@@ -2839,7 +2839,7 @@ function garantirMenuAcessibilidadeEstoque() {
 
 
 // =========================================================
-// ABRIR / FECHAR
+// ABRIR / FECHAR MENU ACESSIBILIDADE
 // =========================================================
 
 function toggleMenuAcessibilidadeEstoque() {
@@ -2857,6 +2857,11 @@ function toggleMenuAcessibilidadeEstoque() {
 
 
     if (!menu) {
+
+        console.warn(
+            '⚠️ Menu Acessibilidade não encontrado.'
+        );
+
         return;
     }
 
@@ -2866,17 +2871,65 @@ function toggleMenuAcessibilidadeEstoque() {
         'block';
 
 
+    // =====================================================
+    // SE VAI ABRIR:
+    // GARANTIR OPÇÕES DINÂMICAS PRIMEIRO
+    // =====================================================
+
+    if (!aberto) {
+
+        // =============================================
+        // PREÇO DE CUSTO
+        // Ronald + Andressamiotto
+        // =============================================
+
+        if (
+            typeof adicionarBotaoCustoFiltroRonald ===
+            'function'
+        ) {
+
+            adicionarBotaoCustoFiltroRonald();
+
+        }
+
+
+        // =============================================
+        // RASTREIO
+        // =============================================
+
+        if (
+            typeof adicionarBotaoInformarRastreioCompra ===
+            'function'
+        ) {
+
+            adicionarBotaoInformarRastreioCompra();
+
+        }
+
+    }
+
+
+    // =====================================================
+    // EXIBIR / ESCONDER
+    // =====================================================
+
     menu.style.display =
         aberto
             ? 'none'
             : 'block';
 
 
+    // =====================================================
+    // ÍCONE
+    // =====================================================
+
     if (icone) {
 
         icone.className =
             aberto
+
                 ? 'fas fa-chevron-down'
+
                 : 'fas fa-chevron-up';
 
     }
@@ -44297,6 +44350,2685 @@ function validarCamposCondicionaisProduto() {
     return true;
 }
 
+// =========================================================
+// PREÇO DE CUSTO EM MASSA PELO FILTRO
+// SOMENTE USUÁRIO RONALD
+// =========================================================
+
+
+// =========================================================
+// PERMISSÃO - ADICIONAR PREÇO DE CUSTO PELO FILTRO
+//
+// PERMITIDOS:
+// - Ronald
+// - Andressamiotto
+//
+// Andressamiotto sempre possui acesso.
+// =========================================================
+
+function podeAdicionarCustoFiltroEstoque() {
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase()
+            ?.trim() || '';
+
+
+    return (
+        username === 'ronald'
+        ||
+        username === 'andressamiotto'
+    );
+}
+
+
+// =========================================================
+// VERIFICAR SE EXISTE FILTRO ATIVO
+// =========================================================
+
+function existeFiltroAtivoParaCustoEstoque() {
+
+    const termo =
+        String(
+            estadoFiltrosEstoque
+                ?.termo || ''
+        ).trim();
+
+
+    const categoria =
+        String(
+            estadoFiltrosEstoque
+                ?.categoria || ''
+        ).trim();
+
+
+    return (
+        termo !== ''
+        ||
+        categoria !== ''
+    );
+}
+
+
+// =========================================================
+// PEGAR DESCRIÇÃO DO FILTRO ATUAL
+// =========================================================
+
+function obterDescricaoFiltroCustoEstoque() {
+
+    const partes = [];
+
+
+    const categoria =
+        String(
+            estadoFiltrosEstoque
+                ?.categoria || ''
+        ).trim();
+
+
+    const termo =
+        String(
+            estadoFiltrosEstoque
+                ?.termo || ''
+        ).trim();
+
+
+    if (categoria) {
+
+        partes.push(
+            `Categoria: ${categoria}`
+        );
+
+    }
+
+
+    if (termo) {
+
+        partes.push(
+            `Busca: "${termo}"`
+        );
+
+    }
+
+
+    return (
+        partes.length > 0
+            ? partes.join(' • ')
+            : 'Nenhum filtro ativo'
+    );
+}
+
+
+// =========================================================
+// ADICIONAR "PREÇO DE CUSTO" AO MENU ACESSIBILIDADE
+//
+// VISÍVEL PARA:
+// - Ronald
+// - Andressamiotto
+// =========================================================
+
+function adicionarBotaoCustoFiltroRonald() {
+
+    const permitido =
+        podeAdicionarCustoFiltroEstoque();
+
+
+    // =====================================================
+    // SEM PERMISSÃO
+    // =====================================================
+
+    if (!permitido) {
+
+        document
+            .getElementById(
+                'btnAdicionarCustoFiltroRonald'
+            )
+            ?.remove();
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // LOCALIZAR MENU
+    // =====================================================
+
+    const menu =
+        document.getElementById(
+            'menuAcessibilidadeEstoqueDropdown'
+        );
+
+
+    if (!menu) {
+
+        console.warn(
+            '⚠️ Menu Acessibilidade ainda não existe.'
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // JÁ EXISTE?
+    // =====================================================
+
+    let botao =
+        document.getElementById(
+            'btnAdicionarCustoFiltroRonald'
+        );
+
+
+    if (botao) {
+
+        // Se por algum motivo saiu do menu,
+        // recolocar.
+        if (
+            botao.parentElement !==
+            menu
+        ) {
+
+            menu.appendChild(
+                botao
+            );
+
+        }
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // CRIAR BOTÃO
+    // =====================================================
+
+    botao =
+        document.createElement(
+            'button'
+        );
+
+
+    botao.id =
+        'btnAdicionarCustoFiltroRonald';
+
+
+    botao.type =
+        'button';
+
+
+    botao.innerHTML = `
+
+        <i class="fas fa-dollar-sign"></i>
+
+        Adicionar preço de custo
+
+    `;
+
+
+    botao.title =
+        'Aplicar preço de custo aos produtos do filtro ativo';
+
+
+    botao.onclick =
+        function() {
+
+            fecharMenuAcessibilidadeEstoque();
+
+
+            abrirModalCustoFiltroRonald();
+
+        };
+
+
+    // =====================================================
+    // MESMO VISUAL DOS ITENS DO MENU
+    // =====================================================
+
+    if (
+        typeof estilizarItemMenuAcessibilidadeEstoque ===
+        'function'
+    ) {
+
+        estilizarItemMenuAcessibilidadeEstoque(
+            botao
+        );
+
+    }
+
+    else {
+
+        botao.className =
+            'item-menu-acessibilidade-estoque';
+
+    }
+
+
+    // =====================================================
+    // POSIÇÃO
+    //
+    // Vamos colocar depois de "Informar rastreio"
+    // e antes das opções de configuração.
+    // =====================================================
+
+    const btnRegras =
+        menu.querySelector(
+            'button[onclick*="abrirModalRegrasEstoque"]'
+        );
+
+
+    if (btnRegras) {
+
+        menu.insertBefore(
+            botao,
+            btnRegras
+        );
+
+    }
+
+    else {
+
+        const btnExportar =
+            menu.querySelector(
+                'button[onclick*="exportarEstoqueExcel"]'
+            );
+
+
+        if (btnExportar) {
+
+            menu.insertBefore(
+                botao,
+                btnExportar
+            );
+
+        }
+
+        else {
+
+            menu.appendChild(
+                botao
+            );
+
+        }
+
+    }
+
+
+    console.log(
+        '✅ Adicionar preço de custo inserido no menu para:',
+        currentUser?.username
+    );
+}
+
+
+// =========================================================
+// ABRIR MODAL DE CUSTO PELO FILTRO
+//
+// REGRA:
+// - considera todos os produtos do filtro ativo
+// - somente produtos SEM custo serão alterados
+// - produtos que já possuem custo são preservados
+// =========================================================
+
+function abrirModalCustoFiltroRonald() {
+
+    // =====================================================
+    // PERMISSÃO
+    // =====================================================
+
+    if (
+        !podeAdicionarCustoFiltroEstoque()
+    ) {
+
+        showToast(
+            '🔒 Você não possui permissão para esta função.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // EXIGIR FILTRO
+    // =====================================================
+
+    if (
+        !existeFiltroAtivoParaCustoEstoque()
+    ) {
+
+        showToast(
+            '⚠️ Primeiro aplique um filtro de categoria ou faça uma busca.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // TODOS OS PRODUTOS DO FILTRO
+    // =====================================================
+
+    const produtosFiltro =
+        Array.isArray(
+            produtosFiltradosAtuais
+        )
+            ? [
+                ...produtosFiltradosAtuais
+            ]
+            : [];
+
+
+    if (
+        produtosFiltro.length === 0
+    ) {
+
+        showToast(
+            '⚠️ O filtro atual não possui produtos.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // SEPARAR:
+    //
+    // - SEM CUSTO → pode alterar
+    // - COM CUSTO → preservar
+    // =====================================================
+
+    const produtosSemCusto =
+        produtosFiltro.filter(
+            produto => {
+
+                const ultimoCusto =
+                    Number(
+                        produto.ultimo_custo ??
+                        produto.dados_extra
+                            ?.ultimo_custo ??
+                        0
+                    ) || 0;
+
+
+                const custoMedio =
+                    Number(
+                        produto.custo_medio ??
+                        produto.dados_extra
+                            ?.custo_medio ??
+                        0
+                    ) || 0;
+
+
+                return (
+                    ultimoCusto <= 0
+                    &&
+                    custoMedio <= 0
+                );
+
+            }
+        );
+
+
+    const produtosComCusto =
+        produtosFiltro.filter(
+            produto => {
+
+                const ultimoCusto =
+                    Number(
+                        produto.ultimo_custo ??
+                        produto.dados_extra
+                            ?.ultimo_custo ??
+                        0
+                    ) || 0;
+
+
+                const custoMedio =
+                    Number(
+                        produto.custo_medio ??
+                        produto.dados_extra
+                            ?.custo_medio ??
+                        0
+                    ) || 0;
+
+
+                return (
+                    ultimoCusto > 0
+                    ||
+                    custoMedio > 0
+                );
+
+            }
+        );
+
+
+    // =====================================================
+    // TODOS JÁ POSSUEM CUSTO
+    // =====================================================
+
+    if (
+        produtosSemCusto.length === 0
+    ) {
+
+        showToast(
+            `ℹ️ Os ${produtosFiltro.length} produto(s) do filtro já possuem preço de custo. Nenhum será alterado.`,
+            'info'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // REMOVER MODAL ANTERIOR
+    // =====================================================
+
+    document
+        .getElementById(
+            'modalCustoFiltroRonald'
+        )
+        ?.remove();
+
+
+    // =====================================================
+    // EXEMPLOS DOS PRODUTOS QUE SERÃO ALTERADOS
+    // =====================================================
+
+    const limiteExemplos =
+        8;
+
+
+    const exemplos =
+        produtosSemCusto
+            .slice(
+                0,
+                limiteExemplos
+            )
+            .map(
+                produto => `
+
+                    <tr>
+
+                        <td
+                            style="
+                                padding:7px;
+                                border-bottom:1px solid #eee;
+                            "
+                        >
+
+                            ${escapeHtml(
+                                String(
+                                    produto.nome ||
+                                    ''
+                                )
+                            )}
+
+                        </td>
+
+
+                        <td
+                            style="
+                                padding:7px;
+                                border-bottom:1px solid #eee;
+                            "
+                        >
+
+                            <code>
+
+                                ${escapeHtml(
+                                    String(
+                                        produto.sku ||
+                                        ''
+                                    )
+                                )}
+
+                            </code>
+
+                        </td>
+
+
+                        <td
+                            style="
+                                padding:7px;
+                                border-bottom:1px solid #eee;
+                                text-align:center;
+                                color:#28a745;
+                                font-weight:600;
+                            "
+                        >
+
+                            Sem custo
+
+                        </td>
+
+                    </tr>
+
+                `
+            )
+            .join('');
+
+
+    // =====================================================
+    // MODAL
+    // =====================================================
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalCustoFiltroRonald';
+
+
+    modal.style.cssText = `
+
+        position:fixed;
+        inset:0;
+
+        background:
+            rgba(0,0,0,.55);
+
+        z-index:100100;
+
+        display:flex;
+
+        align-items:center;
+        justify-content:center;
+
+    `;
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                width:92%;
+                max-width:720px;
+
+                max-height:90vh;
+                overflow:auto;
+
+                background:white;
+
+                border-radius:12px;
+
+                padding:22px;
+
+                box-shadow:
+                    0 20px 60px
+                    rgba(0,0,0,.25);
+            "
+        >
+
+            <!-- ========================================== -->
+            <!-- CABEÇALHO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    display:flex;
+                    align-items:center;
+                    justify-content:space-between;
+
+                    border-bottom:
+                        1px solid #dee2e6;
+
+                    padding-bottom:12px;
+                    margin-bottom:16px;
+                "
+            >
+
+                <div>
+
+                    <h3
+                        style="
+                            margin:0;
+                            color:#00ADEE;
+                        "
+                    >
+
+                        <i
+                            class="fas fa-dollar-sign"
+                        ></i>
+
+                        Adicionar preço de custo
+
+                    </h3>
+
+
+                    <small
+                        style="
+                            color:#6c757d;
+                        "
+                    >
+
+                        Aplicação em massa pelo filtro atual
+
+                    </small>
+
+                </div>
+
+
+                <button
+                    type="button"
+
+                    onclick="
+                        fecharModalCustoFiltroRonald()
+                    "
+
+                    style="
+                        border:none;
+                        background:transparent;
+                        font-size:26px;
+                        cursor:pointer;
+                    "
+                >
+
+                    &times;
+
+                </button>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- FILTRO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    background:#eef8ff;
+
+                    border-left:
+                        4px solid #00ADEE;
+
+                    border-radius:7px;
+
+                    padding:12px 14px;
+
+                    margin-bottom:15px;
+                "
+            >
+
+                <div
+                    style="
+                        font-size:11px;
+                        color:#6c757d;
+                        margin-bottom:3px;
+                    "
+                >
+
+                    FILTRO ATUAL
+
+                </div>
+
+
+                <strong>
+
+                    ${escapeHtml(
+                        obterDescricaoFiltroCustoEstoque()
+                    )}
+
+                </strong>
+
+
+                <div
+                    style="
+                        margin-top:8px;
+                        display:flex;
+                        flex-wrap:wrap;
+                        gap:8px;
+                    "
+                >
+
+                    <span
+                        style="
+                            background:#d4edda;
+                            color:#155724;
+                            padding:4px 9px;
+                            border-radius:12px;
+                            font-size:11px;
+                            font-weight:600;
+                        "
+                    >
+
+                        ✓ ${produtosSemCusto.length}
+                        receberão custo
+
+                    </span>
+
+
+                    <span
+                        style="
+                            background:#f8f9fa;
+                            color:#6c757d;
+                            padding:4px 9px;
+                            border-radius:12px;
+                            font-size:11px;
+                            font-weight:600;
+                        "
+                    >
+
+                        🔒 ${produtosComCusto.length}
+                        já possuem custo
+
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- VALOR -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    margin-bottom:18px;
+                "
+            >
+
+                <label
+                    for="valorCustoFiltroRonald"
+
+                    style="
+                        display:block;
+                        font-weight:700;
+                        margin-bottom:6px;
+                    "
+                >
+
+                    Valor unitário de custo *
+
+                </label>
+
+
+                <div
+                    style="
+                        display:flex;
+                        align-items:center;
+                        max-width:300px;
+                    "
+                >
+
+                    <span
+                        style="
+                            padding:10px 12px;
+
+                            background:#f8f9fa;
+
+                            border:
+                                1px solid #ced4da;
+
+                            border-right:none;
+
+                            border-radius:
+                                6px 0 0 6px;
+
+                            font-weight:600;
+                        "
+                    >
+
+                        R$
+
+                    </span>
+
+
+                    <input
+                        type="text"
+
+                        id="valorCustoFiltroRonald"
+
+                        class="form-control"
+
+                        placeholder="Ex: 8,50"
+
+                        autocomplete="off"
+
+                        style="
+                            border-radius:
+                                0 6px 6px 0;
+
+                            font-size:18px;
+                            font-weight:700;
+                        "
+
+                        onkeydown="
+                            if (
+                                event.key ===
+                                'Enter'
+                            ) {
+                                salvarCustoFiltroRonald();
+                            }
+                        "
+                    >
+
+                </div>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- REGRA -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    background:#fff3cd;
+
+                    border:
+                        1px solid #ffe69c;
+
+                    border-radius:7px;
+
+                    padding:11px 13px;
+
+                    margin-bottom:15px;
+
+                    font-size:12px;
+                "
+            >
+
+                <strong>
+                    Importante:
+                </strong>
+
+                somente produtos que ainda estão
+                <strong>sem preço de custo</strong>
+                receberão o valor informado.
+
+                <br><br>
+
+                Os
+                <strong>
+                    ${produtosComCusto.length}
+                    produto(s)
+                </strong>
+                que já possuem custo serão mantidos
+                exatamente como estão.
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- PRODUTOS SEM CUSTO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    margin-bottom:15px;
+                "
+            >
+
+                <div
+                    style="
+                        font-size:12px;
+                        font-weight:700;
+                        margin-bottom:6px;
+                    "
+                >
+
+                    Produtos que receberão o custo
+
+                </div>
+
+
+                <div
+                    style="
+                        border:
+                            1px solid #dee2e6;
+
+                        border-radius:7px;
+
+                        max-height:220px;
+                        overflow:auto;
+                    "
+                >
+
+                    <table
+                        style="
+                            width:100%;
+                            border-collapse:collapse;
+                            font-size:11px;
+                        "
+                    >
+
+                        <thead
+                            style="
+                                background:#f8f9fa;
+                            "
+                        >
+
+                            <tr>
+
+                                <th
+                                    style="
+                                        padding:7px;
+                                        text-align:left;
+                                    "
+                                >
+                                    Produto
+                                </th>
+
+                                <th
+                                    style="
+                                        padding:7px;
+                                        text-align:left;
+                                    "
+                                >
+                                    SKU
+                                </th>
+
+                                <th
+                                    style="
+                                        padding:7px;
+                                        text-align:center;
+                                    "
+                                >
+                                    Situação
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            ${exemplos}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+
+                ${
+                    produtosSemCusto.length >
+                    limiteExemplos
+
+                        ? `
+
+                            <small
+                                style="
+                                    display:block;
+                                    margin-top:5px;
+                                    color:#6c757d;
+                                "
+                            >
+
+                                + ${
+                                    produtosSemCusto.length -
+                                    limiteExemplos
+                                }
+                                outro(s) produto(s)
+
+                            </small>
+
+                        `
+
+                        : ''
+                }
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- BOTÕES -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:flex-end;
+                    gap:10px;
+
+                    padding-top:15px;
+
+                    border-top:
+                        1px solid #dee2e6;
+                "
+            >
+
+                <button
+                    type="button"
+
+                    class="btn btn-secondary"
+
+                    onclick="
+                        fecharModalCustoFiltroRonald()
+                    "
+                >
+
+                    Cancelar
+
+                </button>
+
+
+                <button
+                    type="button"
+
+                    id="btnSalvarCustoFiltroRonald"
+
+                    class="btn btn-success"
+
+                    onclick="
+                        salvarCustoFiltroRonald()
+                    "
+                >
+
+                    <i class="fas fa-save"></i>
+
+                    Aplicar aos
+                    ${produtosSemCusto.length}
+                    produtos
+
+                </button>
+
+            </div>
+
+        </div>
+
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    setTimeout(
+        () => {
+
+            document
+                .getElementById(
+                    'valorCustoFiltroRonald'
+                )
+                ?.focus();
+
+        },
+        100
+    );
+}
+
+
+// =========================================================
+// CONVERTER VALOR DIGITADO
+// =========================================================
+
+function converterValorCustoFiltroRonald(
+    valor
+) {
+
+    let texto =
+        String(
+            valor ?? ''
+        )
+            .trim()
+            .replace(
+                /R\$/gi,
+                ''
+            )
+            .replace(
+                /\s/g,
+                ''
+            );
+
+
+    if (!texto) {
+        return NaN;
+    }
+
+
+    // 1.234,56
+    if (
+        texto.includes('.') &&
+        texto.includes(',')
+    ) {
+
+        texto =
+            texto
+                .replace(
+                    /\./g,
+                    ''
+                )
+                .replace(
+                    ',',
+                    '.'
+                );
+
+    }
+
+    // 8,50
+    else if (
+        texto.includes(',')
+    ) {
+
+        texto =
+            texto.replace(
+                ',',
+                '.'
+            );
+
+    }
+
+
+    const numero =
+        Number(
+            texto
+        );
+
+
+    return numero;
+}
+
+
+// =========================================================
+// SALVAR CUSTO EM MASSA PELO FILTRO
+//
+// REGRA:
+// SÓ ALTERA PRODUTOS QUE AINDA NÃO POSSUEM CUSTO.
+// =========================================================
+
+async function salvarCustoFiltroRonald() {
+
+    // =====================================================
+    // PERMISSÃO
+    // =====================================================
+
+    if (
+        !podeAdicionarCustoFiltroEstoque()
+    ) {
+
+        showToast(
+            '🔒 Você não possui permissão para esta função.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // FILTRO AINDA EXISTE?
+    // =====================================================
+
+    if (
+        !existeFiltroAtivoParaCustoEstoque()
+    ) {
+
+        showToast(
+            '⚠️ O filtro foi removido. A operação foi cancelada.',
+            'warning'
+        );
+
+
+        fecharModalCustoFiltroRonald();
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // TODOS DO FILTRO
+    // =====================================================
+
+    const produtosFiltro =
+        Array.isArray(
+            produtosFiltradosAtuais
+        )
+            ? [
+                ...produtosFiltradosAtuais
+            ]
+            : [];
+
+
+    if (
+        produtosFiltro.length === 0
+    ) {
+
+        showToast(
+            '⚠️ Não existem produtos no filtro atual.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // FILTRAR NOVAMENTE OS QUE CONTINUAM SEM CUSTO
+    //
+    // Se qualquer custo > 0 existir:
+    // NÃO ALTERAR.
+    // =====================================================
+
+    const produtosSemCusto =
+        produtosFiltro.filter(
+            produto => {
+
+                const ultimoCusto =
+                    Number(
+                        produto.ultimo_custo ??
+                        produto.dados_extra
+                            ?.ultimo_custo ??
+                        0
+                    ) || 0;
+
+
+                const custoMedio =
+                    Number(
+                        produto.custo_medio ??
+                        produto.dados_extra
+                            ?.custo_medio ??
+                        0
+                    ) || 0;
+
+
+                return (
+                    ultimoCusto <= 0
+                    &&
+                    custoMedio <= 0
+                );
+
+            }
+        );
+
+
+    const produtosIgnorados =
+        produtosFiltro.filter(
+            produto => {
+
+                const ultimoCusto =
+                    Number(
+                        produto.ultimo_custo ??
+                        produto.dados_extra
+                            ?.ultimo_custo ??
+                        0
+                    ) || 0;
+
+
+                const custoMedio =
+                    Number(
+                        produto.custo_medio ??
+                        produto.dados_extra
+                            ?.custo_medio ??
+                        0
+                    ) || 0;
+
+
+                return (
+                    ultimoCusto > 0
+                    ||
+                    custoMedio > 0
+                );
+
+            }
+        );
+
+
+    // =====================================================
+    // NINGUÉM PARA ATUALIZAR
+    // =====================================================
+
+    if (
+        produtosSemCusto.length === 0
+    ) {
+
+        showToast(
+            `ℹ️ Todos os ${produtosFiltro.length} produto(s) do filtro já possuem custo. Nenhuma alteração foi realizada.`,
+            'info'
+        );
+
+
+        fecharModalCustoFiltroRonald();
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // VALOR DIGITADO
+    // =====================================================
+
+    const campo =
+        document.getElementById(
+            'valorCustoFiltroRonald'
+        );
+
+
+    const valorUnitario =
+        converterValorCustoFiltroRonald(
+            campo?.value
+        );
+
+
+    if (
+        !Number.isFinite(
+            valorUnitario
+        )
+        ||
+        valorUnitario <= 0
+    ) {
+
+        showToast(
+            '⚠️ Informe um valor unitário de custo válido e maior que zero.',
+            'warning'
+        );
+
+
+        campo?.focus();
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // FORMATAÇÃO
+    // =====================================================
+
+    const valorFormatado =
+        valorUnitario
+            .toLocaleString(
+                'pt-BR',
+                {
+                    minimumFractionDigits:
+                        2,
+
+                    maximumFractionDigits:
+                        4
+                }
+            );
+
+
+    // =====================================================
+    // CONFIRMAÇÃO
+    // =====================================================
+
+    const confirmou =
+        confirm(
+
+            `Aplicar custo de R$ ${valorFormatado}?\n\n` +
+
+            `Produtos no filtro: ${produtosFiltro.length}\n` +
+
+            `Serão atualizados: ${produtosSemCusto.length}\n` +
+
+            `Já possuem custo e serão preservados: ${produtosIgnorados.length}\n\n` +
+
+            `${obterDescricaoFiltroCustoEstoque()}`
+
+        );
+
+
+    if (!confirmou) {
+        return;
+    }
+
+
+    // =====================================================
+    // BOTÃO
+    // =====================================================
+
+    const botao =
+        document.getElementById(
+            'btnSalvarCustoFiltroRonald'
+        );
+
+
+    if (botao) {
+
+        botao.disabled =
+            true;
+
+    }
+
+
+    // =====================================================
+    // CONTADORES
+    // =====================================================
+
+    let atualizados =
+        0;
+
+
+    const erros =
+        [];
+
+
+    const agora =
+        new Date()
+            .toISOString();
+
+
+    const usuario =
+        currentUser?.name ||
+        currentUser?.username ||
+        'sistema';
+
+
+    // =====================================================
+    // ATUALIZAR SOMENTE PRODUTOS SEM CUSTO
+    // =====================================================
+
+    for (
+        let i = 0;
+        i < produtosSemCusto.length;
+        i++
+    ) {
+
+        const produto =
+            produtosSemCusto[
+                i
+            ];
+
+
+        if (botao) {
+
+            botao.innerHTML = `
+
+                <i
+                    class="
+                        fas
+                        fa-spinner
+                        fa-spin
+                    "
+                ></i>
+
+                ${i + 1}
+                /
+                ${produtosSemCusto.length}
+
+            `;
+
+        }
+
+
+        try {
+
+            // =================================================
+            // SEGURANÇA EXTRA:
+            // BUSCAR DO BANCO ANTES DE ALTERAR
+            //
+            // Evita sobrescrever custo salvo por outra pessoa
+            // enquanto o modal estava aberto.
+            // =================================================
+
+            const {
+                data: produtoBanco,
+                error: erroConsulta
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .select(
+                        'id, ultimo_custo, custo_medio, historico_custos, dados_extra'
+                    )
+                    .eq(
+                        'id',
+                        produto.id
+                    )
+                    .maybeSingle();
+
+
+            if (
+                erroConsulta
+            ) {
+                throw erroConsulta;
+            }
+
+
+            if (
+                !produtoBanco
+            ) {
+
+                throw new Error(
+                    'Produto não encontrado no banco.'
+                );
+
+            }
+
+
+            // =================================================
+            // VERIFICAR NOVAMENTE O CUSTO REAL DO BANCO
+            // =================================================
+
+            const ultimoCustoAtual =
+                Number(
+                    produtoBanco
+                        .ultimo_custo ??
+                    produtoBanco
+                        .dados_extra
+                        ?.ultimo_custo ??
+                    0
+                ) || 0;
+
+
+            const custoMedioAtual =
+                Number(
+                    produtoBanco
+                        .custo_medio ??
+                    produtoBanco
+                        .dados_extra
+                        ?.custo_medio ??
+                    0
+                ) || 0;
+
+
+            // =================================================
+            // JÁ TEM CUSTO?
+            // PULAR.
+            // =================================================
+
+            if (
+                ultimoCustoAtual > 0
+                ||
+                custoMedioAtual > 0
+            ) {
+
+                console.log(
+                    `🔒 ${produto.sku} ignorado porque já possui custo.`
+                );
+
+
+                continue;
+            }
+
+
+            // =================================================
+            // HISTÓRICO EXISTENTE
+            // =================================================
+
+            let historicoCustos =
+                Array.isArray(
+                    produtoBanco
+                        .historico_custos
+                )
+
+                    ? [
+                        ...produtoBanco
+                            .historico_custos
+                    ]
+
+                    : (
+                        Array.isArray(
+                            produtoBanco
+                                .dados_extra
+                                ?.historico_custos
+                        )
+
+                            ? [
+                                ...produtoBanco
+                                    .dados_extra
+                                    .historico_custos
+                            ]
+
+                            : []
+                    );
+
+
+            // =================================================
+            // NOVO REGISTRO
+            // =================================================
+
+            historicoCustos.push({
+
+                valor:
+                    valorUnitario,
+
+                data:
+                    agora,
+
+                entrada:
+                    'AJUSTE-CUSTO-FILTRO',
+
+                quantidade:
+                    0,
+
+                usuario:
+                    usuario,
+
+                tipo:
+                    'ajuste_manual_filtro',
+
+                filtro:
+                    obterDescricaoFiltroCustoEstoque()
+
+            });
+
+
+            // Limitar histórico
+            if (
+                historicoCustos.length >
+                50
+            ) {
+
+                historicoCustos =
+                    historicoCustos.slice(
+                        -50
+                    );
+
+            }
+
+
+            // =================================================
+            // DADOS EXTRA
+            // PRESERVAR TODO O RESTANTE
+            // =================================================
+
+            const dadosExtra = {
+
+                ...(
+                    produtoBanco
+                        .dados_extra ||
+                    {}
+                ),
+
+                ultimo_custo:
+                    valorUnitario,
+
+                custo_medio:
+                    valorUnitario,
+
+                historico_custos:
+                    historicoCustos
+
+            };
+
+
+            // =================================================
+            // SALVAR
+            // =================================================
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update({
+
+                        ultimo_custo:
+                            valorUnitario,
+
+                        custo_medio:
+                            valorUnitario,
+
+                        historico_custos:
+                            historicoCustos,
+
+                        dados_extra:
+                            dadosExtra
+
+                    })
+                    .eq(
+                        'id',
+                        produto.id
+                    );
+
+
+            if (
+                error
+            ) {
+                throw error;
+            }
+
+
+            // =================================================
+            // MEMÓRIA LOCAL
+            // =================================================
+
+            produto.ultimo_custo =
+                valorUnitario;
+
+
+            produto.custo_medio =
+                valorUnitario;
+
+
+            produto.historico_custos =
+                historicoCustos;
+
+
+            produto.dados_extra =
+                dadosExtra;
+
+
+            atualizados++;
+
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                `❌ Erro atualizando custo de ${produto.sku}:`,
+                error
+            );
+
+
+            erros.push({
+
+                sku:
+                    produto.sku ||
+                    produto.id,
+
+                erro:
+                    error.message
+
+            });
+
+        }
+
+    }
+
+
+    // =====================================================
+    // RECARREGAR
+    // =====================================================
+
+    try {
+
+        await carregarProdutosEstoque();
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro recarregando estoque:',
+            error
+        );
+
+    }
+
+
+    // =====================================================
+    // FECHAR MODAL
+    // =====================================================
+
+    fecharModalCustoFiltroRonald();
+
+
+    // =====================================================
+    // RESULTADO
+    // =====================================================
+
+    if (
+        erros.length === 0
+    ) {
+
+        showToast(
+            `✅ Custo aplicado em ${atualizados} produto(s). ${produtosIgnorados.length} produto(s) que já possuíam custo foram preservados.`,
+            'success'
+        );
+
+    }
+
+    else {
+
+        showToast(
+            `⚠️ ${atualizados} atualizado(s), ${produtosIgnorados.length} preservado(s) e ${erros.length} erro(s).`,
+            'warning'
+        );
+
+
+        console.table(
+            erros
+        );
+
+    }
+}
+
+// =========================================================
+// ANALISAR ÚLTIMO AJUSTE DE CUSTO EM MASSA
+// NÃO ALTERA NADA NO BANCO
+// =========================================================
+
+async function analisarReversaoUltimoCustoEmMassa() {
+
+    try {
+
+        await carregarProdutosEstoque();
+
+
+        const encontrados = [];
+
+
+        // =================================================
+        // ENCONTRAR TODOS OS REGISTROS DE AJUSTE EM MASSA
+        // =================================================
+
+        for (
+            const produto
+            of produtosEstoque
+        ) {
+
+            const historico =
+                Array.isArray(
+                    produto.historico_custos
+                )
+                    ? produto.historico_custos
+                    : (
+                        Array.isArray(
+                            produto.dados_extra
+                                ?.historico_custos
+                        )
+                            ? produto.dados_extra
+                                .historico_custos
+                            : []
+                    );
+
+
+            historico.forEach(
+                (
+                    registro,
+                    indice
+                ) => {
+
+                    const ehAjusteMassa =
+                        registro?.tipo ===
+                            'ajuste_manual_filtro'
+                        ||
+                        registro?.entrada ===
+                            'AJUSTE-CUSTO-FILTRO';
+
+
+                    if (
+                        !ehAjusteMassa
+                    ) {
+                        return;
+                    }
+
+
+                    encontrados.push({
+
+                        produto,
+
+                        historico,
+
+                        registro,
+
+                        indice,
+
+                        data:
+                            registro.data ||
+                            ''
+
+                    });
+
+                }
+            );
+
+        }
+
+
+        if (
+            encontrados.length === 0
+        ) {
+
+            console.log(
+                'ℹ️ Nenhum ajuste de custo em massa encontrado.'
+            );
+
+
+            showToast(
+                'Nenhum ajuste de custo em massa foi encontrado no histórico.',
+                'info'
+            );
+
+
+            return null;
+        }
+
+
+        // =================================================
+        // IDENTIFICAR O LOTE MAIS RECENTE
+        //
+        // Na função antiga todos os produtos do mesmo lote
+        // recebiam exatamente o mesmo timestamp.
+        // =================================================
+
+        const datas =
+            encontrados
+                .map(
+                    item =>
+                        item.data
+                )
+                .filter(
+                    Boolean
+                )
+                .sort();
+
+
+        const dataUltimoLote =
+            datas[
+                datas.length -
+                1
+            ];
+
+
+        const lote =
+            encontrados.filter(
+                item =>
+                    item.data ===
+                    dataUltimoLote
+            );
+
+
+        const reversiveis = [];
+
+        const ignorados = [];
+
+
+        // =================================================
+        // ANALISAR CADA PRODUTO
+        // =================================================
+
+        for (
+            const item
+            of lote
+        ) {
+
+            const {
+                produto,
+                historico,
+                registro,
+                indice
+            } =
+                item;
+
+
+            // =============================================
+            // O AJUSTE PRECISA CONTINUAR SENDO O ÚLTIMO
+            // REGISTRO DE CUSTO.
+            //
+            // Se houve uma entrada depois, NÃO REVERTER.
+            // =============================================
+
+            if (
+                indice !==
+                historico.length -
+                    1
+            ) {
+
+                ignorados.push({
+
+                    sku:
+                        produto.sku,
+
+                    motivo:
+                        'Existe movimentação de custo posterior ao ajuste em massa.'
+
+                });
+
+
+                continue;
+            }
+
+
+            // =============================================
+            // HISTÓRICO ANTES DO ERRO
+            // =============================================
+
+            const historicoAnterior =
+                historico.slice(
+                    0,
+                    indice
+                );
+
+
+            const custosAnteriores =
+                historicoAnterior.filter(
+                    registroAnterior =>
+                        Number(
+                            registroAnterior
+                                ?.valor
+                        ) > 0
+                );
+
+
+            if (
+                custosAnteriores.length ===
+                0
+            ) {
+
+                ignorados.push({
+
+                    sku:
+                        produto.sku,
+
+                    motivo:
+                        'Não existe custo anterior recuperável no histórico.'
+
+                });
+
+
+                continue;
+            }
+
+
+            // =============================================
+            // ÚLTIMO CUSTO ANTERIOR
+            // =============================================
+
+            const ultimoRegistroAnterior =
+                custosAnteriores[
+                    custosAnteriores.length -
+                        1
+                ];
+
+
+            const ultimoCustoAnterior =
+                Number(
+                    ultimoRegistroAnterior
+                        .valor
+                );
+
+
+            // =============================================
+            // CUSTO MÉDIO ANTERIOR
+            //
+            // Mesmo cálculo usado pela aba Entradas.
+            // =============================================
+
+            const custoMedioAnterior =
+                custosAnteriores.reduce(
+                    (
+                        soma,
+                        registroAnterior
+                    ) => {
+
+                        return (
+                            soma +
+                            Number(
+                                registroAnterior.valor
+                            )
+                        );
+
+                    },
+                    0
+                )
+                /
+                custosAnteriores.length;
+
+
+            // =============================================
+            // SEGURANÇA:
+            // O CUSTO ATUAL DEVE SER O DO AJUSTE EM MASSA
+            // =============================================
+
+            const valorAjuste =
+                Number(
+                    registro.valor
+                );
+
+
+            const custoAtual =
+                Number(
+                    produto.ultimo_custo ??
+                    produto.dados_extra
+                        ?.ultimo_custo ??
+                    0
+                );
+
+
+            if (
+                Math.abs(
+                    custoAtual -
+                    valorAjuste
+                ) >
+                0.0001
+            ) {
+
+                ignorados.push({
+
+                    sku:
+                        produto.sku,
+
+                    motivo:
+                        `Custo atual (${custoAtual}) já não corresponde ao ajuste (${valorAjuste}).`
+
+                });
+
+
+                continue;
+            }
+
+
+            reversiveis.push({
+
+                produto,
+
+                registroAjuste:
+                    registro,
+
+                valorErrado:
+                    valorAjuste,
+
+                ultimoCustoAnterior,
+
+                custoMedioAnterior,
+
+                historicoAnterior
+
+            });
+
+        }
+
+
+        // =================================================
+        // RELATÓRIO
+        // =================================================
+
+        console.log(
+            '=========================================='
+        );
+
+        console.log(
+            '🔄 ANÁLISE DE REVERSÃO DE CUSTO EM MASSA'
+        );
+
+        console.log(
+            'Lote:',
+            dataUltimoLote
+        );
+
+        console.log(
+            'Encontrados no lote:',
+            lote.length
+        );
+
+        console.log(
+            'Podem ser revertidos:',
+            reversiveis.length
+        );
+
+        console.log(
+            'Ignorados por segurança:',
+            ignorados.length
+        );
+
+
+        console.table(
+            reversiveis.map(
+                item => ({
+
+                    SKU:
+                        item.produto.sku,
+
+                    Produto:
+                        item.produto.nome,
+
+                    'Valor errado':
+                        item.valorErrado,
+
+                    'Último custo anterior':
+                        item.ultimoCustoAnterior,
+
+                    'Médio anterior':
+                        item.custoMedioAnterior
+
+                })
+            )
+        );
+
+
+        if (
+            ignorados.length >
+            0
+        ) {
+
+            console.warn(
+                'Produtos ignorados:'
+            );
+
+
+            console.table(
+                ignorados
+            );
+
+        }
+
+
+        console.log(
+            '=========================================='
+        );
+
+
+        return {
+
+            dataUltimoLote,
+
+            lote,
+
+            reversiveis,
+
+            ignorados
+
+        };
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro analisando reversão:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao analisar reversão: ${error.message}`,
+            'error'
+        );
+
+
+        return null;
+    }
+}
+
+
+// =========================================================
+// REVERTER O ÚLTIMO AJUSTE DE CUSTO EM MASSA
+// =========================================================
+
+async function reverterUltimoCustoEmMassa() {
+
+    // =====================================================
+    // SOMENTE RONALD / ANDRESSAMIOTTO
+    // =====================================================
+
+    if (
+        !podeAdicionarCustoFiltroEstoque()
+    ) {
+
+        showToast(
+            '🔒 Você não possui permissão para realizar esta reversão.',
+            'warning'
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // PRIMEIRO ANALISAR
+    // =====================================================
+
+    const analise =
+        await analisarReversaoUltimoCustoEmMassa();
+
+
+    if (
+        !analise
+    ) {
+        return;
+    }
+
+
+    const {
+        dataUltimoLote,
+        reversiveis,
+        ignorados
+    } =
+        analise;
+
+
+    if (
+        reversiveis.length ===
+        0
+    ) {
+
+        showToast(
+            'Nenhum produto pode ser revertido automaticamente com segurança.',
+            'warning'
+        );
+
+
+        return;
+    }
+
+
+    const dataFormatada =
+        (() => {
+
+            try {
+
+                return new Date(
+                    dataUltimoLote
+                ).toLocaleString(
+                    'pt-BR'
+                );
+
+            } catch {
+
+                return dataUltimoLote;
+
+            }
+
+        })();
+
+
+    // =====================================================
+    // CONFIRMAÇÃO
+    // =====================================================
+
+    const confirmou =
+        confirm(
+
+            `REVERTER ÚLTIMO AJUSTE DE CUSTO EM MASSA?\n\n` +
+
+            `Data do ajuste: ${dataFormatada}\n` +
+
+            `Produtos que serão revertidos: ${reversiveis.length}\n` +
+
+            `Produtos ignorados por segurança: ${ignorados.length}\n\n` +
+
+            `O sistema restaurará o último custo e o custo médio anteriores e removerá o registro do ajuste em massa do histórico.\n\n` +
+
+            `Deseja continuar?`
+
+        );
+
+
+    if (!confirmou) {
+        return;
+    }
+
+
+    let revertidos =
+        0;
+
+
+    const erros =
+        [];
+
+
+    // =====================================================
+    // REVERTER UM POR UM
+    // =====================================================
+
+    for (
+        const item
+        of reversiveis
+    ) {
+
+        const {
+            produto,
+            ultimoCustoAnterior,
+            custoMedioAnterior,
+            historicoAnterior
+        } =
+            item;
+
+
+        try {
+
+            // =============================================
+            // BUSCAR O PRODUTO ATUAL NO BANCO
+            // ANTES DE ALTERAR
+            // =============================================
+
+            const {
+                data: atual,
+                error: erroBusca
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .select(
+                        'id, sku, ultimo_custo, custo_medio, historico_custos, dados_extra'
+                    )
+                    .eq(
+                        'id',
+                        produto.id
+                    )
+                    .maybeSingle();
+
+
+            if (
+                erroBusca
+            ) {
+                throw erroBusca;
+            }
+
+
+            if (!atual) {
+
+                throw new Error(
+                    'Produto não encontrado no banco.'
+                );
+
+            }
+
+
+            const historicoAtual =
+                Array.isArray(
+                    atual.historico_custos
+                )
+                    ? atual.historico_custos
+                    : (
+                        Array.isArray(
+                            atual.dados_extra
+                                ?.historico_custos
+                        )
+                            ? atual.dados_extra
+                                .historico_custos
+                            : []
+                    );
+
+
+            const ultimoAtual =
+                historicoAtual[
+                    historicoAtual.length -
+                    1
+                ];
+
+
+            const ultimoAindaEhAjuste =
+                ultimoAtual
+                &&
+                (
+                    ultimoAtual.tipo ===
+                        'ajuste_manual_filtro'
+                    ||
+                    ultimoAtual.entrada ===
+                        'AJUSTE-CUSTO-FILTRO'
+                )
+                &&
+                ultimoAtual.data ===
+                    dataUltimoLote;
+
+
+            // =============================================
+            // SEGURANÇA FINAL
+            // =============================================
+
+            if (
+                !ultimoAindaEhAjuste
+            ) {
+
+                console.warn(
+                    `⏭️ ${produto.sku}: foi alterado depois da análise. Ignorando.`
+                );
+
+
+                continue;
+            }
+
+
+            // =============================================
+            // REMOVER SOMENTE O AJUSTE ERRADO
+            // =============================================
+
+            const novoHistorico =
+                historicoAtual.slice(
+                    0,
+                    -1
+                );
+
+
+            // =============================================
+            // PRESERVAR TODO DADOS_EXTRA
+            // =============================================
+
+            const dadosExtraNovo = {
+
+                ...(
+                    atual.dados_extra ||
+                    {}
+                ),
+
+                ultimo_custo:
+                    ultimoCustoAnterior,
+
+                custo_medio:
+                    custoMedioAnterior,
+
+                historico_custos:
+                    novoHistorico
+
+            };
+
+
+            // =============================================
+            // RESTAURAR
+            // =============================================
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update({
+
+                        ultimo_custo:
+                            ultimoCustoAnterior,
+
+                        custo_medio:
+                            custoMedioAnterior,
+
+                        historico_custos:
+                            novoHistorico,
+
+                        dados_extra:
+                            dadosExtraNovo
+
+                    })
+                    .eq(
+                        'id',
+                        produto.id
+                    );
+
+
+            if (
+                error
+            ) {
+                throw error;
+            }
+
+
+            revertidos++;
+
+
+            console.log(
+                `✅ ${produto.sku}: R$ ${item.valorErrado} → R$ ${ultimoCustoAnterior}`
+            );
+
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                `❌ Erro revertendo ${produto.sku}:`,
+                error
+            );
+
+
+            erros.push({
+
+                sku:
+                    produto.sku,
+
+                erro:
+                    error.message
+
+            });
+
+        }
+
+    }
+
+
+    // =====================================================
+    // RECARREGAR ESTOQUE
+    // =====================================================
+
+    await carregarProdutosEstoque();
+
+
+    // =====================================================
+    // RESULTADO
+    // =====================================================
+
+    if (
+        erros.length === 0
+    ) {
+
+        showToast(
+            `✅ ${revertidos} produto(s) tiveram o custo anterior restaurado.`,
+            'success'
+        );
+
+    } else {
+
+        showToast(
+            `⚠️ ${revertidos} revertido(s) e ${erros.length} erro(s).`,
+            'warning'
+        );
+
+
+        console.table(
+            erros
+        );
+
+    }
+}
+
+
+// =========================================================
+// FECHAR MODAL
+// =========================================================
+
+function fecharModalCustoFiltroRonald() {
+
+    document
+        .getElementById(
+            'modalCustoFiltroRonald'
+        )
+        ?.remove();
+}
+
 function prepararCamposCondicionaisParaSalvar() {
     const categoria =
         document.getElementById(
@@ -44460,6 +47192,12 @@ if (!window.__integracaoRegrasCondicionaisEstoqueV2) {
     window.validarCamposCondicionaisProduto = validarCamposCondicionaisProduto;
     window.salvarProdutoEstoque = salvarProdutoEstoque;
     window.gerarCamposDinamicos = gerarCamposDinamicos;
+    window.abrirModalCustoFiltroRonald = abrirModalCustoFiltroRonald;
+    window.salvarCustoFiltroRonald = salvarCustoFiltroRonald;
+    window.fecharModalCustoFiltroRonald = fecharModalCustoFiltroRonald;
+    window.adicionarBotaoCustoFiltroRonald = adicionarBotaoCustoFiltroRonald;
+    window.analisarReversaoUltimoCustoEmMassa = analisarReversaoUltimoCustoEmMassa;
+    window.reverterUltimoCustoEmMassa = reverterUltimoCustoEmMassa;
 }
 
 console.log('📦 Gestão de Estoque carregada com sucesso! (Versão completa com categorias customizadas)');

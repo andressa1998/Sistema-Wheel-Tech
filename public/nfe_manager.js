@@ -26065,17 +26065,23 @@ async function consultarSituacaoMLBFullNFE(
     // usa FULL + LOCAL como fallback.
     // =====================================================
 
-    const quantidadeBaseExposicao =
+const quantidadeBaseExposicao =
+    Math.max(
 
-        estoqueTotalAnuncio >
+        Number(
+            estoqueTotalAnuncio ||
             0
+        ),
 
-            ? estoqueTotalAnuncio
-
-            : (
-                estoqueTotalFull +
-                estoqueTotalLocal
-            );
+        Number(
+            estoqueTotalFull ||
+            0
+        ) +
+        Number(
+            estoqueTotalLocal ||
+            0
+        )
+    );
 
 
     let listingTypeEsperado =
