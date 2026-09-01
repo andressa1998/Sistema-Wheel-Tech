@@ -8844,21 +8844,75 @@ async function marcarVendaComoSeparadaNFE(
     }
 
 
-    const venda =
-        (
-            Array.isArray(
-                vendasPendentes
+    // =====================================================
+    // EVITAR CLIQUE DUPLO
+    // =====================================================
+
+    window._separacaoNFEEmAndamento =
+        window._separacaoNFEEmAndamento ||
+        new Set();
+
+
+    if (
+        window
+            ._separacaoNFEEmAndamento
+            .has(
+                vendaId
             )
-                ? vendasPendentes
-                : []
-        )
-            .find(
+    ) {
+
+        showToast(
+            '⏳ Salvando separação. Aguarde...',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    window
+        ._separacaoNFEEmAndamento
+        .add(
+            vendaId
+        );
+
+
+    try {
+
+        // =================================================
+        // LOCALIZAR VENDA
+        // =================================================
+
+        const todasVendas =
+            [
+                ...(
+                    Array.isArray(
+                        vendasPendentes
+                    )
+                        ? vendasPendentes
+                        : []
+                ),
+
+                ...(
+                    Array.isArray(
+                        window._vendasTabelaNFEBase
+                    )
+                        ? window._vendasTabelaNFEBase
+                        : []
+                )
+            ];
+
+
+        const venda =
+            todasVendas.find(
                 item => {
 
                     const principal =
                         normalizarOrderIdML(
-                            item.id_venda_ml ||
-                            item.id
+                            item
+                                ?.id_venda_ml ||
+                            item
+                                ?.id
                         );
 
 
@@ -8873,7 +8927,8 @@ async function marcarVendaComoSeparadaNFE(
 
                     return (
                         Array.isArray(
-                            item._order_ids_pack
+                            item
+                                ?._order_ids_pack
                         ) &&
                         item
                             ._order_ids_pack
@@ -8888,124 +8943,434 @@ async function marcarVendaComoSeparadaNFE(
             );
 
 
-    if (
-        !venda
-    ) {
+        if (
+            !venda
+        ) {
 
-        showToast(
-            '❌ Venda não encontrada.',
-            'error'
-        );
-
-        return;
-    }
-
-
-    if (
-        vendaEstaCanceladaNFE(
-            venda
-        )
-    ) {
-
-        showToast(
-            '🚫 Venda cancelada.',
-            'warning'
-        );
-
-        return;
-    }
-
-
-    if (
-        venda._is_full
-    ) {
-
-        showToast(
-            'ℹ️ Venda FULL não precisa de separação local.',
-            'info'
-        );
-
-        return;
-    }
-
-
-    const ids =
-        [
-            ...new Set(
-                (
-                    Array.isArray(
-                        venda._order_ids_pack
-                    ) &&
-                    venda._order_ids_pack.length >
-                        0
-
-                        ? venda._order_ids_pack
-
-                        : [
-                            vendaId
-                        ]
-                )
-                    .map(
-                        normalizarOrderIdML
-                    )
-                    .filter(Boolean)
-            )
-        ];
-
-
-    const usuario =
-        obterUsuarioOperacaoNFE();
-
-
-    const agora =
-        new Date()
-            .toISOString();
-
-
-    try {
-
-        const {
-            error
-        } =
-            await window
-                .supabaseClient
-                .from(
-                    'vendas_nfe_cache'
-                )
-                .update({
-
-                    separado:
-                        true,
-
-                    separado_em:
-                        agora,
-
-                    separado_por_username:
-                        usuario.username,
-
-                    separado_por_nome:
-                        usuario.nome
-                })
-                .in(
-                    'id_venda_ml',
-                    ids
-                );
+            throw new Error(
+                'Venda não encontrada na tabela.'
+            );
+        }
 
 
         if (
-            error
+            vendaEstaCanceladaNFE(
+                venda
+            )
         ) {
 
-            throw error;
+            showToast(
+                '🚫 Venda cancelada.',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        if (
+            venda._is_full ===
+                true ||
+            detectarVendaFullNFE(
+                venda
+            )
+        ) {
+
+            showToast(
+                'ℹ️ Venda FULL não precisa de separação local.',
+                'info'
+            );
+
+            return;
         }
 
 
         // =================================================
-        // ATUALIZAR MEMÓRIA IMEDIATAMENTE
+        // TODAS AS ORDERS DO PACK
+        // =================================================
+
+        const ids =
+            [
+                ...new Set(
+                    (
+                        Array.isArray(
+                            venda
+                                ._order_ids_pack
+                        ) &&
+                        venda
+                            ._order_ids_pack
+                            .length >
+                            0
+
+                            ? venda
+                                ._order_ids_pack
+
+                            : [
+                                vendaId
+                            ]
+                    )
+                        .map(
+                            normalizarOrderIdML
+                        )
+                        .filter(
+                            Boolean
+                        )
+                )
+            ];
+
+
+        const usuario =
+            obterUsuarioOperacaoNFE();
+
+
+        const agora =
+            new Date()
+                .toISOString();
+
+
+        console.log(
+            '📦 [SEPARAÇÃO] Gravando:',
+            {
+                ids,
+                usuario,
+                agora
+            }
+        );
+
+
+        // =================================================
+        // FUNÇÃO QUE REALMENTE GRAVA E RETORNA AS LINHAS
+        // =================================================
+
+        const executarUpdate =
+            async () => {
+
+                const {
+                    data,
+                    error
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'vendas_nfe_cache'
+                        )
+                        .update({
+
+                            separado:
+                                true,
+
+                            separado_em:
+                                agora,
+
+                            separado_por_username:
+                                usuario.username,
+
+                            separado_por_nome:
+                                usuario.nome
+                        })
+                        .in(
+                            'id_venda_ml',
+                            ids
+                        )
+                        .select(`
+                            id_venda_ml,
+                            separado,
+                            separado_em,
+                            separado_por_username,
+                            separado_por_nome
+                        `);
+
+
+                if (
+                    error
+                ) {
+
+                    throw error;
+                }
+
+
+                return Array.isArray(
+                    data
+                )
+                    ? data
+                    : [];
+            };
+
+
+        // =================================================
+        // PRIMEIRA TENTATIVA
+        // =================================================
+
+        let registrosGravados =
+            await executarUpdate();
+
+
+        let idsGravados =
+            new Set(
+                registrosGravados
+                    .filter(
+                        registro =>
+                            registro
+                                ?.separado ===
+                            true
+                    )
+                    .map(
+                        registro =>
+                            normalizarOrderIdML(
+                                registro
+                                    .id_venda_ml
+                            )
+                    )
+                    .filter(
+                        Boolean
+                    )
+            );
+
+
+        let faltantes =
+            ids.filter(
+                id =>
+                    !idsGravados.has(
+                        id
+                    )
+            );
+
+
+        // =================================================
+        // SE ALGUMA VENDA AINDA NÃO EXISTIA NO CACHE,
+        // PRIMEIRO GARANTIR O CADASTRO DELA
+        // =================================================
+
+        if (
+            faltantes.length >
+            0
+        ) {
+
+            console.warn(
+                '⚠️ [SEPARAÇÃO] Venda(s) ainda não existiam no cache:',
+                faltantes
+            );
+
+
+            const candidatas =
+                [];
+
+
+            const adicionarCandidata =
+                item => {
+
+                    if (
+                        !item
+                    ) {
+
+                        return;
+                    }
+
+
+                    const id =
+                        normalizarOrderIdML(
+                            item
+                                .id_venda_ml ||
+                            item
+                                .id
+                        );
+
+
+                    if (
+                        id &&
+                        faltantes.includes(
+                            id
+                        )
+                    ) {
+
+                        candidatas.push(
+                            item
+                        );
+                    }
+
+
+                    if (
+                        Array.isArray(
+                            item
+                                ._membros_pack
+                        )
+                    ) {
+
+                        item
+                            ._membros_pack
+                            .forEach(
+                                adicionarCandidata
+                            );
+                    }
+                };
+
+
+            todasVendas.forEach(
+                adicionarCandidata
+            );
+
+
+            adicionarCandidata(
+                venda
+            );
+
+
+            const candidatasUnicas =
+                Array.from(
+                    new Map(
+                        candidatas.map(
+                            item => [
+
+                                normalizarOrderIdML(
+                                    item.id_venda_ml ||
+                                    item.id
+                                ),
+
+                                item
+                            ]
+                        )
+                    )
+                    .values()
+                );
+
+
+            if (
+                candidatasUnicas.length >
+                0
+            ) {
+
+                console.log(
+                    '💾 [SEPARAÇÃO] Criando vendas faltantes no cache:',
+                    candidatasUnicas.map(
+                        item =>
+                            normalizarOrderIdML(
+                                item.id_venda_ml ||
+                                item.id
+                            )
+                    )
+                );
+
+
+                await salvarVendasCacheNFE(
+                    candidatasUnicas
+                );
+
+
+                // Pequena espera para a gravação ficar disponível.
+                await new Promise(
+                    resolve =>
+                        setTimeout(
+                            resolve,
+                            150
+                        )
+                );
+
+
+                registrosGravados =
+                    await executarUpdate();
+
+
+                idsGravados =
+                    new Set(
+                        registrosGravados
+                            .filter(
+                                registro =>
+                                    registro
+                                        ?.separado ===
+                                    true
+                            )
+                            .map(
+                                registro =>
+                                    normalizarOrderIdML(
+                                        registro
+                                            .id_venda_ml
+                                    )
+                            )
+                            .filter(
+                                Boolean
+                            )
+                    );
+
+
+                faltantes =
+                    ids.filter(
+                        id =>
+                            !idsGravados.has(
+                                id
+                            )
+                    );
+            }
+        }
+
+
+        // =================================================
+        // VERIFICAÇÃO FINAL
+        //
+        // NÃO DEIXA A TELA FICAR VERDE SE O BANCO NÃO SALVOU
+        // =================================================
+
+        if (
+            faltantes.length >
+            0
+        ) {
+
+            throw new Error(
+                `A separação não foi salva para: ${faltantes.join(', ')}`
+            );
+        }
+
+
+        // =================================================
+        // CACHE LOCAL DE SEGURANÇA
+        // =================================================
+
+        ids.forEach(
+            id => {
+
+                try {
+
+                    localStorage.setItem(
+                        `wheeltech_nfe_separado_${id}`,
+                        JSON.stringify({
+
+                            separado:
+                                true,
+
+                            separado_em:
+                                agora,
+
+                            separado_por_username:
+                                usuario.username,
+
+                            separado_por_nome:
+                                usuario.nome
+                        })
+                    );
+
+                } catch (
+                    error
+                ) {}
+            }
+        );
+
+
+        // =================================================
+        // ATUALIZAR OBJETOS EM MEMÓRIA
+        //
+        // IMPORTANTE PARA PACK:
+        // atualiza também _membros_pack
         // =================================================
 
         const atualizarVenda =
             item => {
+
+                if (
+                    !item
+                ) {
+
+                    return;
+                }
+
 
                 const id =
                     normalizarOrderIdML(
@@ -9015,38 +9380,49 @@ async function marcarVendaComoSeparadaNFE(
 
 
                 if (
-                    !ids.includes(
+                    ids.includes(
                         id
                     )
                 ) {
 
-                    return;
+                    item._separado =
+                        true;
+
+                    item.separado =
+                        true;
+
+                    item._separado_em =
+                        agora;
+
+                    item.separado_em =
+                        agora;
+
+                    item._separado_por_username =
+                        usuario.username;
+
+                    item.separado_por_username =
+                        usuario.username;
+
+                    item._separado_por_nome =
+                        usuario.nome;
+
+                    item.separado_por_nome =
+                        usuario.nome;
                 }
 
 
-                item._separado =
-                    true;
+                if (
+                    Array.isArray(
+                        item._membros_pack
+                    )
+                ) {
 
-                item.separado =
-                    true;
-
-                item._separado_em =
-                    agora;
-
-                item.separado_em =
-                    agora;
-
-                item._separado_por_username =
-                    usuario.username;
-
-                item.separado_por_username =
-                    usuario.username;
-
-                item._separado_por_nome =
-                    usuario.nome;
-
-                item.separado_por_nome =
-                    usuario.nome;
+                    item
+                        ._membros_pack
+                        .forEach(
+                            atualizarVenda
+                        );
+                }
             };
 
 
@@ -9061,29 +9437,133 @@ async function marcarVendaComoSeparadaNFE(
                 atualizarVenda
             );
 
-            (
-    Array.isArray(
-        vendasPendentes
-    )
-        ? vendasPendentes
-        : []
-)
-    .forEach(
-        atualizarVenda
-    );
+
+        (
+            Array.isArray(
+                vendasPendentes
+            )
+                ? vendasPendentes
+                : []
+        )
+            .forEach(
+                atualizarVenda
+            );
+
+
+        atualizarVenda(
+            venda
+        );
+
+
+        if (
+            window._nfeVendaAtual
+        ) {
+
+            atualizarVenda(
+                window._nfeVendaAtual
+            );
+        }
+
+
+        // =================================================
+        // CONFERÊNCIA REAL NO BANCO
+        // =================================================
+
+        const {
+            data:
+                confirmacaoBanco,
+
+            error:
+                erroConfirmacao
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .select(`
+                    id_venda_ml,
+                    separado,
+                    separado_em,
+                    separado_por_username,
+                    separado_por_nome
+                `)
+                .in(
+                    'id_venda_ml',
+                    ids
+                );
+
+
+        if (
+            erroConfirmacao
+        ) {
+
+            throw erroConfirmacao;
+        }
+
+
+        const mapaConfirmacao =
+            new Map(
+                (
+                    confirmacaoBanco ||
+                    []
+                )
+                    .map(
+                        registro => [
+
+                            normalizarOrderIdML(
+                                registro.id_venda_ml
+                            ),
+
+                            registro
+                        ]
+                    )
+            );
+
+
+        const naoConfirmadas =
+            ids.filter(
+                id =>
+                    mapaConfirmacao
+                        .get(
+                            id
+                        )
+                        ?.separado !==
+                    true
+            );
+
+
+        if (
+            naoConfirmadas.length >
+            0
+        ) {
+
+            throw new Error(
+                `Banco não confirmou a separação de: ${naoConfirmadas.join(', ')}`
+            );
+        }
+
+
+        console.log(
+            '✅ [SEPARAÇÃO] Confirmada no banco:',
+            confirmacaoBanco
+        );
 
 
         showToast(
             ids.length >
                 1
-                ? `✅ Pacote separado. ${ids.length} vendas marcadas.`
-                : '✅ Produto marcado como separado.',
+
+                ? `✅ Pacote separado. ${ids.length} vendas salvas no banco.`
+
+                : '✅ Produto separado e salvo no banco.',
             'success'
         );
 
 
         renderizarVendasNFETabela(
             window._vendasTabelaNFEBase ||
+            vendasPendentes ||
             []
         );
 
@@ -9099,9 +9579,18 @@ async function marcarVendaComoSeparadaNFE(
 
 
         showToast(
-            `❌ Não foi possível marcar como separado: ${error.message}`,
+            `❌ Não foi possível salvar a separação: ${error.message}`,
             'error'
         );
+
+
+    } finally {
+
+        window
+            ._separacaoNFEEmAndamento
+            .delete(
+                vendaId
+            );
     }
 }
 
@@ -9118,36 +9607,124 @@ window.marcarVendaComoSeparadaNFE =
             vendas
         ) ||
         vendas.length ===
-            0
+        0
     ) {
 
         return [];
     }
 
 
-    const ids =
-        [
-            ...new Set(
-                vendas
+    // =====================================================
+    // PEGAR TODOS OS IDS, INCLUSIVE MEMBROS DE PACK
+    // =====================================================
+
+    const idsSet =
+        new Set();
+
+
+    const coletarIds =
+        venda => {
+
+            if (
+                !venda
+            ) {
+
+                return;
+            }
+
+
+            const id =
+                normalizarOrderIdML(
+                    venda.id_venda_ml ||
+                    venda.id
+                );
+
+
+            if (
+                id
+            ) {
+
+                idsSet.add(
+                    id
+                );
+            }
+
+
+            if (
+                Array.isArray(
+                    venda._order_ids_pack
+                )
+            ) {
+
+                venda
+                    ._order_ids_pack
                     .map(
-                        venda =>
-                            normalizarOrderIdML(
-                                venda.id_venda_ml ||
-                                venda.id
-                            )
+                        normalizarOrderIdML
                     )
-                    .filter(Boolean)
-            )
-        ];
+                    .filter(
+                        Boolean
+                    )
+                    .forEach(
+                        id =>
+                            idsSet.add(
+                                id
+                            )
+                    );
+            }
+
+
+            if (
+                Array.isArray(
+                    venda._membros_pack
+                )
+            ) {
+
+                venda
+                    ._membros_pack
+                    .forEach(
+                        coletarIds
+                    );
+            }
+        };
+
+
+    vendas.forEach(
+        coletarIds
+    );
+
+
+    const ids =
+        Array.from(
+            idsSet
+        );
+
+
+    if (
+        ids.length ===
+        0
+    ) {
+
+        return vendas;
+    }
 
 
     const mapa =
         new Map();
 
 
+    const lotesComErro =
+        new Set();
+
+
     const TAMANHO_LOTE =
         200;
 
+
+    // =====================================================
+    // CONSULTAR BANCO
+    //
+    // FAZ ATÉ 2 TENTATIVAS POR LOTE
+    // =====================================================
 
     for (
         let i = 0;
@@ -9159,65 +9736,204 @@ window.marcarVendaComoSeparadaNFE =
             ids.slice(
                 i,
                 i +
-                    TAMANHO_LOTE
+                TAMANHO_LOTE
             );
 
 
-        const {
-            data,
-            error
-        } =
-            await window
-                .supabaseClient
-                .from(
-                    'vendas_nfe_cache'
+        let sucesso =
+            false;
+
+
+        let ultimoErro =
+            null;
+
+
+        for (
+            let tentativa = 1;
+            tentativa <= 2;
+            tentativa++
+        ) {
+
+            try {
+
+                const {
+                    data,
+                    error
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'vendas_nfe_cache'
+                        )
+                        .select(`
+                            id_venda_ml,
+                            separado,
+                            separado_em,
+                            separado_por_username,
+                            separado_por_nome
+                        `)
+                        .in(
+                            'id_venda_ml',
+                            lote
+                        );
+
+
+                if (
+                    error
+                ) {
+
+                    throw error;
+                }
+
+
+                (
+                    data ||
+                    []
                 )
-                .select(`
-                    id_venda_ml,
-                    separado,
-                    separado_em,
-                    separado_por_username,
-                    separado_por_nome
-                `)
-                .in(
-                    'id_venda_ml',
-                    lote
+                    .forEach(
+                        registro => {
+
+                            const id =
+                                normalizarOrderIdML(
+                                    registro.id_venda_ml
+                                );
+
+
+                            if (
+                                !id
+                            ) {
+
+                                return;
+                            }
+
+
+                            mapa.set(
+                                id,
+                                registro
+                            );
+
+
+                            // =====================================
+                            // ATUALIZAR FALLBACK LOCAL
+                            // SOMENTE QUANDO REALMENTE SEPARADO
+                            // =====================================
+
+                            if (
+                                registro.separado ===
+                                true
+                            ) {
+
+                                try {
+
+                                    localStorage.setItem(
+                                        `wheeltech_nfe_separado_${id}`,
+                                        JSON.stringify({
+
+                                            separado:
+                                                true,
+
+                                            separado_em:
+                                                registro
+                                                    .separado_em ||
+                                                null,
+
+                                            separado_por_username:
+                                                registro
+                                                    .separado_por_username ||
+                                                null,
+
+                                            separado_por_nome:
+                                                registro
+                                                    .separado_por_nome ||
+                                                null
+                                        })
+                                    );
+
+                                } catch (
+                                    error
+                                ) {}
+                            }
+                        }
+                    );
+
+
+                sucesso =
+                    true;
+
+
+                break;
+
+
+            } catch (
+                error
+            ) {
+
+                ultimoErro =
+                    error;
+
+
+                console.warn(
+                    `⚠️ Erro carregando separação - tentativa ${tentativa}/2:`,
+                    error
                 );
 
 
-        if (
-            error
-        ) {
+                if (
+                    tentativa <
+                    2
+                ) {
 
-            console.warn(
-                '⚠️ Erro carregando separação:',
-                error
-            );
-
-            continue;
+                    await new Promise(
+                        resolve =>
+                            setTimeout(
+                                resolve,
+                                250
+                            )
+                    );
+                }
+            }
         }
 
 
-        (
-            data ||
-            []
-        )
-            .forEach(
-                registro => {
+        if (
+            !sucesso
+        ) {
 
-                    mapa.set(
-                        normalizarOrderIdML(
-                            registro.id_venda_ml
-                        ),
-                        registro
-                    );
+            console.warn(
+                '⚠️ Não foi possível consultar separação deste lote. ' +
+                'O estado existente será preservado.',
+                {
+                    lote,
+                    erro:
+                        ultimoErro
                 }
             );
+
+
+            lote.forEach(
+                id =>
+                    lotesComErro.add(
+                        id
+                    )
+            );
+        }
     }
 
 
-    return vendas.map(
+    // =====================================================
+    // APLICAR ESTADO
+    // =====================================================
+
+    const enriquecerVenda =
         venda => {
+
+            if (
+                !venda
+            ) {
+
+                return venda;
+            }
+
 
             const id =
                 normalizarOrderIdML(
@@ -9232,54 +9948,265 @@ window.marcarVendaComoSeparadaNFE =
                 );
 
 
-            return {
+            let fallbackLocal =
+                null;
+
+
+            if (
+                id
+            ) {
+
+                try {
+
+                    const bruto =
+                        localStorage.getItem(
+                            `wheeltech_nfe_separado_${id}`
+                        );
+
+
+                    if (
+                        bruto
+                    ) {
+
+                        fallbackLocal =
+                            JSON.parse(
+                                bruto
+                            );
+                    }
+
+                } catch (
+                    error
+                ) {
+
+                    fallbackLocal =
+                        null;
+                }
+            }
+
+
+            // =================================================
+            // PRIORIDADES
+            //
+            // 1. Banco
+            // 2. Estado já carregado na venda
+            // 3. Fallback local confirmado
+            //
+            // NUNCA transformar ausência de registro
+            // automaticamente em false.
+            // =================================================
+
+            let separado =
+                venda._separado ===
+                    true ||
+                venda.separado ===
+                    true ||
+                fallbackLocal
+                    ?.separado ===
+                    true;
+
+
+            let separadoEm =
+                venda._separado_em ||
+                venda.separado_em ||
+                fallbackLocal
+                    ?.separado_em ||
+                null;
+
+
+            let separadoPorUsername =
+                venda._separado_por_username ||
+                venda.separado_por_username ||
+                fallbackLocal
+                    ?.separado_por_username ||
+                null;
+
+
+            let separadoPorNome =
+                venda._separado_por_nome ||
+                venda.separado_por_nome ||
+                fallbackLocal
+                    ?.separado_por_nome ||
+                null;
+
+
+            // =================================================
+            // BANCO É A FONTE PRINCIPAL
+            //
+            // TRUE nunca volta para FALSE por leitura ausente.
+            //
+            // Como a separação é uma ação definitiva neste
+            // fluxo, TRUE prevalece.
+            // =================================================
+
+            if (
+                registro
+            ) {
+
+                separado =
+                    separado ||
+                    registro.separado ===
+                        true;
+
+
+                if (
+                    registro.separado ===
+                    true
+                ) {
+
+                    separadoEm =
+                        registro.separado_em ||
+                        separadoEm;
+
+
+                    separadoPorUsername =
+                        registro.separado_por_username ||
+                        separadoPorUsername;
+
+
+                    separadoPorNome =
+                        registro.separado_por_nome ||
+                        separadoPorNome;
+                }
+            }
+
+
+            const membrosPack =
+                Array.isArray(
+                    venda._membros_pack
+                )
+
+                    ? venda
+                        ._membros_pack
+                        .map(
+                            enriquecerVenda
+                        )
+
+                    : venda._membros_pack;
+
+
+            const resultado = {
 
                 ...venda,
 
                 _separado:
-                    Boolean(
-                        registro
-                            ?.separado
-                    ),
+                    separado,
 
                 separado:
-                    Boolean(
-                        registro
-                            ?.separado
-                    ),
+                    separado,
 
                 _separado_em:
-                    registro
-                        ?.separado_em ||
-                    null,
+                    separadoEm,
 
                 separado_em:
-                    registro
-                        ?.separado_em ||
-                    null,
+                    separadoEm,
 
                 _separado_por_username:
-                    registro
-                        ?.separado_por_username ||
-                    null,
+                    separadoPorUsername,
 
                 separado_por_username:
-                    registro
-                        ?.separado_por_username ||
-                    null,
+                    separadoPorUsername,
 
                 _separado_por_nome:
-                    registro
-                        ?.separado_por_nome ||
-                    null,
+                    separadoPorNome,
 
                 separado_por_nome:
-                    registro
-                        ?.separado_por_nome ||
-                    null
+                    separadoPorNome,
+
+                _membros_pack:
+                    membrosPack
             };
+
+
+            // =================================================
+            // PACK
+            //
+            // TODOS OS MEMBROS DEVEM ESTAR SEPARADOS
+            // =================================================
+
+            if (
+                Array.isArray(
+                    membrosPack
+                ) &&
+                membrosPack.length >
+                0
+            ) {
+
+                const todosSeparados =
+                    membrosPack.every(
+                        membro =>
+                            membro._separado ===
+                                true ||
+                            membro.separado ===
+                                true
+                    );
+
+
+                resultado._separado =
+                    todosSeparados;
+
+                resultado.separado =
+                    todosSeparados;
+
+
+                if (
+                    todosSeparados
+                ) {
+
+                    const datas =
+                        membrosPack
+                            .map(
+                                membro =>
+                                    membro
+                                        ._separado_em ||
+                                    membro
+                                        .separado_em
+                            )
+                            .filter(
+                                Boolean
+                            )
+                            .sort();
+
+
+                    resultado._separado_em =
+                        datas.at(
+                            -1
+                        ) ||
+                        resultado._separado_em ||
+                        null;
+
+
+                    resultado.separado_em =
+                        resultado._separado_em;
+                }
+            }
+
+
+            return resultado;
+        };
+
+
+    const resultado =
+        vendas.map(
+            enriquecerVenda
+        );
+
+
+    console.log(
+        '📦 Separações carregadas:',
+        {
+            total:
+                ids.length,
+
+            encontradosBanco:
+                mapa.size,
+
+            lotesComErro:
+                lotesComErro.size
         }
     );
+
+
+    return resultado;
 }
 
 // =========================================================

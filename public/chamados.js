@@ -5914,207 +5914,434 @@
 
     }
 
+    async function notificarMudancaStatusChamado({
+    chamadoId,
+    tituloChamado,
+    criadorUsername,
+    statusAnterior,
+    novoStatus
+}) {
+    if (
+        !chamadoId ||
+        !statusAnterior ||
+        !novoStatus ||
+        statusAnterior === novoStatus
+    ) {
+        return false;
+    }
 
-    // ========================================================
-    // ALTERAR STATUS
-    // ========================================================
+    if (
+        typeof window
+            .criarNotificacaoChamado !==
+        'function'
+    ) {
+        console.warn(
+            '⚠️ Função de notificação de chamados não disponível.'
+        );
+
+        return false;
+    }
+
+    const normalizarUsuario =
+        valor => {
+            return String(valor || '')
+                .trim()
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ''
+                );
+        };
+
+    const autorAtual =
+        normalizarUsuario(
+            usernameChamados()
+        );
+
+    const criador =
+        normalizarUsuario(
+            criadorUsername
+        );
+
+    const responsavelGeral =
+        'andressamiotto';
+
+    const nomeStatusAnterior =
+        cfgStatus(
+            statusAnterior
+        )?.texto ||
+        statusAnterior;
+
+    const nomeNovoStatus =
+        cfgStatus(
+            novoStatus
+        )?.texto ||
+        novoStatus;
+
+    /*
+     * Usuários que receberão:
+     *
+     * 1. Quem criou o chamado;
+     * 2. Andressa, que acompanha todos;
+     * 3. Quem realizou a alteração não recebe sobre
+     *    a própria ação.
+     */
+    const destinatarios =
+        new Set();
+
+    if (
+        criador &&
+        criador !== autorAtual
+    ) {
+        destinatarios.add(
+            criador
+        );
+    }
+
+    if (
+        responsavelGeral !==
+        autorAtual
+    ) {
+        destinatarios.add(
+            responsavelGeral
+        );
+    }
+
+    if (!destinatarios.size) {
+        return true;
+    }
+
+    const tituloNotificacao =
+        `Status do chamado #${numeroChamado(chamadoId)} alterado`;
+
+    const mensagemNotificacao =
+        `${
+            tituloChamado ||
+            'Chamado'
+        }
+
+Status anterior: ${nomeStatusAnterior}
+Novo status: ${nomeNovoStatus}
+Alterado por: ${
+    usuarioChamados()?.name ||
+    usuarioChamados()?.username ||
+    usernameChamados() ||
+    'Sistema'
+}`;
+
+    const resultados =
+        await Promise.allSettled(
+            [...destinatarios].map(
+                destinatario => {
+                    return window
+                        .criarNotificacaoChamado({
+                            chamadoId:
+                                chamadoId,
+
+                            destinatarioUsername:
+                                destinatario,
+
+                            tipo:
+                                'status',
+
+                            titulo:
+                                tituloNotificacao,
+
+                            mensagem:
+                                mensagemNotificacao
+                        });
+                }
+            )
+        );
+
+    const houveErro =
+        resultados.some(resultado => {
+            return (
+                resultado.status ===
+                    'rejected' ||
+                resultado.value ===
+                    false
+            );
+        });
+
+    if (houveErro) {
+        console.warn(
+            '⚠️ O status foi alterado, mas alguma notificação falhou.',
+            resultados
+        );
+    }
+
+    /*
+     * Atualiza imediatamente o sino da sessão atual.
+     */
+    if (
+        typeof window
+            .carregarNotificacoesChamados ===
+        'function'
+    ) {
+        await window
+            .carregarNotificacoesChamados();
+    }
+
+    return !houveErro;
+}
+
 
     window.alterarStatusChamados =
-        async function(
-            id,
-            novoStatus
+    async function(
+        id,
+        novoStatus
+    ) {
+        if (
+            !ehAdminChamados()
         ) {
+            toastChamados(
+                '🔒 Apenas o administrador pode alterar o status.',
+                'warning'
+            );
 
+            return;
+        }
+
+        if (
+            !STATUS_CHAMADOS[
+                novoStatus
+            ]
+        ) {
+            toastChamados(
+                '⚠️ Status inválido.',
+                'warning'
+            );
+
+            return;
+        }
+
+        const sb =
+            sbChamados();
+
+        const usuarioAtual =
+            usuarioChamados();
+
+        if (
+            !sb ||
+            !usuarioAtual
+        ) {
+            return;
+        }
+
+        try {
+            /*
+             * Busca o status atual antes de atualizar.
+             * Também traz quem criou o chamado para enviar
+             * a notificação ao usuário correto.
+             */
+            const {
+                data: chamadoAntes,
+                error: erroConsulta
+            } = await sb
+                .from(
+                    CFG_CHAMADOS
+                        .tabelaChamados
+                )
+                .select(`
+                    id,
+                    titulo,
+                    status,
+                    criado_por_username,
+                    criado_por_nome
+                `)
+                .eq(
+                    'id',
+                    id
+                )
+                .single();
+
+            if (erroConsulta) {
+                throw erroConsulta;
+            }
+
+            if (!chamadoAntes) {
+                throw new Error(
+                    'Chamado não encontrado.'
+                );
+            }
+
+            const statusAnterior =
+                chamadoAntes.status;
+
+            /*
+             * Não atualiza nem notifica quando o status
+             * selecionado já é o status atual.
+             */
             if (
-                !ehAdminChamados()
+                statusAnterior ===
+                novoStatus
             ) {
-
                 toastChamados(
-                    '🔒 Apenas o administrador pode alterar o status.',
-                    'warning'
+                    `ℹ️ O chamado já está com o status ${cfgStatus(novoStatus).texto}.`,
+                    'info'
                 );
 
                 return;
-
             }
 
+            const agora =
+                new Date()
+                    .toISOString();
 
-            if (
-                !STATUS_CHAMADOS[
-                    novoStatus
-                ]
-            ) {
+            const update = {
+                status:
+                    novoStatus,
 
-                return;
+                atualizado_em:
+                    agora,
 
+                responsavel:
+                    usuarioAtual.name ||
+                    usuarioAtual.username ||
+                    usernameChamados(),
+
+                concluido_em:
+                    novoStatus ===
+                    'concluido'
+                        ? agora
+                        : null
+            };
+
+            const {
+                data: chamadoAtualizado,
+                error
+            } = await sb
+                .from(
+                    CFG_CHAMADOS
+                        .tabelaChamados
+                )
+                .update(
+                    update
+                )
+                .eq(
+                    'id',
+                    id
+                )
+                .select(`
+                    id,
+                    titulo,
+                    status,
+                    criado_por_username,
+                    criado_por_nome,
+                    atualizado_em,
+                    responsavel,
+                    concluido_em
+                `)
+                .single();
+
+            if (error) {
+                throw error;
             }
 
-
-            const sb =
-                sbChamados();
-
-
-            const u =
-                usuarioChamados();
-
-
-            if (
-                !sb ||
-                !u
-            ) {
-
-                return;
-
-            }
-
-
+            /*
+             * Somente gera a notificação depois que o banco
+             * confirmar a alteração.
+             */
             try {
+                await notificarMudancaStatusChamado({
+                    chamadoId:
+                        id,
 
-                const agora =
-                    new Date()
-                        .toISOString();
+                    tituloChamado:
+                        chamadoAntes.titulo,
 
+                    criadorUsername:
+                        chamadoAntes
+                            .criado_por_username,
 
-                const update = {
+                    statusAnterior:
+                        statusAnterior,
 
-                    status:
-                        novoStatus,
-
-                    atualizado_em:
-                        agora,
-
-                    responsavel:
-                        u.name ||
-                        u.username ||
-                        usernameChamados(),
-
-                    concluido_em:
-                        novoStatus ===
-                        'concluido'
-
-                            ? agora
-
-                            : null
-
-                };
-
-
-                const {
-                    error
-                } =
-                    await sb
-
-                        .from(
-                            CFG_CHAMADOS
-                                .tabelaChamados
-                        )
-
-                        .update(
-                            update
-                        )
-
-                        .eq(
-                            'id',
-                            id
-                        );
-
-
-                if (error) {
-
-                    throw error;
-
-                }
-
-
-                if (
-                    chamadoAberto &&
-                    Number(
-                        chamadoAberto.id
-                    ) ===
-                    Number(
-                        id
-                    )
-                ) {
-
-                    Object.assign(
-                        chamadoAberto,
-                        update
-                    );
-
-                }
-
-
-                const local =
-                    chamadosCache.find(
-                        c =>
-                            Number(
-                                c.id
-                            ) ===
-                            Number(
-                                id
-                            )
-                    );
-
-
-                if (local) {
-
-                    Object.assign(
-                        local,
-                        update
-                    );
-
-                }
-
-
-                renderResumoChamados();
-
-
-                window
-                    .renderizarChamados();
-
-
-                atualizarContadorMenuLocal();
-
-
-                renderDetalhesChamados();
-
-
-                toastChamados(
-                    `✅ Status alterado para ${cfgStatus(novoStatus).texto}.`,
-                    'success'
-                );
-
+                    novoStatus:
+                        novoStatus
+                });
 
             } catch (
-                e
+                erroNotificacao
             ) {
-
-                console.error(
-                    '❌ Erro ao alterar status:',
-                    e
+                /*
+                 * Uma falha na notificação não desfaz uma
+                 * alteração de status já salva.
+                 */
+                console.warn(
+                    '⚠️ Status alterado, mas não foi possível gerar a notificação:',
+                    erroNotificacao
                 );
-
-
-                toastChamados(
-                    '❌ Erro ao alterar status: ' +
-                    e.message,
-                    'error'
-                );
-
-
-                if (
-                    chamadoAberto
-                ) {
-
-                    await carregarDetalhesChamados(
-                        id
-                    );
-
-                }
-
             }
 
-        };
+            if (
+                chamadoAberto &&
+                Number(
+                    chamadoAberto.id
+                ) ===
+                Number(id)
+            ) {
+                Object.assign(
+                    chamadoAberto,
+                    chamadoAtualizado ||
+                    update
+                );
+            }
+
+            const local =
+                chamadosCache.find(
+                    chamado =>
+                        Number(
+                            chamado.id
+                        ) ===
+                        Number(id)
+                );
+
+            if (local) {
+                Object.assign(
+                    local,
+                    chamadoAtualizado ||
+                    update
+                );
+            }
+
+            renderResumoChamados();
+
+            window
+                .renderizarChamados();
+
+            atualizarContadorMenuLocal();
+
+            renderDetalhesChamados();
+
+            toastChamados(
+                `✅ Status alterado de ${cfgStatus(statusAnterior).texto} para ${cfgStatus(novoStatus).texto}.`,
+                'success'
+            );
+
+        } catch (error) {
+            console.error(
+                '❌ Erro ao alterar status:',
+                error
+            );
+
+            toastChamados(
+                '❌ Erro ao alterar status: ' +
+                error.message,
+                'error'
+            );
+
+            if (
+                chamadoAberto
+            ) {
+                await carregarDetalhesChamados(
+                    id
+                );
+            }
+        }
+    };
 
 
     // ========================================================
@@ -6595,6 +6822,45 @@
 
                 throw erroUpdate;
             }
+
+            /*
+ * Se a resposta do usuário reabriu um chamado
+ * concluído, notifica a mudança de status.
+ */
+if (
+    dadosChamado.status ===
+        'concluido' &&
+    atualizacao.status ===
+        'aguardando'
+) {
+    try {
+        await notificarMudancaStatusChamado({
+            chamadoId:
+                id,
+
+            tituloChamado:
+                dadosChamado.titulo,
+
+            criadorUsername:
+                dadosChamado
+                    .criado_por_username,
+
+            statusAnterior:
+                'concluido',
+
+            novoStatus:
+                'aguardando'
+        });
+
+    } catch (
+        erroNotificacaoStatus
+    ) {
+        console.warn(
+            '⚠️ Chamado reaberto, mas a notificação do status falhou:',
+            erroNotificacaoStatus
+        );
+    }
+}
 
 
             // =================================================
