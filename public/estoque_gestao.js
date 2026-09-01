@@ -7125,8 +7125,8 @@ function abrirModalAjusteMassaEstoque() {
         [
             ...new Set(
                 produtos.map(
-                    p =>
-                        p.categoria ||
+                    produto =>
+                        produto.categoria ||
                         ''
                 )
             )
@@ -7182,9 +7182,13 @@ function abrirModalAjusteMassaEstoque() {
                 background: white;
                 border-radius: 12px;
                 padding: 22px;
-                box-shadow: 0 20px 60px rgba(0,0,0,.3);
+                box-shadow: 0 20px 60px rgba(0,0,0,.20);
             "
         >
+
+            <!-- ========================================== -->
+            <!-- CABEÇALHO -->
+            <!-- ========================================== -->
 
             <div
                 style="
@@ -7207,6 +7211,7 @@ function abrirModalAjusteMassaEstoque() {
                     >
 
                         <i class="fas fa-edit"></i>
+
                         Ajustar Produtos em Massa
 
                     </h3>
@@ -7244,6 +7249,10 @@ function abrirModalAjusteMassaEstoque() {
             </div>
 
 
+            <!-- ========================================== -->
+            <!-- AVISO -->
+            <!-- ========================================== -->
+
             <div
                 style="
                     background: #fff3cd;
@@ -7255,10 +7264,16 @@ function abrirModalAjusteMassaEstoque() {
                 "
             >
 
-                <strong>Importante:</strong>
+                <strong>
+                    Importante:
+                </strong>
 
                 somente os campos que você marcar como
-                <strong>Alterar</strong>
+
+                <strong>
+                    Alterar
+                </strong>
+
                 serão modificados.
 
                 Todos os outros dados permanecem exatamente
@@ -7277,15 +7292,50 @@ function abrirModalAjusteMassaEstoque() {
 
 
             <!-- ========================================== -->
-            <!-- PREÇO -->
+            <!-- TÍTULO / NOME -->
+            <!-- NOVO -->
             <!-- ========================================== -->
 
             ${criarCampoMassaSimples({
-                id: 'Preco',
-                label: 'Preço de venda',
-                tipo: 'number',
-                placeholder: 'Ex: 99,90'
+
+                id:
+                    'Nome',
+
+                label:
+                    'Título / Nome do produto',
+
+                tipo:
+                    'text',
+
+                placeholder:
+                    'Novo título para os produtos selecionados'
+
             })}
+
+
+            <!-- ========================================== -->
+            <!-- PREÇO -->
+            <!-- ========================================== -->
+
+            ${criarCampoMassaCategoria(
+    mesmaCategoria
+)}
+
+${criarCampoMassaSimples({
+
+    id:
+        'Preco',
+
+    label:
+        'Preço de venda',
+
+    tipo:
+        'number',
+
+    placeholder:
+        'Ex: 99,90'
+
+})}
 
 
             <!-- ========================================== -->
@@ -7293,10 +7343,19 @@ function abrirModalAjusteMassaEstoque() {
             <!-- ========================================== -->
 
             ${criarCampoMassaSimples({
-                id: 'Descricao',
-                label: 'Descrição / Observações',
-                tipo: 'textarea',
-                placeholder: 'Nova descrição para os produtos selecionados'
+
+                id:
+                    'Descricao',
+
+                label:
+                    'Descrição / Observações',
+
+                tipo:
+                    'textarea',
+
+                placeholder:
+                    'Nova descrição para os produtos selecionados'
+
             })}
 
 
@@ -7328,7 +7387,9 @@ function abrirModalAjusteMassaEstoque() {
                         id="massaAlterarSync"
                         onchange="
                             document
-                                .getElementById('massaValorSync')
+                                .getElementById(
+                                    'massaValorSync'
+                                )
                                 .disabled = !this.checked
                         "
                     >
@@ -7427,7 +7488,9 @@ function abrirModalAjusteMassaEstoque() {
                     class="btn btn-secondary"
                     onclick="fecharModalAjusteMassaEstoque()"
                 >
+
                     Cancelar
+
                 </button>
 
 
@@ -7449,6 +7512,7 @@ function abrirModalAjusteMassaEstoque() {
             </div>
 
         </div>
+
     `;
 
 
@@ -7465,6 +7529,10 @@ function abrirModalAjusteMassaEstoque() {
         mesmaCategoria
     );
 
+
+    // =====================================================
+    // ATRIBUTOS DA CATEGORIA
+    // =====================================================
 
     if (
         mesmaCategoria
@@ -8037,6 +8105,10 @@ function gerarCamposAtributosMassa(
         html;
 }
 
+// =========================================================
+// SALVAR AJUSTE EM MASSA
+// =========================================================
+
 async function salvarAjusteMassaEstoque() {
 
     const ids =
@@ -8048,7 +8120,9 @@ async function salvarAjusteMassaEstoque() {
     if (
         ids.length === 0
     ) {
+
         return;
+
     }
 
 
@@ -8059,6 +8133,16 @@ async function salvarAjusteMassaEstoque() {
     const alterarCategoria =
         document.getElementById(
             'massaAlterarCategoria'
+        )?.checked;
+
+
+    // =====================================================
+    // NOVO - TÍTULO / NOME
+    // =====================================================
+
+    const alterarNome =
+        document.getElementById(
+            'massaAlterarNome'
         )?.checked;
 
 
@@ -8080,10 +8164,24 @@ async function salvarAjusteMassaEstoque() {
         )?.checked;
 
 
+    // =====================================================
+    // VALORES
+    // =====================================================
+
     const categoria =
         document.getElementById(
             'massaCategoria'
         )?.value || '';
+
+
+    // NOVO
+    const nome =
+        String(
+            document.getElementById(
+                'massaValorNome'
+            )?.value ||
+            ''
+        ).trim();
 
 
     const preco =
@@ -8105,6 +8203,10 @@ async function salvarAjusteMassaEstoque() {
             'massaValorSync'
         )?.value;
 
+
+    // =====================================================
+    // ATRIBUTOS
+    // =====================================================
 
     const atributosAlterar = {};
 
@@ -8131,13 +8233,19 @@ async function salvarAjusteMassaEstoque() {
 
 
                 if (!input) {
+
                     return;
+
                 }
 
 
                 let valor =
                     input.value;
 
+
+                // =========================================
+                // NUMBER
+                // =========================================
 
                 if (
                     tipo ===
@@ -8153,6 +8261,10 @@ async function salvarAjusteMassaEstoque() {
 
                 }
 
+
+                // =========================================
+                // CHECKBOX
+                // =========================================
 
                 if (
                     tipo ===
@@ -8179,24 +8291,34 @@ async function salvarAjusteMassaEstoque() {
     // NADA MARCADO
     // =====================================================
 
-    if (
-        !alterarCategoria &&
-        !alterarPreco &&
-        !alterarDescricao &&
-        !alterarSync &&
-        Object.keys(
-            atributosAlterar
-        ).length === 0
-    ) {
+if (
+    !alterarCategoria
+    &&
+    !alterarNome
+    &&
+    !alterarPreco
+    &&
+    !alterarDescricao
+    &&
+    !alterarSync
+    &&
+    Object.keys(
+        atributosAlterar
+    ).length === 0
+) {
 
-        showToast(
-            '⚠️ Marque pelo menos um campo para alterar.',
-            'warning'
-        );
+    showToast(
+        '⚠️ Marque pelo menos um campo para alterar.',
+        'warning'
+    );
 
-        return;
-    }
+    return;
+}
 
+
+    // =====================================================
+    // VALIDAR CATEGORIA
+    // =====================================================
 
     if (
         alterarCategoria &&
@@ -8208,14 +8330,50 @@ async function salvarAjusteMassaEstoque() {
             'warning'
         );
 
+
         return;
+
     }
 
+
+    // =====================================================
+    // VALIDAR TÍTULO
+    // =====================================================
+
+    if (
+        alterarNome &&
+        !nome
+    ) {
+
+        showToast(
+            '⚠️ Informe o novo título dos produtos.',
+            'warning'
+        );
+
+
+        document
+            .getElementById(
+                'massaValorNome'
+            )
+            ?.focus();
+
+
+        return;
+
+    }
+
+
+    // =====================================================
+    // VALIDAR PREÇO
+    // =====================================================
 
     if (
         alterarPreco &&
         (
-            isNaN(preco) ||
+            isNaN(
+                preco
+            )
+            ||
             preco < 0
         )
     ) {
@@ -8225,20 +8383,48 @@ async function salvarAjusteMassaEstoque() {
             'warning'
         );
 
+
         return;
+
+    }
+
+
+    // =====================================================
+    // CONFIRMAÇÃO
+    // =====================================================
+
+    let mensagemConfirmacao =
+        `Aplicar as alterações em ${ids.length} produto(s)?`;
+
+
+    if (
+        alterarNome
+    ) {
+
+        mensagemConfirmacao +=
+            `\n\nNovo título:\n${nome}`;
+
     }
 
 
     const confirmar =
         confirm(
-            `Aplicar as alterações em ${ids.length} produto(s)?`
+            mensagemConfirmacao
         );
 
 
-    if (!confirmar) {
+    if (
+        !confirmar
+    ) {
+
         return;
+
     }
 
+
+    // =====================================================
+    // BOTÃO
+    // =====================================================
 
     const botao =
         document.getElementById(
@@ -8246,7 +8432,9 @@ async function salvarAjusteMassaEstoque() {
         );
 
 
-    if (botao) {
+    if (
+        botao
+    ) {
 
         botao.disabled =
             true;
@@ -8269,8 +8457,8 @@ async function salvarAjusteMassaEstoque() {
     // =====================================================
     // PRODUTO POR PRODUTO
     //
-    // Escolhi individualmente para que se um falhar,
-    // os demais continuem.
+    // Mantém a lógica atual:
+    // se um falhar, os demais continuam.
     // =====================================================
 
     for (
@@ -8280,7 +8468,9 @@ async function salvarAjusteMassaEstoque() {
     ) {
 
         const id =
-            ids[i];
+            ids[
+                i
+            ];
 
 
         const produto =
@@ -8289,23 +8479,44 @@ async function salvarAjusteMassaEstoque() {
                     String(
                         p.id
                     ) ===
-                    String(id)
+                    String(
+                        id
+                    )
             );
 
 
-        if (!produto) {
+        if (
+            !produto
+        ) {
 
             erros.push(
                 `ID ${id}: produto não encontrado`
             );
 
+
             continue;
+
         }
 
 
         try {
 
             const atualizacao = {};
+
+
+            // =============================================
+            // TÍTULO / NOME
+            // NOVO
+            // =============================================
+
+            if (
+                alterarNome
+            ) {
+
+                atualizacao.nome =
+                    nome;
+
+            }
 
 
             // =============================================
@@ -8352,6 +8563,15 @@ async function salvarAjusteMassaEstoque() {
 
             // =============================================
             // DADOS EXTRA
+            //
+            // PRESERVA TUDO QUE O PRODUTO JÁ POSSUI:
+            //
+            // - subcategoria
+            // - a caminho
+            // - rastreio
+            // - atributos
+            // - MLB
+            // etc.
             // =============================================
 
             let dadosExtraNovo = {
@@ -8364,6 +8584,10 @@ async function salvarAjusteMassaEstoque() {
 
             };
 
+
+            // =============================================
+            // ALTERAR ATRIBUTOS MARCADOS
+            // =============================================
 
             for (
                 const [
@@ -8408,10 +8632,15 @@ async function salvarAjusteMassaEstoque() {
             }
 
 
+            // =============================================
+            // SÓ SALVAR DADOS_EXTRA SE NECESSÁRIO
+            // =============================================
+
             if (
                 Object.keys(
                     atributosAlterar
-                ).length > 0 ||
+                ).length > 0
+                ||
                 alterarSync
             ) {
 
@@ -8422,19 +8651,22 @@ async function salvarAjusteMassaEstoque() {
 
 
             // =============================================
-            // GRAVAR
+            // GRAVAR NO SUPABASE
             // =============================================
 
             const {
                 error
             } =
                 await window.supabaseClient
+
                     .from(
                         'produtos_estoque'
                     )
+
                     .update(
                         atualizacao
                     )
+
                     .eq(
                         'id',
                         produto.id
@@ -8444,21 +8676,39 @@ async function salvarAjusteMassaEstoque() {
             if (
                 error
             ) {
+
                 throw error;
+
             }
 
 
             atualizados++;
 
 
+            // =============================================
+            // PROGRESSO
+            // =============================================
+
             if (
                 botao
             ) {
 
-                botao.innerHTML =
-                    `<i class="fas fa-spinner fa-spin"></i> ${i + 1}/${ids.length}`;
+                botao.innerHTML = `
+
+                    <i
+                        class="
+                            fas
+                            fa-spinner
+                            fa-spin
+                        "
+                    ></i>
+
+                    ${i + 1}/${ids.length}
+
+                `;
 
             }
+
 
         } catch (
             error
@@ -8501,7 +8751,9 @@ async function salvarAjusteMassaEstoque() {
             'success'
         );
 
-    } else {
+    }
+
+    else {
 
         showToast(
             `⚠️ ${atualizados} atualizado(s) e ${erros.length} erro(s). Consulte o console.`,
