@@ -324,256 +324,6 @@ function podeVerFornecedores() {
 }
 
 // ============================================
-// DAR ENTRADA EM UM ITEM (COM SINCRONIZAÇÃO ML CORRIGIDA)
-// ============================================
-window.darEntradaItem = async function(cardId, itemId, produtoId) {
-    if (!cardId || !itemId || !produtoId) {
-        showToast('Erro: dados incompletos', 'error');
-        return;
-    }
-
-    const card = entradasCards.find(c => c.id == cardId);
-    if (!card) {
-        showToast('Card não encontrado', 'error');
-        return;
-    }
-
-        // ========================================
-    // BRUNA E ARTHUR SÓ PODEM DAR ENTRADA
-    // SE O CARD VEIO DE XML
-    // ========================================
-
-    if (
-        usuarioSomenteXMLEntradas() &&
-        !entradaEhXML(card)
-    ) {
-
-        showToast(
-            '🔒 Seu usuário pode dar entrada somente por XML.',
-            'warning'
-        );
-
-        return;
-    }
-    const item = card.itens.find(i => i.id == itemId);
-    if (!item) {
-        showToast('Item não encontrado', 'error');
-        return;
-    }
-
-    if (item.status !== 'pendente') {
-        showToast('Este item já foi processado', 'warning');
-        return;
-    }
-
-    const quantidadeSugerida = item.quantidade || 1;
-    
-    const quantidadeStr = prompt(
-        `Quantas unidades deseja dar entrada?\n(Sugestão: ${quantidadeSugerida})`,
-        quantidadeSugerida.toString()
-    );
-    
-    if (quantidadeStr === null) {
-        showToast('Operação cancelada.', 'info');
-        return;
-    }
-    
-    const quantidade = parseInt(quantidadeStr);
-    if (isNaN(quantidade) || quantidade <= 0) {
-        showToast('Quantidade inválida. Deve ser um número positivo.', 'warning');
-        return;
-    }
-
-    if (!confirm(`Confirmar entrada de ${quantidade} unidade(s) do SKU "${item.sku_original}"?`)) {
-        return;
-    }
-
-    try {
-        if (!window.supabaseClient) throw new Error('Supabase não conectado');
-
-        const { data: produto, error: errProd } = await window.supabaseClient
-            .from('produtos_estoque')
-            .select('quantidade, dados_extra, historico_custos, bloquear_sync_ml, sku, nome, mlb_codes')
-            .eq('id', produtoId)
-            .single();
-
-        if (errProd) throw errProd;
-
-        const novaQuantidade = (produto.quantidade || 0) + quantidade;
-
-        const valorCusto = item.valor_custo || 0;
-        let historicoCustos = produto.historico_custos || [];
-        
-        if (valorCusto > 0) {
-            historicoCustos.push({
-                valor: valorCusto,
-                data: new Date().toISOString(),
-                entrada: card.numero_entrada,
-                quantidade: quantidade,
-                usuario: currentUser.name
-            });
-            
-            if (historicoCustos.length > 50) {
-                historicoCustos = historicoCustos.slice(-50);
-            }
-        }
-
-        const custosValidos = historicoCustos.filter(h => h.valor > 0);
-        const custoMedio = custosValidos.length > 0 
-            ? custosValidos.reduce((sum, h) => sum + h.valor, 0) / custosValidos.length 
-            : 0;
-
-        let dadosExtra = produto.dados_extra || {};
-        dadosExtra.ultimo_custo = valorCusto;
-        dadosExtra.custo_medio = custoMedio;
-        dadosExtra.historico_custos = historicoCustos;
-
-        const { error: errUpdate } = await window.supabaseClient
-            .from('produtos_estoque')
-            .update({ 
-                quantidade: novaQuantidade,
-                dados_extra: dadosExtra,
-                historico_custos: historicoCustos,
-                ultimo_custo: valorCusto,
-                custo_medio: custoMedio
-            })
-            .eq('id', produtoId);
-
-        if (errUpdate) throw errUpdate;
-
-        await registrarMovimentacao(
-            produtoId,
-            'entrada',
-            quantidade,
-            `ENT-${card.numero_entrada}`,
-            'nova'
-        );
-
-        const { error: errItem } = await window.supabaseClient
-            .from('entrada_items')
-            .update({
-                status: 'entrada_realizada',
-                acao: 'entrada',
-                quantidade_entrada: quantidade,
-                responsavel: currentUser.name,
-                data_acao: getDataHoraLocalISO()
-            })
-            .eq('id', itemId);
-
-        if (errItem) throw errItem;
-
-        const concluidos = card.itens.filter(i => 
-            i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
-        ).length + 1;
-        const total = card.itens.filter(i => i.status !== 'ignorado').length;
-        const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
-
-        const { error: errCard } = await window.supabaseClient
-            .from('entradas_cards')
-            .update({
-                items_concluidos: concluidos,
-                status: novoStatus,
-                finalizado_em: novoStatus === 'finalizado' ? getDataHoraLocalISO() : null,
-                finalizado_por: novoStatus === 'finalizado' ? currentUser.name : null
-            })
-            .eq('id', cardId);
-
-        if (errCard) throw errCard;
-
-        showToast(`✅ Entrada de ${quantidade} unidade(s) realizada! Custo: R$ ${valorCusto.toFixed(2)}`, 'success');
-        
-        // ===== ATUALIZA O ESTOQUE LOCAL =====
-        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-            const produtoLocal = produtosEstoque.find(p => p.id == produtoId);
-            if (produtoLocal) {
-                produtoLocal.quantidade = novaQuantidade;
-                produtoLocal.dados_extra = dadosExtra;
-                produtoLocal.historico_custos = historicoCustos;
-                produtoLocal.ultimo_custo = valorCusto;
-                produtoLocal.custo_medio = custoMedio;
-            }
-        }
-
-        await carregarEntradas();
-
-        // ===== SINCRONIZAÇÃO COM MERCADO LIVRE =====
-        const syncBloqueado = produto.bloquear_sync_ml || dadosExtra.bloquear_sync_ml || false;
-        const mlbCodes = produto.mlb_codes || dadosExtra?.mlb_codes || [];
-
-        // Verifica se há códigos MLB para sincronizar
-        if (mlbCodes && mlbCodes.length > 0 && !syncBloqueado) {
-            console.log(`🔄 Iniciando sincronização com ML para ${produto.sku} (${mlbCodes.length} anúncios)`);
-            
-            // Busca o produto atualizado com os dados mais recentes
-            const { data: produtoAtualizado, error: errProdAtualizado } = await window.supabaseClient
-                .from('produtos_estoque')
-                .select('*')
-                .eq('id', produtoId)
-                .single();
-
-            if (errProdAtualizado) {
-                console.warn('⚠️ Erro ao buscar produto atualizado para sincronização:', errProdAtualizado);
-            } else {
-                // Tenta sincronizar usando a função global
-                let sincronizou = false;
-                
-                // Método 1: Usar sincronizarEstoqueML (função do estoque_gestao.js)
-                if (typeof window.sincronizarEstoqueML === 'function') {
-                    try {
-                        console.log(`🔄 Sincronizando ${produtoAtualizado.sku} via sincronizarEstoqueML`);
-                        await window.sincronizarEstoqueML(produtoAtualizado);
-                        sincronizou = true;
-                        showToast(`🔄 Produto ${produtoAtualizado.sku} sincronizado com ML!`, 'info');
-                    } catch (errSync) {
-                        console.warn('⚠️ Erro na sincronização via sincronizarEstoqueML:', errSync);
-                    }
-                }
-                
-                // Método 2: Usar a API direta do ML (fallback)
-                if (!sincronizou && typeof window.atualizarEstoqueML === 'function') {
-                    try {
-                        console.log(`🔄 Sincronizando ${produtoAtualizado.sku} via atualizarEstoqueML`);
-                        await window.atualizarEstoqueML(produtoAtualizado);
-                        sincronizou = true;
-                        showToast(`🔄 Produto ${produtoAtualizado.sku} sincronizado com ML!`, 'info');
-                    } catch (errSync) {
-                        console.warn('⚠️ Erro na sincronização via atualizarEstoqueML:', errSync);
-                    }
-                }
-                
-                // Método 3: Sincronizar individualmente cada MLB code
-                if (!sincronizou && mlbCodes.length > 0) {
-                    for (const mlbCode of mlbCodes) {
-                        try {
-                            console.log(`🔄 Sincronizando MLB ${mlbCode} com quantidade ${novaQuantidade}`);
-                            const resultado = await sincronizarEstoqueMLPorMlb(mlbCode, novaQuantidade);
-                            if (resultado) {
-                                sincronizou = true;
-                                showToast(`🔄 Anúncio ${mlbCode} sincronizado!`, 'info');
-                            }
-                        } catch (errSync) {
-                            console.warn(`⚠️ Erro ao sincronizar MLB ${mlbCode}:`, errSync);
-                        }
-                    }
-                }
-                
-                if (!sincronizou) {
-                    console.log('ℹ️ Nenhuma sincronização ML realizada - pode estar bloqueada ou sem códigos MLB');
-                }
-            }
-        } else if (syncBloqueado) {
-            console.log(`🔒 Sincronização BLOQUEADA para ${produto.sku}`);
-        } else if (!mlbCodes || mlbCodes.length === 0) {
-            console.log(`ℹ️ Produto ${produto.sku} não possui códigos MLB para sincronizar`);
-        }
-
-    } catch (error) {
-        console.error('❌ Erro ao dar entrada:', error);
-        showToast('❌ Erro ao dar entrada: ' + error.message, 'error');
-    }
-};
-
-// ============================================
 // FUNÇÕES AUXILIARES DE DATA/HORA (FUSO BRASÍLIA)
 // ============================================
 
@@ -1036,55 +786,29 @@ function adicionarBotaoObservacao(item, card) {
     `;
 }
 
-// ============================================
-// RENDERIZAR ENTRADAS
-// - OCULTAÇÃO DE FORNECEDOR
-// - ALERTA DE ESTOQUE ZERO
-// - BRUNA E ARTHUR SOMENTE XML
-// ============================================
 async function renderizarEntradas() {
-
-    // ============================================
-    // GARANTE QUE O ESTOQUE ESTEJA CARREGADO
-    // ============================================
-
+    // Garante que o estoque esteja carregado
     if (
         typeof produtosEstoque === 'undefined' ||
         !Array.isArray(produtosEstoque) ||
         produtosEstoque.length === 0
     ) {
-
-        console.log(
-            '🔄 Forçando recarregamento do estoque antes de renderizar...'
-        );
+        console.log('🔄 Forçando recarregamento do estoque antes de renderizar...');
 
         if (typeof carregarProdutosEstoque === 'function') {
-
             await carregarProdutosEstoque();
-
         } else {
-
-            await new Promise(
-                resolve => setTimeout(resolve, 2000)
-            );
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
 
-
-    // ============================================
-    // INJETA CSS DO ALERTA URGENTE
-    // ============================================
-
+    // CSS do alerta de estoque zero
     if (!document.getElementById('estilosEntradasUrgentes')) {
-
         const style = document.createElement('style');
-
         style.id = 'estilosEntradasUrgentes';
 
         style.textContent = `
-
             @keyframes entradaUrgentePiscarVermelho {
-
                 0%, 100% {
                     background-color: #ffe3e3;
                 }
@@ -1095,19 +819,16 @@ async function renderizarEntradas() {
                 }
             }
 
-
             tr.entrada-urgente-estoque-zero > td {
                 animation: entradaUrgentePiscarVermelho 1s ease-in-out infinite;
                 border-color: rgba(220, 53, 69, 0.45) !important;
             }
-
 
             tr.entrada-urgente-estoque-zero code,
             tr.entrada-urgente-estoque-zero small,
             tr.entrada-urgente-estoque-zero strong {
                 color: inherit !important;
             }
-
 
             .badge-entrada-urgente {
                 display: inline-block;
@@ -1121,27 +842,10 @@ async function renderizarEntradas() {
                 white-space: nowrap;
                 box-shadow: 0 2px 5px rgba(220, 53, 69, 0.35);
             }
-
-
-            .entrada-manual-bloqueada {
-                display: inline-block;
-                background: #6c757d;
-                color: #ffffff;
-                padding: 4px 8px;
-                border-radius: 5px;
-                font-size: 11px;
-                font-weight: 600;
-            }
-
         `;
 
         document.head.appendChild(style);
     }
-
-
-    // ============================================
-    // CONTAINER PRINCIPAL
-    // ============================================
 
     const container =
         document.getElementById('entradasCardsContainer');
@@ -1150,60 +854,26 @@ async function renderizarEntradas() {
         return;
     }
 
+    // =====================================================
+    // BRUNA E ARTHUR:
+    // podem trabalhar em entradas já existentes.
+    // A restrição é somente para CRIAR entrada manual.
+    // =====================================================
 
-    // ============================================
-    // IDENTIFICA USUÁRIO
-    // ============================================
-
-    const normalizarUsuario = valor => {
-
-        return (valor || '')
-            .toString()
-            .trim()
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '');
-
-    };
-
-
-    const usernameAtual =
-        normalizarUsuario(currentUser?.username);
-
-
-    const primeiroNomeAtual =
-        normalizarUsuario(currentUser?.name)
-            .split(/\s+/)[0];
-
-
-    // Se a função global já existir, usa ela.
-    // Caso contrário, faz a verificação aqui mesmo.
     const somenteXML =
         typeof usuarioSomenteXMLEntradas === 'function'
             ? usuarioSomenteXMLEntradas()
-            : (
-                usernameAtual === 'arthur' ||
-                usernameAtual === 'bruna' ||
-                primeiroNomeAtual === 'arthur' ||
-                primeiroNomeAtual === 'bruna'
-            );
+            : false;
 
-
-    // ============================================
-    // OCULTA CARD DE ENTRADA MANUAL
-    // PARA BRUNA E ARTHUR
-    // ============================================
-
+    // Oculta somente o formulário usado para CRIAR entrada manual
     const entradaPasteArea =
         document.getElementById('entradaPasteArea');
 
     if (entradaPasteArea) {
-
         const cardEntradaManual =
             entradaPasteArea.closest('.card');
 
         if (cardEntradaManual) {
-
             cardEntradaManual.style.display =
                 somenteXML
                     ? 'none'
@@ -1211,33 +881,31 @@ async function renderizarEntradas() {
         }
     }
 
+    // =====================================================
+    // FILTRO
+    // =====================================================
 
-    // ============================================
-    // FILTRO DE STATUS
-    // ============================================
-
-    let cardsFiltrados = [...entradasCards];
-
+    let cardsFiltrados =
+        [...entradasCards];
 
     if (filtroEntradasAtual === 'pendente') {
-
         cardsFiltrados =
             cardsFiltrados.filter(
                 c => c.status === 'pendente'
             );
 
-    } else if (filtroEntradasAtual === 'finalizado') {
-
+    } else if (
+        filtroEntradasAtual === 'finalizado'
+    ) {
         cardsFiltrados =
             cardsFiltrados.filter(
                 c => c.status === 'finalizado'
             );
     }
 
-
-    // ============================================
+    // =====================================================
     // BUSCA
-    // ============================================
+    // =====================================================
 
     const busca =
         document
@@ -1246,27 +914,19 @@ async function renderizarEntradas() {
             ?.trim()
             .toLowerCase() || '';
 
-
     if (busca) {
-
         cardsFiltrados =
             cardsFiltrados.filter(card => {
 
-                const numeroEntrada =
+                if (
                     (card.numero_entrada || '')
-                        .toLowerCase();
-
-
-                const cardMatch =
-                    numeroEntrada.includes(busca);
-
-
-                if (cardMatch) {
+                        .toLowerCase()
+                        .includes(busca)
+                ) {
                     return true;
                 }
 
-
-                return card.itens.some(item =>
+                return (card.itens || []).some(item =>
 
                     (item.rastreio || '')
                         .toLowerCase()
@@ -1291,18 +951,15 @@ async function renderizarEntradas() {
                     (item.cd_fornecedor || '')
                         .toLowerCase()
                         .includes(busca)
-
                 );
             });
     }
 
-
-    // ============================================
+    // =====================================================
     // NENHUMA ENTRADA
-    // ============================================
+    // =====================================================
 
     if (cardsFiltrados.length === 0) {
-
         container.innerHTML = `
 
             <div class="text-center py-5 text-muted">
@@ -1312,7 +969,9 @@ async function renderizarEntradas() {
                     style="opacity:0.3;"
                 ></i>
 
-                <h4>Nenhuma entrada encontrada</h4>
+                <h4>
+                    Nenhuma entrada encontrada
+                </h4>
 
                 <p>
                     ${
@@ -1334,66 +993,59 @@ async function renderizarEntradas() {
         return;
     }
 
-
-    // ============================================
+    // =====================================================
     // PERMISSÕES
-    // ============================================
+    // =====================================================
 
-    const podeVerCusto =
+    const podeVerCusto = !!(
         currentUser &&
         (
             currentUser.username === 'andressamiotto' ||
             currentUser.username === 'ronald'
-        );
+        )
+    );
 
-
-    const podeEditarObservacoes =
+    const podeEditarObservacoes = !!(
         currentUser &&
-        currentUser.username === 'ronald';
+        currentUser.username === 'ronald'
+    );
 
-
-    const isAdmin =
+    const isAdmin = !!(
         currentUser &&
         (
             currentUser.role === 'admin' ||
             currentUser.username === 'andressamiotto' ||
             currentUser.username === 'ronald'
-        );
-
+        )
+    );
 
     const verFornecedor =
         podeVerFornecedores();
 
-
-    // ============================================
-    // MONTA HTML
-    // ============================================
-
     let html = '';
 
+    // =====================================================
+    // CARDS
+    // =====================================================
 
     cardsFiltrados.forEach(card => {
 
-
-        // ========================================
-        // CONTADORES
-        // ========================================
+        const itens =
+            Array.isArray(card.itens)
+                ? card.itens
+                : [];
 
         const total =
-            card.itens.filter(
+            itens.filter(
                 i => i.status !== 'ignorado'
             ).length;
 
-
         const concluidos =
-            card.itens.filter(i =>
-
+            itens.filter(i =>
                 i.status === 'entrada_realizada' ||
                 i.status === 'cadastrado' ||
                 i.status === 'ignorado'
-
             ).length;
-
 
         const progresso =
             total > 0
@@ -1402,18 +1054,13 @@ async function renderizarEntradas() {
                 )
                 : 0;
 
-
         const isFinalizado =
             card.status === 'finalizado';
 
-
         const criadoEm =
-            formatarDataHora(card.criado_em);
-
-
-        // ========================================
-        // TIPO DE ENTRADA
-        // ========================================
+            formatarDataHora(
+                card.criado_em
+            );
 
         const cardEhXML =
             (
@@ -1423,22 +1070,9 @@ async function renderizarEntradas() {
                 .toString()
                 .toLowerCase() === 'xml';
 
-
         const isExcel =
             card.tipo_entrada === 'excel' ||
             !card.tipo_entrada;
-
-
-        // Bruna e Arthur não podem trabalhar
-        // com entradas manuais
-        const cardManualBloqueado =
-            somenteXML &&
-            !cardEhXML;
-
-
-        // ========================================
-        // BADGES
-        // ========================================
 
         const origemBadge =
             cardEhXML
@@ -1453,20 +1087,9 @@ async function renderizarEntradas() {
                     </span>
                 `;
 
-
-        const badgeBloqueado =
-            cardManualBloqueado
-                ? `
-                    <span class="badge badge-danger ml-2">
-                        🔒 Somente XML
-                    </span>
-                `
-                : '';
-
-
-        // ========================================
-        // CARD
-        // ========================================
+        // =================================================
+        // CABEÇALHO DO CARD
+        // =================================================
 
         html += `
 
@@ -1514,12 +1137,13 @@ async function renderizarEntradas() {
 
                             </span>
 
-                            ${badgeBloqueado}
-
                             ${
-                                isExcel && !verFornecedor
+                                isExcel &&
+                                !verFornecedor
                                     ? `
-                                        <span class="badge badge-secondary ml-2">
+                                        <span
+                                            class="badge badge-secondary ml-2"
+                                        >
                                             🔒 Fornecedor oculto
                                         </span>
                                     `
@@ -1527,7 +1151,6 @@ async function renderizarEntradas() {
                             }
 
                         </h3>
-
 
                         <small class="text-muted">
 
@@ -1568,12 +1191,13 @@ async function renderizarEntradas() {
 
                     </div>
 
-
                     <div
                         class="d-flex gap-2 align-items-center"
                     >
 
-                        <div style="min-width:120px;">
+                        <div
+                            style="min-width:120px;"
+                        >
 
                             <div
                                 class="progress"
@@ -1602,16 +1226,15 @@ async function renderizarEntradas() {
 
                             </div>
 
-                            <small class="text-muted">
-
+                            <small
+                                class="text-muted"
+                            >
                                 ${concluidos}/${total}
                                 itens
                                 (${progresso}%)
-
                             </small>
 
                         </div>
-
 
                         ${
                             !isFinalizado
@@ -1627,9 +1250,9 @@ async function renderizarEntradas() {
                                 : ''
                         }
 
-
                         ${
-                            isFinalizado && isAdmin
+                            isFinalizado &&
+                            isAdmin
                                 ? `
                                     <button
                                         class="btn btn-sm btn-danger"
@@ -1646,8 +1269,9 @@ async function renderizarEntradas() {
 
                 </div>
 
-
-                <div class="table-responsive">
+                <div
+                    class="table-responsive"
+                >
 
                     <table
                         class="table table-sm table-hover"
@@ -1658,7 +1282,9 @@ async function renderizarEntradas() {
 
                             <tr>
 
-                                <th style="width:40px;">
+                                <th
+                                    style="width:40px;"
+                                >
                                     #
                                 </th>
 
@@ -1670,7 +1296,9 @@ async function renderizarEntradas() {
                                     Referência de entrada
                                 </th>
 
-                                <th style="width:80px;">
+                                <th
+                                    style="width:80px;"
+                                >
                                     Quant
                                 </th>
 
@@ -1684,29 +1312,47 @@ async function renderizarEntradas() {
 
                                 ${
                                     verFornecedor
-                                        ? '<th>Fornecedor</th>'
+                                        ? `
+                                            <th>
+                                                Fornecedor
+                                            </th>
+                                        `
                                         : ''
                                 }
 
-                                <th style="width:70px;">
+                                <th
+                                    style="width:70px;"
+                                >
                                     Qtd Entrada
                                 </th>
 
                                 ${
                                     podeVerCusto
-                                        ? '<th style="width:90px;">Custo Unit.</th>'
+                                        ? `
+                                            <th
+                                                style="width:90px;"
+                                            >
+                                                Custo Unit.
+                                            </th>
+                                        `
                                         : ''
                                 }
 
-                                <th style="min-width:180px;">
+                                <th
+                                    style="min-width:180px;"
+                                >
                                     Obs.
                                 </th>
 
-                                <th style="width:70px;">
+                                <th
+                                    style="width:70px;"
+                                >
                                     Status
                                 </th>
 
-                                <th style="width:300px;">
+                                <th
+                                    style="width:300px;"
+                                >
                                     Ação
                                 </th>
 
@@ -1714,404 +1360,279 @@ async function renderizarEntradas() {
 
                         </thead>
 
-
                         <tbody>
         `;
 
-
-        // ========================================
+        // =================================================
         // ITENS
-        // ========================================
+        // =================================================
 
-        card.itens.forEach((item, idx) => {
+        itens.forEach(
+            (item, idx) => {
 
+                const isConcluido =
+                    item.status !== 'pendente';
 
-            const isConcluido =
-                item.status !== 'pendente';
+                const isIgnorado =
+                    item.status === 'ignorado';
 
+                // =========================================
+                // STATUS
+                // =========================================
 
-            const isIgnorado =
-                item.status === 'ignorado';
+                let itemStatus = '';
+                let statusClass = '';
 
+                if (isIgnorado) {
 
-            // ====================================
-            // STATUS
-            // ====================================
+                    itemStatus =
+                        '⏭️ Ignorado';
 
-            let itemStatus = '';
-            let statusClass = '';
+                    statusClass =
+                        'badge-secondary';
 
-
-            if (isIgnorado) {
-
-                itemStatus = '⏭️ Ignorado';
-                statusClass = 'badge-secondary';
-
-            } else if (
-                item.status === 'entrada_realizada'
-            ) {
-
-                itemStatus = '✅ Entrada';
-                statusClass = 'badge-success';
-
-            } else if (
-                item.status === 'cadastrado'
-            ) {
-
-                itemStatus = '📝 Cadastrado';
-                statusClass = 'badge-info';
-
-            } else {
-
-                itemStatus = '⏳ Pendente';
-                statusClass = 'badge-warning';
-
-            }
-
-
-            // ====================================
-            // PROCURA PRODUTO NO ESTOQUE
-            // ====================================
-
-            const skuParaVerificar =
-                item.sku_match ||
-                item.sku_original;
-
-
-            const produtoExistente =
-                verificarSKUExistente(
-                    skuParaVerificar
-                );
-
-
-            let tituloProduto = '';
-
-
-            if (produtoExistente) {
-
-                tituloProduto =
-                    produtoExistente.nome || '';
-
-            }
-
-
-            // ====================================
-            // ESTOQUE ATUAL
-            // ====================================
-
-            let quantidadeAtualProduto = null;
-
-
-            if (produtoExistente) {
-
-                const quantidadeConvertida =
-                    Number(
-                        produtoExistente.quantidade
-                    );
-
-
-                if (
-                    Number.isFinite(
-                        quantidadeConvertida
-                    )
+                } else if (
+                    item.status ===
+                    'entrada_realizada'
                 ) {
 
-                    quantidadeAtualProduto =
-                        quantidadeConvertida;
+                    itemStatus =
+                        '✅ Entrada';
 
+                    statusClass =
+                        'badge-success';
+
+                } else if (
+                    item.status ===
+                    'cadastrado'
+                ) {
+
+                    itemStatus =
+                        '📝 Cadastrado';
+
+                    statusClass =
+                        'badge-info';
+
+                } else {
+
+                    itemStatus =
+                        '⏳ Pendente';
+
+                    statusClass =
+                        'badge-warning';
                 }
-            }
 
+                // =========================================
+                // PRODUTO DO ESTOQUE
+                // =========================================
 
-            // ====================================
-            // URGÊNCIA
-            //
-            // Somente:
-            // - produto encontrado
-            // - item pendente
-            // - estoque <= 0
-            // ====================================
+                const skuParaVerificar =
+                    item.sku_match ||
+                    item.sku_original;
 
-            const entradaUrgente =
-                !!produtoExistente &&
-                !isConcluido &&
-                quantidadeAtualProduto !== null &&
-                quantidadeAtualProduto <= 0;
+                const produtoExistente =
+                    verificarSKUExistente(
+                        skuParaVerificar
+                    );
 
+                const tituloProduto =
+                    produtoExistente?.nome ||
+                    '';
 
-            // ====================================
-            // BLOQUEIO MANUAL
-            // ====================================
+                let quantidadeAtualProduto =
+                    null;
 
-            const entradaManualBloqueada =
-                cardManualBloqueado &&
-                !isConcluido;
+                if (produtoExistente) {
 
+                    const quantidadeConvertida =
+                        Number(
+                            produtoExistente.quantidade
+                        );
 
-            // ====================================
-            // OBSERVAÇÃO
-            // ====================================
-
-            const obsValue =
-                item.observacao || '';
-
-
-            const obsId =
-                `obs-${card.id}-${item.id}`;
-
-
-            // ====================================
-            // AÇÕES
-            // ====================================
-
-            let acaoHtml = '';
-
-
-            // ====================================
-            // ITEM JÁ CONCLUÍDO
-            // ====================================
-
-            if (
-                isConcluido &&
-                !isIgnorado
-            ) {
-
-                acaoHtml = `
-
-                    <span
-                        class="badge ${statusClass}"
-                    >
-                        ${itemStatus}
-                    </span>
-
-                    <small
-                        class="text-muted d-block"
-                    >
-                        ${item.responsavel || ''}
-                    </small>
-
-                    ${
-                        podeEditarObservacoes
-                            ? `
-                                <button
-                                    class="btn btn-sm btn-outline-primary mt-1"
-                                    onclick="abrirModalObservacao('${card.id}', ${item.id})"
-                                    title="Editar observação"
-                                >
-                                    <i class="fas fa-edit"></i>
-                                    Obs
-                                </button>
-                            `
-                            : ''
+                    if (
+                        Number.isFinite(
+                            quantidadeConvertida
+                        )
+                    ) {
+                        quantidadeAtualProduto =
+                            quantidadeConvertida;
                     }
+                }
 
-                `;
+                const entradaUrgente =
+                    !!produtoExistente &&
+                    !isConcluido &&
+                    quantidadeAtualProduto !== null &&
+                    quantidadeAtualProduto <= 0;
 
+                // =========================================
+                // OBSERVAÇÃO
+                // =========================================
 
-            // ====================================
-            // IGNORADO
-            // ====================================
+                const obsValue =
+                    item.observacao ||
+                    '';
 
-            } else if (isIgnorado) {
+                const obsId =
+                    `obs-${card.id}-${item.id}`;
 
-                acaoHtml = `
+                // =========================================
+                // AÇÕES
+                //
+                // IMPORTANTE:
+                // NÃO EXISTE MAIS BLOQUEIO POR SER MANUAL.
+                // =========================================
 
-                    <span
-                        class="badge ${statusClass}"
-                    >
-                        ${itemStatus}
-                    </span>
+                let acaoHtml = '';
 
-                    <small
-                        class="text-muted d-block"
-                    >
-                        ${item.responsavel || ''}
-                    </small>
+                // ITEM JÁ CONCLUÍDO
+                if (
+                    isConcluido &&
+                    !isIgnorado
+                ) {
 
-                    ${
-                        podeEditarObservacoes
-                            ? `
-                                <button
-                                    class="btn btn-sm btn-outline-primary mt-1"
-                                    onclick="abrirModalObservacao('${card.id}', ${item.id})"
-                                    title="Editar observação"
-                                >
-                                    <i class="fas fa-edit"></i>
-                                    Obs
-                                </button>
-                            `
-                            : ''
-                    }
+                    acaoHtml = `
 
-                `;
+                        <span
+                            class="badge ${statusClass}"
+                        >
+                            ${itemStatus}
+                        </span>
 
+                        <small
+                            class="text-muted d-block"
+                        >
+                            ${item.responsavel || ''}
+                        </small>
 
-            // ====================================
-            // BRUNA/ARTHUR EM ENTRADA MANUAL
-            // ====================================
+                        ${
+                            podeEditarObservacoes
+                                ? `
+                                    <button
+                                        class="btn btn-sm btn-outline-primary mt-1"
+                                        onclick="abrirModalObservacao('${card.id}', ${item.id})"
+                                        title="Editar observação"
+                                    >
+                                        <i class="fas fa-edit"></i>
+                                        Obs
+                                    </button>
+                                `
+                                : ''
+                        }
 
-            } else if (entradaManualBloqueada) {
+                    `;
 
-                acaoHtml = `
+                // ITEM IGNORADO
+                } else if (
+                    isIgnorado
+                ) {
 
-                    <span
-                        class="entrada-manual-bloqueada"
-                    >
-                        🔒 Apenas XML
-                    </span>
+                    acaoHtml = `
 
-                    <small
-                        class="text-muted d-block mt-1"
-                    >
-                        Entrada manual não permitida
-                        para este usuário.
-                    </small>
+                        <span
+                            class="badge ${statusClass}"
+                        >
+                            ${itemStatus}
+                        </span>
 
-                `;
+                        <small
+                            class="text-muted d-block"
+                        >
+                            ${item.responsavel || ''}
+                        </small>
 
+                        ${
+                            podeEditarObservacoes
+                                ? `
+                                    <button
+                                        class="btn btn-sm btn-outline-primary mt-1"
+                                        onclick="abrirModalObservacao('${card.id}', ${item.id})"
+                                        title="Editar observação"
+                                    >
+                                        <i class="fas fa-edit"></i>
+                                        Obs
+                                    </button>
+                                `
+                                : ''
+                        }
 
-            // ====================================
-            // PRODUTO ENCONTRADO
-            // ====================================
+                    `;
 
-            } else if (produtoExistente) {
+                // PRODUTO JÁ EXISTE NO ESTOQUE
+                } else if (
+                    produtoExistente
+                ) {
 
-                acaoHtml = `
+                    acaoHtml = `
 
-                    ${
-                        entradaUrgente
-                            ? `
-                                <span
-                                    class="badge-entrada-urgente"
-                                >
-                                    🚨 URGENTE — ESTOQUE ${quantidadeAtualProduto}
-                                </span>
-
-                                <br>
-                            `
-                            : ''
-                    }
-
-
-                    <button
-                        class="btn btn-sm btn-success"
-                        onclick="darEntradaItem(
-                            '${card.id}',
-                            ${item.id},
-                            '${produtoExistente.id}'
-                        )"
-                        title="Adicionar ao estoque"
-                    >
-                        <i class="fas fa-arrow-right-to-bracket"></i>
-                        Dar Entrada
-                    </button>
-
-
-                    ${
-                        tituloProduto
-                            ? `
-                                <small
-                                    class="d-block text-success"
-                                >
-                                    🔍 ${tituloProduto}
-                                </small>
-                            `
-                            : ''
-                    }
-
-
-                    <small
-                        class="d-block ${
+                        ${
                             entradaUrgente
-                                ? ''
-                                : 'text-muted'
-                        }"
-                        style="
-                            margin-top:2px;
-                            font-size:11px;
-                        "
-                    >
-                        Estoque atual:
-                        <strong>
-                            ${
-                                quantidadeAtualProduto !== null
-                                    ? quantidadeAtualProduto
-                                    : '-'
-                            }
-                        </strong>
-                    </small>
+                                ? `
+                                    <span
+                                        class="badge-entrada-urgente"
+                                    >
+                                        🚨 URGENTE — ESTOQUE ${quantidadeAtualProduto}
+                                    </span>
 
-
-                    <button
-                        class="btn btn-sm btn-secondary"
-                        onclick="ignorarItem(
-                            '${card.id}',
-                            ${item.id}
-                        )"
-                        title="Ignorar este item"
-                    >
-                        <i class="fas fa-ban"></i>
-                        Ignorar
-                    </button>
-
-
-                    ${
-                        podeEditarObservacoes
-                            ? `
-                                <button
-                                    class="btn btn-sm btn-outline-primary mt-1"
-                                    onclick="abrirModalObservacao(
-                                        '${card.id}',
-                                        ${item.id}
-                                    )"
-                                    title="Editar observação"
-                                >
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                            `
-                            : ''
-                    }
-
-                `;
-
-
-            // ====================================
-            // PRODUTO NÃO ENCONTRADO
-            // ====================================
-
-            } else {
-
-                acaoHtml = `
-
-                    <div
-                        class="d-flex flex-wrap gap-1"
-                    >
+                                    <br>
+                                `
+                                : ''
+                        }
 
                         <button
-                            class="btn btn-sm btn-primary"
-                            onclick="abrirCadastroRapido(
+                            class="btn btn-sm btn-success"
+                            onclick="darEntradaItem(
                                 '${card.id}',
-                                ${item.id}
+                                ${item.id},
+                                '${produtoExistente.id}'
                             )"
-                            title="Cadastrar novo produto"
+                            title="Adicionar ao estoque"
                         >
-                            <i class="fas fa-plus-circle"></i>
-                            Cadastrar
+                            <i
+                                class="fas fa-arrow-right-to-bracket"
+                            ></i>
+
+                            Dar Entrada
                         </button>
 
+                        ${
+                            tituloProduto
+                                ? `
+                                    <small
+                                        class="d-block text-success"
+                                    >
+                                        🔍 ${tituloProduto}
+                                    </small>
+                                `
+                                : ''
+                        }
 
-                        <button
-                            class="btn btn-sm btn-info"
-                            onclick="vincularProdutoExistente(
-                                '${card.id}',
-                                ${item.id}
-                            )"
-                            title="Vincular a um produto já existente"
+                        <small
+                            class="
+                                d-block
+                                ${
+                                    entradaUrgente
+                                        ? ''
+                                        : 'text-muted'
+                                }
+                            "
+                            style="
+                                margin-top:2px;
+                                font-size:11px;
+                            "
                         >
-                            <i class="fas fa-link"></i>
-                            Já existe
-                        </button>
 
+                            Estoque atual:
+
+                            <strong>
+                                ${
+                                    quantidadeAtualProduto !== null
+                                        ? quantidadeAtualProduto
+                                        : '-'
+                                }
+                            </strong>
+
+                        </small>
 
                         <button
                             class="btn btn-sm btn-secondary"
@@ -2125,12 +1646,11 @@ async function renderizarEntradas() {
                             Ignorar
                         </button>
 
-
                         ${
                             podeEditarObservacoes
                                 ? `
                                     <button
-                                        class="btn btn-sm btn-outline-primary"
+                                        class="btn btn-sm btn-outline-primary mt-1"
                                         onclick="abrirModalObservacao(
                                             '${card.id}',
                                             ${item.id}
@@ -2143,265 +1663,322 @@ async function renderizarEntradas() {
                                 : ''
                         }
 
-                    </div>
+                    `;
 
+                // PRODUTO NÃO ENCONTRADO
+                } else {
 
-                    <small
-                        class="d-block text-muted"
-                    >
-                        ⛔ Produto não encontrado
-                    </small>
+                    acaoHtml = `
 
-                `;
-            }
+                        <div
+                            class="d-flex flex-wrap gap-1"
+                        >
 
+                            <button
+                                class="btn btn-sm btn-primary"
+                                onclick="abrirCadastroRapido(
+                                    '${card.id}',
+                                    ${item.id}
+                                )"
+                                title="Cadastrar novo produto"
+                            >
+                                <i
+                                    class="fas fa-plus-circle"
+                                ></i>
 
-            // ====================================
-            // SKU
-            // ====================================
+                                Cadastrar
+                            </button>
 
-            const skuDisplay =
-                item.sku_match ||
-                item.sku_original ||
-                '-';
+                            <button
+                                class="btn btn-sm btn-info"
+                                onclick="vincularProdutoExistente(
+                                    '${card.id}',
+                                    ${item.id}
+                                )"
+                                title="Vincular a um produto já existente"
+                            >
+                                <i
+                                    class="fas fa-link"
+                                ></i>
 
+                                Já existe
+                            </button>
 
-            // ====================================
-            // FORNECEDOR
-            // ====================================
+                            <button
+                                class="btn btn-sm btn-secondary"
+                                onclick="ignorarItem(
+                                    '${card.id}',
+                                    ${item.id}
+                                )"
+                                title="Ignorar este item"
+                            >
+                                <i
+                                    class="fas fa-ban"
+                                ></i>
 
-            let fornecedorDisplay =
-                item.fornecedor_nome ||
-                item.cd_fornecedor ||
-                '-';
+                                Ignorar
+                            </button>
 
+                            ${
+                                podeEditarObservacoes
+                                    ? `
+                                        <button
+                                            class="btn btn-sm btn-outline-primary"
+                                            onclick="abrirModalObservacao(
+                                                '${card.id}',
+                                                ${item.id}
+                                            )"
+                                            title="Editar observação"
+                                        >
+                                            <i
+                                                class="fas fa-edit"
+                                            ></i>
+                                        </button>
+                                    `
+                                    : ''
+                            }
 
-            if (
-                isExcel &&
-                !verFornecedor
-            ) {
+                        </div>
 
-                fornecedorDisplay =
-                    '🔒 Oculto';
+                        <small
+                            class="d-block text-muted"
+                        >
+                            ⛔ Produto não encontrado
+                        </small>
 
-            }
+                    `;
+                }
 
+                // =========================================
+                // SKU
+                // =========================================
 
-            // ====================================
-            // QUANTIDADE DA ENTRADA
-            // ====================================
+                const skuDisplay =
+                    item.sku_match ||
+                    item.sku_original ||
+                    '-';
 
-            const qtdEntrada =
-                item.quantidade_entrada &&
-                item.quantidade_entrada > 0
-                    ? item.quantidade_entrada
-                    : '-';
+                // =========================================
+                // FORNECEDOR
+                // =========================================
 
+                let fornecedorDisplay =
+                    item.fornecedor_nome ||
+                    item.cd_fornecedor ||
+                    '-';
 
-            // ====================================
-            // CUSTO
-            // ====================================
+                if (
+                    isExcel &&
+                    !verFornecedor
+                ) {
+                    fornecedorDisplay =
+                        '🔒 Oculto';
+                }
 
-            const custoDisplay =
-                podeVerCusto &&
-                item.valor_custo
+                // =========================================
+                // QTD ENTRADA
+                // =========================================
 
-                    ? `R$ ${parseFloat(
-                        item.valor_custo
-                    ).toFixed(2)}`
+                const qtdEntrada =
+                    item.quantidade_entrada &&
+                    item.quantidade_entrada > 0
+                        ? item.quantidade_entrada
+                        : '-';
 
-                    : (
-                        podeVerCusto
-                            ? '-'
+                // =========================================
+                // CUSTO
+                // =========================================
+
+                const custoDisplay =
+                    podeVerCusto &&
+                    item.valor_custo
+                        ? `R$ ${parseFloat(
+                            item.valor_custo
+                        ).toFixed(2)}`
+                        :
+                    podeVerCusto
+                        ? '-'
+                        : '';
+
+                // =========================================
+                // OBSERVAÇÃO
+                // =========================================
+
+                let obsDisplay =
+                    obsValue ||
+                    '-';
+
+                if (
+                    podeEditarObservacoes
+                ) {
+
+                    obsDisplay = `
+
+                        <div
+                            class="d-flex align-items-center gap-1"
+                        >
+
+                            <span
+                                id="${obsId}-text"
+                                style="
+                                    font-size:12px;
+                                    max-width:150px;
+                                    overflow:hidden;
+                                    text-overflow:ellipsis;
+                                    white-space:nowrap;
+                                "
+                                title="${obsValue || '-'}"
+                            >
+                                ${obsValue || '-'}
+                            </span>
+
+                            <button
+                                class="btn btn-sm btn-outline-primary"
+                                onclick="abrirModalObservacao(
+                                    '${card.id}',
+                                    ${item.id}
+                                )"
+                                style="
+                                    padding:2px 6px;
+                                    font-size:10px;
+                                "
+                                title="Editar observação"
+                            >
+                                <i
+                                    class="fas fa-pen"
+                                ></i>
+                            </button>
+
+                        </div>
+
+                    `;
+                }
+
+                // =========================================
+                // CLASSE DA LINHA
+                // =========================================
+
+                const classeLinha =
+                    [
+                        (
+                            isConcluido ||
+                            isIgnorado
+                        )
+                            ? 'table-light'
+                            : '',
+
+                        entradaUrgente
+                            ? 'entrada-urgente-estoque-zero'
                             : ''
-                    );
+                    ]
+                        .filter(Boolean)
+                        .join(' ');
 
+                // =========================================
+                // LINHA
+                // =========================================
 
-            // ====================================
-            // OBSERVAÇÃO
-            // ====================================
+                html += `
 
-            let obsDisplay =
-                obsValue || '-';
-
-
-            if (podeEditarObservacoes) {
-
-                obsDisplay = `
-
-                    <div
-                        class="d-flex align-items-center gap-1"
+                    <tr
+                        class="${classeLinha}"
                     >
 
-                        <span
-                            id="${obsId}-text"
-                            style="
-                                font-size:12px;
-                                max-width:150px;
-                                overflow:hidden;
-                                text-overflow:ellipsis;
-                                white-space:nowrap;
-                            "
-                            title="${obsValue || '-'}"
-                        >
-                            ${obsValue || '-'}
-                        </span>
+                        <td>
+                            ${idx + 1}
+                        </td>
 
+                        <td>
+                            ${item.cd_fornecedor || '-'}
+                        </td>
 
-                        <button
-                            class="btn btn-sm btn-outline-primary"
-                            onclick="abrirModalObservacao(
-                                '${card.id}',
-                                ${item.id}
-                            )"
-                            style="
-                                padding:2px 6px;
-                                font-size:10px;
-                            "
-                            title="Editar observação"
-                        >
-                            <i class="fas fa-pen"></i>
-                        </button>
+                        <td>
+                            ${item.rastreio || '-'}
+                        </td>
 
-                    </div>
+                        <td>
+                            <strong>
+                                ${item.quantidade || 0}
+                            </strong>
+                        </td>
 
-                `;
-            }
+                        <td>
 
+                            ${
+                                entradaUrgente
+                                    ? `
+                                        <span
+                                            class="badge-entrada-urgente"
+                                        >
+                                            🚨 URGENTE — ESTOQUE 0
+                                        </span>
 
-            // ====================================
-            // LINHA DA TABELA
-            // ====================================
+                                        <br>
+                                    `
+                                    : ''
+                            }
 
-            const classeLinha = [
+                            ${item.produto || '-'}
 
-                (
-                    isConcluido ||
-                    isIgnorado
-                )
-                    ? 'table-light'
-                    : '',
+                        </td>
 
-                entradaUrgente
-                    ? 'entrada-urgente-estoque-zero'
-                    : ''
-
-            ]
-                .filter(Boolean)
-                .join(' ');
-
-
-            html += `
-
-                <tr class="${classeLinha}">
-
-                    <td>
-                        ${idx + 1}
-                    </td>
-
-
-                    <td>
-                        ${item.cd_fornecedor || '-'}
-                    </td>
-
-
-                    <td>
-                        ${item.rastreio || '-'}
-                    </td>
-
-
-                    <td>
-                        <strong>
-                            ${item.quantidade || 0}
-                        </strong>
-                    </td>
-
-
-                    <td>
+                        <td>
+                            <code>
+                                ${skuDisplay}
+                            </code>
+                        </td>
 
                         ${
-                            entradaUrgente
+                            verFornecedor
                                 ? `
-                                    <span
-                                        class="badge-entrada-urgente"
-                                    >
-                                        🚨 URGENTE — ESTOQUE 0
-                                    </span>
-
-                                    <br>
+                                    <td>
+                                        ${fornecedorDisplay}
+                                    </td>
                                 `
                                 : ''
                         }
 
-                        ${item.produto || '-'}
+                        <td>
+                            ${qtdEntrada}
+                        </td>
 
-                    </td>
+                        ${
+                            podeVerCusto
+                                ? `
+                                    <td>
+                                        ${custoDisplay}
+                                    </td>
+                                `
+                                : ''
+                        }
 
+                        <td>
+                            ${obsDisplay}
+                        </td>
 
-                    <td>
-                        <code>
-                            ${skuDisplay}
-                        </code>
-                    </td>
+                        <td>
 
+                            <span
+                                class="badge ${statusClass}"
+                            >
+                                ${itemStatus}
+                            </span>
 
-                    ${
-                        verFornecedor
-                            ? `
-                                <td>
-                                    ${fornecedorDisplay}
-                                </td>
-                            `
-                            : ''
-                    }
+                        </td>
 
+                        <td>
+                            ${acaoHtml}
+                        </td>
 
-                    <td>
-                        ${qtdEntrada}
-                    </td>
+                    </tr>
 
+                `;
+            }
+        );
 
-                    ${
-                        podeVerCusto
-                            ? `
-                                <td>
-                                    ${custoDisplay}
-                                </td>
-                            `
-                            : ''
-                    }
-
-
-                    <td>
-                        ${obsDisplay}
-                    </td>
-
-
-                    <td>
-
-                        <span
-                            class="badge ${statusClass}"
-                        >
-                            ${itemStatus}
-                        </span>
-
-                    </td>
-
-
-                    <td>
-                        ${acaoHtml}
-                    </td>
-
-                </tr>
-
-            `;
-
-        });
-
-
-        // ========================================
-        // FECHA TABELA / CARD
-        // ========================================
+        // =================================================
+        // RODAPÉ
+        // =================================================
 
         html += `
 
@@ -2410,7 +1987,6 @@ async function renderizarEntradas() {
                     </table>
 
                 </div>
-
 
                 ${
                     !isFinalizado
@@ -2434,7 +2010,10 @@ async function renderizarEntradas() {
                                                 class="btn btn-sm btn-success"
                                                 onclick="finalizarEntrada('${card.id}')"
                                             >
-                                                <i class="fas fa-check-double"></i>
+                                                <i
+                                                    class="fas fa-check-double"
+                                                ></i>
+
                                                 Finalizar Entrada
                                             </button>
                                         `
@@ -2446,7 +2025,6 @@ async function renderizarEntradas() {
                         `
                         : ''
                 }
-
 
                 ${
                     isFinalizado &&
@@ -2467,7 +2045,10 @@ async function renderizarEntradas() {
                                     class="btn btn-sm btn-danger"
                                     onclick="excluirEntradaFinalizada('${card.id}')"
                                 >
-                                    <i class="fas fa-trash-alt"></i>
+                                    <i
+                                        class="fas fa-trash-alt"
+                                    ></i>
+
                                     Excluir Entrada (Admin)
                                 </button>
 
@@ -2480,15 +2061,10 @@ async function renderizarEntradas() {
             </div>
 
         `;
-
     });
 
-
-    // ============================================
-    // RENDERIZA
-    // ============================================
-
-    container.innerHTML = html;
+    container.innerHTML =
+        html;
 }
 
 // ============================================
@@ -3706,71 +3282,176 @@ async function gerarNumeroEntrada() {
     }
 }
 
-// ============================================
-// DAR ENTRADA EM UM ITEM (COM SINCRONIZAÇÃO ML CORRIGIDA)
-// ============================================
 window.darEntradaItem = async function(cardId, itemId, produtoId) {
-    if (!cardId || !itemId || !produtoId) {
-        showToast('Erro: dados incompletos', 'error');
+
+    if (
+        !cardId ||
+        !itemId ||
+        !produtoId
+    ) {
+        showToast(
+            'Erro: dados incompletos',
+            'error'
+        );
+
         return;
     }
 
-    const card = entradasCards.find(c => c.id == cardId);
+    const card =
+        entradasCards.find(
+            c => c.id == cardId
+        );
+
     if (!card) {
-        showToast('Card não encontrado', 'error');
+        showToast(
+            'Card não encontrado',
+            'error'
+        );
+
         return;
     }
-    const item = card.itens.find(i => i.id == itemId);
+
+    // =====================================================
+    // IMPORTANTE:
+    // NÃO verificar aqui se o card é XML ou Manual.
+    //
+    // Bruna e Arthur não podem CRIAR entrada manual,
+    // mas podem processar qualquer entrada já criada.
+    // =====================================================
+
+    const item =
+        card.itens.find(
+            i => i.id == itemId
+        );
+
     if (!item) {
-        showToast('Item não encontrado', 'error');
+        showToast(
+            'Item não encontrado',
+            'error'
+        );
+
         return;
     }
 
-    if (item.status !== 'pendente') {
-        showToast('Este item já foi processado', 'warning');
+    if (
+        item.status !== 'pendente'
+    ) {
+        showToast(
+            'Este item já foi processado',
+            'warning'
+        );
+
         return;
     }
 
-    const quantidadeSugerida = item.quantidade || 1;
-    
-    const quantidadeStr = prompt(
-        `Quantas unidades deseja dar entrada?\n(Sugestão: ${quantidadeSugerida})`,
-        quantidadeSugerida.toString()
-    );
-    
-    if (quantidadeStr === null) {
-        showToast('Operação cancelada.', 'info');
-        return;
-    }
-    
-    const quantidade = parseInt(quantidadeStr);
-    if (isNaN(quantidade) || quantidade <= 0) {
-        showToast('Quantidade inválida. Deve ser um número positivo.', 'warning');
+    const quantidadeSugerida =
+        item.quantidade ||
+        1;
+
+    const quantidadeStr =
+        prompt(
+            `Quantas unidades deseja dar entrada?\n(Sugestão: ${quantidadeSugerida})`,
+            quantidadeSugerida.toString()
+        );
+
+    if (
+        quantidadeStr === null
+    ) {
+        showToast(
+            'Operação cancelada.',
+            'info'
+        );
+
         return;
     }
 
-    if (!confirm(`Confirmar entrada de ${quantidade} unidade(s) do SKU "${item.sku_original}"?`)) {
+    const quantidade =
+        parseInt(
+            quantidadeStr
+        );
+
+    if (
+        isNaN(quantidade) ||
+        quantidade <= 0
+    ) {
+        showToast(
+            'Quantidade inválida. Deve ser um número positivo.',
+            'warning'
+        );
+
+        return;
+    }
+
+    if (
+        !confirm(
+            `Confirmar entrada de ${quantidade} unidade(s) do SKU "${item.sku_original}"?`
+        )
+    ) {
         return;
     }
 
     try {
-        if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // ===== BUSCA O PRODUTO SEM A COLUNA mlb_codes =====
-        const { data: produto, error: errProd } = await window.supabaseClient
-            .from('produtos_estoque')
-            .select('quantidade, dados_extra, historico_custos, bloquear_sync_ml, sku, nome')
-            .eq('id', produtoId)
-            .single();
+        if (
+            !window.supabaseClient
+        ) {
+            throw new Error(
+                'Supabase não conectado'
+            );
+        }
 
-        if (errProd) throw errProd;
+        // =================================================
+        // PRODUTO
+        // =================================================
 
-        const novaQuantidade = (produto.quantidade || 0) + quantidade;
+        const {
+            data: produto,
+            error: errProd
+        } =
+            await window.supabaseClient
 
-        const valorCusto = item.valor_custo || 0;
-        let historicoCustos = produto.historico_custos || [];
-        
-        if (valorCusto > 0) {
+                .from(
+                    'produtos_estoque'
+                )
+
+                .select(
+                    'quantidade, dados_extra, historico_custos, bloquear_sync_ml, sku, nome'
+                )
+
+                .eq(
+                    'id',
+                    produtoId
+                )
+
+                .single();
+
+        if (errProd) {
+            throw errProd;
+        }
+
+        const novaQuantidade =
+            (
+                produto.quantidade ||
+                0
+            ) +
+            quantidade;
+
+        // =================================================
+        // CUSTO
+        // =================================================
+
+        const valorCusto =
+            item.valor_custo ||
+            0;
+
+        let historicoCustos =
+            produto.historico_custos ||
+            [];
+
+        if (
+            valorCusto > 0
+        ) {
+
             historicoCustos.push({
                 valor: valorCusto,
                 data: getDataHoraLocalISO(),
@@ -3778,34 +3459,85 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
                 quantidade: quantidade,
                 usuario: currentUser.name
             });
-            
-            if (historicoCustos.length > 50) {
-                historicoCustos = historicoCustos.slice(-50);
+
+            if (
+                historicoCustos.length >
+                50
+            ) {
+                historicoCustos =
+                    historicoCustos.slice(
+                        -50
+                    );
             }
         }
 
-        const custosValidos = historicoCustos.filter(h => h.valor > 0);
-        const custoMedio = custosValidos.length > 0 
-            ? custosValidos.reduce((sum, h) => sum + h.valor, 0) / custosValidos.length 
-            : 0;
+        const custosValidos =
+            historicoCustos.filter(
+                h => h.valor > 0
+            );
 
-        let dadosExtra = produto.dados_extra || {};
-        dadosExtra.ultimo_custo = valorCusto;
-        dadosExtra.custo_medio = custoMedio;
-        dadosExtra.historico_custos = historicoCustos;
+        const custoMedio =
+            custosValidos.length > 0
 
-        const { error: errUpdate } = await window.supabaseClient
-            .from('produtos_estoque')
-            .update({ 
-                quantidade: novaQuantidade,
-                dados_extra: dadosExtra,
-                historico_custos: historicoCustos,
-                ultimo_custo: valorCusto,
-                custo_medio: custoMedio
-            })
-            .eq('id', produtoId);
+                ? custosValidos.reduce(
+                    (
+                        sum,
+                        h
+                    ) =>
+                        sum +
+                        h.valor,
+                    0
+                ) /
+                custosValidos.length
 
-        if (errUpdate) throw errUpdate;
+                : 0;
+
+        let dadosExtra =
+            produto.dados_extra ||
+            {};
+
+        dadosExtra.ultimo_custo =
+            valorCusto;
+
+        dadosExtra.custo_medio =
+            custoMedio;
+
+        dadosExtra.historico_custos =
+            historicoCustos;
+
+        // =================================================
+        // ATUALIZA ESTOQUE
+        // =================================================
+
+        const {
+            error: errUpdate
+        } =
+            await window.supabaseClient
+
+                .from(
+                    'produtos_estoque'
+                )
+
+                .update({
+                    quantidade: novaQuantidade,
+                    dados_extra: dadosExtra,
+                    historico_custos: historicoCustos,
+                    ultimo_custo: valorCusto,
+                    custo_medio: custoMedio
+                })
+
+                .eq(
+                    'id',
+                    produtoId
+                );
+
+        if (errUpdate) {
+            throw errUpdate;
+        }
+
+        // =================================================
+        // MOVIMENTAÇÃO
+        // =================================================
 
         await registrarMovimentacao(
             produtoId,
@@ -3815,130 +3547,408 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
             'nova'
         );
 
-        const { error: errItem } = await window.supabaseClient
-            .from('entrada_items')
-            .update({
-                status: 'entrada_realizada',
-                acao: 'entrada',
-                quantidade_entrada: quantidade,
-                responsavel: currentUser.name,
-                data_acao: getDataHoraLocalISO()
-            })
-            .eq('id', itemId);
+        // =================================================
+        // ITEM
+        // =================================================
 
-        if (errItem) throw errItem;
+        const {
+            error: errItem
+        } =
+            await window.supabaseClient
 
-        const concluidos = card.itens.filter(i => 
-            i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
-        ).length + 1;
-        const total = card.itens.filter(i => i.status !== 'ignorado').length;
-        const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
+                .from(
+                    'entrada_items'
+                )
 
-        const { error: errCard } = await window.supabaseClient
-            .from('entradas_cards')
-            .update({
-                items_concluidos: concluidos,
-                status: novoStatus,
-                finalizado_em: novoStatus === 'finalizado' ? getDataHoraLocalISO() : null,
-                finalizado_por: novoStatus === 'finalizado' ? currentUser.name : null
-            })
-            .eq('id', cardId);
+                .update({
+                    status:
+                        'entrada_realizada',
 
-        if (errCard) throw errCard;
+                    acao:
+                        'entrada',
 
-        showToast(`✅ Entrada de ${quantidade} unidade(s) realizada! Custo: R$ ${valorCusto.toFixed(2)}`, 'success');
-        
-        // ===== ATUALIZA O ESTOQUE LOCAL =====
-        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-            const produtoLocal = produtosEstoque.find(p => p.id == produtoId);
-            if (produtoLocal) {
-                produtoLocal.quantidade = novaQuantidade;
-                produtoLocal.dados_extra = dadosExtra;
-                produtoLocal.historico_custos = historicoCustos;
-                produtoLocal.ultimo_custo = valorCusto;
-                produtoLocal.custo_medio = custoMedio;
+                    quantidade_entrada:
+                        quantidade,
+
+                    responsavel:
+                        currentUser.name,
+
+                    data_acao:
+                        getDataHoraLocalISO()
+                })
+
+                .eq(
+                    'id',
+                    itemId
+                );
+
+        if (errItem) {
+            throw errItem;
+        }
+
+        // =================================================
+        // STATUS DO CARD
+        // =================================================
+
+        const concluidos =
+            card.itens.filter(
+                i =>
+                    i.id != itemId &&
+                    (
+                        i.status !==
+                        'pendente' &&
+                        i.status !==
+                        'ignorado'
+                    )
+            ).length +
+            1;
+
+        const total =
+            card.itens.filter(
+                i =>
+                    i.status !==
+                    'ignorado'
+            ).length;
+
+        const novoStatus =
+            concluidos === total
+                ? 'finalizado'
+                : 'pendente';
+
+        const {
+            error: errCard
+        } =
+            await window.supabaseClient
+
+                .from(
+                    'entradas_cards'
+                )
+
+                .update({
+                    items_concluidos:
+                        concluidos,
+
+                    status:
+                        novoStatus,
+
+                    finalizado_em:
+                        novoStatus ===
+                        'finalizado'
+                            ? getDataHoraLocalISO()
+                            : null,
+
+                    finalizado_por:
+                        novoStatus ===
+                        'finalizado'
+                            ? currentUser.name
+                            : null
+                })
+
+                .eq(
+                    'id',
+                    cardId
+                );
+
+        if (errCard) {
+            throw errCard;
+        }
+
+        showToast(
+            `✅ Entrada de ${quantidade} unidade(s) realizada! Custo: R$ ${valorCusto.toFixed(2)}`,
+            'success'
+        );
+
+        // =================================================
+        // ATUALIZA ESTOQUE LOCAL
+        // =================================================
+
+        if (
+            typeof produtosEstoque !==
+                'undefined' &&
+            Array.isArray(
+                produtosEstoque
+            )
+        ) {
+
+            const produtoLocal =
+                produtosEstoque.find(
+                    p =>
+                        p.id ==
+                        produtoId
+                );
+
+            if (
+                produtoLocal
+            ) {
+
+                produtoLocal.quantidade =
+                    novaQuantidade;
+
+                produtoLocal.dados_extra =
+                    dadosExtra;
+
+                produtoLocal.historico_custos =
+                    historicoCustos;
+
+                produtoLocal.ultimo_custo =
+                    valorCusto;
+
+                produtoLocal.custo_medio =
+                    custoMedio;
             }
         }
 
+        // Atualiza a tela
         await carregarEntradas();
 
-        // =========================================================
-        // ===== SINCRONIZAÇÃO COM MERCADO LIVRE =====
-        // =========================================================
-        // Busca os MLB codes do dados_extra
-        const mlbCodes = dadosExtra?.mlb_codes || [];
-        const syncBloqueado = produto.bloquear_sync_ml || dadosExtra?.bloquear_sync_ml || false;
+        // =================================================
+        // SINCRONIZAÇÃO MERCADO LIVRE
+        // =================================================
 
-        if (mlbCodes && mlbCodes.length > 0 && !syncBloqueado) {
-            console.log(`🔄 Iniciando sincronização com ML para ${produto.sku} (${mlbCodes.length} anúncios)`);
-            
-            // Busca o produto atualizado com os dados mais recentes
-            const { data: produtoAtualizado, error: errProdAtualizado } = await window.supabaseClient
-                .from('produtos_estoque')
-                .select('*')
-                .eq('id', produtoId)
-                .single();
+        const mlbCodes =
+            dadosExtra?.mlb_codes ||
+            [];
 
-            if (errProdAtualizado) {
-                console.warn('⚠️ Erro ao buscar produto atualizado para sincronização:', errProdAtualizado);
-                showToast('⚠️ Produto atualizado, mas falha ao sincronizar com ML', 'warning');
+        const syncBloqueado =
+            produto.bloquear_sync_ml ||
+            dadosExtra?.bloquear_sync_ml ||
+            false;
+
+        if (
+            mlbCodes &&
+            mlbCodes.length > 0 &&
+            !syncBloqueado
+        ) {
+
+            console.log(
+                `🔄 Iniciando sincronização com ML para ${produto.sku} (${mlbCodes.length} anúncios)`
+            );
+
+            const {
+                data: produtoAtualizado,
+                error: errProdAtualizado
+            } =
+                await window.supabaseClient
+
+                    .from(
+                        'produtos_estoque'
+                    )
+
+                    .select('*')
+
+                    .eq(
+                        'id',
+                        produtoId
+                    )
+
+                    .single();
+
+            if (
+                errProdAtualizado
+            ) {
+
+                console.warn(
+                    '⚠️ Erro ao buscar produto atualizado para sincronização:',
+                    errProdAtualizado
+                );
+
+                showToast(
+                    '⚠️ Produto atualizado, mas falha ao sincronizar com ML',
+                    'warning'
+                );
+
             } else {
-                // ===== CHAMA A FUNÇÃO DE SINCRONIZAÇÃO DO MÓDULO DE ESTOQUE =====
+
                 try {
-                    // Verifica se a função existe no escopo global
-                    if (typeof window.sincronizarEstoqueML === 'function') {
-                        console.log(`🔄 Sincronizando ${produtoAtualizado.sku} via sincronizarEstoqueML`);
-                        
-                        // Mostra toast de sincronização
-                        showToast(`🔄 Sincronizando ${produtoAtualizado.sku} com Mercado Livre...`, 'info');
-                        
-                        // Chama a função de sincronização
-                        const resultado = await window.sincronizarEstoqueML(produtoAtualizado);
-                        
-                        if (resultado && resultado.success) {
-                            showToast(`✅ Produto ${produtoAtualizado.sku} sincronizado com ML!`, 'success');
-                        } else if (resultado && resultado.results) {
-                            const sucessos = resultado.results.filter(r => r.success).length;
-                            const falhas = resultado.results.filter(r => !r.success).length;
-                            
-                            if (sucessos > 0 && falhas === 0) {
-                                showToast(`✅ ${sucessos} anúncio(s) sincronizado(s)!`, 'success');
-                            } else if (sucessos > 0 && falhas > 0) {
-                                showToast(`⚠️ ${sucessos} OK, ${falhas} falhas na sincronização`, 'warning');
+
+                    // =============================================
+                    // MÉTODO PRINCIPAL
+                    // =============================================
+
+                    if (
+                        typeof window.sincronizarEstoqueML ===
+                        'function'
+                    ) {
+
+                        console.log(
+                            `🔄 Sincronizando ${produtoAtualizado.sku} via sincronizarEstoqueML`
+                        );
+
+                        showToast(
+                            `🔄 Sincronizando ${produtoAtualizado.sku} com Mercado Livre...`,
+                            'info'
+                        );
+
+                        const resultado =
+                            await window.sincronizarEstoqueML(
+                                produtoAtualizado
+                            );
+
+                        if (
+                            resultado &&
+                            resultado.success
+                        ) {
+
+                            showToast(
+                                `✅ Produto ${produtoAtualizado.sku} sincronizado com ML!`,
+                                'success'
+                            );
+
+                        } else if (
+                            resultado &&
+                            resultado.results
+                        ) {
+
+                            const sucessos =
+                                resultado.results.filter(
+                                    r =>
+                                        r.success
+                                ).length;
+
+                            const falhas =
+                                resultado.results.filter(
+                                    r =>
+                                        !r.success
+                                ).length;
+
+                            if (
+                                sucessos > 0 &&
+                                falhas === 0
+                            ) {
+
+                                showToast(
+                                    `✅ ${sucessos} anúncio(s) sincronizado(s)!`,
+                                    'success'
+                                );
+
+                            } else if (
+                                sucessos > 0 &&
+                                falhas > 0
+                            ) {
+
+                                showToast(
+                                    `⚠️ ${sucessos} OK, ${falhas} falhas na sincronização`,
+                                    'warning'
+                                );
+
                             } else {
-                                // Verifica se são FULL puros
-                                const fullPuros = resultado.results.filter(r => r.tipo === 'full_puro' || r.ignorado);
-                                if (fullPuros.length > 0) {
-                                    showToast(`🔴 ${fullPuros.length} anúncio(s) FULL precisam ser atualizados manualmente`, 'warning');
+
+                                const fullPuros =
+                                    resultado.results.filter(
+                                        r =>
+                                            r.tipo ===
+                                                'full_puro' ||
+                                            r.ignorado
+                                    );
+
+                                if (
+                                    fullPuros.length > 0
+                                ) {
+
+                                    showToast(
+                                        `🔴 ${fullPuros.length} anúncio(s) FULL precisam ser atualizados manualmente`,
+                                        'warning'
+                                    );
+
                                 } else {
-                                    showToast(`⚠️ Falha ao sincronizar ${produtoAtualizado.sku} com ML`, 'warning');
+
+                                    showToast(
+                                        `⚠️ Falha ao sincronizar ${produtoAtualizado.sku} com ML`,
+                                        'warning'
+                                    );
                                 }
                             }
                         }
-                    } else if (typeof window.sincronizarProdutoML === 'function') {
-                        // Fallback: tenta usar sincronizarProdutoML
-                        console.log(`🔄 Sincronizando ${produtoAtualizado.sku} via sincronizarProdutoML`);
-                        showToast(`🔄 Sincronizando ${produtoAtualizado.sku} com Mercado Livre...`, 'info');
-                        await window.sincronizarProdutoML(produtoId);
+
+                    // =============================================
+                    // FALLBACK
+                    // =============================================
+                    } else if (
+                        typeof window.sincronizarProdutoML ===
+                        'function'
+                    ) {
+
+                        console.log(
+                            `🔄 Sincronizando ${produtoAtualizado.sku} via sincronizarProdutoML`
+                        );
+
+                        showToast(
+                            `🔄 Sincronizando ${produtoAtualizado.sku} com Mercado Livre...`,
+                            'info'
+                        );
+
+                        await window.sincronizarProdutoML(
+                            produtoId
+                        );
+
                     } else {
-                        console.warn('⚠️ Nenhuma função de sincronização ML encontrada');
-                        showToast('ℹ️ Produto atualizado no estoque, mas sincronização ML não disponível', 'info');
+
+                        console.warn(
+                            '⚠️ Nenhuma função de sincronização ML encontrada'
+                        );
+
+                        showToast(
+                            'ℹ️ Produto atualizado no estoque, mas sincronização ML não disponível',
+                            'info'
+                        );
                     }
-                } catch (errSync) {
-                    console.error('❌ Erro na sincronização com ML:', errSync);
-                    showToast(`⚠️ Erro ao sincronizar com ML: ${errSync.message || 'Erro desconhecido'}`, 'warning');
+
+                } catch (
+                    errSync
+                ) {
+
+                    console.error(
+                        '❌ Erro na sincronização com ML:',
+                        errSync
+                    );
+
+                    showToast(
+                        `⚠️ Erro ao sincronizar com ML: ${
+                            errSync.message ||
+                            'Erro desconhecido'
+                        }`,
+                        'warning'
+                    );
                 }
             }
-        } else if (syncBloqueado) {
-            console.log(`🔒 Sincronização BLOQUEADA para ${produto.sku}`);
-            showToast(`🔒 Sincronização com ML bloqueada para ${produto.sku}`, 'info');
-        } else if (!mlbCodes || mlbCodes.length === 0) {
-            console.log(`ℹ️ Produto ${produto.sku} não possui códigos MLB para sincronizar`);
+
+        } else if (
+            syncBloqueado
+        ) {
+
+            console.log(
+                `🔒 Sincronização BLOQUEADA para ${produto.sku}`
+            );
+
+            showToast(
+                `🔒 Sincronização com ML bloqueada para ${produto.sku}`,
+                'info'
+            );
+
+        } else if (
+            !mlbCodes ||
+            mlbCodes.length === 0
+        ) {
+
+            console.log(
+                `ℹ️ Produto ${produto.sku} não possui códigos MLB para sincronizar`
+            );
         }
 
-    } catch (error) {
-        console.error('❌ Erro ao dar entrada:', error);
-        showToast('❌ Erro ao dar entrada: ' + error.message, 'error');
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro ao dar entrada:',
+            error
+        );
+
+        showToast(
+            '❌ Erro ao dar entrada: ' +
+            error.message,
+            'error'
+        );
     }
 };
 
