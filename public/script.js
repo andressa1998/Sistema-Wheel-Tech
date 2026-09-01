@@ -8656,6 +8656,24 @@ async function loadOrders() {
                         order.urgencia ||
                         'normal',
 
+                        transferenciaPendente:
+                            order.transferencia_pendente || false,
+
+                        instrucaoTransferencia:
+                            order.instrucao_transferencia || '',
+
+                        responsavelAnterior:
+                            order.responsavel_anterior || null,
+
+                        transferidoPor:
+                            order.transferido_por || null,
+
+                        dataTransferencia:
+                            order.data_transferencia || null,
+
+                        statusAnteriorTransferencia:
+                            order.status_anterior_transferencia || null,
+
                     osType:
                         order.tipo_os ||
                         'normal',
@@ -13246,145 +13264,156 @@ function closePhotoViewer() {
     document.getElementById('photoViewerModal').classList.add('hidden');
 }
 
-// ============================================
-// INICIAR ORDEM DE SERVIÇO
-// ============================================
-window.startOrder = async function(orderId) {
+window.startOrder =
+    async function(orderId) {
 
-    const order =
-        orders.find(
-            o =>
-                String(o.id) ===
-                String(orderId)
-        );
+        const order =
+            orders.find(
+                o =>
+                    String(o.id) ===
+                    String(orderId)
+            );
 
 
-    if (!order) {
+        if (!order) {
 
-        showToast(
-            '❌ OS não encontrada',
-            'error'
-        );
+            showToast(
+                'OS não encontrada',
+                'error'
+            );
 
-        return;
-    }
-
-
-    if (!checkOrderPermission(order)) {
-
-        showToast(
-            '⚠️ Sem permissão para iniciar esta OS',
-            'warning'
-        );
-
-        return;
-    }
+            return;
+        }
 
 
-    if (
-        !confirm(
-            `Iniciar "${order.productName}"?`
-        )
-    ) {
+        if (
+            !checkOrderPermission(
+                order
+            )
+        ) {
 
-        return;
-    }
+            showToast(
+                'Sem permissão para iniciar esta OS',
+                'warning'
+            );
 
-
-    try {
-
-        const agoraISO =
-            new Date().toISOString();
-
-
-        // Se já teve início anteriormente,
-        // preserva o primeiro início.
-        //
-        // Isso é importante para OS que
-        // voltaram para revisão.
-        const inicioExecucao =
-            order.startedAt ||
-            agoraISO;
+            return;
+        }
 
 
-        if (supabaseClient) {
+        if (
+            !confirm(
+                `Iniciar "${order.productName}"?`
+            )
+        ) {
 
-            const dadosAtualizacao = {
+            return;
+        }
+
+
+        try {
+
+            const agoraISO =
+                new Date()
+                    .toISOString();
+
+
+            // Como transferida volta sem data_inicio,
+            // começa um novo tempo para o novo responsável.
+            const inicioExecucao =
+                order.startedAt ||
+                agoraISO;
+
+
+            const updateData = {
 
                 status:
                     'andamento',
+
+                transferencia_pendente:
+                    false,
 
                 ultima_atualizacao:
                     agoraISO
             };
 
 
-            // Só grava data_inicio
-            // se ainda não existir.
-            if (!order.startedAt) {
+            if (
+                !order.startedAt
+            ) {
 
-                dadosAtualizacao.data_inicio =
+                updateData.data_inicio =
                     inicioExecucao;
             }
 
 
-            const {
-                error
-            } =
-                await supabaseClient
-                    .from(
-                        'ordens_service'
-                    )
-                    .update(
-                        dadosAtualizacao
-                    )
-                    .eq(
-                        'id',
-                        orderId
-                    );
+            if (supabaseClient) {
+
+                const {
+                    error
+                } =
+                    await supabaseClient
+                        .from(
+                            'ordens_service'
+                        )
+                        .update(
+                            updateData
+                        )
+                        .eq(
+                            'id',
+                            orderId
+                        );
 
 
-            if (error) {
-                throw error;
+                if (error) {
+                    throw error;
+                }
             }
-        }
 
-        order.status =
-            'andamento';
 
-        if (!order.startedAt) {
+            order.status =
+                'andamento';
+
+
+            order.transferenciaPendente =
+                false;
+
 
             order.startedAt =
                 inicioExecucao;
+
+
+            order.updatedAt =
+                agoraISO;
+
+
+            updateCounters();
+
+
+            renderOrdersTable();
+
+
+            showToast(
+                '✅ OS iniciada',
+                'success'
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                '❌ Erro ao iniciar OS:',
+                error
+            );
+
+
+            showToast(
+                '❌ Erro ao iniciar: ' +
+                error.message,
+                'error'
+            );
         }
-
-        order.updatedAt =
-            agoraISO;
-
-        updateCounters();
-        renderOrdersTable();
-
-        showToast(
-            '✅ OS iniciada - cronômetro de horário útil iniciado',
-            'success'
-        );
-
-
-    } catch (error) {
-
-        console.error(
-            '❌ Erro ao iniciar OS:',
-            error
-        );
-
-
-        showToast(
-            '❌ Erro ao iniciar OS: ' +
-            error.message,
-            'error'
-        );
-    }
-};
+    };
 
 window.openCompleteModal = function(orderId) {
     const order = orders.find(o => o.id == orderId);
@@ -14642,6 +14671,149 @@ function generateDetailsTab() {
             </div>
         `;
     }
+
+    // ============================================================
+// TRANSFERÊNCIA DE RESPONSÁVEL
+// ============================================================
+
+let transferenciaSection =
+    '';
+
+
+if (
+    order.instrucaoTransferencia
+) {
+
+    transferenciaSection = `
+
+        <div
+            class="info-card"
+            style="
+                margin-top:20px;
+                background:#e3f2fd;
+                border-left:4px solid #2196f3;
+            "
+        >
+
+            <h4 style="
+                color:#0d47a1;
+            ">
+                <i class="fas fa-exchange-alt"></i>
+                OS Transferida
+            </h4>
+
+
+            <div class="info-grid">
+
+                <div class="info-item">
+
+                    <div class="info-label">
+                        Responsável anterior
+                    </div>
+
+                    <div class="info-value">
+                        ${order.responsavelAnterior || '-'}
+                    </div>
+
+                </div>
+
+
+                <div class="info-item">
+
+                    <div class="info-label">
+                        Novo responsável
+                    </div>
+
+                    <div
+                        class="info-value"
+                        style="
+                            font-weight:700;
+                            color:#0d47a1;
+                        "
+                    >
+                        ${order.responsibleName || '-'}
+                    </div>
+
+                </div>
+
+
+                <div class="info-item">
+
+                    <div class="info-label">
+                        Transferido por
+                    </div>
+
+                    <div class="info-value">
+                        ${order.transferidoPor || '-'}
+                    </div>
+
+                </div>
+
+
+                <div class="info-item">
+
+                    <div class="info-label">
+                        Data da transferência
+                    </div>
+
+                    <div class="info-value">
+
+                        ${
+                            order.dataTransferencia
+                                ? new Date(
+                                    order.dataTransferencia
+                                ).toLocaleString(
+                                    'pt-BR'
+                                )
+                                : '-'
+                        }
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div
+                style="
+                    margin-top:15px;
+                    padding:16px;
+                    background:white;
+                    border:1px solid #90caf9;
+                    border-radius:8px;
+                "
+            >
+
+                <div style="
+                    font-size:12px;
+                    color:#1565c0;
+                    font-weight:700;
+                    margin-bottom:6px;
+                ">
+                    <i class="fas fa-clipboard-list"></i>
+                    O QUE VOCÊ PRECISA FAZER
+                </div>
+
+
+                <div style="
+                    font-size:15px;
+                    font-weight:600;
+                    white-space:pre-wrap;
+                ">
+                    ${escapeHtmlMetaRonald
+                        ? escapeHtmlMetaRonald(
+                            order.instrucaoTransferencia
+                        )
+                        : order.instrucaoTransferencia
+                    }
+                </div>
+
+            </div>
+
+        </div>
+    `;
+}
     
     // Motivo de rejeição
     let motivoRejeicaoSection = '';
@@ -14765,6 +14937,7 @@ function generateDetailsTab() {
                 </div>
             </div>
             
+            ${transferenciaSection}
             ${anuncioSection}
             ${motivoRejeicaoSection}
             
@@ -20851,65 +21024,439 @@ function exportarRelatorioOSExcel() {
 // ===== MODAL DE EDIÇÃO =====
 let editingOSId = null;
 
+// ============================================================
+// ABRIR MODAL DE EDIÇÃO DA OS
+// ============================================================
+
 window.abrirModalEdicaoOS = function(orderId) {
-    const order = orders.find(o => o.id == orderId);
+
+    const order =
+        orders.find(
+            o => String(o.id) === String(orderId)
+        );
+
+
     if (!order) {
-        showToast('Ordem não encontrada', 'error');
-        return;
-    }
-    // Verifica permissão
-    if (!checkOrderPermission(order) && currentUser.role !== 'Administrador') {
-        showToast('Sem permissão para editar', 'warning');
+
+        showToast(
+            'Ordem não encontrada',
+            'error'
+        );
+
         return;
     }
 
-    editingOSId = orderId;
-    const modal = document.getElementById('editOSModal');
-    
-    // Preencher campos
-    document.getElementById('editOSId').value = orderId;
-    document.getElementById('editProductName').value = order.productName || '';
-    document.getElementById('editResponsibleName').value = order.responsibleName || '';
-    document.getElementById('editUrgency').value = order.urgency || 'normal';
-    document.getElementById('editOsType').value = order.osType || 'normal';
-    document.getElementById('editPhotoType').value = order.photoType || 'estudio';
-    document.getElementById('editLinkAnuncio').value = order.linkAnuncio || '';
-    document.getElementById('editSkus').value = Array.isArray(order.skus) ? order.skus.join(', ') : (order.skus || '');
-    document.getElementById('editObservations').value = order.observations || '';
-    document.getElementById('editValorAnuncio').value = order.valorAnuncio || '';
-    document.getElementById('editDescricaoAnuncio').value = order.descricaoAnuncio || '';
-    document.getElementById('editLinkNovoAnuncio').value = order.linkNovoAnuncio || '';
-    document.getElementById('editPrecisaFoto').value = order.precisaFoto || 'nao';
-    
-    // Campos de anúncio – mostrar se for tipo de anúncio ou edição
-    const photoType = order.photoType;
-    const isAnuncio = (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio' || photoType === 'edicao');
-    document.getElementById('editCamposAnuncio').classList.toggle('hidden', !isAnuncio);
-    
-    // Motivo de rejeição – visível apenas para admin e se houver motivo
-    const motivoGroup = document.getElementById('editMotivoRejeicaoGroup');
-    if (currentUser.role === 'Administrador' && order.motivo_rejeicao) {
-        motivoGroup.classList.remove('hidden');
-        document.getElementById('editMotivoRejeicao').value = order.motivo_rejeicao || '';
+
+    // ========================================================
+    // PERMISSÃO NORMAL PARA EDITAR A OS
+    // ========================================================
+
+    if (
+        !checkOrderPermission(order) &&
+        currentUser.role !== 'Administrador'
+    ) {
+
+        showToast(
+            'Sem permissão para editar',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    editingOSId =
+        orderId;
+
+
+    const modal =
+        document.getElementById(
+            'editOSModal'
+        );
+
+
+    if (!modal) {
+
+        showToast(
+            'Modal de edição não encontrado',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // ========================================================
+    // CAMPOS
+    // ========================================================
+
+    document.getElementById(
+        'editOSId'
+    ).value =
+        orderId;
+
+
+    document.getElementById(
+        'editProductName'
+    ).value =
+        order.productName || '';
+
+
+    const responsavelSelect =
+        document.getElementById(
+            'editResponsibleName'
+        );
+
+
+    responsavelSelect.value =
+        order.responsibleName || '';
+
+
+    document.getElementById(
+        'editOriginalResponsibleName'
+    ).value =
+        order.responsibleName || '';
+
+
+    document.getElementById(
+        'editUrgency'
+    ).value =
+        order.urgency || 'normal';
+
+
+    document.getElementById(
+        'editOsType'
+    ).value =
+        order.osType || 'normal';
+
+
+    document.getElementById(
+        'editPhotoType'
+    ).value =
+        order.photoType || 'estudio';
+
+
+    document.getElementById(
+        'editLinkAnuncio'
+    ).value =
+        order.linkAnuncio || '';
+
+
+    document.getElementById(
+        'editSkus'
+    ).value =
+        Array.isArray(order.skus)
+            ? order.skus.join(', ')
+            : (order.skus || '');
+
+
+    document.getElementById(
+        'editObservations'
+    ).value =
+        order.observations || '';
+
+
+    document.getElementById(
+        'editValorAnuncio'
+    ).value =
+        order.valorAnuncio || '';
+
+
+    document.getElementById(
+        'editDescricaoAnuncio'
+    ).value =
+        order.descricaoAnuncio || '';
+
+
+    document.getElementById(
+        'editLinkNovoAnuncio'
+    ).value =
+        order.linkNovoAnuncio || '';
+
+
+    document.getElementById(
+        'editPrecisaFoto'
+    ).value =
+        order.precisaFoto || 'nao';
+
+
+    // ========================================================
+    // SOMENTE ADMIN PODE TROCAR RESPONSÁVEL
+    // ========================================================
+
+    const isAdmin =
+        currentUser &&
+        currentUser.role ===
+        'Administrador';
+
+
+    responsavelSelect.disabled =
+        !isAdmin;
+
+
+    if (!isAdmin) {
+
+        responsavelSelect.title =
+            'Somente administradores podem alterar o responsável';
+
     } else {
-        motivoGroup.classList.add('hidden');
-        document.getElementById('editMotivoRejeicao').value = '';
+
+        responsavelSelect.title =
+            'Selecione outro usuário para transferir esta OS';
     }
-    
-    // Atualizar contador do produto
-    const campoProduto = document.getElementById('editProductName');
-    const contador = document.getElementById('editContadorProduto');
-    function atualizarContadorEdit() {
-        const len = campoProduto.value.length;
-        const max = 200;
-        contador.textContent = `${len}/${max}`;
-        contador.style.color = len >= max ? '#dc3545' : (len >= 180 ? '#ffc107' : '#6c757d');
-        contador.style.fontWeight = len >= 180 ? 'bold' : 'normal';
+
+
+    // ========================================================
+    // CAMPO DA TRANSFERÊNCIA
+    // ========================================================
+
+    const transferenciaGroup =
+        document.getElementById(
+            'editTransferenciaResponsavelGroup'
+        );
+
+
+    const instrucaoInput =
+        document.getElementById(
+            'editInstrucaoTransferencia'
+        );
+
+
+    if (instrucaoInput) {
+
+        instrucaoInput.value =
+            '';
     }
-    campoProduto.addEventListener('input', atualizarContadorEdit);
-    atualizarContadorEdit();
-    
-    modal.classList.remove('hidden');
+
+
+    if (transferenciaGroup) {
+
+        transferenciaGroup.classList.add(
+            'hidden'
+        );
+
+        transferenciaGroup.style.display =
+            'none';
+    }
+
+
+    // ========================================================
+    // ESCUTAR ALTERAÇÃO DO RESPONSÁVEL
+    // ========================================================
+
+    responsavelSelect.onchange =
+        function() {
+
+            if (!isAdmin) {
+                return;
+            }
+
+
+            const original =
+                String(
+                    document.getElementById(
+                        'editOriginalResponsibleName'
+                    ).value || ''
+                )
+                    .trim()
+                    .toLowerCase();
+
+
+            const novo =
+                String(
+                    responsavelSelect.value || ''
+                )
+                    .trim()
+                    .toLowerCase();
+
+
+            const mudou =
+                !!novo &&
+                novo !== original;
+
+
+            if (
+                transferenciaGroup
+            ) {
+
+                if (mudou) {
+
+                    transferenciaGroup.classList.remove(
+                        'hidden'
+                    );
+
+                    transferenciaGroup.style.display =
+                        'block';
+
+
+                    setTimeout(
+                        () => {
+
+                            instrucaoInput?.focus();
+
+                        },
+                        50
+                    );
+
+                } else {
+
+                    transferenciaGroup.classList.add(
+                        'hidden'
+                    );
+
+                    transferenciaGroup.style.display =
+                        'none';
+
+
+                    if (instrucaoInput) {
+
+                        instrucaoInput.value =
+                            '';
+                    }
+                }
+            }
+        };
+
+
+    // ========================================================
+    // CAMPOS DO ANÚNCIO
+    // ========================================================
+
+    const photoType =
+        order.photoType;
+
+
+    const isAnuncio =
+        (
+            photoType ===
+                'criar_anuncio' ||
+
+            photoType ===
+                'replicar_anuncio' ||
+
+            photoType ===
+                'edicao'
+        );
+
+
+    const editCamposAnuncio =
+        document.getElementById(
+            'editCamposAnuncio'
+        );
+
+
+    if (editCamposAnuncio) {
+
+        editCamposAnuncio.classList.toggle(
+            'hidden',
+            !isAnuncio
+        );
+    }
+
+
+    // ========================================================
+    // MOTIVO DE REJEIÇÃO
+    // ========================================================
+
+    const motivoGroup =
+        document.getElementById(
+            'editMotivoRejeicaoGroup'
+        );
+
+
+    const motivoInput =
+        document.getElementById(
+            'editMotivoRejeicao'
+        );
+
+
+    if (
+        motivoGroup &&
+        isAdmin &&
+        order.motivo_rejeicao
+    ) {
+
+        motivoGroup.classList.remove(
+            'hidden'
+        );
+
+
+        if (motivoInput) {
+
+            motivoInput.value =
+                order.motivo_rejeicao || '';
+        }
+
+    } else if (motivoGroup) {
+
+        motivoGroup.classList.add(
+            'hidden'
+        );
+
+
+        if (motivoInput) {
+
+            motivoInput.value =
+                '';
+        }
+    }
+
+
+    // ========================================================
+    // CONTADOR DO PRODUTO
+    // ========================================================
+
+    const campoProduto =
+        document.getElementById(
+            'editProductName'
+        );
+
+
+    const contador =
+        document.getElementById(
+            'editContadorProduto'
+        );
+
+
+    if (
+        campoProduto &&
+        contador
+    ) {
+
+        function atualizarContadorEdit() {
+
+            const len =
+                campoProduto.value.length;
+
+
+            const max =
+                200;
+
+
+            contador.textContent =
+                `${len}/${max}`;
+
+
+            contador.style.color =
+                len >= max
+                    ? '#dc3545'
+                    : (
+                        len >= 180
+                            ? '#ffc107'
+                            : '#6c757d'
+                    );
+            contador.style.fontWeight =
+                len >= 180
+                    ? 'bold'
+                    : 'normal';
+        }
+        campoProduto.oninput =
+            atualizarContadorEdit;
+        atualizarContadorEdit();
+    }
+    modal.classList.remove(
+        'hidden'
+    );
 };
 
 window.fecharModalEdicaoOS = function() {
@@ -20917,98 +21464,766 @@ window.fecharModalEdicaoOS = function() {
     editingOSId = null;
 };
 
-window.salvarEdicaoOS = async function() {
-    const orderId = document.getElementById('editOSId').value;
-    if (!orderId) {
-        showToast('ID inválido', 'error');
-        return;
-    }
-    
-    // Coletar dados
-    const productName = document.getElementById('editProductName').value.trim();
-    const responsibleName = document.getElementById('editResponsibleName').value;
-    const urgency = document.getElementById('editUrgency').value;
-    const osType = document.getElementById('editOsType').value;
-    const photoType = document.getElementById('editPhotoType').value;
-    const linkAnuncio = document.getElementById('editLinkAnuncio').value.trim();
-    const skus = document.getElementById('editSkus').value.split(',').map(s => s.trim()).filter(s => s);
-    const observations = document.getElementById('editObservations').value.trim();
-    const valorAnuncio = parseFloat(document.getElementById('editValorAnuncio').value) || 0;
-    const descricaoAnuncio = document.getElementById('editDescricaoAnuncio').value.trim();
-    const linkNovoAnuncio = document.getElementById('editLinkNovoAnuncio').value.trim();
-    const precisaFoto = document.getElementById('editPrecisaFoto').value;
-    const motivoRejeicao = document.getElementById('editMotivoRejeicao').value.trim();
-    
-    // Validação
-    if (!productName || !responsibleName) {
-        showToast('Preencha produto e responsável', 'warning');
-        return;
-    }
-    
-    // Montar objeto de atualização
-    const updateData = {
-        produto_nome: productName,
-        responsavel: responsibleName,
-        urgencia: urgency,
-        tipo_os: osType,
-        tipo_foto: photoType,
-        link_anuncio: linkAnuncio,
-        skus: skus,
-        observacoes: observations,
-        valor_anuncio: valorAnuncio,
-        descricao_anuncio: descricaoAnuncio,
-        link_novo_anuncio: linkNovoAnuncio,
-        precisa_foto: precisaFoto,
-        ultima_atualizacao: new Date().toISOString()
-    };
-    
-    // Se admin e motivo foi alterado, atualizar também
-    if (currentUser.role === 'Administrador' && motivoRejeicao !== undefined) {
-        updateData.motivo_rejeicao = motivoRejeicao || null;
-        // Se o motivo foi removido (vazio), e a OS está pendente com motivo, podemos limpar?
-        // Vamos manter, mas se o admin quiser remover, ele pode.
-    }
-    
-    try {
-        if (!supabaseClient) throw new Error('Supabase não conectado');
-        const { error } = await supabaseClient
-            .from('ordens_service')
-            .update(updateData)
-            .eq('id', orderId);
-        if (error) throw error;
-        
-        // Atualizar a lista local
-        const idx = orders.findIndex(o => o.id == orderId);
-        if (idx !== -1) {
-            const old = orders[idx];
-            orders[idx] = {
-                ...old,
-                productName: updateData.produto_nome,
-                responsibleName: updateData.responsavel,
-                urgency: updateData.urgencia,
-                osType: updateData.tipo_os,
-                photoType: updateData.tipo_foto,
-                linkAnuncio: updateData.link_anuncio,
-                skus: updateData.skus,
-                observations: updateData.observacoes,
-                valorAnuncio: updateData.valor_anuncio,
-                descricaoAnuncio: updateData.descricao_anuncio,
-                linkNovoAnuncio: updateData.link_novo_anuncio,
-                precisaFoto: updateData.precisa_foto,
-                updatedAt: updateData.ultima_atualizacao,
-                motivo_rejeicao: updateData.motivo_rejeicao !== undefined ? updateData.motivo_rejeicao : old.motivo_rejeicao
-            };
+// ============================================================
+// SALVAR EDIÇÃO DA OS
+// + TRANSFERÊNCIA DE RESPONSÁVEL
+// ============================================================
+
+window.salvarEdicaoOS =
+    async function() {
+
+        const orderId =
+            document.getElementById(
+                'editOSId'
+            ).value;
+
+
+        if (!orderId) {
+
+            showToast(
+                'ID inválido',
+                'error'
+            );
+
+            return;
         }
-        
-        showToast('✅ OS atualizada com sucesso!', 'success');
-        fecharModalEdicaoOS();
-        renderOrdersTable();
-        updateCounters();
-    } catch (error) {
-        console.error('Erro ao salvar edição:', error);
-        showToast('❌ Erro ao salvar: ' + error.message, 'error');
-    }
-};
+
+
+        const order =
+            orders.find(
+                o =>
+                    String(o.id) ===
+                    String(orderId)
+            );
+
+
+        if (!order) {
+
+            showToast(
+                'OS não encontrada',
+                'error'
+            );
+
+            return;
+        }
+
+
+        // ====================================================
+        // COLETAR CAMPOS NORMAIS
+        // ====================================================
+
+        const productName =
+            document.getElementById(
+                'editProductName'
+            ).value.trim();
+
+
+        const responsibleName =
+            document.getElementById(
+                'editResponsibleName'
+            ).value;
+
+
+        const originalResponsibleName =
+            document.getElementById(
+                'editOriginalResponsibleName'
+            ).value;
+
+
+        const urgency =
+            document.getElementById(
+                'editUrgency'
+            ).value;
+
+
+        const osType =
+            document.getElementById(
+                'editOsType'
+            ).value;
+
+
+        const photoType =
+            document.getElementById(
+                'editPhotoType'
+            ).value;
+
+
+        const linkAnuncio =
+            document.getElementById(
+                'editLinkAnuncio'
+            ).value.trim();
+
+
+        const skus =
+            document.getElementById(
+                'editSkus'
+            ).value
+                .split(',')
+                .map(
+                    s =>
+                        s.trim()
+                )
+                .filter(Boolean);
+
+
+        const observations =
+            document.getElementById(
+                'editObservations'
+            ).value.trim();
+
+
+        const valorAnuncio =
+            parseFloat(
+                document.getElementById(
+                    'editValorAnuncio'
+                ).value
+            ) || 0;
+
+
+        const descricaoAnuncio =
+            document.getElementById(
+                'editDescricaoAnuncio'
+            ).value.trim();
+
+
+        const linkNovoAnuncio =
+            document.getElementById(
+                'editLinkNovoAnuncio'
+            ).value.trim();
+
+
+        const precisaFoto =
+            document.getElementById(
+                'editPrecisaFoto'
+            ).value;
+
+
+        const motivoInput =
+            document.getElementById(
+                'editMotivoRejeicao'
+            );
+
+
+        const motivoRejeicao =
+            motivoInput
+                ? motivoInput.value.trim()
+                : '';
+
+
+        const instrucaoTransferencia =
+            document.getElementById(
+                'editInstrucaoTransferencia'
+            )?.value
+                ?.trim() ||
+            '';
+
+
+        // ====================================================
+        // IDENTIFICAR TRANSFERÊNCIA
+        // ====================================================
+
+        const responsavelMudou =
+            String(
+                responsibleName || ''
+            )
+                .trim()
+                .toLowerCase() !==
+
+            String(
+                originalResponsibleName || ''
+            )
+                .trim()
+                .toLowerCase();
+
+
+        const isAdmin =
+            currentUser &&
+            currentUser.role ===
+            'Administrador';
+
+
+        // ====================================================
+        // VALIDAÇÕES
+        // ====================================================
+
+        if (
+            !productName ||
+            !responsibleName
+        ) {
+
+            showToast(
+                'Preencha produto e responsável',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        // Somente admin troca responsável
+        if (
+            responsavelMudou &&
+            !isAdmin
+        ) {
+
+            showToast(
+                '⛔ Somente administradores podem alterar o responsável da OS.',
+                'error'
+            );
+
+            return;
+        }
+
+
+        // Se mudar responsável, instrução obrigatória
+        if (
+            responsavelMudou &&
+            !instrucaoTransferencia
+        ) {
+
+            showToast(
+                '⚠️ Informe o que o novo responsável precisa fazer.',
+                'warning'
+            );
+
+
+            document.getElementById(
+                'editInstrucaoTransferencia'
+            )?.focus();
+
+
+            return;
+        }
+
+
+        if (
+            responsavelMudou &&
+            instrucaoTransferencia.length <
+            5
+        ) {
+
+            showToast(
+                '⚠️ Descreva melhor o que o novo responsável precisa fazer.',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        // ====================================================
+        // CONFIRMAÇÃO DA TRANSFERÊNCIA
+        // ====================================================
+
+        if (responsavelMudou) {
+
+            const confirmar =
+                confirm(
+                    `TRANSFERIR ESTA OS?\n\n` +
+                    `Responsável atual: ${originalResponsibleName}\n` +
+                    `Novo responsável: ${responsibleName}\n\n` +
+                    `O que deverá fazer:\n${instrucaoTransferencia}\n\n` +
+                    `A OS será colocada em PENDENTES para ${responsibleName}.\n` +
+                    `Todos os dados atuais serão preservados no histórico.`
+                );
+
+
+            if (!confirmar) {
+                return;
+            }
+        }
+
+
+        const agoraISO =
+            new Date()
+                .toISOString();
+
+
+        // ====================================================
+        // DADOS NORMAIS DA EDIÇÃO
+        // ====================================================
+
+        const updateData = {
+
+            produto_nome:
+                productName,
+
+            responsavel:
+                responsibleName,
+
+            urgencia:
+                urgency,
+
+            tipo_os:
+                osType,
+
+            tipo_foto:
+                photoType,
+
+            link_anuncio:
+                linkAnuncio,
+
+            skus:
+                skus,
+
+            observacoes:
+                observations,
+
+            valor_anuncio:
+                valorAnuncio,
+
+            descricao_anuncio:
+                descricaoAnuncio,
+
+            link_novo_anuncio:
+                linkNovoAnuncio,
+
+            precisa_foto:
+                precisaFoto,
+
+            ultima_atualizacao:
+                agoraISO
+        };
+
+
+        // ====================================================
+        // ADMIN PODE ALTERAR O MOTIVO NORMALMENTE
+        // ====================================================
+
+        if (
+            isAdmin &&
+            motivoInput &&
+            !responsavelMudou
+        ) {
+
+            updateData.motivo_rejeicao =
+                motivoRejeicao ||
+                null;
+        }
+
+
+        // ====================================================
+        // TRANSFERÊNCIA
+        // ====================================================
+
+        if (responsavelMudou) {
+
+            // Guardar dados da transferência
+            updateData.responsavel_anterior =
+                originalResponsibleName;
+
+
+            updateData.instrucao_transferencia =
+                instrucaoTransferencia;
+
+
+            updateData.transferido_por =
+                currentUser.name;
+
+
+            updateData.data_transferencia =
+                agoraISO;
+
+
+            updateData.status_anterior_transferencia =
+                order.status;
+
+
+            updateData.transferencia_pendente =
+                true;
+
+
+            // ================================================
+            // NOVO RESPONSÁVEL RECEBE COMO PENDENTE
+            // ================================================
+
+            updateData.status =
+                'pendente';
+
+
+            // ================================================
+            // LIMPAR APENAS O ESTADO OPERACIONAL ATUAL
+            //
+            // O estado anterior será salvo no histórico.
+            // Fotos, edições, SKU, observações etc.
+            // NÃO são removidos.
+            // ================================================
+
+            updateData.motivo_rejeicao =
+                null;
+
+
+            updateData.rejeitado_por =
+                null;
+
+
+            updateData.data_rejeicao =
+                null;
+
+
+            updateData.conferido =
+                false;
+
+
+            updateData.conferido_por =
+                null;
+
+
+            updateData.data_conferencia =
+                null;
+
+
+            updateData.data_conclusao =
+                null;
+
+
+            // Novo responsável ainda não iniciou
+            updateData.data_inicio =
+                null;
+
+
+            // Para aparecer como nova notificação
+            updateData.user_notified =
+                false;
+        }
+
+
+        try {
+
+            if (!supabaseClient) {
+
+                throw new Error(
+                    'Supabase não conectado'
+                );
+            }
+
+
+            // =================================================
+            // SALVAR ESTADO ANTERIOR NO HISTÓRICO
+            // ANTES DA TRANSFERÊNCIA
+            // =================================================
+
+            if (
+                responsavelMudou &&
+                typeof salvarHistoricoOS ===
+                'function'
+            ) {
+
+                const dadosDepoisHistorico = {
+
+                    ...order,
+
+                    responsibleName:
+                        responsibleName,
+
+                    status:
+                        'pendente',
+
+                    transferenciaPendente:
+                        true,
+
+                    instrucaoTransferencia:
+                        instrucaoTransferencia,
+
+                    responsavelAnterior:
+                        originalResponsibleName,
+
+                    transferidoPor:
+                        currentUser.name,
+
+                    dataTransferencia:
+                        agoraISO
+                };
+
+
+                await salvarHistoricoOS(
+                    orderId,
+                    { ...order },
+                    dadosDepoisHistorico,
+                    currentUser.name
+                );
+            }
+
+
+            // =================================================
+            // ATUALIZAR SUPABASE
+            // =================================================
+
+            const {
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .update(
+                        updateData
+                    )
+                    .eq(
+                        'id',
+                        orderId
+                    );
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            // =================================================
+            // ATUALIZAÇÃO LOCAL
+            // =================================================
+
+            const idx =
+                orders.findIndex(
+                    o =>
+                        String(o.id) ===
+                        String(orderId)
+                );
+
+
+            if (
+                idx !== -1
+            ) {
+
+                const old =
+                    orders[idx];
+
+
+                orders[idx] = {
+
+                    ...old,
+
+                    productName:
+                        updateData.produto_nome,
+
+                    responsibleName:
+                        updateData.responsavel,
+
+                    urgency:
+                        updateData.urgencia,
+
+                    osType:
+                        updateData.tipo_os,
+
+                    photoType:
+                        updateData.tipo_foto,
+
+                    linkAnuncio:
+                        updateData.link_anuncio,
+
+                    skus:
+                        updateData.skus,
+
+                    observations:
+                        updateData.observacoes,
+
+                    valorAnuncio:
+                        updateData.valor_anuncio,
+
+                    descricaoAnuncio:
+                        updateData.descricao_anuncio,
+
+                    linkNovoAnuncio:
+                        updateData.link_novo_anuncio,
+
+                    precisaFoto:
+                        updateData.precisa_foto,
+
+                    updatedAt:
+                        updateData.ultima_atualizacao,
+
+                    motivo_rejeicao:
+                        updateData.motivo_rejeicao !==
+                        undefined
+                            ? updateData.motivo_rejeicao
+                            : old.motivo_rejeicao
+                };
+
+
+                // =============================================
+                // CAMPOS ESPECÍFICOS DA TRANSFERÊNCIA
+                // =============================================
+
+                if (
+                    responsavelMudou
+                ) {
+
+                    orders[idx].status =
+                        'pendente';
+
+
+                    orders[idx].transferenciaPendente =
+                        true;
+
+
+                    orders[idx].instrucaoTransferencia =
+                        instrucaoTransferencia;
+
+
+                    orders[idx].responsavelAnterior =
+                        originalResponsibleName;
+
+
+                    orders[idx].transferidoPor =
+                        currentUser.name;
+
+
+                    orders[idx].dataTransferencia =
+                        agoraISO;
+
+
+                    orders[idx].statusAnteriorTransferencia =
+                        order.status;
+
+
+                    orders[idx].motivo_rejeicao =
+                        null;
+
+
+                    orders[idx].rejeitado_por =
+                        null;
+
+
+                    orders[idx].data_rejeicao =
+                        null;
+
+
+                    orders[idx].conferido =
+                        false;
+
+
+                    orders[idx].conferidoPor =
+                        null;
+
+
+                    orders[idx].dataConferencia =
+                        null;
+
+
+                    orders[idx].completionDate =
+                        null;
+
+
+                    orders[idx].startedAt =
+                        null;
+
+
+                    orders[idx].user_notified =
+                        false;
+                }
+            }
+
+
+            // =================================================
+            // NOTIFICAR NOVO RESPONSÁVEL
+            // =================================================
+
+            if (
+                responsavelMudou
+            ) {
+
+                try {
+
+                    const assunto =
+                        `📋 OS transferida para você: ${order.code}`;
+
+
+                    const mensagem =
+`
+Olá ${responsibleName},
+
+Uma Ordem de Serviço foi transferida para você.
+
+OS: ${order.code}
+Produto: ${productName}
+
+Responsável anterior:
+${originalResponsibleName}
+
+Transferido por:
+${currentUser.name}
+
+O QUE VOCÊ PRECISA FAZER:
+
+${instrucaoTransferencia}
+
+A OS está disponível no filtro "Pendentes".
+
+Os dados, fotos e informações já existentes na OS foram mantidos.
+
+Sistema Wheel Tech
+`;
+
+
+                    await enviarNotificacaoEmail(
+                        responsibleName,
+                        assunto,
+                        mensagem
+                    );
+
+
+                } catch (
+                    erroEmail
+                ) {
+
+                    console.warn(
+                        '⚠️ A transferência foi salva, mas houve erro na notificação:',
+                        erroEmail
+                    );
+                }
+            }
+
+
+            // =================================================
+            // FINAL
+            // =================================================
+
+            fecharModalEdicaoOS();
+
+
+            renderOrdersTable();
+
+
+            updateCounters();
+
+
+            updateOSNotificationBell();
+
+
+            if (
+                responsavelMudou
+            ) {
+
+                showToast(
+                    `✅ OS transferida para ${responsibleName} e enviada para Pendentes.`,
+                    'success'
+                );
+
+            } else {
+
+                showToast(
+                    '✅ OS atualizada com sucesso!',
+                    'success'
+                );
+            }
+
+
+        } catch (error) {
+
+            console.error(
+                '❌ Erro ao salvar edição da OS:',
+                error
+            );
+
+
+            showToast(
+                '❌ Erro ao salvar: ' +
+                error.message,
+                'error'
+            );
+        }
+    };
 
 // ============================================
 // FUNÇÃO PARA APROVAR REEMBOLSO (Marcar como Reembolsado)
