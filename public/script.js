@@ -535,19 +535,17 @@ async function carregarStatusMetaRonald() {
     }
 
 
-    if (
-        !config ||
-        config.ativo === false
-    ) {
+    if (!config) {
 
-        return {
+    return {
+        ativo: false,
+        configurada: false
+    };
+}
 
-            ativo:
-                false
 
-        };
-    }
-
+const metaPausada =
+    config.ativo === false;
 
     const metaDiaria =
         Number(
@@ -564,6 +562,65 @@ async function carregarStatusMetaRonald() {
         dataLocalISO(
             new Date()
         );
+
+        // ============================================================
+// PERÍODOS EM QUE A META FICOU PAUSADA
+// ============================================================
+
+const {
+    data: pausasMeta,
+    error: pausasError
+} =
+    await supabaseClient
+        .from(
+            'os_conferencia_meta_pausas'
+        )
+        .select(
+            'inicio, fim_exclusivo'
+        )
+        .eq(
+            'username',
+            META_RONALD_CONFIG.username
+        )
+        .lte(
+            'inicio',
+            hoje
+        );
+
+
+if (pausasError) {
+    throw pausasError;
+}
+
+
+function dataEstaPausadaMetaRonald(
+    dataString
+) {
+
+    return (
+        pausasMeta ||
+        []
+    ).some(
+        pausa => {
+
+            const depoisInicio =
+                dataString >=
+                pausa.inicio;
+
+
+            const antesFim =
+                !pausa.fim_exclusivo ||
+                dataString <
+                pausa.fim_exclusivo;
+
+
+            return (
+                depoisInicio &&
+                antesFim
+            );
+        }
+    );
+}
 
 
     // ========================================================
@@ -728,12 +785,21 @@ async function carregarStatusMetaRonald() {
             0;
 
 
-        const metaDesteDia =
-            ehDiaDeMetaRonald(
-                cursor
-            )
-                ? metaDiaria
-                : 0;
+        const diaEstaPausado =
+    dataEstaPausadaMetaRonald(
+        chave
+    );
+
+
+const metaDesteDia =
+    (
+        ehDiaDeMetaRonald(
+            cursor
+        ) &&
+        !diaEstaPausado
+    )
+        ? metaDiaria
+        : 0;
 
 
         const ehHoje =
@@ -1008,10 +1074,16 @@ async function carregarStatusMetaRonald() {
 
     return {
 
-        ativo:
-            true,
+    configurada:
+        true,
 
-        metaDiaria,
+    ativo:
+        !metaPausada,
+
+    pausada:
+        metaPausada,
+
+    metaDiaria,
 
         dataInicio,
 
@@ -1076,6 +1148,146 @@ function fecharModalMetaRonald() {
         modal.remove();
     }
 }
+
+// ============================================================
+// ANDRESSA - PAUSAR / RETOMAR META DO RONALD
+// ============================================================
+
+window.alternarPausaMetaRonald =
+    async function() {
+
+        if (
+            !currentUser ||
+            currentUser.username !==
+            'andressamiotto'
+        ) {
+
+            showToast(
+                '⛔ Somente Andressa pode alterar a meta do Ronald.',
+                'error'
+            );
+
+            return;
+        }
+
+
+        try {
+
+            const status =
+                await carregarStatusMetaRonald();
+
+
+            const estaPausada =
+                status.pausada === true;
+
+
+            const acao =
+                estaPausada
+                    ? 'RETOMAR'
+                    : 'PAUSAR';
+
+
+            let mensagem;
+
+
+            if (estaPausada) {
+
+                mensagem =
+                    'Deseja RETOMAR a meta do Ronald?\n\n' +
+                    'A partir de hoje a meta voltará a ser cobrada.\n' +
+                    'A pendência anterior será mantida.';
+
+            } else {
+
+                mensagem =
+                    'Deseja PAUSAR a meta do Ronald?\n\n' +
+                    'Enquanto estiver pausada:\n' +
+                    '- ele não receberá notificações\n' +
+                    '- não será bloqueado\n' +
+                    '- novos dias não acumularão meta\n' +
+                    '- a pendência atual será preservada';
+            }
+
+
+            if (
+                !confirm(
+                    mensagem
+                )
+            ) {
+
+                return;
+            }
+
+
+            const {
+                data,
+                error
+            } =
+                await supabaseClient
+                    .rpc(
+                        'alterar_pausa_meta_ronald',
+                        {
+
+                            p_admin_username:
+                                currentUser.username,
+
+                            p_pausar:
+                                !estaPausada
+
+                        }
+                    );
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            if (estaPausada) {
+
+                showToast(
+                    '▶️ Meta do Ronald retomada.',
+                    'success'
+                );
+
+            } else {
+
+                showToast(
+                    '⏸️ Meta do Ronald pausada.',
+                    'success'
+                );
+            }
+
+
+            fecharPainelMetaRonald();
+
+
+            // Reabre já atualizado
+            setTimeout(
+                () => {
+
+                    abrirPainelMetaRonald();
+
+                },
+                250
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                '❌ Erro alterando pausa da meta:',
+                error
+            );
+
+
+            showToast(
+                '❌ Erro ao alterar a meta: ' +
+                error.message,
+                'error'
+            );
+        }
+    };
 
 
 // ============================================================
@@ -1568,7 +1780,21 @@ window.ignorarAvisoMetaRonald =
             const status =
                 await carregarStatusMetaRonald();
 
+if (
+    status.pausada
+) {
 
+    fecharModalMetaRonald();
+
+
+    showToast(
+        '⏸️ A meta está pausada.',
+        'info'
+    );
+
+
+    return;
+}
             if (
                 status.faltamHoje <= 0
             ) {
@@ -2233,16 +2459,42 @@ async function verificarMetaRonald(
 
 
         if (
-            !status ||
-            status.ativo === false
-        ) {
+    !status ||
+    status.configurada === false
+) {
 
-            desativarBloqueioVisualMetaRonald();
+    desativarBloqueioVisualMetaRonald();
 
-            fecharModalMetaRonald();
+    fecharModalMetaRonald();
 
-            return status;
-        }
+    return status;
+}
+
+
+// ============================================================
+// META PAUSADA PELA ANDRESSA
+//
+// - não notifica
+// - não bloqueia
+// - não exige conferência
+// ============================================================
+
+if (
+    status.pausada === true
+) {
+
+    console.log(
+        '⏸️ Meta do Ronald está pausada.'
+    );
+
+
+    desativarBloqueioVisualMetaRonald();
+
+    fecharModalMetaRonald();
+
+
+    return status;
+}
 
 
         // ====================================================
@@ -2696,15 +2948,23 @@ instalarGuardMetaRonald();
 
 // ============================================================
 // PAINEL ADMINISTRATIVO DA ANDRESSA
+// CONTROLE DA META DO RONALD
 // ============================================================
 
 window.abrirPainelMetaRonald =
     async function() {
 
+        // ====================================================
+        // PERMISSÃO
+        // SOMENTE ANDRESSAMIOTTO
+        // ====================================================
+
         if (
             !currentUser ||
-            currentUser.username !==
-            META_RONALD_CONFIG.adminUsername
+            String(currentUser.username || '')
+                .trim()
+                .toLowerCase() !==
+                META_RONALD_CONFIG.adminUsername
         ) {
 
             showToast(
@@ -2718,9 +2978,25 @@ window.abrirPainelMetaRonald =
 
         try {
 
+            // =================================================
+            // CARREGAR STATUS ATUAL
+            // =================================================
+
             const status =
                 await carregarStatusMetaRonald();
 
+
+            if (!status) {
+
+                throw new Error(
+                    'Não foi possível carregar a situação da meta.'
+                );
+            }
+
+
+            // =================================================
+            // REMOVER PAINEL ANTIGO, SE EXISTIR
+            // =================================================
 
             let modal =
                 document.getElementById(
@@ -2733,39 +3009,77 @@ window.abrirPainelMetaRonald =
             }
 
 
-            modal =
-                document.createElement(
-                    'div'
-                );
+            // =================================================
+            // ESTADOS
+            // =================================================
 
-
-            modal.id =
-                'painelMetaRonaldModal';
-
-
-            modal.style.cssText = `
-                position:fixed;
-                inset:0;
-                background:rgba(0,0,0,.58);
-                z-index:999999;
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                padding:20px;
-            `;
+            const metaPausada =
+                status.pausada === true;
 
 
             const bloqueado =
-                !!status.estado
-                    ?.bloqueado;
+                !!status.estado?.bloqueado;
 
+
+            const metaDiaria =
+                Number(
+                    status.metaDiaria
+                ) || 15;
+
+
+            const conferidasHoje =
+                Number(
+                    status.conferidasHoje
+                ) || 0;
+
+
+            const pendenciaAnterior =
+                Number(
+                    status.pendenciaAnterior
+                ) || 0;
+
+
+            const faltamHoje =
+                Number(
+                    status.faltamHoje
+                ) || 0;
+
+
+            const exigenciaTotalHoje =
+                Number(
+                    status.exigenciaTotalHoje
+                ) || 0;
+
+
+            const ignoradasHoje =
+                Number(
+                    status.ignoradasHoje
+                ) || 0;
+
+
+            const diasIgnoradosSemana =
+                Number(
+                    status.diasIgnoradosSemana
+                ) || 0;
+
+
+            const osDisponiveis =
+                Number(
+                    status.osDisponiveis
+                ) || 0;
+
+
+            // =================================================
+            // LIBERAÇÃO ADMINISTRATIVA
+            // =================================================
 
             let liberacao =
                 'Não';
 
 
             if (
-                status.overrideAtivo
+                status.overrideAtivo &&
+                status.estado?.desbloqueado_admin_ate
             ) {
 
                 liberacao =
@@ -2778,49 +3092,151 @@ window.abrirPainelMetaRonald =
             }
 
 
+            // =================================================
+            // MOTIVO DO BLOQUEIO
+            // =================================================
+
+            const motivoBloqueio =
+                status.estado
+                    ?.motivo_bloqueio ||
+                'Não informado';
+
+
+            // =================================================
+            // DATA DE INÍCIO
+            // =================================================
+
+            let dataInicioFormatada =
+                '-';
+
+
+            if (
+                status.dataInicio
+            ) {
+
+                try {
+
+                    const partes =
+                        String(
+                            status.dataInicio
+                        )
+                            .split('-')
+                            .map(Number);
+
+
+                    dataInicioFormatada =
+                        new Date(
+                            partes[0],
+                            partes[1] - 1,
+                            partes[2]
+                        ).toLocaleDateString(
+                            'pt-BR'
+                        );
+
+                } catch (error) {
+
+                    dataInicioFormatada =
+                        status.dataInicio;
+                }
+            }
+
+
+            // =================================================
+            // CRIAR MODAL
+            // =================================================
+
+            modal =
+                document.createElement(
+                    'div'
+                );
+
+
+            modal.id =
+                'painelMetaRonaldModal';
+
+
+            modal.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,.58);
+                z-index: 999999;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                overflow-y: auto;
+            `;
+
+
+            // =================================================
+            // HTML
+            // =================================================
+
             modal.innerHTML = `
 
                 <div style="
-                    background:white;
-                    width:100%;
-                    max-width:620px;
-                    border-radius:14px;
-                    overflow:hidden;
-                    box-shadow:0 20px 60px rgba(0,0,0,.3);
+                    background: white;
+                    width: 100%;
+                    max-width: 720px;
+                    border-radius: 14px;
+                    overflow: hidden;
+                    box-shadow: 0 20px 60px rgba(0,0,0,.30);
+                    margin: auto;
                 ">
 
+                    <!-- ===================================== -->
+                    <!-- CABEÇALHO -->
+                    <!-- ===================================== -->
+
                     <div style="
-                        padding:20px 24px;
-                        background:linear-gradient(
+                        padding: 20px 24px;
+                        background: linear-gradient(
                             135deg,
                             #ff9800,
                             #f57c00
                         );
-                        color:white;
-                        display:flex;
-                        justify-content:space-between;
-                        align-items:center;
+                        color: white;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
                     ">
 
                         <div>
-                            <strong style="
-                                font-size:20px;
+
+                            <div style="
+                                font-size: 20px;
+                                font-weight: 800;
                             ">
+
                                 <i class="fas fa-user-shield"></i>
+
                                 Controle da Meta — Ronald
-                            </strong>
+
+                            </div>
+
+                            <div style="
+                                font-size: 12px;
+                                opacity: .9;
+                                margin-top: 4px;
+                            ">
+                                Conferência diária de Ordens de Serviço
+                            </div>
+
                         </div>
 
 
                         <button
                             onclick="fecharPainelMetaRonald()"
                             style="
-                                border:none;
-                                background:transparent;
-                                color:white;
-                                font-size:26px;
-                                cursor:pointer;
+                                border: none;
+                                background: transparent;
+                                color: white;
+                                font-size: 28px;
+                                line-height: 1;
+                                cursor: pointer;
+                                padding: 5px 10px;
                             "
+                            title="Fechar"
                         >
                             &times;
                         </button>
@@ -2828,198 +3244,575 @@ window.abrirPainelMetaRonald =
                     </div>
 
 
+                    <!-- ===================================== -->
+                    <!-- CORPO -->
+                    <!-- ===================================== -->
+
                     <div style="
-                        padding:24px;
+                        padding: 24px;
                     ">
 
+
+                        <!-- ================================= -->
+                        <!-- STATUS ATIVA / PAUSADA -->
+                        <!-- ================================= -->
+
                         <div style="
-                            display:grid;
-                            grid-template-columns:
-                                repeat(2,minmax(0,1fr));
-                            gap:10px;
+                            margin-bottom: 20px;
+                            padding: 18px;
+                            border-radius: 10px;
+
+                            background:
+                                ${
+                                    metaPausada
+                                        ? '#fff3cd'
+                                        : '#e8f5e9'
+                                };
+
+                            border: 1px solid
+                                ${
+                                    metaPausada
+                                        ? '#ffe69c'
+                                        : '#a5d6a7'
+                                };
+
+                            text-align: center;
                         ">
 
                             <div style="
-                                background:#f8f9fa;
-                                padding:14px;
-                                border-radius:8px;
+                                font-size: 19px;
+                                font-weight: 800;
+
+                                color:
+                                    ${
+                                        metaPausada
+                                            ? '#856404'
+                                            : '#1b5e20'
+                                    };
                             ">
-                                Meta diária
-                                <br>
-                                <strong style="font-size:24px;">
-                                    ${status.metaDiaria}
-                                </strong>
+
+                                ${
+                                    metaPausada
+                                        ? `
+                                            <i class="fas fa-pause-circle"></i>
+                                            META PAUSADA
+                                        `
+                                        : `
+                                            <i class="fas fa-play-circle"></i>
+                                            META ATIVA
+                                        `
+                                }
+
                             </div>
 
 
                             <div style="
-                                background:#f8f9fa;
-                                padding:14px;
-                                border-radius:8px;
+                                font-size: 13px;
+                                margin-top: 7px;
+                                color: #555;
+                                line-height: 1.5;
                             ">
-                                Conferidas hoje
-                                <br>
-                                <strong style="font-size:24px;">
-                                    ${status.conferidasHoje}
-                                </strong>
+
+                                ${
+                                    metaPausada
+                                        ? `
+                                            Ronald não está recebendo notificações,
+                                            não será bloqueado e os dias pausados
+                                            não geram novas metas.
+                                            <br>
+                                            A pendência existente permanece preservada.
+                                        `
+                                        : `
+                                            Ronald está sujeito à meta diária,
+                                            às notificações e ao bloqueio
+                                            caso ultrapasse os limites de ignorar.
+                                        `
+                                }
+
                             </div>
 
 
-                            <div style="
-                                background:#fff3cd;
-                                padding:14px;
-                                border-radius:8px;
-                            ">
-                                Pendência anterior
-                                <br>
-                                <strong style="font-size:24px;">
-                                    ${status.pendenciaAnterior}
-                                </strong>
-                            </div>
+                            <button
+                                onclick="alternarPausaMetaRonald()"
+                                style="
+                                    margin-top: 14px;
+                                    border: none;
+                                    padding: 12px 22px;
+                                    border-radius: 8px;
+                                    cursor: pointer;
+                                    font-weight: 800;
+                                    font-size: 14px;
+
+                                    background:
+                                        ${
+                                            metaPausada
+                                                ? '#28a745'
+                                                : '#dc3545'
+                                        };
+
+                                    color: white;
+                                "
+                            >
+
+                                ${
+                                    metaPausada
+                                        ? `
+                                            <i class="fas fa-play"></i>
+                                            Retomar Meta
+                                        `
+                                        : `
+                                            <i class="fas fa-pause"></i>
+                                            Pausar Meta
+                                        `
+                                }
+
+                            </button>
+
+                        </div>
 
 
+                        <!-- ================================= -->
+                        <!-- CARDS PRINCIPAIS -->
+                        <!-- ================================= -->
+
+                        <div style="
+                            display: grid;
+                            grid-template-columns:
+                                repeat(
+                                    2,
+                                    minmax(0,1fr)
+                                );
+                            gap: 12px;
+                        ">
+
+
+                            <!-- META DIÁRIA -->
+
                             <div style="
-                                background:#ffebee;
-                                padding:14px;
-                                border-radius:8px;
+                                background: #f8f9fa;
+                                padding: 16px;
+                                border-radius: 9px;
+                                border: 1px solid #eee;
                             ">
-                                Faltam
-                                <br>
-                                <strong style="
-                                    font-size:24px;
-                                    color:#c62828;
+
+                                <div style="
+                                    font-size: 12px;
+                                    color: #6c757d;
                                 ">
-                                    ${status.faltamHoje}
+                                    Meta diária
+                                </div>
+
+                                <strong style="
+                                    font-size: 27px;
+                                    display: block;
+                                    margin-top: 4px;
+                                ">
+                                    ${metaDiaria}
                                 </strong>
+
+                            </div>
+
+
+                            <!-- CONFERIDAS -->
+
+                            <div style="
+                                background: #e8f5e9;
+                                padding: 16px;
+                                border-radius: 9px;
+                                border: 1px solid #c8e6c9;
+                            ">
+
+                                <div style="
+                                    font-size: 12px;
+                                    color: #2e7d32;
+                                ">
+                                    Conferidas hoje
+                                </div>
+
+                                <strong style="
+                                    font-size: 27px;
+                                    display: block;
+                                    margin-top: 4px;
+                                    color: #2e7d32;
+                                ">
+                                    ${conferidasHoje}
+                                </strong>
+
+                            </div>
+
+
+                            <!-- PENDÊNCIA -->
+
+                            <div style="
+                                background: #fff3cd;
+                                padding: 16px;
+                                border-radius: 9px;
+                                border: 1px solid #ffe69c;
+                            ">
+
+                                <div style="
+                                    font-size: 12px;
+                                    color: #856404;
+                                ">
+                                    Pendência anterior
+                                </div>
+
+                                <strong style="
+                                    font-size: 27px;
+                                    display: block;
+                                    margin-top: 4px;
+                                    color: #856404;
+                                ">
+                                    ${pendenciaAnterior}
+                                </strong>
+
+                            </div>
+
+
+                            <!-- FALTAM -->
+
+                            <div style="
+                                background:
+                                    ${
+                                        faltamHoje > 0
+                                            ? '#ffebee'
+                                            : '#e8f5e9'
+                                    };
+                                padding: 16px;
+                                border-radius: 9px;
+                                border: 1px solid
+                                    ${
+                                        faltamHoje > 0
+                                            ? '#ffcdd2'
+                                            : '#c8e6c9'
+                                    };
+                            ">
+
+                                <div style="
+                                    font-size: 12px;
+                                    color:
+                                        ${
+                                            faltamHoje > 0
+                                                ? '#c62828'
+                                                : '#2e7d32'
+                                        };
+                                ">
+                                    Ainda faltam
+                                </div>
+
+                                <strong style="
+                                    font-size: 27px;
+                                    display: block;
+                                    margin-top: 4px;
+                                    color:
+                                        ${
+                                            faltamHoje > 0
+                                                ? '#c62828'
+                                                : '#2e7d32'
+                                        };
+                                ">
+                                    ${faltamHoje}
+                                </strong>
+
                             </div>
 
                         </div>
 
 
+                        <!-- ================================= -->
+                        <!-- DETALHES -->
+                        <!-- ================================= -->
+
                         <div style="
-                            margin-top:15px;
-                            border:1px solid #ddd;
-                            border-radius:8px;
-                            padding:14px;
-                            line-height:1.8;
+                            margin-top: 18px;
+                            border: 1px solid #ddd;
+                            border-radius: 9px;
+                            padding: 16px;
+                            line-height: 1.9;
+                            font-size: 14px;
                         ">
 
-                            <strong>Meta exigida hoje:</strong>
-                            ${status.exigenciaTotalHoje}
+                            <div>
 
-                            <br>
+                                <strong>
+                                    Meta exigida hoje:
+                                </strong>
 
-                            <strong>Ignoradas hoje:</strong>
-                            ${status.ignoradasHoje}/3
+                                ${exigenciaTotalHoje}
 
-                            <br>
+                            </div>
 
-                            <strong>Dias ignorados na semana:</strong>
-                            ${status.diasIgnoradosSemana}/3
 
-                            <br>
+                            <div>
 
-                            <strong>OS disponíveis:</strong>
-                            ${status.osDisponiveis}
+                                <strong>
+                                    OS disponíveis para conferência:
+                                </strong>
 
-                            <br>
+                                ${osDisponiveis}
 
-                            <strong>Status:</strong>
+                            </div>
+
+
+                            <div>
+
+                                <strong>
+                                    Ignoradas hoje:
+                                </strong>
+
+                                ${ignoradasHoje}
+                                /
+                                ${META_RONALD_CONFIG.maxIgnoradasDia}
+
+                            </div>
+
+
+                            <div>
+
+                                <strong>
+                                    Dias com "Ignorar" nesta semana:
+                                </strong>
+
+                                ${diasIgnoradosSemana}
+                                /
+                                ${META_RONALD_CONFIG.maxDiasIgnorarSemana}
+
+                            </div>
+
+
+                            <div>
+
+                                <strong>
+                                    Início do controle:
+                                </strong>
+
+                                ${dataInicioFormatada}
+
+                            </div>
+
+                        </div>
+
+
+                        <!-- ================================= -->
+                        <!-- STATUS DO BLOQUEIO -->
+                        <!-- ================================= -->
+
+                        <div style="
+                            margin-top: 18px;
+                            padding: 16px;
+                            border-radius: 9px;
+
+                            background:
+                                ${
+                                    bloqueado
+                                        ? '#ffebee'
+                                        : '#e8f5e9'
+                                };
+
+                            border: 1px solid
+                                ${
+                                    bloqueado
+                                        ? '#ef9a9a'
+                                        : '#a5d6a7'
+                                };
+                        ">
+
+                            <div style="
+                                font-size: 16px;
+                                font-weight: 800;
+
+                                color:
+                                    ${
+                                        bloqueado
+                                            ? '#b71c1c'
+                                            : '#1b5e20'
+                                    };
+                            ">
+
+                                ${
+                                    bloqueado
+                                        ? `
+                                            <i class="fas fa-lock"></i>
+                                            Ronald está BLOQUEADO
+                                        `
+                                        : `
+                                            <i class="fas fa-unlock"></i>
+                                            Ronald está LIBERADO
+                                        `
+                                }
+
+                            </div>
+
 
                             ${
                                 bloqueado
                                     ? `
-                                        <span style="
-                                            color:#d32f2f;
-                                            font-weight:800;
+                                        <div style="
+                                            margin-top: 8px;
+                                            font-size: 12px;
+                                            color: #721c24;
                                         ">
-                                            BLOQUEADO
-                                        </span>
+
+                                            <strong>
+                                                Motivo:
+                                            </strong>
+
+                                            ${escapeHtmlMetaRonald(
+                                                motivoBloqueio
+                                            )}
+
+                                        </div>
                                     `
-                                    : `
-                                        <span style="
-                                            color:#28a745;
-                                            font-weight:800;
-                                        ">
-                                            LIBERADO
-                                        </span>
-                                    `
+                                    : ''
                             }
 
-                            <br>
+                        </div>
+
+
+                        <!-- ================================= -->
+                        <!-- LIBERAÇÃO ADMIN -->
+                        <!-- ================================= -->
+
+                        <div style="
+                            margin-top: 12px;
+                            padding: 14px;
+                            background: #f8f9fa;
+                            border: 1px solid #ddd;
+                            border-radius: 9px;
+                            font-size: 13px;
+                        ">
 
                             <strong>
                                 Liberação administrativa ativa até:
                             </strong>
+
+                            <br>
 
                             ${liberacao}
 
                         </div>
 
 
+                        <!-- ================================= -->
+                        <!-- BOTÃO DESBLOQUEAR -->
+                        <!-- ================================= -->
+
                         ${
-    bloqueado
-        ? `
-            <div style="
-                margin-top:18px;
-                padding:12px;
-                background:#ffebee;
-                border:1px solid #ef9a9a;
-                border-radius:8px;
-                color:#b71c1c;
-                text-align:center;
-                font-weight:700;
-            ">
-                <i class="fas fa-lock"></i>
-                Ronald está BLOQUEADO
-            </div>
+                            bloqueado &&
+                            !metaPausada
+                                ? `
 
-            <button
-                onclick="desbloquearRonaldAdmin()"
-                style="
-                    width:100%;
-                    border:none;
-                    background:#28a745;
-                    color:white;
-                    padding:14px;
-                    border-radius:8px;
-                    margin-top:10px;
-                    cursor:pointer;
-                    font-weight:800;
-                    font-size:15px;
-                "
-            >
-                <i class="fas fa-unlock"></i>
-                Desbloquear Ronald até o fim do dia
-            </button>
-        `
-        : `
-            <div style="
-                margin-top:18px;
-                padding:14px;
-                background:#e8f5e9;
-                border:1px solid #a5d6a7;
-                border-radius:8px;
-                color:#1b5e20;
-                text-align:center;
-                font-weight:700;
-            ">
-                <i class="fas fa-unlock"></i>
-                Ronald não está bloqueado no momento
-            </div>
-        `
-}
+                                    <button
+                                        onclick="desbloquearRonaldAdmin()"
+                                        style="
+                                            width: 100%;
+                                            border: none;
+                                            background: #28a745;
+                                            color: white;
+                                            padding: 14px;
+                                            border-radius: 8px;
+                                            margin-top: 18px;
+                                            cursor: pointer;
+                                            font-weight: 800;
+                                            font-size: 15px;
+                                        "
+                                    >
 
+                                        <i class="fas fa-unlock"></i>
+
+                                        Desbloquear Ronald até o fim do dia
+
+                                    </button>
+
+                                `
+                                : ''
+                        }
+
+
+                        <!-- ================================= -->
+                        <!-- META PAUSADA -->
+                        <!-- ================================= -->
+
+                        ${
+                            metaPausada
+                                ? `
+
+                                    <div style="
+                                        margin-top: 18px;
+                                        padding: 14px;
+                                        background: #fff3cd;
+                                        border: 1px solid #ffe69c;
+                                        border-radius: 8px;
+                                        color: #664d03;
+                                        font-size: 13px;
+                                        line-height: 1.5;
+                                    ">
+
+                                        <i class="fas fa-info-circle"></i>
+
+                                        <strong>
+                                            Não é necessário desbloquear Ronald
+                                            enquanto a meta estiver pausada.
+                                        </strong>
+
+                                        <br>
+
+                                        A pausa já impede notificações e
+                                        bloqueios da meta.
+
+                                    </div>
+
+                                `
+                                : ''
+                        }
+
+
+                        <!-- ================================= -->
+                        <!-- OBSERVAÇÃO -->
+                        <!-- ================================= -->
 
                         <div style="
-                            font-size:12px;
-                            color:#6c757d;
-                            margin-top:15px;
+                            font-size: 12px;
+                            color: #6c757d;
+                            margin-top: 18px;
+                            line-height: 1.55;
                         ">
+
+                            <i class="fas fa-info-circle"></i>
+
                             O desbloqueio administrativo não apaga
-                            a pendência de OS. Ele apenas libera
-                            excepcionalmente o sistema até o fim do dia.
+                            a pendência de conferências.
+
+                            <br>
+
+                            Ao pausar a meta, os dias durante a pausa
+                            não entram no acúmulo.
+
                         </div>
+
+
+                        <!-- ================================= -->
+                        <!-- FECHAR -->
+                        <!-- ================================= -->
+
+                        <button
+                            onclick="fecharPainelMetaRonald()"
+                            style="
+                                width: 100%;
+                                margin-top: 18px;
+                                padding: 11px;
+                                border: 1px solid #ccc;
+                                background: white;
+                                color: #555;
+                                border-radius: 8px;
+                                cursor: pointer;
+                                font-weight: 600;
+                            "
+                        >
+
+                            Fechar
+
+                        </button>
 
                     </div>
 
@@ -3027,21 +3820,45 @@ window.abrirPainelMetaRonald =
             `;
 
 
+            // =================================================
+            // ADICIONAR NA TELA
+            // =================================================
+
             document.body.appendChild(
                 modal
+            );
+
+
+            // =================================================
+            // FECHAR CLICANDO FORA DO PAINEL
+            // =================================================
+
+            modal.addEventListener(
+                'click',
+                function(event) {
+
+                    if (
+                        event.target ===
+                        modal
+                    ) {
+
+                        fecharPainelMetaRonald();
+                    }
+                }
             );
 
 
         } catch (error) {
 
             console.error(
-                'Erro abrindo painel da meta Ronald:',
+                '❌ Erro abrindo painel da meta Ronald:',
                 error
             );
 
 
             showToast(
-                '❌ Erro ao carregar controle da meta.',
+                '❌ Erro ao carregar controle da meta: ' +
+                error.message,
                 'error'
             );
         }
