@@ -1998,154 +1998,26 @@ function atualizarBannerBloqueioMetaRonald(
 }
 
 
-// ============================================================
-// RESTRIÇÃO VISUAL DA TABELA
-// ============================================================
-
 function aplicarRestricaoVisualMetaRonald() {
-
     if (
         !bloqueioMetaRonaldAtivo ||
         !currentUser ||
         currentUser.username !==
-        META_RONALD_CONFIG.username
+            META_RONALD_CONFIG.username
     ) {
-
         return;
     }
 
+    /*
+     * A aba de Ordem de Serviço permanece completamente
+     * liberada. Remove qualquer ocultação aplicada por
+     * versões anteriores do bloqueio.
+     */
+    restaurarInterfaceMetaRonald();
 
-    // ========================================================
-    // ESCONDER AÇÕES QUE NÃO FAZEM PARTE DA CONFERÊNCIA
-    // ========================================================
-
-    document
-        .querySelectorAll(
-            '#osTableBody button'
-        )
-        .forEach(
-            btn => {
-
-                const onclick =
-                    btn.getAttribute(
-                        'onclick'
-                    ) ||
-                    '';
-
-
-                const permitido =
-                    onclick.includes(
-                        'conferirOS'
-                    ) ||
-
-                    onclick.includes(
-                        'viewOrderDetails'
-                    ) ||
-
-                    onclick.includes(
-                        'viewOrderPhotos'
-                    ) ||
-
-                    onclick.includes(
-                        'abrirRejeitarModal'
-                    );
-
-
-                if (!permitido) {
-
-                    if (
-                        !btn.hasAttribute(
-                            'data-meta-ronald-display'
-                        )
-                    ) {
-
-                        btn.setAttribute(
-                            'data-meta-ronald-display',
-                            btn.style.display ||
-                            ''
-                        );
-                    }
-
-
-                    btn.style.display =
-                        'none';
-                }
-
-            }
-        );
-
-
-    // ========================================================
-    // FILTROS: DEIXAR SÓ NÃO CONFERIDAS
-    // ========================================================
-
-    document
-        .querySelectorAll(
-            '.filter-group button'
-        )
-        .forEach(
-            btn => {
-
-                const onclick =
-                    btn.getAttribute(
-                        'onclick'
-                    ) ||
-                    '';
-
-
-                if (
-                    !onclick.includes(
-                        "'nao_conferidas'"
-                    )
-                ) {
-
-                    if (
-                        !btn.hasAttribute(
-                            'data-meta-ronald-display'
-                        )
-                    ) {
-
-                        btn.setAttribute(
-                            'data-meta-ronald-display',
-                            btn.style.display ||
-                            ''
-                        );
-                    }
-
-
-                    btn.style.display =
-                        'none';
-                }
-
-            }
-        );
-
-
-    const selectOS =
-        document.getElementById(
-            'selectOSBtn'
-        );
-
-
-    if (selectOS) {
-
-        if (
-            !selectOS.hasAttribute(
-                'data-meta-ronald-display'
-            )
-        ) {
-
-            selectOS.setAttribute(
-                'data-meta-ronald-display',
-                selectOS.style.display ||
-                ''
-            );
-        }
-
-
-        selectOS.style.display =
-            'none';
-    }
+    console.log(
+        '🔒 Ronald bloqueado: outras abas bloqueadas, aba OS totalmente liberada.'
+    );
 }
 
 
@@ -2178,80 +2050,65 @@ function restaurarInterfaceMetaRonald() {
 }
 
 
-// ============================================================
-// ATIVAR BLOQUEIO VISUAL
-// ============================================================
-
 function ativarBloqueioVisualMetaRonald(
     status,
     motivo = null
 ) {
-
     if (
         !currentUser ||
         currentUser.username !==
-        META_RONALD_CONFIG.username
+            META_RONALD_CONFIG.username
     ) {
-
         return;
     }
-
 
     const jaEstavaBloqueado =
         bloqueioMetaRonaldAtivo;
 
-
     bloqueioMetaRonaldAtivo =
         true;
-
 
     ultimoStatusMetaRonald =
         status;
 
-
     fecharModalMetaRonald();
 
-
+    /*
+     * Ao ser bloqueado, Ronald é direcionado para a aba OS.
+     * A aba continua inteiramente liberada.
+     */
     if (
-        !jaEstavaBloqueado
-    ) {
-
-        if (
-            typeof window.abrirSistemaOS ===
+        !jaEstavaBloqueado &&
+        typeof window.abrirSistemaOS ===
             'function'
-        ) {
-
-            window.abrirSistemaOS();
-        }
+    ) {
+        window.abrirSistemaOS();
     }
 
-
-    currentFilter =
-        'nao_conferidas';
-
-
-    paginaAtualOS =
-        1;
-
-
-    toggleFiltroDataConcluidas(
-        false
-    );
-
-
+    /*
+     * Não força mais o filtro "Não Conferidas".
+     * Mantém o filtro que Ronald estiver utilizando.
+     */
     setTimeout(
         () => {
+            if (
+                typeof renderOrdersTable ===
+                'function'
+            ) {
+                renderOrdersTable();
+            }
 
-            renderOrdersTable();
-
-            highlightActiveFilterButton();
+            if (
+                typeof highlightActiveFilterButton ===
+                'function'
+            ) {
+                highlightActiveFilterButton();
+            }
 
             aplicarRestricaoVisualMetaRonald();
-
         },
         300
     );
-
 
     atualizarBannerBloqueioMetaRonald(
         status,
@@ -2261,40 +2118,30 @@ function ativarBloqueioVisualMetaRonald(
         'Meta de conferência pendente'
     );
 
-
-    // ========================================================
-    // ENQUANTO BLOQUEADO:
-    // CONSULTAR A CADA 30s SE ANDRESSA DESBLOQUEOU
-    // ========================================================
-
+    /*
+     * Continua verificando a cada 30 segundos se houve
+     * desbloqueio administrativo ou conclusão da meta.
+     */
     if (
         !timerPollBloqueioMetaRonald
     ) {
-
         timerPollBloqueioMetaRonald =
             setInterval(
                 () => {
-
                     if (
                         currentUser &&
                         currentUser.username ===
-                        META_RONALD_CONFIG.username &&
+                            META_RONALD_CONFIG.username &&
                         bloqueioMetaRonaldAtivo
                     ) {
+                        verificarMetaRonald({
+                            mostrarAviso:
+                                false,
 
-                        verificarMetaRonald(
-                            {
-
-                                mostrarAviso:
-                                    false,
-
-                                motivo:
-                                    'poll_bloqueio'
-
-                            }
-                        );
+                            motivo:
+                                'poll_bloqueio'
+                        });
                     }
-
                 },
                 META_RONALD_CONFIG
                     .intervaloPollBloqueio
@@ -2601,273 +2448,243 @@ function finalizarControleMetaRonaldSessao() {
 }
 
 
-// ============================================================
-// BLOQUEAR QUALQUER OUTRA AÇÃO ENQUANTO RONALD ESTIVER BLOQUEADO
-// ============================================================
-
 function elementoPermitidoDuranteBloqueioMetaRonald(
     elemento
 ) {
-
     if (!elemento) {
         return true;
     }
 
-
-    // ========================================================
-    // MODAIS QUE FAZEM PARTE DA CONFERÊNCIA
-    // ========================================================
-
+    /*
+     * Tudo dentro da aba Ordem de Serviço fica liberado.
+     * O container principal da aba OS é #mainSystem.
+     */
     if (
+        elemento.closest &&
         elemento.closest(
-            '#viewOSModal'
-        ) ||
-
-        elemento.closest(
-            '#photoViewerModal'
-        ) ||
-
-        elemento.closest(
-            '#rejeitarOSModal'
-        ) ||
-
-        elemento.closest(
-            '#ronaldMetaBloqueioBanner'
+            '#mainSystem'
         )
     ) {
-
         return true;
     }
 
-
-    // ========================================================
-    // LOGOUT CONTINUA PERMITIDO
-    // ========================================================
-
+    /*
+     * Modais pertencentes à aba OS também permanecem
+     * totalmente liberados.
+     */
     if (
-        elemento.id ===
-        'logoutBtn'
-    ) {
+        elemento.closest &&
+        (
+            elemento.closest(
+                '#viewOSModal'
+            ) ||
 
+            elemento.closest(
+                '#photoViewerModal'
+            ) ||
+
+            elemento.closest(
+                '#rejeitarOSModal'
+            ) ||
+
+            elemento.closest(
+                '#relatorioOSModal'
+            ) ||
+
+            elemento.closest(
+                '#ronaldMetaBloqueioBanner'
+            )
+        )
+    ) {
         return true;
     }
 
-
+    /*
+     * Logout continua liberado mesmo durante o bloqueio.
+     */
     const acionavel =
-        elemento.closest(
-            'button, a, input, select, textarea, [onclick]'
-        );
+        elemento.closest
+            ? elemento.closest(
+                'button, a, input, select, textarea, form, [onclick]'
+            )
+            : null;
 
+    if (
+        elemento.id === 'logoutBtn' ||
+        acionavel?.id === 'logoutBtn'
+    ) {
+        return true;
+    }
 
+    /*
+     * Clique em áreas sem ação não precisa ser bloqueado.
+     */
     if (!acionavel) {
-
         return true;
     }
 
-
-    if (
-        acionavel.id ===
-            'buscaOS' ||
-
-        acionavel.id ===
-            'btnOSAnterior' ||
-
-        acionavel.id ===
-            'btnOSProxima' ||
-
-        acionavel.id ===
-            'itensPorPaginaOS'
-    ) {
-
-        return true;
-    }
-
-
-    const onclick =
-        acionavel.getAttribute(
-            'onclick'
-        ) ||
-        '';
-
-
-    const permitidos = [
-
-        'conferirOS',
-
-        'viewOrderDetails',
-
-        'viewOrderPhotos',
-
-        'abrirRejeitarModal',
-
-        'confirmarRejeicaoOS',
-
-        'closeRejeitarModal',
-
-        'closeViewOSModal',
-
-        'closePhotoViewer',
-
-        "'nao_conferidas'",
-
-        'mudarItensPorPaginaOS'
-
-    ];
-
-
-    if (
-        permitidos.some(
-            item =>
-                onclick.includes(
-                    item
-                )
-        )
-    ) {
-
-        return true;
-    }
-
-
+    /*
+     * Qualquer ação fora da aba OS permanece bloqueada.
+     */
     return false;
 }
 
 
-// ============================================================
-// INSTALAR GUARD GLOBAL
-// ============================================================
-
 function instalarGuardMetaRonald() {
-
     if (
         guardMetaRonaldInstalado
     ) {
-
         return;
     }
-
 
     guardMetaRonaldInstalado =
         true;
 
-
+    /*
+     * Bloqueia cliques somente fora da aba OS.
+     */
     document.addEventListener(
         'click',
-        function (
-            event
-        ) {
-
+        function(event) {
             if (
                 !bloqueioMetaRonaldAtivo ||
                 !currentUser ||
                 currentUser.username !==
                     META_RONALD_CONFIG.username
             ) {
-
                 return;
             }
-
 
             if (
                 elementoPermitidoDuranteBloqueioMetaRonald(
                     event.target
                 )
             ) {
-
                 return;
             }
 
-
             event.preventDefault();
-
             event.stopPropagation();
-
             event.stopImmediatePropagation();
 
-
             showToast(
-                '🔒 Sistema bloqueado. Finalize sua meta de conferência.',
+                '🔒 Enquanto a meta estiver pendente, somente a aba de Ordem de Serviço está disponível.',
                 'error'
             );
-
         },
         true
     );
 
-
+    /*
+     * Formulários da aba OS ficam totalmente liberados.
+     * Formulários de outras abas permanecem bloqueados.
+     */
     document.addEventListener(
         'submit',
-        function (
-            event
-        ) {
-
+        function(event) {
             if (
                 !bloqueioMetaRonaldAtivo ||
                 !currentUser ||
                 currentUser.username !==
                     META_RONALD_CONFIG.username
             ) {
-
                 return;
             }
-
 
             if (
                 event.target.closest(
+                    '#mainSystem'
+                ) ||
+
+                event.target.closest(
+                    '#viewOSModal'
+                ) ||
+
+                event.target.closest(
+                    '#photoViewerModal'
+                ) ||
+
+                event.target.closest(
                     '#rejeitarOSModal'
+                ) ||
+
+                event.target.closest(
+                    '#relatorioOSModal'
                 )
             ) {
-
                 return;
             }
 
-
             event.preventDefault();
-
+            event.stopPropagation();
             event.stopImmediatePropagation();
 
+            showToast(
+                '🔒 Enquanto a meta estiver pendente, somente a aba de Ordem de Serviço está disponível.',
+                'error'
+            );
         },
         true
     );
 
-
-    // Bloqueia atalhos como Ctrl+S / Ctrl+P
+    /*
+     * Atalhos utilizados dentro da aba OS também ficam
+     * liberados. Fora dela, Ctrl e Command continuam
+     * bloqueados.
+     */
     document.addEventListener(
         'keydown',
-        function (
-            event
-        ) {
-
+        function(event) {
             if (
                 !bloqueioMetaRonaldAtivo ||
                 !currentUser ||
                 currentUser.username !==
                     META_RONALD_CONFIG.username
             ) {
-
                 return;
             }
 
+            if (
+                event.target.closest &&
+                (
+                    event.target.closest(
+                        '#mainSystem'
+                    ) ||
 
-            // ESC continua permitido para fechar visualizações
+                    event.target.closest(
+                        '#viewOSModal'
+                    ) ||
+
+                    event.target.closest(
+                        '#photoViewerModal'
+                    ) ||
+
+                    event.target.closest(
+                        '#rejeitarOSModal'
+                    ) ||
+
+                    event.target.closest(
+                        '#relatorioOSModal'
+                    )
+                )
+            ) {
+                return;
+            }
+
             if (
                 event.key ===
                 'Escape'
             ) {
-
                 return;
             }
-
 
             if (
                 event.ctrlKey ||
                 event.metaKey
             ) {
-
                 event.preventDefault();
-
                 event.stopImmediatePropagation();
             }
-
         },
         true
     );
@@ -9654,74 +9471,112 @@ function renderOrdersTable() {
 
 
     // ========================================
-    // PESQUISA
-    // ========================================
+// PESQUISA
+// PESQUISA DENTRO DO FILTRO ATIVO
+// ========================================
 
-    const campoBusca =
-        document.getElementById(
-            'buscaOS'
-        );
+const campoBusca =
+    document.getElementById(
+        'buscaOS'
+    );
 
-
-    const termoBusca =
-        (
-            campoBusca?.value ||
-            ''
-        )
+/*
+ * Remove acentos e transforma tudo em minúsculo.
+ *
+ * Assim, "Foto Estúdio" e "foto estudio"
+ * produzem o mesmo resultado.
+ */
+const normalizarTextoBuscaOS =
+    valor =>
+        String(valor || '')
+            .normalize('NFD')
+            .replace(
+                /[\u0300-\u036f]/g,
+                ''
+            )
             .trim()
             .toLowerCase();
 
+const termoBusca =
+    normalizarTextoBuscaOS(
+        campoBusca?.value
+    );
 
-    if (termoBusca) {
-
-        filteredOrders =
-            filteredOrders.filter(
-                order => {
-
-                    const skusTexto =
-                        Array.isArray(
-                            order.skus
+if (termoBusca) {
+    /*
+     * filteredOrders já contém somente as OS pertencentes
+     * ao filtro ativo. Portanto, a pesquisa abaixo acontece
+     * dentro de Pendentes, Em Andamento, Não Conferidas,
+     * Revisão, Concluídas ou Todas, conforme o filtro aberto.
+     */
+    filteredOrders =
+        filteredOrders.filter(
+            order => {
+                const skusTexto =
+                    Array.isArray(
+                        order.skus
+                    )
+                        ? order.skus.join(
+                            ' '
                         )
-                            ? order.skus.join(
-                                ' '
-                            )
-                            : (
-                                order.skus ||
-                                ''
-                            );
+                        : (
+                            order.skus ||
+                            ''
+                        );
 
+                /*
+                 * order.photoType normalmente guarda valores
+                 * como "estudio", "bike" e "edicao".
+                 *
+                 * PHOTO_TYPE_MAP converte para o nome exibido:
+                 * "Foto Estúdio", "Foto Bike", "Apenas edição" etc.
+                 */
+                const codigoServico =
+                    order.photoType ||
+                    '';
 
-                    const campos =
-                        [
-                            order.code,
-                            order.id,
-                            order.productName,
-                            order.responsibleName,
-                            order.createdBy,
-                            order.status,
-                            order.urgency,
-                            order.osType,
-                            order.photoType,
-                            order.observations,
-                            skusTexto,
-                            order.linkAnuncio,
-                            order.linkNovoAnuncio
-                        ];
+                const nomeServico =
+                    PHOTO_TYPE_MAP[
+                        codigoServico
+                    ] ||
+                    codigoServico;
 
+                const campos =
+                    [
+                        order.code,
+                        order.id,
+                        order.productName,
+                        order.responsibleName,
+                        order.createdBy,
+                        order.status,
+                        order.urgency,
+                        order.osType,
 
-                    return campos.some(
-                        valor =>
-                            String(
-                                valor || ''
-                            )
-                                .toLowerCase()
-                                .includes(
-                                    termoBusca
-                                )
-                    );
-                }
-            );
-    }
+                        // Código salvo no banco: "estudio"
+                        codigoServico,
+
+                        // Nome exibido: "Foto Estúdio"
+                        nomeServico,
+
+                        order.observations,
+                        skusTexto,
+                        order.linkAnuncio,
+                        order.linkNovoAnuncio,
+                        order.motivo_rejeicao,
+                        order.rejeitado_por
+                    ];
+
+                return campos.some(
+                    valor =>
+                        normalizarTextoBuscaOS(
+                            valor
+                        ).includes(
+                            termoBusca
+                        )
+                );
+            }
+        );
+}
 
 
     // ========================================
@@ -10744,63 +10599,24 @@ if (
 }
 
 window.filterOS = function(filter) {
-
-    // ========================================================
-    // RONALD BLOQUEADO:
-    // SOMENTE NÃO CONFERIDAS
-    // ========================================================
-
-    if (
-        bloqueioMetaRonaldAtivo &&
-        currentUser &&
-        currentUser.username ===
-        META_RONALD_CONFIG.username &&
-        filter !==
-        'nao_conferidas'
-    ) {
-
-        showToast(
-            '🔒 Você precisa finalizar a meta de conferência antes de acessar outros filtros.',
-            'error'
-        );
-
-
-        filter =
-            'nao_conferidas';
-    }
-
-
+    /*
+     * Todos os filtros da aba OS permanecem liberados,
+     * inclusive quando Ronald estiver bloqueado.
+     */
     currentFilter =
         filter;
-
 
     paginaAtualOS =
         1;
 
-
     toggleFiltroDataConcluidas(
         filter ===
-        'concluida'
+            'concluida'
     );
-
 
     renderOrdersTable();
 
-
     highlightActiveFilterButton();
-
-
-    if (
-        bloqueioMetaRonaldAtivo &&
-        currentUser?.username ===
-        META_RONALD_CONFIG.username
-    ) {
-
-        setTimeout(
-            aplicarRestricaoVisualMetaRonald,
-            0
-        );
-    }
 };
 
 // Mostrar mensagem do filtro ativo

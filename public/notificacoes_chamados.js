@@ -2,6 +2,17 @@
 // NOTIFICAÇÕES DA CENTRAL DE CHAMADOS
 // WHEEL TECH
 // Arquivo: notificacoes_chamados.js
+//
+// VERSÃO ATUALIZADA
+//
+// - Sino aparece sempre no menu
+// - Fica antes da engrenagem
+// - Badge vermelho aparece SEM precisar clicar
+// - Consulta automática a cada 3 segundos
+// - Tenta usar Supabase Realtime
+// - Atualiza ao voltar para a aba do navegador
+// - Persiste até a notificação ser lida
+// - Clique abre diretamente o chamado
 // ============================================================
 
 (function () {
@@ -18,8 +29,9 @@
         tabela:
             'chamados_notificacoes',
 
+        // Fallback caso Realtime não esteja habilitado
         intervaloAtualizacao:
-            15000,
+            3000,
 
         limiteLista:
             30
@@ -31,13 +43,36 @@
     // ESTADO
     // ========================================================
 
-    let notificacoesChamadosCache = [];
+    let notificacoesChamadosCache =
+        [];
 
-    let timerNotificacoesChamados = null;
 
-    let usuarioNotificacaoAtual = null;
+    let timerNotificacoesChamados =
+        null;
 
-    let carregandoNotificacoesChamados = false;
+
+    let usuarioNotificacaoAtual =
+        null;
+
+
+    let carregandoNotificacoesChamados =
+        false;
+
+
+    let totalNaoLidasChamados =
+        0;
+
+
+    // ========================================================
+    // REALTIME
+    // ========================================================
+
+    let canalRealtimeNotificacoesChamados =
+        null;
+
+
+    let usuarioRealtimeNotificacoesChamados =
+        null;
 
 
     // ========================================================
@@ -50,24 +85,35 @@
             window.supabaseClient
         ) {
 
-            return window.supabaseClient;
+            return (
+                window.supabaseClient
+            );
 
         }
 
 
+        // Fallback para o supabaseClient global
+        // existente no script.js
         try {
 
             if (
-                typeof supabaseClient !== 'undefined' &&
+                typeof supabaseClient !==
+                    'undefined' &&
                 supabaseClient
             ) {
 
-                return supabaseClient;
+                return (
+                    supabaseClient
+                );
 
             }
 
-        } catch (e) {
+        } catch (
+            erro
+        ) {
+
             // ignora
+
         }
 
 
@@ -76,12 +122,70 @@
     }
 
 
+    // ========================================================
+    // USUÁRIO ATUAL
+    // ========================================================
+
     function usuarioAtualNotificacoes() {
 
-        return (
-            window.currentUser ||
-            null
-        );
+        // Primeiro tenta window.currentUser
+        if (
+            window.currentUser
+        ) {
+
+            return (
+                window.currentUser
+            );
+
+        }
+
+
+        // Fallback pela sessão salva
+        try {
+
+            const salvo =
+                localStorage.getItem(
+                    'wheeltech_user'
+                );
+
+
+            if (
+                salvo
+            ) {
+
+                const usuario =
+                    JSON.parse(
+                        salvo
+                    );
+
+
+                if (
+                    usuario &&
+                    (
+                        usuario.username ||
+                        usuario.name
+                    )
+                ) {
+
+                    return usuario;
+
+                }
+
+            }
+
+        } catch (
+            erro
+        ) {
+
+            console.warn(
+                '⚠️ Não foi possível recuperar usuário para o sino:',
+                erro
+            );
+
+        }
+
+
+        return null;
 
     }
 
@@ -113,8 +217,12 @@
             usuarioAtualNotificacoes();
 
 
-        if (!usuario) {
+        if (
+            !usuario
+        ) {
+
             return '';
+
         }
 
 
@@ -136,14 +244,23 @@
 
 
         return (
+
             usuario?.name ||
+
             usuario?.username ||
+
             usernameAtualNotificacao() ||
+
             'Usuário'
+
         );
 
     }
 
+
+    // ========================================================
+    // ESCAPE
+    // ========================================================
 
     function escaparNotif(
         valor
@@ -153,21 +270,44 @@
             valor ??
             ''
         )
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+            .replace(
+                /&/g,
+                '&amp;'
+            )
+            .replace(
+                /</g,
+                '&lt;'
+            )
+            .replace(
+                />/g,
+                '&gt;'
+            )
+            .replace(
+                /"/g,
+                '&quot;'
+            )
+            .replace(
+                /'/g,
+                '&#039;'
+            );
 
     }
 
+
+    // ========================================================
+    // DATA
+    // ========================================================
 
     function formatarDataNotif(
         valor
     ) {
 
-        if (!valor) {
+        if (
+            !valor
+        ) {
+
             return '';
+
         }
 
 
@@ -213,6 +353,10 @@
     }
 
 
+    // ========================================================
+    // NÚMERO DO CHAMADO
+    // ========================================================
+
     function numeroChamadoNotif(
         id
     ) {
@@ -229,6 +373,10 @@
 
     }
 
+
+    // ========================================================
+    // ÍCONES
+    // ========================================================
 
     function iconeTipoNotificacao(
         tipo
@@ -269,21 +417,24 @@
 
     // ========================================================
     // ADMINISTRADORES
-    //
-    // Procura usuários com role administrador/admin.
-    // Caso SYSTEM_USERS não esteja disponível, usa a lista
-    // de CFG_CHAMADOS como fallback.
     // ========================================================
 
     function obterAdminsNotificacoesChamados() {
 
-        let admins = [];
+        let admins =
+            [];
 
+
+        // ================================================
+        // PRIMEIRO:
+        // SYSTEM_USERS
+        // ================================================
 
         try {
 
             if (
-                typeof SYSTEM_USERS !== 'undefined' &&
+                typeof SYSTEM_USERS !==
+                    'undefined' &&
                 Array.isArray(
                     SYSTEM_USERS
                 )
@@ -303,10 +454,15 @@
 
                                 return (
 
-                                    role === 'admin' ||
+                                    role ===
+                                        'admin'
+
+                                    ||
 
                                     role ===
-                                        'administrador' ||
+                                        'administrador'
+
+                                    ||
 
                                     role.includes(
                                         'administrador'
@@ -319,9 +475,11 @@
 
                         .map(
                             usuario =>
+
                                 normalizarUsuarioNotificacao(
                                     usuario.username
                                 )
+
                         )
 
                         .filter(
@@ -330,18 +488,21 @@
 
             }
 
-        } catch (e) {
+        } catch (
+            erro
+        ) {
 
             console.warn(
                 '⚠️ SYSTEM_USERS não disponível para notificações:',
-                e
+                erro
             );
 
         }
 
 
         // ================================================
-        // FALLBACK
+        // FALLBACK:
+        // CFG_CHAMADOS
         // ================================================
 
         if (
@@ -353,12 +514,14 @@
                 if (
                     window.CFG_CHAMADOS &&
                     Array.isArray(
-                        window.CFG_CHAMADOS.admins
+                        window.CFG_CHAMADOS
+                            .admins
                     )
                 ) {
 
                     admins =
-                        window.CFG_CHAMADOS.admins
+                        window.CFG_CHAMADOS
+                            .admins
 
                             .map(
                                 normalizarUsuarioNotificacao
@@ -370,9 +533,35 @@
 
                 }
 
-            } catch (e) {
-                // ignora
+            } catch (
+                erro
+            ) {
+
+                console.warn(
+                    '⚠️ CFG_CHAMADOS não disponível:',
+                    erro
+                );
+
             }
+
+        }
+
+
+        // ================================================
+        // ÚLTIMO FALLBACK
+        // ================================================
+
+        if (
+            !admins.length
+        ) {
+
+            admins = [
+
+                'andressamiotto',
+                'ronald',
+                'leticia'
+
+            ];
 
         }
 
@@ -387,9 +576,9 @@
 
 
     // ========================================================
-    // CRIAR NOTIFICAÇÃO
+    // CRIAR UMA NOTIFICAÇÃO
     //
-    // Esta função será usada também pelo chamados.js.
+    // USADA PELO chamados.js
     // ========================================================
 
     window.criarNotificacaoChamado =
@@ -405,7 +594,9 @@
                 sbNotificacoesChamados();
 
 
-            if (!sb) {
+            if (
+                !sb
+            ) {
 
                 console.warn(
                     '⚠️ Supabase indisponível para criar notificação.'
@@ -431,7 +622,10 @@
             }
 
 
-            // Não notifica a própria pessoa sobre uma ação dela mesma
+            // ================================================
+            // NÃO CRIA NOTIFICAÇÃO PARA A PRÓPRIA PESSOA
+            // ================================================
+
             if (
                 destinatario ===
                 usernameAtualNotificacao()
@@ -486,11 +680,19 @@
                         });
 
 
-                if (error) {
+                if (
+                    error
+                ) {
 
                     throw error;
 
                 }
+
+
+                console.log(
+                    '🔔 Notificação criada para:',
+                    destinatario
+                );
 
 
                 return true;
@@ -544,6 +746,7 @@
 
                     .map(
                         admin =>
+
                             window
                                 .criarNotificacaoChamado({
 
@@ -563,6 +766,7 @@
                                         mensagem
 
                                 })
+
                     );
 
 
@@ -607,9 +811,15 @@
             ============================================= */
 
             #chamadosNotificacaoWrap {
+
                 position: relative;
-                display: inline-flex;
+
+                display: inline-flex !important;
+
                 align-items: center;
+
+                flex-shrink: 0;
+
             }
 
 
@@ -618,27 +828,44 @@
             ============================================= */
 
             #btnNotificacoesChamados {
+
                 position: relative;
 
                 width: 34px;
+                min-width: 34px;
+
                 height: 34px;
+                min-height: 34px;
 
                 padding: 0 !important;
 
+                margin: 0 !important;
+
                 border-radius: 8px;
 
-                display: inline-flex;
+                display: inline-flex !important;
 
                 align-items: center;
 
                 justify-content: center;
+
+                cursor: pointer;
+
             }
 
 
             #btnNotificacoesChamados i {
+
                 font-size: 15px !important;
+
+                line-height: 1;
+
             }
 
+
+            /* =============================================
+               CONTADOR VERMELHO
+            ============================================= */
 
             #contadorNotificacoesChamados {
 
@@ -648,11 +875,12 @@
                 right: -7px;
 
                 min-width: 18px;
+
                 height: 18px;
 
                 padding: 0 5px;
 
-                border-radius: 9px;
+                border-radius: 10px;
 
                 background: #dc3545;
 
@@ -673,15 +901,25 @@
                 line-height: 1;
 
                 box-sizing: border-box;
+
+                z-index: 5;
+
+                pointer-events: none;
+
             }
 
 
             #contadorNotificacoesChamados.vazio {
-                display: none;
+
+                display: none !important;
+
             }
 
 
-            /* Anima quando chega nova */
+            /* =============================================
+               ANIMAÇÃO
+            ============================================= */
+
             @keyframes sinoChamadosAnimar {
 
                 0% {
@@ -712,9 +950,11 @@
 
 
             #btnNotificacoesChamados.tem-nova i {
+
                 animation:
                     sinoChamadosAnimar
                     .6s ease;
+
             }
 
 
@@ -726,13 +966,19 @@
 
                 position: absolute;
 
-                top: calc(100% + 8px);
+                top:
+                    calc(
+                        100% + 8px
+                    );
+
                 right: 0;
 
                 width: 390px;
 
                 max-width:
-                    calc(100vw - 25px);
+                    calc(
+                        100vw - 25px
+                    );
 
                 background: white;
 
@@ -740,22 +986,35 @@
                     1px solid
                     #dee2e6;
 
-                border-radius: 10px;
+                border-radius:
+                    10px;
 
                 box-shadow:
                     0 10px 30px
-                    rgba(0,0,0,.20);
+                    rgba(
+                        0,
+                        0,
+                        0,
+                        .20
+                    );
 
                 overflow: hidden;
 
                 z-index: 100000;
+
             }
 
 
             #dropdownNotificacoesChamados.notif-hidden {
+
                 display: none !important;
+
             }
 
+
+            /* =============================================
+               CABEÇALHO
+            ============================================= */
 
             .notif-ch-head {
 
@@ -763,11 +1022,13 @@
 
                 align-items: center;
 
-                justify-content: space-between;
+                justify-content:
+                    space-between;
 
                 gap: 10px;
 
-                padding: 12px 14px;
+                padding:
+                    12px 14px;
 
                 border-bottom:
                     1px solid
@@ -775,11 +1036,15 @@
 
                 background:
                     #fff;
+
             }
 
 
             .notif-ch-head strong {
-                font-size: 14px;
+
+                font-size:
+                    14px;
+
             }
 
 
@@ -787,20 +1052,29 @@
 
                 border: 0;
 
-                background: transparent;
+                background:
+                    transparent;
 
-                color: #00ADEE;
+                color:
+                    #00ADEE;
 
-                font-size: 11px;
+                font-size:
+                    11px;
 
-                cursor: pointer;
+                cursor:
+                    pointer;
 
-                padding: 4px;
+                padding:
+                    4px;
+
             }
 
 
             .notif-ch-marcar:hover {
-                text-decoration: underline;
+
+                text-decoration:
+                    underline;
+
             }
 
 
@@ -810,78 +1084,108 @@
 
             #listaNotificacoesChamados {
 
-                max-height: 430px;
+                max-height:
+                    430px;
 
-                overflow-y: auto;
+                overflow-y:
+                    auto;
 
-                background: white;
+                background:
+                    white;
+
             }
 
 
             .notif-ch-item {
 
-                width: 100%;
+                width:
+                    100%;
 
-                border: 0;
+                border:
+                    0;
 
                 border-bottom:
                     1px solid
                     #f0f1f3;
 
-                background: white;
+                background:
+                    white;
 
-                padding: 11px 13px;
+                padding:
+                    11px 13px;
 
-                display: flex;
+                display:
+                    flex;
 
-                gap: 10px;
+                gap:
+                    10px;
 
-                cursor: pointer;
+                cursor:
+                    pointer;
 
-                text-align: left;
+                text-align:
+                    left;
 
                 transition:
-                    background .15s;
+                    background
+                    .15s;
+
             }
 
 
             .notif-ch-item:hover {
+
                 background:
                     #f7fafc;
+
             }
 
 
             .notif-ch-item.nao-lida {
+
                 background:
                     #eef9fd;
+
             }
 
 
             .notif-ch-item.nao-lida:hover {
+
                 background:
                     #e2f5fc;
+
             }
 
 
             .notif-ch-icone {
 
-                flex-shrink: 0;
+                flex-shrink:
+                    0;
 
-                width: 34px;
-                height: 34px;
+                width:
+                    34px;
 
-                border-radius: 50%;
+                height:
+                    34px;
+
+                border-radius:
+                    50%;
 
                 background:
                     #f1f3f5;
 
-                display: flex;
+                display:
+                    flex;
 
-                align-items: center;
+                align-items:
+                    center;
 
-                justify-content: center;
+                justify-content:
+                    center;
 
-                font-size: 16px;
+                font-size:
+                    16px;
+
             }
 
 
@@ -890,38 +1194,51 @@
 
                 background:
                     #d9f2fc;
+
             }
 
 
             .notif-ch-conteudo {
 
-                min-width: 0;
+                min-width:
+                    0;
 
-                flex: 1;
+                flex:
+                    1;
+
             }
 
 
             .notif-ch-titulo {
 
-                font-size: 12px;
+                font-size:
+                    12px;
 
-                font-weight: 700;
+                font-weight:
+                    700;
 
-                color: #343a40;
+                color:
+                    #343a40;
 
-                margin-bottom: 2px;
+                margin-bottom:
+                    2px;
+
             }
 
 
             .notif-ch-mensagem {
 
-                font-size: 11px;
+                font-size:
+                    11px;
 
-                color: #6c757d;
+                color:
+                    #6c757d;
 
-                line-height: 1.4;
+                line-height:
+                    1.4;
 
-                overflow: hidden;
+                overflow:
+                    hidden;
 
                 display:
                     -webkit-box;
@@ -931,70 +1248,95 @@
 
                 -webkit-box-orient:
                     vertical;
+
             }
 
 
             .notif-ch-meta {
 
-                margin-top: 5px;
+                margin-top:
+                    5px;
 
-                font-size: 10px;
+                font-size:
+                    10px;
 
-                color: #adb5bd;
+                color:
+                    #adb5bd;
 
-                display: flex;
+                display:
+                    flex;
 
-                align-items: center;
+                align-items:
+                    center;
 
-                gap: 5px;
+                gap:
+                    5px;
+
             }
 
 
             .notif-ch-bolinha {
 
-                width: 7px;
-                height: 7px;
+                width:
+                    7px;
 
-                border-radius: 50%;
+                height:
+                    7px;
+
+                border-radius:
+                    50%;
 
                 background:
                     #00ADEE;
 
-                flex-shrink: 0;
+                flex-shrink:
+                    0;
+
             }
 
 
             .notif-ch-vazio {
 
-                padding: 35px 15px;
+                padding:
+                    35px 15px;
 
-                text-align: center;
+                text-align:
+                    center;
 
-                color: #868e96;
+                color:
+                    #868e96;
 
-                font-size: 12px;
+                font-size:
+                    12px;
+
             }
 
 
             .notif-ch-vazio i {
 
-                display: block;
+                display:
+                    block;
 
-                font-size: 28px !important;
+                font-size:
+                    28px !important;
 
-                color: #ced4da;
+                color:
+                    #ced4da;
 
-                margin-bottom: 8px;
+                margin-bottom:
+                    8px;
+
             }
 
 
             /* =============================================
-               FOOTER
+               RODAPÉ
             ============================================= */
 
             .notif-ch-footer {
 
-                padding: 9px;
+                padding:
+                    9px;
 
                 background:
                     #f8f9fa;
@@ -1003,25 +1345,38 @@
                     1px solid
                     #e9ecef;
 
-                text-align: center;
+                text-align:
+                    center;
+
             }
 
 
             .notif-ch-footer button {
 
-                border: 0;
+                border:
+                    0;
 
-                background: transparent;
+                background:
+                    transparent;
 
-                color: #00ADEE;
+                color:
+                    #00ADEE;
 
-                font-size: 11px;
+                font-size:
+                    11px;
 
-                font-weight: 600;
+                font-weight:
+                    600;
 
-                cursor: pointer;
+                cursor:
+                    pointer;
+
             }
 
+
+            /* =============================================
+               MOBILE
+            ============================================= */
 
             @media (
                 max-width: 500px
@@ -1030,9 +1385,12 @@
                 #dropdownNotificacoesChamados {
 
                     width:
-                        calc(100vw - 25px);
+                        calc(
+                            100vw - 25px
+                        );
 
-                    right: -60px;
+                    right:
+                        -60px;
 
                 }
 
@@ -1049,16 +1407,67 @@
 
 
     // ========================================================
+    // LOCALIZA O CABEÇALHO DO MENU
+    // ========================================================
+
+    function obterUserInfoMenuChamados() {
+
+        const menuSystem =
+            document.getElementById(
+                'menuSystem'
+            );
+
+
+        if (
+            !menuSystem
+        ) {
+
+            return null;
+
+        }
+
+
+        return (
+
+            menuSystem.querySelector(
+                '.main-header .user-info'
+            )
+
+            ||
+
+            menuSystem.querySelector(
+                '.user-info'
+            )
+
+        );
+
+    }
+
+
+    // ========================================================
     // CRIA O SINO
     // ========================================================
 
     function criarSinoChamados() {
 
-        if (
+        // ================================================
+        // JÁ EXISTE
+        // ================================================
+
+        const existente =
             document.getElementById(
                 'chamadosNotificacaoWrap'
-            )
+            );
+
+
+        if (
+            existente
         ) {
+
+            // Garante que não ficou oculto
+            existente.style.display =
+                'inline-flex';
+
 
             return true;
 
@@ -1066,17 +1475,21 @@
 
 
         const userInfo =
-            document.querySelector(
-                '#menuSystem .user-info'
-            );
+            obterUserInfoMenuChamados();
 
 
-        if (!userInfo) {
+        if (
+            !userInfo
+        ) {
 
             return false;
 
         }
 
+
+        // ================================================
+        // CRIA
+        // ================================================
 
         const wrap =
             document.createElement(
@@ -1088,17 +1501,37 @@
             'chamadosNotificacaoWrap';
 
 
+        wrap.style.position =
+            'relative';
+
+
+        wrap.style.display =
+            'inline-flex';
+
+
+        wrap.style.alignItems =
+            'center';
+
+
+        wrap.style.flexShrink =
+            '0';
+
+
         wrap.innerHTML = `
 
             <button
                 type="button"
+
                 id="btnNotificacoesChamados"
+
                 class="
                     btn
                     btn-sm
                     btn-secondary
                 "
+
                 title="Notificações"
+
                 onclick="
                     event.stopPropagation();
                     toggleNotificacoesChamados();
@@ -1126,8 +1559,9 @@
             <div
                 id="dropdownNotificacoesChamados"
                 class="notif-hidden"
+
                 onclick="
-                    event.stopPropagation()
+                    event.stopPropagation();
                 "
             >
 
@@ -1142,9 +1576,11 @@
 
                     <button
                         type="button"
+
                         class="notif-ch-marcar"
+
                         onclick="
-                            marcarTodasNotificacoesChamadosLidas()
+                            marcarTodasNotificacoesChamadosLidas();
                         "
                     >
                         Marcar todas como lidas
@@ -1160,7 +1596,16 @@
                     <div
                         class="notif-ch-vazio"
                     >
-                        Carregando...
+
+                        <i
+                            class="
+                                far
+                                fa-bell
+                            "
+                        ></i>
+
+                        Nenhuma notificação.
+
                     </div>
 
                 </div>
@@ -1172,9 +1617,9 @@
 
                     <button
                         type="button"
+
                         onclick="
-                            abrirSistemaChamados();
-                            fecharDropdownNotificacoesChamados();
+                            abrirCentralChamadosPeloSino();
                         "
                     >
                         Abrir Central de Chamados
@@ -1188,7 +1633,9 @@
 
 
         // ================================================
-        // ENGRENAGEM
+        // POSIÇÃO:
+        //
+        // SINO | ENGRENAGEM | AVATAR
         // ================================================
 
         const engrenagem =
@@ -1197,15 +1644,10 @@
             );
 
 
-        /*
-         * Se existe engrenagem:
-         *
-         * SINO | ENGRENAGEM | AVATAR
-         */
         if (
             engrenagem &&
-            engrenagem.parentNode ===
-            userInfo
+            engrenagem.parentElement ===
+                userInfo
         ) {
 
             userInfo.insertBefore(
@@ -1215,13 +1657,62 @@
 
         } else {
 
-            // Se não existe engrenagem,
-            // coloca antes do primeiro elemento da área do usuário.
-
             userInfo.insertBefore(
                 wrap,
                 userInfo.firstChild
             );
+
+        }
+
+
+        console.log(
+            '✅ Sino de chamados criado.'
+        );
+
+
+        // Se já temos dados carregados,
+        // aplica o contador imediatamente
+        atualizarBadgeNotificacoesChamados(
+            totalNaoLidasChamados
+        );
+
+
+        return true;
+
+    }
+
+
+    // ========================================================
+    // GARANTE QUE O SINO EXISTA
+    // ========================================================
+
+    function garantirSinoChamados() {
+
+        const criado =
+            criarSinoChamados();
+
+
+        if (
+            !criado
+        ) {
+
+            return false;
+
+        }
+
+
+        const wrap =
+            document.getElementById(
+                'chamadosNotificacaoWrap'
+            );
+
+
+        if (
+            wrap
+        ) {
+
+            wrap.style.display =
+                'inline-flex';
 
         }
 
@@ -1238,14 +1729,21 @@
     window.toggleNotificacoesChamados =
         async function() {
 
+            garantirSinoChamados();
+
+
             const dropdown =
                 document.getElementById(
                     'dropdownNotificacoesChamados'
                 );
 
 
-            if (!dropdown) {
+            if (
+                !dropdown
+            ) {
+
                 return;
+
             }
 
 
@@ -1259,29 +1757,52 @@
                 vaiAbrir
             ) {
 
-                // Fecha engrenagem se estiver aberta
-                document
-                    .getElementById(
+                // ========================================
+                // FECHA ENGRENAGEM
+                // ========================================
+
+                const menuEngrenagem =
+                    document.getElementById(
                         'menuConfiguracoesDropdown'
-                    )
-                    ?.classList
-                    .add(
-                        'hidden-menu-config'
                     );
 
 
-                dropdown.classList.remove(
-                    'notif-hidden'
-                );
+                if (
+                    menuEngrenagem
+                ) {
+
+                    menuEngrenagem
+                        .classList
+                        .add(
+                            'hidden-menu-config'
+                        );
+
+                }
 
 
+                // ========================================
+                // ABRE NOTIFICAÇÕES
+                // ========================================
+
+                dropdown
+                    .classList
+                    .remove(
+                        'notif-hidden'
+                    );
+
+
+                // Recarrega por garantia.
+                // MAS o contador não depende deste clique.
                 await carregarNotificacoesChamados();
+
 
             } else {
 
-                dropdown.classList.add(
-                    'notif-hidden'
-                );
+                dropdown
+                    .classList
+                    .add(
+                        'notif-hidden'
+                    );
 
             }
 
@@ -1291,11 +1812,23 @@
     window.fecharDropdownNotificacoesChamados =
         function() {
 
-            document
-                .getElementById(
+            const dropdown =
+                document.getElementById(
                     'dropdownNotificacoesChamados'
-                )
-                ?.classList
+                );
+
+
+            if (
+                !dropdown
+            ) {
+
+                return;
+
+            }
+
+
+            dropdown
+                .classList
                 .add(
                     'notif-hidden'
                 );
@@ -1305,6 +1838,8 @@
 
     // ========================================================
     // CARREGAR NOTIFICAÇÕES
+    //
+    // ESTA É A FUNÇÃO QUE ATUALIZA O VERMELHINHO SEM CLIQUE.
     // ========================================================
 
     async function carregarNotificacoesChamados() {
@@ -1316,6 +1851,11 @@
             return;
 
         }
+
+
+        // O sino deve existir mesmo antes
+        // de conseguirmos consultar o banco.
+        garantirSinoChamados();
 
 
         const sb =
@@ -1341,6 +1881,10 @@
 
 
         try {
+
+            // ================================================
+            // LISTA
+            // ================================================
 
             const {
                 data,
@@ -1374,20 +1918,17 @@
                     );
 
 
-            if (error) {
+            if (
+                error
+            ) {
 
                 throw error;
 
             }
 
 
-            const anterioresNaoLidas =
-                notificacoesChamadosCache
-                    .filter(
-                        n =>
-                            !n.lida
-                    )
-                    .length;
+            const quantidadeAnterior =
+                totalNaoLidasChamados;
 
 
             notificacoesChamadosCache =
@@ -1395,25 +1936,109 @@
                 [];
 
 
-            const novasNaoLidas =
+            // ================================================
+            // CONTAGEM EXATA DE NÃO LIDAS
+            // ================================================
+
+            let quantidadeNaoLidas =
                 notificacoesChamadosCache
                     .filter(
-                        n =>
-                            !n.lida
+                        notificacao =>
+                            !notificacao.lida
                     )
                     .length;
 
 
+            try {
+
+                const {
+                    count,
+                    error:
+                        erroCount
+                } =
+                    await sb
+
+                        .from(
+                            NOTIF_CHAMADOS_CONFIG
+                                .tabela
+                        )
+
+                        .select(
+                            'id',
+                            {
+
+                                count:
+                                    'exact',
+
+                                head:
+                                    true
+
+                            }
+                        )
+
+                        .eq(
+                            'destinatario_username',
+                            username
+                        )
+
+                        .eq(
+                            'lida',
+                            false
+                        );
+
+
+                if (
+                    !erroCount &&
+                    count !== null &&
+                    count !== undefined
+                ) {
+
+                    quantidadeNaoLidas =
+                        Number(
+                            count
+                        );
+
+                }
+
+            } catch (
+                erroContagem
+            ) {
+
+                console.warn(
+                    '⚠️ Usando contagem local das notificações:',
+                    erroContagem
+                );
+
+            }
+
+
+            totalNaoLidasChamados =
+                quantidadeNaoLidas;
+
+
+            // ================================================
+            // RENDERIZA LISTA
+            // ================================================
+
             renderizarNotificacoesChamados();
 
 
-            atualizarBadgeNotificacoesChamados();
+            // ================================================
+            // ATUALIZA O BADGE VERMELHO
+            // ================================================
+
+            atualizarBadgeNotificacoesChamados(
+                quantidadeNaoLidas
+            );
 
 
-            // Anima o sino se aumentou a quantidade
+            // ================================================
+            // CHEGOU NOVA
+            // ================================================
+
             if (
-                novasNaoLidas >
-                anterioresNaoLidas
+                quantidadeNaoLidas >
+                quantidadeAnterior
             ) {
 
                 animarSinoChamados();
@@ -1442,10 +2067,15 @@
 
 
     // ========================================================
-    // BADGE
+    // BADGE VERMELHO
     // ========================================================
 
-    function atualizarBadgeNotificacoesChamados() {
+    function atualizarBadgeNotificacoesChamados(
+        quantidadeForcada = null
+    ) {
+
+        garantirSinoChamados();
+
 
         const badge =
             document.getElementById(
@@ -1453,33 +2083,102 @@
             );
 
 
-        if (!badge) {
+        if (
+            !badge
+        ) {
+
             return;
+
         }
 
 
-        const qtd =
-            notificacoesChamadosCache
-                .filter(
-                    notif =>
-                        !notif.lida
-                )
-                .length;
+        let qtd;
+
+
+        if (
+            quantidadeForcada !== null &&
+            quantidadeForcada !== undefined
+        ) {
+
+            qtd =
+                Number(
+                    quantidadeForcada
+                );
+
+
+        } else {
+
+            qtd =
+                notificacoesChamadosCache
+                    .filter(
+                        notificacao =>
+                            !notificacao.lida
+                    )
+                    .length;
+
+        }
+
+
+        if (
+            !Number.isFinite(
+                qtd
+            ) ||
+            qtd < 0
+        ) {
+
+            qtd =
+                0;
+
+        }
+
+
+        totalNaoLidasChamados =
+            qtd;
 
 
         badge.textContent =
             qtd > 99
                 ? '99+'
-                : qtd;
+                : String(
+                    qtd
+                );
 
 
-        badge.classList.toggle(
-            'vazio',
-            qtd === 0
-        );
+        if (
+            qtd > 0
+        ) {
+
+            badge
+                .classList
+                .remove(
+                    'vazio'
+                );
+
+
+            badge.style.display =
+                'flex';
+
+
+        } else {
+
+            badge
+                .classList
+                .add(
+                    'vazio'
+                );
+
+
+            badge.style.display =
+                'none';
+
+        }
 
     }
 
+
+    // ========================================================
+    // ANIMAR SINO
+    // ========================================================
 
     function animarSinoChamados() {
 
@@ -1489,31 +2188,41 @@
             );
 
 
-        if (!btn) {
+        if (
+            !btn
+        ) {
+
             return;
+
         }
 
 
-        btn.classList.remove(
-            'tem-nova'
-        );
+        btn
+            .classList
+            .remove(
+                'tem-nova'
+            );
 
 
-        // força reinício da animação
+        // Reinicia a animação
         void btn.offsetWidth;
 
 
-        btn.classList.add(
-            'tem-nova'
-        );
+        btn
+            .classList
+            .add(
+                'tem-nova'
+            );
 
 
         setTimeout(
             () => {
 
-                btn.classList.remove(
-                    'tem-nova'
-                );
+                btn
+                    .classList
+                    .remove(
+                        'tem-nova'
+                    );
 
             },
             800
@@ -1534,8 +2243,12 @@
             );
 
 
-        if (!lista) {
+        if (
+            !lista
+        ) {
+
             return;
+
         }
 
 
@@ -1572,11 +2285,11 @@
             notificacoesChamadosCache
 
                 .map(
-                    notif => {
+                    notificacao => {
 
                         const icone =
                             iconeTipoNotificacao(
-                                notif.tipo
+                                notificacao.tipo
                             );
 
 
@@ -1584,19 +2297,27 @@
 
                             <button
                                 type="button"
+
                                 class="
                                     notif-ch-item
+
                                     ${
-                                        !notif.lida
+                                        !notificacao.lida
                                             ? 'nao-lida'
                                             : ''
                                     }
                                 "
+
                                 onclick="
                                     abrirNotificacaoChamados(
-                                        ${Number(notif.id)},
-                                        ${Number(notif.chamado_id)}
-                                    )
+                                        ${Number(
+                                            notificacao.id
+                                        )},
+
+                                        ${Number(
+                                            notificacao.chamado_id
+                                        )}
+                                    );
                                 "
                             >
 
@@ -1616,7 +2337,7 @@
                                     >
 
                                         ${escaparNotif(
-                                            notif.titulo ||
+                                            notificacao.titulo ||
                                             'Atualização no chamado'
                                         )}
 
@@ -1624,16 +2345,18 @@
 
 
                                     ${
-                                        notif.mensagem
+                                        notificacao.mensagem
 
                                             ? `
 
                                                 <div
                                                     class="notif-ch-mensagem"
                                                 >
+
                                                     ${escaparNotif(
-                                                        notif.mensagem
+                                                        notificacao.mensagem
                                                     )}
+
                                                 </div>
 
                                             `
@@ -1647,12 +2370,14 @@
                                     >
 
                                         ${
-                                            !notif.lida
+                                            !notificacao.lida
 
                                                 ? `
+
                                                     <span
                                                         class="notif-ch-bolinha"
                                                     ></span>
+
                                                 `
 
                                                 : ''
@@ -1660,14 +2385,14 @@
 
 
                                         #${numeroChamadoNotif(
-                                            notif.chamado_id
+                                            notificacao.chamado_id
                                         )}
 
                                         •
 
                                         ${escaparNotif(
                                             formatarDataNotif(
-                                                notif.criado_em
+                                                notificacao.criado_em
                                             )
                                         )}
 
@@ -1682,7 +2407,9 @@
                     }
                 )
 
-                .join('');
+                .join(
+                    ''
+                );
 
     }
 
@@ -1699,12 +2426,26 @@
             sbNotificacoesChamados();
 
 
-        if (!sb) {
+        const username =
+            usernameAtualNotificacao();
+
+
+        if (
+            !sb ||
+            !username
+        ) {
+
             return false;
+
         }
 
 
         try {
+
+            const agora =
+                new Date()
+                    .toISOString();
+
 
             const {
                 error
@@ -1722,8 +2463,7 @@
                             true,
 
                         lida_em:
-                            new Date()
-                                .toISOString()
+                            agora
 
                     })
 
@@ -1734,23 +2474,30 @@
 
                     .eq(
                         'destinatario_username',
-                        usernameAtualNotificacao()
+                        username
                     );
 
 
-            if (error) {
+            if (
+                error
+            ) {
 
                 throw error;
 
             }
 
 
+            // ================================================
+            // ATUALIZA LOCAL
+            // ================================================
+
             const local =
                 notificacoesChamadosCache
                     .find(
-                        notif =>
+                        notificacao =>
+
                             Number(
-                                notif.id
+                                notificacao.id
                             ) ===
                             Number(
                                 id
@@ -1758,20 +2505,31 @@
                     );
 
 
-            if (local) {
+            if (
+                local
+            ) {
 
                 local.lida =
                     true;
 
 
                 local.lida_em =
-                    new Date()
-                        .toISOString();
+                    agora;
 
             }
 
 
-            atualizarBadgeNotificacoesChamados();
+            totalNaoLidasChamados =
+                Math.max(
+                    0,
+                    totalNaoLidasChamados -
+                    1
+                );
+
+
+            atualizarBadgeNotificacoesChamados(
+                totalNaoLidasChamados
+            );
 
 
             renderizarNotificacoesChamados();
@@ -1860,7 +2618,9 @@
                         );
 
 
-                if (error) {
+                if (
+                    error
+                ) {
 
                     throw error;
 
@@ -1869,23 +2629,29 @@
 
                 notificacoesChamadosCache
                     .forEach(
-                        notif => {
+                        notificacao => {
 
-                            notif.lida =
+                            notificacao.lida =
                                 true;
 
 
-                            notif.lida_em =
+                            notificacao.lida_em =
                                 agora;
 
                         }
                     );
 
 
+                totalNaoLidasChamados =
+                    0;
+
+
+                atualizarBadgeNotificacoesChamados(
+                    0
+                );
+
+
                 renderizarNotificacoesChamados();
-
-
-                atualizarBadgeNotificacoesChamados();
 
 
             } catch (
@@ -1893,7 +2659,7 @@
             ) {
 
                 console.error(
-                    '❌ Erro marcando notificações:',
+                    '❌ Erro marcando notificações como lidas:',
                     error
                 );
 
@@ -1903,7 +2669,7 @@
 
 
     // ========================================================
-    // ABRIR NOTIFICAÇÃO
+    // ABRIR UMA NOTIFICAÇÃO
     // ========================================================
 
     window.abrirNotificacaoChamados =
@@ -1912,6 +2678,7 @@
             chamadoId
         ) {
 
+            // Marca somente esta como lida
             await marcarNotificacaoChamadosLida(
                 notificacaoId
             );
@@ -1922,7 +2689,7 @@
 
 
             // ================================================
-            // ABRE A CENTRAL
+            // ABRE CENTRAL DE CHAMADOS
             // ================================================
 
             if (
@@ -1954,30 +2721,50 @@
 
             }
 
+
+            // Atualiza contador do sino
+            await carregarNotificacoesChamados();
+
         };
 
 
     // ========================================================
-    // VERIFICA MUDANÇA DE USUÁRIO
+    // ABRIR CENTRAL PELO RODAPÉ DO SINO
     // ========================================================
 
-    function verificarUsuarioNotificacoes() {
+    window.abrirCentralChamadosPeloSino =
+        async function() {
 
-        const atual =
-            usernameAtualNotificacao();
+            window
+                .fecharDropdownNotificacoesChamados();
 
 
-        if (!atual) {
+            if (
+                typeof window
+                    .abrirSistemaChamados ===
+                'function'
+            ) {
 
-            usuarioNotificacaoAtual =
+                await window
+                    .abrirSistemaChamados();
+
+            }
+
+        };
+
+
+    // ========================================================
+    // REMOVER REALTIME
+    // ========================================================
+
+    async function removerRealtimeNotificacoesChamados() {
+
+        if (
+            !canalRealtimeNotificacoesChamados
+        ) {
+
+            usuarioRealtimeNotificacoesChamados =
                 null;
-
-
-            notificacoesChamadosCache =
-                [];
-
-
-            atualizarBadgeNotificacoesChamados();
 
 
             return;
@@ -1985,10 +2772,287 @@
         }
 
 
+        const sb =
+            sbNotificacoesChamados();
+
+
+        try {
+
+            if (
+                sb &&
+                typeof sb.removeChannel ===
+                    'function'
+            ) {
+
+                await sb.removeChannel(
+                    canalRealtimeNotificacoesChamados
+                );
+
+            }
+
+        } catch (
+            erro
+        ) {
+
+            console.warn(
+                '⚠️ Erro removendo Realtime do sino:',
+                erro
+            );
+
+        }
+
+
+        canalRealtimeNotificacoesChamados =
+            null;
+
+
+        usuarioRealtimeNotificacoesChamados =
+            null;
+
+    }
+
+
+    // ========================================================
+    // INSTALAR REALTIME
+    // ========================================================
+
+    async function instalarRealtimeNotificacoesChamados(
+        username
+    ) {
+
+        const sb =
+            sbNotificacoesChamados();
+
+
+        if (
+            !sb ||
+            !username
+        ) {
+
+            return;
+
+        }
+
+
+        // ================================================
+        // SUPABASE CLIENT SEM REALTIME?
+        // Tudo bem. Polling continuará funcionando.
+        // ================================================
+
+        if (
+            typeof sb.channel !==
+            'function'
+        ) {
+
+            return;
+
+        }
+
+
+        // ================================================
+        // JÁ INSTALADO PARA ESTE USUÁRIO
+        // ================================================
+
+        if (
+            canalRealtimeNotificacoesChamados &&
+            usuarioRealtimeNotificacoesChamados ===
+                username
+        ) {
+
+            return;
+
+        }
+
+
+        await removerRealtimeNotificacoesChamados();
+
+
+        usuarioRealtimeNotificacoesChamados =
+            username;
+
+
+        try {
+
+            canalRealtimeNotificacoesChamados =
+                sb
+
+                    .channel(
+                        `notificacoes-chamados-${username}-${Date.now()}`
+                    )
+
+                    // ========================================
+                    // INSERT
+                    // ========================================
+
+                    .on(
+                        'postgres_changes',
+
+                        {
+
+                            event:
+                                'INSERT',
+
+                            schema:
+                                'public',
+
+                            table:
+                                NOTIF_CHAMADOS_CONFIG
+                                    .tabela,
+
+                            filter:
+                                `destinatario_username=eq.${username}`
+
+                        },
+
+                        async payload => {
+
+                            console.log(
+                                '🔔 Nova notificação recebida:',
+                                payload.new
+                            );
+
+
+                            // Força atualização imediata
+                            await carregarNotificacoesChamados();
+
+                        }
+                    )
+
+                    // ========================================
+                    // UPDATE
+                    // ========================================
+
+                    .on(
+                        'postgres_changes',
+
+                        {
+
+                            event:
+                                'UPDATE',
+
+                            schema:
+                                'public',
+
+                            table:
+                                NOTIF_CHAMADOS_CONFIG
+                                    .tabela,
+
+                            filter:
+                                `destinatario_username=eq.${username}`
+
+                        },
+
+                        async payload => {
+
+                            console.log(
+                                '🔔 Notificação atualizada:',
+                                payload.new
+                            );
+
+
+                            await carregarNotificacoesChamados();
+
+                        }
+                    )
+
+                    .subscribe(
+                        status => {
+
+                            console.log(
+                                '🔔 Realtime notificações:',
+                                status
+                            );
+
+                        }
+                    );
+
+
+        } catch (
+            erro
+        ) {
+
+            console.warn(
+                '⚠️ Realtime do sino indisponível. O polling de 3 segundos continuará funcionando:',
+                erro
+            );
+
+
+            canalRealtimeNotificacoesChamados =
+                null;
+
+        }
+
+    }
+
+
+    // ========================================================
+    // VERIFICAR LOGIN / TROCA DE USUÁRIO
+    // ========================================================
+
+    async function verificarUsuarioNotificacoes() {
+
+        // Sino deve existir independentemente
+        // de haver ou não notificações.
+        garantirSinoChamados();
+
+
+        const atual =
+            usernameAtualNotificacao();
+
+
+        // ================================================
+        // NÃO LOGADO
+        // ================================================
+
+        if (
+            !atual
+        ) {
+
+            if (
+                usuarioNotificacaoAtual
+            ) {
+
+                usuarioNotificacaoAtual =
+                    null;
+
+
+                notificacoesChamadosCache =
+                    [];
+
+
+                totalNaoLidasChamados =
+                    0;
+
+
+                atualizarBadgeNotificacoesChamados(
+                    0
+                );
+
+
+                await removerRealtimeNotificacoesChamados();
+
+            }
+
+
+            return;
+
+        }
+
+
+        // ================================================
+        // LOGIN NOVO / USUÁRIO DIFERENTE
+        // ================================================
+
         if (
             atual !==
             usuarioNotificacaoAtual
         ) {
+
+            console.log(
+                '🔔 Iniciando notificações para:',
+                atual
+            );
+
 
             usuarioNotificacaoAtual =
                 atual;
@@ -1998,7 +3062,36 @@
                 [];
 
 
-            carregarNotificacoesChamados();
+            totalNaoLidasChamados =
+                0;
+
+
+            // Primeiro consulta imediatamente
+            await carregarNotificacoesChamados();
+
+
+            // Depois instala Realtime
+            await instalarRealtimeNotificacoesChamados(
+                atual
+            );
+
+
+            return;
+
+        }
+
+
+        // ================================================
+        // GARANTE REALTIME
+        // ================================================
+
+        if (
+            !canalRealtimeNotificacoesChamados
+        ) {
+
+            await instalarRealtimeNotificacoesChamados(
+                atual
+            );
 
         }
 
@@ -2058,19 +3151,104 @@
 
 
     // ========================================================
+    // VOLTOU PARA A ABA DO NAVEGADOR
+    // ========================================================
+
+    document.addEventListener(
+        'visibilitychange',
+        async () => {
+
+            if (
+                document.visibilityState !==
+                'visible'
+            ) {
+
+                return;
+
+            }
+
+
+            garantirSinoChamados();
+
+
+            await verificarUsuarioNotificacoes();
+
+
+            if (
+                usernameAtualNotificacao()
+            ) {
+
+                await carregarNotificacoesChamados();
+
+            }
+
+        }
+    );
+
+
+    // ========================================================
+    // JANELA GANHOU FOCO
+    // ========================================================
+
+    window.addEventListener(
+        'focus',
+        async () => {
+
+            garantirSinoChamados();
+
+
+            await verificarUsuarioNotificacoes();
+
+
+            if (
+                usernameAtualNotificacao()
+            ) {
+
+                await carregarNotificacoesChamados();
+
+            }
+
+        }
+    );
+
+
+    // ========================================================
     // INICIALIZAÇÃO
     // ========================================================
 
     function iniciarNotificacoesChamados() {
 
+        console.log(
+            '🔔 Inicializando notificações de chamados...'
+        );
+
+
+        // ================================================
+        // CSS
+        // ================================================
+
         injetarCSSNotificacoesChamados();
 
 
-        criarSinoChamados();
+        // ================================================
+        // SINO
+        // ================================================
 
+        garantirSinoChamados();
+
+
+        // ================================================
+        // PRIMEIRA VERIFICAÇÃO
+        // ================================================
 
         verificarUsuarioNotificacoes();
 
+
+        // ================================================
+        // POLLING
+        //
+        // Atualiza automaticamente sem clicar.
+        // ================================================
 
         if (
             timerNotificacoesChamados
@@ -2085,18 +3263,35 @@
 
         timerNotificacoesChamados =
             setInterval(
-                () => {
+                async () => {
 
-                    criarSinoChamados();
+                    try {
 
-                    verificarUsuarioNotificacoes();
+                        // Se por algum motivo o sino foi
+                        // removido/recriado, coloca novamente.
+                        garantirSinoChamados();
 
 
-                    if (
-                        usernameAtualNotificacao()
+                        await verificarUsuarioNotificacoes();
+
+
+                        if (
+                            usernameAtualNotificacao()
+                        ) {
+
+                            await carregarNotificacoesChamados();
+
+                        }
+
+
+                    } catch (
+                        erro
                     ) {
 
-                        carregarNotificacoesChamados();
+                        console.warn(
+                            '⚠️ Erro na atualização automática do sino:',
+                            erro
+                        );
 
                     }
 
@@ -2106,27 +3301,90 @@
             );
 
 
-        // Algumas áreas do menu aparecem depois do login
+        // ================================================
+        // TENTATIVAS EXTRAS
+        //
+        // Caso o cabeçalho tenha sido criado depois.
+        // ================================================
+
         setTimeout(
-            criarSinoChamados,
-            500
+            async () => {
+
+                garantirSinoChamados();
+
+                await verificarUsuarioNotificacoes();
+
+
+                if (
+                    usernameAtualNotificacao()
+                ) {
+
+                    await carregarNotificacoesChamados();
+
+                }
+
+            },
+            300
         );
 
 
         setTimeout(
-            criarSinoChamados,
+            async () => {
+
+                garantirSinoChamados();
+
+                await verificarUsuarioNotificacoes();
+
+
+                if (
+                    usernameAtualNotificacao()
+                ) {
+
+                    await carregarNotificacoesChamados();
+
+                }
+
+            },
+            800
+        );
+
+
+        setTimeout(
+            async () => {
+
+                garantirSinoChamados();
+
+                await verificarUsuarioNotificacoes();
+
+
+                if (
+                    usernameAtualNotificacao()
+                ) {
+
+                    await carregarNotificacoesChamados();
+
+                }
+
+            },
             1500
         );
 
 
         setTimeout(
-            () => {
+            async () => {
 
-                criarSinoChamados();
+                garantirSinoChamados();
 
-                verificarUsuarioNotificacoes();
+                await verificarUsuarioNotificacoes();
 
-                carregarNotificacoesChamados();
+
+                if (
+                    usernameAtualNotificacao()
+                ) {
+
+                    await carregarNotificacoesChamados();
+
+                }
 
             },
             3000
@@ -2134,6 +3392,10 @@
 
     }
 
+
+    // ========================================================
+    // START
+    // ========================================================
 
     if (
         document.readyState ===
@@ -2146,20 +3408,47 @@
 
                 setTimeout(
                     iniciarNotificacoesChamados,
-                    300
+                    150
                 );
 
             }
         );
 
+
     } else {
 
         setTimeout(
             iniciarNotificacoesChamados,
-            200
+            100
         );
 
     }
+
+
+    // ========================================================
+    // FUNÇÃO PARA ATUALIZAR O SINO IMEDIATAMENTE
+    //
+    // Pode ser chamada por qualquer outro módulo.
+    // ========================================================
+
+    window.atualizarSinoChamadosAgora =
+        async function() {
+
+            garantirSinoChamados();
+
+
+            await verificarUsuarioNotificacoes();
+
+
+            if (
+                usernameAtualNotificacao()
+            ) {
+
+                await carregarNotificacoesChamados();
+
+            }
+
+        };
 
 
     // ========================================================
@@ -2172,5 +3461,18 @@
 
     window.obterAdminsNotificacoesChamados =
         obterAdminsNotificacoesChamados;
+
+
+    window.criarSinoChamados =
+        criarSinoChamados;
+
+
+    window.garantirSinoChamados =
+        garantirSinoChamados;
+
+
+    console.log(
+        '✅ notificacoes_chamados.js carregado.'
+    );
 
 })();
