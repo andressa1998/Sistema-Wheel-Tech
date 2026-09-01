@@ -3953,76 +3953,987 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 };
 
 // ============================================
-// IGNORAR ITEM
+// IGNORAR ITEM / CORRIGIR SKU RECEBIDO
 // ============================================
+
 window.ignorarItem = async function(cardId, itemId) {
-    if (!cardId || !itemId) {
-        showToast('Erro: dados incompletos', 'error');
+
+    // ========================================
+    // VALIDAÇÃO
+    // ========================================
+
+    if (
+        !cardId ||
+        !itemId
+    ) {
+
+        showToast(
+            'Erro: dados incompletos',
+            'error'
+        );
+
         return;
     }
 
-    const card = entradasCards.find(c => c.id == cardId);
+
+    const card =
+        entradasCards.find(
+            c =>
+                String(c.id) ===
+                String(cardId)
+        );
+
+
     if (!card) {
-        showToast('Card não encontrado', 'error');
+
+        showToast(
+            'Card não encontrado',
+            'error'
+        );
+
         return;
     }
-    const item = card.itens.find(i => i.id == itemId);
+
+
+    const item =
+        card.itens.find(
+            i =>
+                String(i.id) ===
+                String(itemId)
+        );
+
+
     if (!item) {
-        showToast('Item não encontrado', 'error');
+
+        showToast(
+            'Item não encontrado',
+            'error'
+        );
+
         return;
     }
 
-    if (item.status !== 'pendente') {
-        showToast('Este item já foi processado', 'warning');
+
+    if (
+        item.status !==
+        'pendente'
+    ) {
+
+        showToast(
+            'Este item já foi processado',
+            'warning'
+        );
+
         return;
     }
 
-    if (!confirm(`Deseja ignorar o item "${item.produto}"? Ele será marcado como ignorado.`)) {
+
+    // ========================================
+    // ESCOLHA
+    // ========================================
+
+    const escolha =
+        prompt(
+            `O que deseja fazer com este item?
+
+Produto informado:
+${item.produto || '-'}
+
+SKU / referência atual:
+${item.sku_match || item.sku_original || '-'}
+
+1 - Ignorar completamente este item
+
+2 - O produto que chegou é outro
+    Informar o SKU correto e dar entrada nele
+
+Digite 1 ou 2:`,
+            '1'
+        );
+
+
+    // Cancelou
+    if (
+        escolha === null
+    ) {
+
+        showToast(
+            'Operação cancelada.',
+            'info'
+        );
+
         return;
     }
+
+
+    const opcao =
+        String(
+            escolha
+        )
+            .trim();
+
+
+    // ========================================
+    // OPÇÃO 2:
+    // CORRIGIR SKU
+    // ========================================
+
+    if (
+        opcao === '2'
+    ) {
+
+        await window
+            .corrigirSKUEntradaItem(
+                cardId,
+                itemId
+            );
+
+        return;
+    }
+
+
+    // ========================================
+    // OPÇÃO INVÁLIDA
+    // ========================================
+
+    if (
+        opcao !== '1'
+    ) {
+
+        showToast(
+            '⚠️ Opção inválida. Digite 1 para ignorar ou 2 para corrigir o SKU.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // ========================================
+    // CONFIRMA IGNORAR
+    // ========================================
+
+    const confirmar =
+        confirm(
+            `Deseja realmente IGNORAR este item?
+
+Produto:
+${item.produto || '-'}
+
+SKU:
+${item.sku_match || item.sku_original || '-'}
+
+Quantidade:
+${item.quantidade || 0}
+
+Nenhuma unidade será adicionada ao estoque.`
+        );
+
+
+    if (
+        !confirmar
+    ) {
+
+        showToast(
+            'Operação cancelada.',
+            'info'
+        );
+
+        return;
+    }
+
+
+    // ========================================
+    // IGNORA
+    // ========================================
 
     try {
-        if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        const { error: errItem } = await window.supabaseClient
-            .from('entrada_items')
-            .update({
-                status: 'ignorado',
-                acao: 'ignorado',
-                responsavel: currentUser.name,
-                data_acao: new Date().toISOString(),
-                quantidade_entrada: 0
-            })
-            .eq('id', itemId);
+        if (
+            !window.supabaseClient
+        ) {
 
-        if (errItem) throw errItem;
+            throw new Error(
+                'Supabase não conectado'
+            );
+        }
 
-        const concluidos = card.itens.filter(i => 
-            i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
-        ).length + 1;
-        const total = card.itens.filter(i => i.status !== 'ignorado').length;
-        const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
 
-        const { error: errCard } = await window.supabaseClient
-            .from('entradas_cards')
-            .update({
-                items_concluidos: concluidos,
-                status: novoStatus,
-                finalizado_em: novoStatus === 'finalizado' ? new Date().toISOString() : null,
-                finalizado_por: novoStatus === 'finalizado' ? currentUser.name : null
-            })
-            .eq('id', cardId);
+        const responsavel =
+            currentUser?.name ||
+            currentUser?.username ||
+            'Sistema';
 
-        if (errCard) throw errCard;
 
-        showToast(`⏭️ Item ignorado com sucesso!`, 'info');
+        const dataAcao =
+            typeof getDataHoraLocalISO ===
+                'function'
+
+                ? getDataHoraLocalISO()
+
+                : new Date()
+                    .toISOString();
+
+
+        // ====================================
+        // IMPORTANTE:
+        //
+        // NÃO usamos:
+        //
+        // acao: 'ignorado'
+        //
+        // porque o banco possui
+        // entrada_items_acao_check e esse
+        // valor não é permitido.
+        //
+        // O STATUS já identifica que o item
+        // foi ignorado.
+        // ====================================
+
+        const {
+            error: errItem
+        } =
+            await window.supabaseClient
+
+                .from(
+                    'entrada_items'
+                )
+
+                .update({
+
+                    status:
+                        'ignorado',
+
+                    acao:
+                        null,
+
+                    responsavel:
+                        responsavel,
+
+                    data_acao:
+                        dataAcao,
+
+                    quantidade_entrada:
+                        0
+
+                })
+
+                .eq(
+                    'id',
+                    itemId
+                );
+
+
+        if (
+            errItem
+        ) {
+
+            throw errItem;
+        }
+
+
+        // ====================================
+        // SIMULA O NOVO ESTADO DOS ITENS
+        // PARA RECALCULAR O CARD
+        // ====================================
+
+        const itensAtualizados =
+            card.itens.map(
+                i => {
+
+                    if (
+                        String(i.id) ===
+                        String(itemId)
+                    ) {
+
+                        return {
+
+                            ...i,
+
+                            status:
+                                'ignorado',
+
+                            acao:
+                                null,
+
+                            responsavel:
+                                responsavel,
+
+                            data_acao:
+                                dataAcao,
+
+                            quantidade_entrada:
+                                0
+
+                        };
+                    }
+
+
+                    return i;
+
+                }
+            );
+
+
+        // ====================================
+        // QUANTOS ITENS AINDA ESTÃO PENDENTES?
+        // ====================================
+
+        const pendentes =
+            itensAtualizados.filter(
+                i =>
+                    i.status ===
+                    'pendente'
+            ).length;
+
+
+        // Tudo que não está pendente
+        // já foi processado ou ignorado.
+        const concluidos =
+            itensAtualizados.filter(
+                i =>
+                    i.status !==
+                    'pendente'
+            ).length;
+
+
+        const novoStatus =
+            pendentes === 0
+
+                ? 'finalizado'
+
+                : 'pendente';
+
+
+        // ====================================
+        // ATUALIZA CARD
+        // ====================================
+
+        const {
+            error: errCard
+        } =
+            await window.supabaseClient
+
+                .from(
+                    'entradas_cards'
+                )
+
+                .update({
+
+                    items_concluidos:
+                        concluidos,
+
+                    status:
+                        novoStatus,
+
+                    finalizado_em:
+                        novoStatus ===
+                        'finalizado'
+
+                            ? dataAcao
+
+                            : null,
+
+                    finalizado_por:
+                        novoStatus ===
+                        'finalizado'
+
+                            ? responsavel
+
+                            : null
+
+                })
+
+                .eq(
+                    'id',
+                    cardId
+                );
+
+
+        if (
+            errCard
+        ) {
+
+            throw errCard;
+        }
+
+
+        showToast(
+            '⏭️ Item ignorado com sucesso!',
+            'success'
+        );
+
+
+        // ====================================
+        // RECARREGA
+        // ====================================
+
         await carregarEntradas();
 
-    } catch (error) {
-        console.error('❌ Erro ao ignorar item:', error);
-        showToast('❌ Erro ao ignorar: ' + error.message, 'error');
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro ao ignorar item:',
+            error
+        );
+
+
+        showToast(
+            '❌ Erro ao ignorar: ' +
+            (
+                error.message ||
+                'Erro desconhecido'
+            ),
+            'error'
+        );
+
     }
+
 };
+
+// ============================================
+// CORRIGIR SKU DE UM ITEM DA ENTRADA
+//
+// USADO QUANDO:
+// - fornecedor/referência indica um produto
+// - fisicamente chegou outro produto
+//
+// NÃO ALTERA O MAPEAMENTO DO FORNECEDOR.
+// ALTERA SOMENTE ESTA ENTRADA.
+// ============================================
+
+window.corrigirSKUEntradaItem =
+    async function(
+        cardId,
+        itemId
+    ) {
+
+        // ========================================
+        // VALIDAÇÃO
+        // ========================================
+
+        if (
+            !cardId ||
+            !itemId
+        ) {
+
+            showToast(
+                'Erro: dados incompletos',
+                'error'
+            );
+
+            return;
+        }
+
+
+        const card =
+            entradasCards.find(
+                c =>
+                    String(c.id) ===
+                    String(cardId)
+            );
+
+
+        if (!card) {
+
+            showToast(
+                'Card não encontrado',
+                'error'
+            );
+
+            return;
+        }
+
+
+        const item =
+            card.itens.find(
+                i =>
+                    String(i.id) ===
+                    String(itemId)
+            );
+
+
+        if (!item) {
+
+            showToast(
+                'Item não encontrado',
+                'error'
+            );
+
+            return;
+        }
+
+
+        if (
+            item.status !==
+            'pendente'
+        ) {
+
+            showToast(
+                'Este item já foi processado.',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        // ========================================
+        // GARANTE ESTOQUE CARREGADO
+        // ========================================
+
+        try {
+
+            if (
+                (
+                    typeof produtosEstoque ===
+                        'undefined'
+                )
+
+                ||
+
+                !Array.isArray(
+                    produtosEstoque
+                )
+
+                ||
+
+                produtosEstoque.length ===
+                    0
+            ) {
+
+                showToast(
+                    '🔄 Carregando estoque...',
+                    'info'
+                );
+
+
+                if (
+                    typeof carregarProdutosEstoque ===
+                    'function'
+                ) {
+
+                    await carregarProdutosEstoque();
+
+                }
+
+
+                if (
+                    typeof aguardarEstoqueCarregado ===
+                    'function'
+                ) {
+
+                    await aguardarEstoqueCarregado(
+                        15000
+                    );
+
+                }
+
+            }
+
+        } catch (
+            erroEstoque
+        ) {
+
+            console.warn(
+                '⚠️ Erro carregando estoque:',
+                erroEstoque
+            );
+
+        }
+
+
+        // ========================================
+        // PEDE SKU CORRETO
+        // ========================================
+
+        const skuInformado =
+            prompt(
+                `Informe o SKU CORRETO do produto que realmente chegou.
+
+Produto/referência recebida na entrada:
+${item.produto || '-'}
+
+SKU atualmente identificado:
+${item.sku_match || item.sku_original || '-'}
+
+Digite o SKU correto:`
+            );
+
+
+        if (
+            skuInformado === null
+        ) {
+
+            showToast(
+                'Operação cancelada.',
+                'info'
+            );
+
+            return;
+        }
+
+
+        const skuCorreto =
+            String(
+                skuInformado
+            )
+                .trim();
+
+
+        if (
+            !skuCorreto
+        ) {
+
+            showToast(
+                '⚠️ Informe o SKU correto.',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        // ========================================
+        // PROCURA PRODUTO NO ESTOQUE
+        // ========================================
+
+        const produtoCorreto =
+            verificarSKUExistente(
+                skuCorreto
+            );
+
+
+        if (
+            !produtoCorreto
+        ) {
+
+            showToast(
+                `❌ O SKU "${skuCorreto}" não foi encontrado no estoque.
+
+Confira o SKU informado.`,
+                'error'
+            );
+
+            return;
+        }
+
+
+        // ========================================
+        // CONFIRMA PRODUTO
+        // ========================================
+
+        const confirmar =
+            confirm(
+                `Confirme a correção:
+
+ENTRADA:
+${card.numero_entrada || '-'}
+
+PRODUTO INFORMADO ORIGINALMENTE:
+${item.produto || '-'}
+
+SKU ORIGINAL / REFERÊNCIA:
+${item.sku_original || '-'}
+
+────────────────────────────
+
+PRODUTO QUE REALMENTE CHEGOU:
+
+SKU:
+${produtoCorreto.sku || '-'}
+
+Produto:
+${produtoCorreto.nome || '-'}
+
+Estoque atual:
+${produtoCorreto.quantidade ?? '-'}
+
+────────────────────────────
+
+Após confirmar, esta linha continuará PENDENTE e o botão "Dar Entrada" será ativado para o produto correto.
+
+Confirmar?`
+            );
+
+
+        if (
+            !confirmar
+        ) {
+
+            showToast(
+                'Correção cancelada.',
+                'info'
+            );
+
+            return;
+        }
+
+
+        // ========================================
+        // ATUALIZA ITEM
+        // ========================================
+
+        try {
+
+            if (
+                !window.supabaseClient
+            ) {
+
+                throw new Error(
+                    'Supabase não conectado'
+                );
+
+            }
+
+
+            const responsavel =
+                currentUser?.name ||
+                currentUser?.username ||
+                'Sistema';
+
+
+            const dataAcao =
+                typeof getDataHoraLocalISO ===
+                    'function'
+
+                    ? getDataHoraLocalISO()
+
+                    : new Date()
+                        .toISOString();
+
+
+            // ====================================
+            // REGISTRA HISTÓRICO NA OBSERVAÇÃO
+            // ====================================
+
+            const dataHistorico =
+                new Date()
+                    .toLocaleString(
+                        'pt-BR',
+                        {
+                            timeZone:
+                                'America/Sao_Paulo',
+
+                            day:
+                                '2-digit',
+
+                            month:
+                                '2-digit',
+
+                            year:
+                                'numeric',
+
+                            hour:
+                                '2-digit',
+
+                            minute:
+                                '2-digit'
+                        }
+                    );
+
+
+            const registroCorrecao =
+                `[CORREÇÃO DE SKU - ${dataHistorico} - ${responsavel}]
+Produto informado na entrada: ${item.produto || '-'}
+SKU original/referência: ${item.sku_original || '-'}
+SKU identificado anteriormente: ${item.sku_match || '-'}
+Produto que realmente chegou: ${produtoCorreto.nome || '-'}
+SKU correto: ${produtoCorreto.sku || '-'}`;
+
+
+            const novaObservacao =
+                item.observacao &&
+                String(
+                    item.observacao
+                ).trim()
+
+                    ? `${item.observacao}
+
+${registroCorrecao}`
+
+                    : registroCorrecao;
+
+
+            // ====================================
+            // ATUALIZA SOMENTE ESTA ENTRADA
+            //
+            // NÃO mexe na tabela fornecedores.
+            // ====================================
+
+            const {
+                error: errUpdate
+            } =
+                await window.supabaseClient
+
+                    .from(
+                        'entrada_items'
+                    )
+
+                    .update({
+
+                        // Produto correto no estoque
+                        produto_id:
+                            produtoCorreto.id,
+
+                        // SKU correto passa a ter prioridade
+                        // no renderizarEntradas()
+                        sku_match:
+                            produtoCorreto.sku,
+
+                        // Atualiza o nome visual da linha
+                        // para mostrar o produto recebido
+                        produto:
+                            produtoCorreto.nome ||
+                            item.produto,
+
+                        // Continua pendente:
+                        // NÃO adiciona estoque ainda.
+                        status:
+                            'pendente',
+
+                        // "cadastro" já é um valor aceito
+                        // pelo check atual de acao.
+                        acao:
+                            'cadastro',
+
+                        quantidade_entrada:
+                            0,
+
+                        responsavel:
+                            responsavel,
+
+                        data_acao:
+                            dataAcao,
+
+                        observacao:
+                            novaObservacao
+
+                    })
+
+                    .eq(
+                        'id',
+                        itemId
+                    );
+
+
+            if (
+                errUpdate
+            ) {
+
+                throw errUpdate;
+            }
+
+
+            // ====================================
+            // ATUALIZA MEMÓRIA LOCAL
+            // ====================================
+
+            const cardLocal =
+                entradasCards.find(
+                    c =>
+                        String(c.id) ===
+                        String(cardId)
+                );
+
+
+            if (
+                cardLocal
+            ) {
+
+                const itemLocal =
+                    cardLocal.itens.find(
+                        i =>
+                            String(i.id) ===
+                            String(itemId)
+                    );
+
+
+                if (
+                    itemLocal
+                ) {
+
+                    itemLocal.produto_id =
+                        produtoCorreto.id;
+
+
+                    itemLocal.sku_match =
+                        produtoCorreto.sku;
+
+
+                    itemLocal.produto =
+                        produtoCorreto.nome ||
+                        itemLocal.produto;
+
+
+                    itemLocal.status =
+                        'pendente';
+
+
+                    itemLocal.acao =
+                        'cadastro';
+
+
+                    itemLocal.quantidade_entrada =
+                        0;
+
+
+                    itemLocal.responsavel =
+                        responsavel;
+
+
+                    itemLocal.data_acao =
+                        dataAcao;
+
+
+                    itemLocal.observacao =
+                        novaObservacao;
+
+                }
+
+            }
+
+
+            showToast(
+                `✅ SKU corrigido para ${produtoCorreto.sku}!
+
+Agora você já pode clicar em "Dar Entrada".`,
+                'success'
+            );
+
+
+            // ====================================
+            // RECARREGA A TELA
+            // ====================================
+
+            await carregarEntradas();
+
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                '❌ Erro corrigindo SKU da entrada:',
+                error
+            );
+
+
+            showToast(
+                '❌ Erro ao corrigir SKU: ' +
+                (
+                    error.message ||
+                    'Erro desconhecido'
+                ),
+                'error'
+            );
+
+        }
+
+    };
 
 // ============================================
 // ABRIR CADASTRO RÁPIDO
