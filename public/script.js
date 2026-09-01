@@ -16254,50 +16254,153 @@ window.abrirSistemaEstoque = function() {
     console.log('✅ Aba NF-e exibida com sucesso');
 };
 
-// ===== MODAL PARA NÃO AUTORIZADO - VERSÃO CORRIGIDA (FORÇA DISPLAY) =====
 window.abrirRejeitarModal = function(orderId) {
-    console.log('🔴 Abrindo modal Não Autorizado para OS:', orderId);
-    
-    const modal = document.getElementById('rejeitarOSModal');
-    const osIdInput = document.getElementById('rejeitarOSId');
-    const motivoInput = document.getElementById('motivoRejeicao');
-    
+    console.log(
+        '🔴 Abrindo modal Não Autorizado para OS:',
+        orderId
+    );
+
+    const modal =
+        document.getElementById(
+            'rejeitarOSModal'
+        );
+
+    const osIdInput =
+        document.getElementById(
+            'rejeitarOSId'
+        );
+
+    const motivoInput =
+        document.getElementById(
+            'motivoRejeicao'
+        );
+
+    const responsavelCorrecaoSelect =
+        document.getElementById(
+            'responsavelCorrecaoOS'
+        );
+
     if (!modal) {
-        console.error('❌ Modal #rejeitarOSModal não encontrado!');
-        showToast('Erro: Modal não encontrado', 'error');
+        console.error(
+            '❌ Modal #rejeitarOSModal não encontrado!'
+        );
+
+        showToast(
+            'Erro: Modal não encontrado',
+            'error'
+        );
+
         return;
     }
-    
-    // Preencher o ID da OS
-    if (osIdInput) osIdInput.value = orderId;
-    
-    // Limpar campo de motivo
-    if (motivoInput) motivoInput.value = '';
-    
-    // 🔥 FORÇAR A EXIBIÇÃO - REMOVER TODAS AS CLASSES QUE OCULTAM
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
-    modal.style.visibility = 'visible';
-    modal.style.opacity = '1';
-    modal.style.zIndex = '9999';
-    
-    // Também garantir que o body não esteja com overflow hidden
-    document.body.style.overflow = '';
-    
-    console.log('✅ Modal aberto para OS:', orderId);
-    console.log('🔍 Modal display:', modal.style.display);
-    console.log('🔍 Modal classes:', modal.className);
+
+    if (osIdInput) {
+        osIdInput.value =
+            orderId;
+    }
+
+    if (motivoInput) {
+        motivoInput.value =
+            '';
+    }
+
+    if (responsavelCorrecaoSelect) {
+        responsavelCorrecaoSelect.innerHTML =
+            '<option value="">Selecione o usuário responsável</option>' +
+            SYSTEM_USERS
+                .filter(
+                    usuario =>
+                        !BLOCKED_USERS.includes(
+                            usuario.username
+                        )
+                )
+                .map(
+                    usuario =>
+                        `<option value="${usuario.name}">${usuario.name} - ${usuario.role}</option>`
+                )
+                .join('');
+
+        responsavelCorrecaoSelect.value =
+            '';
+    }
+
+    modal.classList.remove(
+        'hidden'
+    );
+
+    modal.style.display =
+        'flex';
+
+    modal.style.visibility =
+        'visible';
+
+    modal.style.opacity =
+        '1';
+
+    modal.style.zIndex =
+        '9999';
+
+    document.body.style.overflow =
+        '';
+
+    console.log(
+        '✅ Modal aberto para OS:',
+        orderId
+    );
 };
 
 window.closeRejeitarModal = function() {
-    console.log('🔴 Fechando modal Não Autorizado');
-    
-    const modal = document.getElementById('rejeitarOSModal');
+    console.log(
+        '🔴 Fechando modal Não Autorizado'
+    );
+
+    const modal =
+        document.getElementById(
+            'rejeitarOSModal'
+        );
+
     if (modal) {
-        modal.classList.add('hidden');
-        modal.style.display = 'none';
-        modal.style.visibility = 'hidden';
-        modal.style.opacity = '0';
+        modal.classList.add(
+            'hidden'
+        );
+
+        modal.style.display =
+            'none';
+
+        modal.style.visibility =
+            'hidden';
+
+        modal.style.opacity =
+            '0';
+    }
+
+    const osIdInput =
+        document.getElementById(
+            'rejeitarOSId'
+        );
+
+    const motivoInput =
+        document.getElementById(
+            'motivoRejeicao'
+        );
+
+    const responsavelSelect =
+        document.getElementById(
+            'responsavelCorrecaoOS'
+        );
+
+    if (osIdInput) {
+        osIdInput.value =
+            '';
+    }
+
+    if (motivoInput) {
+        motivoInput.value =
+            '';
+    }
+
+    if (responsavelSelect) {
+        responsavelSelect.value =
+            '';
     }
 };
 
@@ -16305,10 +16408,6 @@ window.confirmarRejeicaoOS = async function() {
     console.log(
         '🔴 Confirmando rejeição da OS'
     );
-
-    // ====================================================
-    // RONALD OU LETÍCIA
-    // ====================================================
 
     const username =
         getUsernameAtualOS();
@@ -16338,6 +16437,11 @@ window.confirmarRejeicaoOS = async function() {
             'motivoRejeicao'
         )?.value?.trim() || '';
 
+    const responsavelCorrecao =
+        document.getElementById(
+            'responsavelCorrecaoOS'
+        )?.value?.trim() || '';
+
     if (!orderId) {
         showToast(
             '❌ ID da OS não encontrado',
@@ -16356,6 +16460,21 @@ window.confirmarRejeicaoOS = async function() {
         document
             .getElementById(
                 'motivoRejeicao'
+            )
+            ?.focus();
+
+        return;
+    }
+
+    if (!responsavelCorrecao) {
+        showToast(
+            '⚠️ Selecione quem vai corrigir a OS',
+            'warning'
+        );
+
+        document
+            .getElementById(
+                'responsavelCorrecaoOS'
             )
             ?.focus();
 
@@ -16398,14 +16517,16 @@ window.confirmarRejeicaoOS = async function() {
             ? '\n\nEsta análise contará para sua meta de conferência.'
             : '\n\nEsta ação não será contabilizada na meta do Ronald.';
 
-    if (
-        !confirm(
+    const confirmou =
+        confirm(
             `⚠️ Tem certeza que deseja NÃO AUTORIZAR esta OS?\n\n` +
             `Motivo: ${motivo}\n\n` +
-            `A OS voltará para REVISÃO.` +
+            `Responsável pela correção: ${responsavelCorrecao}\n\n` +
+            `A OS voltará para PENDENTES.` +
             complementoConfirmacao
-        )
-    ) {
+        );
+
+    if (!confirmou) {
         return;
     }
 
@@ -16416,36 +16537,40 @@ window.confirmarRejeicaoOS = async function() {
             );
         }
 
-        // =================================================
-        // RONALD: USA A RPC E CONTABILIZA NA META
-        // LETÍCIA: ATUALIZA A OS SEM CONTABILIZAR NA META
-        // =================================================
+        let data =
+            null;
 
-        let data = null;
-        let error = null;
+        let error =
+            null;
 
+        /*
+         * Quando Ronald reprova, utilizamos a RPC que já
+         * registra a análise na meta de conferência.
+         *
+         * Quando Letícia reprova, a OS é atualizada
+         * normalmente, sem alterar a meta do Ronald.
+         */
         if (contabilizaMeta) {
             const resultado =
-                await supabaseClient
-                    .rpc(
-                        'processar_conferencia_os_ronald',
-                        {
-                            p_os_id:
-                                String(orderId),
+                await supabaseClient.rpc(
+                    'processar_conferencia_os_ronald',
+                    {
+                        p_os_id:
+                            String(orderId),
 
-                            p_username:
-                                currentUser.username,
+                        p_username:
+                            currentUser.username,
 
-                            p_nome:
-                                currentUser.name,
+                        p_nome:
+                            currentUser.name,
 
-                            p_resultado:
-                                'nao_autorizada',
+                        p_resultado:
+                            'nao_autorizada',
 
-                            p_motivo:
-                                motivo
-                        }
-                    );
+                        p_motivo:
+                            motivo
+                    }
+                );
 
             data =
                 resultado.data;
@@ -16521,18 +16646,83 @@ window.confirmarRejeicaoOS = async function() {
             throw error;
         }
 
+        /*
+         * Atribui a correção ao usuário escolhido.
+         *
+         * user_notified = false faz a OS aparecer como
+         * nova no sino desse usuário.
+         */
+        const agoraAtribuicao =
+            new Date().toISOString();
+
+        const {
+            error: erroAtribuicao
+        } =
+            await supabaseClient
+                .from(
+                    'ordens_service'
+                )
+                .update({
+                    status:
+                        'pendente',
+
+                    responsavel:
+                        responsavelCorrecao,
+
+                    motivo_rejeicao:
+                        motivo,
+
+                    rejeitado_por:
+                        currentUser.name,
+
+                    data_rejeicao:
+                        agoraAtribuicao,
+
+                    conferido:
+                        false,
+
+                    conferido_por:
+                        null,
+
+                    data_conferencia:
+                        null,
+
+                    user_notified:
+                        false,
+
+                    ultima_atualizacao:
+                        agoraAtribuicao
+                })
+                .eq(
+                    'id',
+                    orderId
+                );
+
+        if (erroAtribuicao) {
+            throw erroAtribuicao;
+        }
+
         const agoraISO =
             data?.data_evento ||
             data?.data_rejeicao ||
             data?.ultima_atualizacao ||
-            new Date().toISOString();
+            agoraAtribuicao;
 
-        // =================================================
-        // ATUALIZAÇÃO LOCAL
-        // =================================================
-
+        /*
+         * Atualização local para que a mudança apareça
+         * imediatamente, sem precisar recarregar a página.
+         */
         order.status =
             'pendente';
+
+        order.responsibleName =
+            responsavelCorrecao;
+
+        order.responsavel =
+            responsavelCorrecao;
+
+        order.user_notified =
+            false;
 
         order.motivo_rejeicao =
             motivo;
@@ -16549,44 +16739,58 @@ window.confirmarRejeicaoOS = async function() {
         order.conferidoPor =
             null;
 
+        order.conferido_por =
+            null;
+
         order.dataConferencia =
+            null;
+
+        order.data_conferencia =
             null;
 
         order.updatedAt =
             agoraISO;
 
-        // =================================================
-        // NOTIFICAR O CRIADOR
-        // =================================================
+        order.ultima_atualizacao =
+            agoraISO;
 
+        /*
+         * Envia a notificação usando o sistema de
+         * notificações que já alimenta o sino.
+         */
         if (
-            order.createdBy &&
-            order.createdBy !==
+            responsavelCorrecao &&
+            responsavelCorrecao !==
                 currentUser.name
         ) {
             const assunto =
-                `📋 OS não autorizada: ${order.code}`;
+                `🛠 Correção atribuída: ${order.code}`;
 
-            const mensagem = `
-Olá ${order.createdBy},
+            const mensagem =
+`Olá ${responsavelCorrecao},
 
 A OS ${order.code} - ${order.productName} não foi autorizada.
 
 Motivo:
 ${motivo}
 
-Por favor, verifique o sistema para mais detalhes.
+Esta correção foi atribuída a você. A OS está na aba de pendentes e também foi enviada ao seu sino de notificações.
 
-Sistema Wheel Tech
-            `;
+Sistema Wheel Tech`;
 
             try {
                 await enviarNotificacaoEmail(
-                    order.createdBy,
+                    responsavelCorrecao,
                     assunto,
                     mensagem
                 );
-            } catch (erroNotificacao) {
+            } catch (
+                erroNotificacao
+            ) {
+                /*
+                 * A falha da notificação não desfaz a
+                 * reprovação nem a atribuição da OS.
+                 */
                 console.warn(
                     '⚠️ A OS foi não autorizada, mas não foi possível enviar a notificação:',
                     erroNotificacao
@@ -16596,27 +16800,51 @@ Sistema Wheel Tech
 
         closeRejeitarModal();
 
-        updateCounters();
+        if (
+            typeof updateCounters ===
+            'function'
+        ) {
+            updateCounters();
+        }
 
-        renderOrdersTable();
+        if (
+            typeof renderOrdersTable ===
+            'function'
+        ) {
+            renderOrdersTable();
+        }
 
-        // =================================================
-        // LETÍCIA: NÃO RECALCULA A META
-        // =================================================
+        if (
+            typeof updateOSNotificationBell ===
+            'function'
+        ) {
+            updateOSNotificationBell();
+        }
 
+        if (
+            typeof updateNotificationsUI ===
+            'function'
+        ) {
+            updateNotificationsUI();
+        }
+
+        /*
+         * Letícia pode reprovar, mas isso não entra
+         * na meta de conferência do Ronald.
+         */
         if (!contabilizaMeta) {
             showToast(
-                '✅ OS não autorizada por Letícia e enviada para revisão. Esta ação não contabiliza na meta.',
+                '✅ OS não autorizada por Letícia e enviada para o usuário responsável. Esta ação não contabiliza na meta do Ronald.',
                 'success'
             );
 
             return;
         }
 
-        // =================================================
-        // RONALD: RECALCULA A META
-        // =================================================
-
+        /*
+         * Como Ronald analisou a OS, a reprovação
+         * é contabilizada como uma conferência.
+         */
         const status =
             await verificarMetaRonald({
                 mostrarAviso:

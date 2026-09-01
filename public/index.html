@@ -5619,6 +5619,13 @@ body > * {
             <label for="motivoRejeicao">Motivo da não autorização *</label>
             <textarea id="motivoRejeicao" class="form-control" rows="3" placeholder="Descreva o que precisa ser ajustado..." required></textarea>
         </div>
+        <div class="form-group mb-3">
+            <label for="responsavelCorrecaoOS">Quem vai corrigir? *</label>
+            <select id="responsavelCorrecaoOS" class="form-control" required>
+                <option value="">Selecione o usuário responsável</option>
+            </select>
+            <small class="text-muted">A OS ficará pendente somente para o usuário selecionado, que receberá uma notificação no sino.</small>
+        </div>
         <div class="d-flex justify-content-end gap-2">
             <button class="btn btn-secondary" onclick="closeRejeitarModal()">Cancelar</button>
             <button class="btn btn-danger" onclick="confirmarRejeicaoOS()">Enviar para Pendentes</button>

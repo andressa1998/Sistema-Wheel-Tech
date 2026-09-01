@@ -7184,5 +7184,341 @@
 
     window.atualizarContadorMenuChamados =
         atualizarContadorMenuChamados;
+// ========================================================
+// CORREÇÃO DE LOGOUT DA CENTRAL DE CHAMADOS
+// ========================================================
+
+function limparTelaChamadosAoSair() {
+
+    console.log(
+        '🧹 Limpando Central de Chamados para logout...'
+    );
+
+
+    // =====================================================
+    // ESCONDE A TELA PRINCIPAL DE CHAMADOS
+    // =====================================================
+
+    const sistemaChamados =
+        document.getElementById(
+            'chamadosSystem'
+        );
+
+
+    if (
+        sistemaChamados
+    ) {
+
+        sistemaChamados.classList.add(
+            'hidden'
+        );
+
+
+        sistemaChamados.style.display =
+            'none';
+    }
+
+
+    // =====================================================
+    // FECHA MODAL DE NOVO CHAMADO
+    // =====================================================
+
+    const modalNovo =
+        document.getElementById(
+            'modalNovoChamado'
+        );
+
+
+    if (
+        modalNovo
+    ) {
+
+        modalNovo.classList.add(
+            'hidden-ch'
+        );
+
+
+        modalNovo.style.display =
+            'none';
+    }
+
+
+    // =====================================================
+    // FECHA MODAL DE DETALHES
+    // =====================================================
+
+    const modalDetalhes =
+        document.getElementById(
+            'modalDetalhesChamado'
+        );
+
+
+    if (
+        modalDetalhes
+    ) {
+
+        modalDetalhes.classList.add(
+            'hidden-ch'
+        );
+
+
+        modalDetalhes.style.display =
+            'none';
+    }
+
+
+    // =====================================================
+    // FECHA ZOOM DE PRINT
+    // =====================================================
+
+    document
+        .querySelectorAll(
+            '.ch-zoom'
+        )
+        .forEach(
+            elemento => {
+
+                elemento.remove();
+
+            }
+        );
+
+
+    // =====================================================
+    // FECHA NOTIFICAÇÕES
+    // =====================================================
+
+    if (
+        typeof window
+            .fecharDropdownNotificacoesChamados ===
+        'function'
+    ) {
+
+        try {
+
+            window
+                .fecharDropdownNotificacoesChamados();
+
+        } catch (
+            erro
+        ) {
+
+            console.warn(
+                '⚠️ Erro fechando notificações:',
+                erro
+            );
+        }
+    }
+
+
+    // =====================================================
+    // LIMPA ESTADO INTERNO
+    // =====================================================
+
+    chamadoAberto =
+        null;
+
+
+    mensagensCache =
+        [];
+
+
+    printNovoChamado =
+        null;
+
+
+    printNovaMensagem =
+        null;
+
+
+    salvandoChamado =
+        false;
+
+
+    salvandoMensagem =
+        false;
+
+
+    console.log(
+        '✅ Central de Chamados limpa.'
+    );
+}
+
+
+// ========================================================
+// EXPÕE FUNÇÃO
+// ========================================================
+
+window.limparTelaChamadosAoSair =
+    limparTelaChamadosAoSair;
+
+
+// ========================================================
+// INTERCEPTA O LOGOUT ORIGINAL SEM SUBSTITUIR SUA LÓGICA
+// ========================================================
+
+function instalarCorrecaoLogoutChamados() {
+
+    // Já instalado
+    if (
+        window.__logoutChamadosCorrigido
+    ) {
+
+        return;
+    }
+
+
+    const logoutOriginal =
+        window.handleLogout;
+
+
+    // =====================================================
+    // HANDLELOGOUT AINDA NÃO CARREGOU
+    // =====================================================
+
+    if (
+        typeof logoutOriginal !==
+        'function'
+    ) {
+
+        console.warn(
+            '⏳ handleLogout ainda não disponível. Tentando novamente...'
+        );
+
+
+        setTimeout(
+            instalarCorrecaoLogoutChamados,
+            500
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // GUARDA FUNÇÃO ORIGINAL E CRIA WRAPPER
+    // =====================================================
+
+    window.handleLogout =
+        function (...args) {
+
+            // Primeiro fecha tudo da Central de Chamados
+            try {
+
+                limparTelaChamadosAoSair();
+
+            } catch (
+                erro
+            ) {
+
+                console.warn(
+                    '⚠️ Erro limpando Chamados no logout:',
+                    erro
+                );
+            }
+
+
+            // Depois executa exatamente o logout original
+            return logoutOriginal.apply(
+                this,
+                args
+            );
+
+        };
+
+
+    window.__logoutChamadosCorrigido =
+        true;
+
+
+    console.log(
+        '✅ Correção de logout da Central de Chamados instalada.'
+    );
+}
+
+
+// ========================================================
+// PROTEÇÃO EXTRA VIA CSS
+//
+// Mesmo que algum logout futuro seja alterado,
+// se o body entrar em modo login, Chamados some.
+// ========================================================
+
+function instalarCSSLogoutChamados() {
+
+    if (
+        document.getElementById(
+            'cssLogoutChamados'
+        )
+    ) {
+
+        return;
+    }
+
+
+    const style =
+        document.createElement(
+            'style'
+        );
+
+
+    style.id =
+        'cssLogoutChamados';
+
+
+    style.textContent = `
+
+        body.login-active #chamadosSystem {
+            display: none !important;
+        }
+
+
+        body.login-active #modalNovoChamado {
+            display: none !important;
+        }
+
+
+        body.login-active #modalDetalhesChamado {
+            display: none !important;
+        }
+
+
+        body.login-active .ch-zoom {
+            display: none !important;
+        }
+
+    `;
+
+
+    document.head.appendChild(
+        style
+    );
+}
+
+
+// ========================================================
+// INSTALA
+// ========================================================
+
+instalarCSSLogoutChamados();
+
+
+setTimeout(
+    instalarCorrecaoLogoutChamados,
+    100
+);
+
+
+setTimeout(
+    instalarCorrecaoLogoutChamados,
+    800
+);
+
+
+setTimeout(
+    instalarCorrecaoLogoutChamados,
+    2000
+);
 
 })();
