@@ -122,72 +122,39 @@
     }
 
 
-    // ========================================================
-    // USUÁRIO ATUAL
-    // ========================================================
-
     function usuarioAtualNotificacoes() {
-
-        // Primeiro tenta window.currentUser
+    try {
         if (
-            window.currentUser
+            typeof currentUser !== 'undefined' &&
+            currentUser
         ) {
-
-            return (
-                window.currentUser
-            );
-
+            return currentUser;
         }
-
-
-        // Fallback pela sessão salva
-        try {
-
-            const salvo =
-                localStorage.getItem(
-                    'wheeltech_user'
-                );
-
-
-            if (
-                salvo
-            ) {
-
-                const usuario =
-                    JSON.parse(
-                        salvo
-                    );
-
-
-                if (
-                    usuario &&
-                    (
-                        usuario.username ||
-                        usuario.name
-                    )
-                ) {
-
-                    return usuario;
-
-                }
-
-            }
-
-        } catch (
-            erro
-        ) {
-
-            console.warn(
-                '⚠️ Não foi possível recuperar usuário para o sino:',
-                erro
-            );
-
-        }
-
-
-        return null;
-
+    } catch (error) {
+        // currentUser pode não estar disponível neste arquivo.
     }
+
+    if (window.currentUser) {
+        return window.currentUser;
+    }
+
+    try {
+        const usuarioSalvo =
+            localStorage.getItem('currentUser') ||
+            sessionStorage.getItem('currentUser');
+
+        if (usuarioSalvo) {
+            return JSON.parse(usuarioSalvo);
+        }
+    } catch (error) {
+        console.warn(
+            '⚠️ Não foi possível recuperar o usuário logado:',
+            error
+        );
+    }
+
+    return null;
+}
 
 
     function normalizarUsuarioNotificacao(
@@ -212,50 +179,40 @@
 
 
     function usernameAtualNotificacao() {
+    const usuario =
+        usuarioAtualNotificacoes();
 
-        const usuario =
-            usuarioAtualNotificacoes();
-
-
-        if (
-            !usuario
-        ) {
-
-            return '';
-
-        }
-
-
-        return normalizarUsuarioNotificacao(
-
-            usuario.username ||
-            usuario.name ||
-            ''
-
-        );
-
+    if (!usuario) {
+        return '';
     }
+
+    return normalizarUsuarioNotificacao(
+        usuario.username ||
+        usuario.login ||
+        usuario.usuario ||
+        usuario.name ||
+        ''
+    );
+}
 
 
     function nomeAtualNotificacao() {
+    const usuario =
+        usuarioAtualNotificacoes();
 
-        const usuario =
-            usuarioAtualNotificacoes();
-
-
-        return (
-
-            usuario?.name ||
-
-            usuario?.username ||
-
-            usernameAtualNotificacao() ||
-
-            'Usuário'
-
-        );
-
+    if (!usuario) {
+        return 'Usuário';
     }
+
+    return (
+        usuario.name ||
+        usuario.nome ||
+        usuario.username ||
+        usuario.login ||
+        usernameAtualNotificacao() ||
+        'Usuário'
+    );
+}
 
 
     // ========================================================
@@ -415,366 +372,230 @@
     }
 
 
-    // ========================================================
-    // ADMINISTRADORES
-    // ========================================================
-
     function obterAdminsNotificacoesChamados() {
+    // Somente Andressa recebe notificações de todos os chamados.
+    return ['andressamiotto'];
+}
 
-        let admins =
-            [];
-
-
-        // ================================================
-        // PRIMEIRO:
-        // SYSTEM_USERS
-        // ================================================
-
-        try {
-
-            if (
-                typeof SYSTEM_USERS !==
-                    'undefined' &&
-                Array.isArray(
-                    SYSTEM_USERS
-                )
-            ) {
-
-                admins =
-                    SYSTEM_USERS
-
-                        .filter(
-                            usuario => {
-
-                                const role =
-                                    normalizarUsuarioNotificacao(
-                                        usuario.role
-                                    );
-
-
-                                return (
-
-                                    role ===
-                                        'admin'
-
-                                    ||
-
-                                    role ===
-                                        'administrador'
-
-                                    ||
-
-                                    role.includes(
-                                        'administrador'
-                                    )
-
-                                );
-
-                            }
-                        )
-
-                        .map(
-                            usuario =>
-
-                                normalizarUsuarioNotificacao(
-                                    usuario.username
-                                )
-
-                        )
-
-                        .filter(
-                            Boolean
-                        );
-
-            }
-
-        } catch (
-            erro
-        ) {
-
-            console.warn(
-                '⚠️ SYSTEM_USERS não disponível para notificações:',
-                erro
-            );
-
-        }
-
-
-        // ================================================
-        // FALLBACK:
-        // CFG_CHAMADOS
-        // ================================================
-
-        if (
-            !admins.length
-        ) {
-
-            try {
-
-                if (
-                    window.CFG_CHAMADOS &&
-                    Array.isArray(
-                        window.CFG_CHAMADOS
-                            .admins
-                    )
-                ) {
-
-                    admins =
-                        window.CFG_CHAMADOS
-                            .admins
-
-                            .map(
-                                normalizarUsuarioNotificacao
-                            )
-
-                            .filter(
-                                Boolean
-                            );
-
-                }
-
-            } catch (
-                erro
-            ) {
-
-                console.warn(
-                    '⚠️ CFG_CHAMADOS não disponível:',
-                    erro
-                );
-
-            }
-
-        }
-
-
-        // ================================================
-        // ÚLTIMO FALLBACK
-        // ================================================
-
-        if (
-            !admins.length
-        ) {
-
-            admins = [
-
-                'andressamiotto',
-                'ronald',
-                'leticia'
-
-            ];
-
-        }
-
-
-        return [
-            ...new Set(
-                admins
-            )
-        ];
-
-    }
-
-
-    // ========================================================
-    // CRIAR UMA NOTIFICAÇÃO
-    //
-    // USADA PELO chamados.js
-    // ========================================================
 
     window.criarNotificacaoChamado =
-        async function ({
-            chamadoId,
-            destinatarioUsername,
-            tipo,
-            titulo,
-            mensagem = ''
-        }) {
+    async function ({
+        chamadoId,
+        destinatarioUsername,
+        tipo,
+        titulo,
+        mensagem = '',
+        permitirNotificarProprioUsuario = false
+    }) {
+        const sb =
+            sbNotificacoesChamados();
 
-            const sb =
-                sbNotificacoesChamados();
+        if (!sb) {
+            console.warn(
+                '⚠️ Supabase indisponível para criar notificação.'
+            );
 
+            return false;
+        }
 
-            if (
-                !sb
-            ) {
+        const destinatario =
+            normalizarUsuarioNotificacao(
+                destinatarioUsername
+            );
 
-                console.warn(
-                    '⚠️ Supabase indisponível para criar notificação.'
-                );
+        if (!destinatario) {
+            console.warn(
+                '⚠️ Destinatário da notificação não informado.'
+            );
 
-                return false;
+            return false;
+        }
 
+        const autorUsername =
+            usernameAtualNotificacao();
+
+        if (
+            !permitirNotificarProprioUsuario &&
+            destinatario === autorUsername
+        ) {
+            return true;
+        }
+
+        const chamadoIdNormalizado =
+            Number(chamadoId);
+
+        if (
+            !Number.isFinite(chamadoIdNormalizado) ||
+            chamadoIdNormalizado <= 0
+        ) {
+            console.warn(
+                '⚠️ ID inválido para criar notificação:',
+                chamadoId
+            );
+
+            return false;
+        }
+
+        try {
+            const {
+                error
+            } = await sb
+                .from(
+                    NOTIF_CHAMADOS_CONFIG.tabela
+                )
+                .insert({
+                    chamado_id:
+                        chamadoIdNormalizado,
+
+                    destinatario_username:
+                        destinatario,
+
+                    autor_username:
+                        autorUsername ||
+                        null,
+
+                    autor_nome:
+                        nomeAtualNotificacao(),
+
+                    tipo:
+                        tipo ||
+                        'atualizacao',
+
+                    titulo:
+                        titulo ||
+                        `Atualização no chamado ${chamadoIdNormalizado}`,
+
+                    mensagem:
+                        mensagem ||
+                        null,
+
+                    lida:
+                        false
+                });
+
+            if (error) {
+                throw error;
             }
-
-
-            const destinatario =
-                normalizarUsuarioNotificacao(
-                    destinatarioUsername
-                );
-
-
-            if (
-                !destinatario
-            ) {
-
-                return false;
-
-            }
-
-
-            // ================================================
-            // NÃO CRIA NOTIFICAÇÃO PARA A PRÓPRIA PESSOA
-            // ================================================
 
             if (
                 destinatario ===
                 usernameAtualNotificacao()
             ) {
-
-                return false;
-
+                await carregarNotificacoesChamados();
             }
 
+            return true;
 
-            try {
-
-                const {
-                    error
-                } =
-                    await sb
-
-                        .from(
-                            NOTIF_CHAMADOS_CONFIG
-                                .tabela
-                        )
-
-                        .insert({
-
-                            chamado_id:
-                                Number(
-                                    chamadoId
-                                ),
-
-                            destinatario_username:
-                                destinatario,
-
-                            autor_username:
-                                usernameAtualNotificacao(),
-
-                            autor_nome:
-                                nomeAtualNotificacao(),
-
-                            tipo:
-                                tipo,
-
-                            titulo:
-                                titulo,
-
-                            mensagem:
-                                mensagem ||
-                                null,
-
-                            lida:
-                                false
-
-                        });
-
-
-                if (
-                    error
-                ) {
-
-                    throw error;
-
-                }
-
-
-                console.log(
-                    '🔔 Notificação criada para:',
-                    destinatario
-                );
-
-
-                return true;
-
-
-            } catch (
+        } catch (error) {
+            console.error(
+                '❌ Erro criando notificação do chamado:',
                 error
-            ) {
-
-                console.error(
-                    '❌ Erro criando notificação:',
-                    error
-                );
-
-
-                return false;
-
-            }
-
-        };
-
-
-    // ========================================================
-    // NOTIFICAR TODOS OS ADMINS
-    // ========================================================
-
-    window.notificarAdminsChamado =
-        async function ({
-            chamadoId,
-            tipo,
-            titulo,
-            mensagem = ''
-        }) {
-
-            const admins =
-                obterAdminsNotificacoesChamados();
-
-
-            const atual =
-                usernameAtualNotificacao();
-
-
-            const promises =
-                admins
-
-                    .filter(
-                        admin =>
-                            admin !==
-                            atual
-                    )
-
-                    .map(
-                        admin =>
-
-                            window
-                                .criarNotificacaoChamado({
-
-                                    chamadoId:
-                                        chamadoId,
-
-                                    destinatarioUsername:
-                                        admin,
-
-                                    tipo:
-                                        tipo,
-
-                                    titulo:
-                                        titulo,
-
-                                    mensagem:
-                                        mensagem
-
-                                })
-
-                    );
-
-
-            await Promise.allSettled(
-                promises
             );
 
-        };
+            return false;
+        }
+    };
+
+
+    window.notificarAdminsChamado =
+    async function ({
+        chamadoId,
+        tipo,
+        titulo,
+        mensagem = ''
+    }) {
+        const destinatarios =
+            obterAdminsNotificacoesChamados();
+
+        const usuarioAtual =
+            usernameAtualNotificacao();
+
+        const resultados =
+            await Promise.allSettled(
+                destinatarios
+                    .filter(Boolean)
+                    .filter(
+                        destinatario =>
+                            destinatario !==
+                            usuarioAtual
+                    )
+                    .map(
+                        destinatario =>
+                            window.criarNotificacaoChamado({
+                                chamadoId:
+                                    chamadoId,
+
+                                destinatarioUsername:
+                                    destinatario,
+
+                                tipo:
+                                    tipo ||
+                                    'novo_chamado',
+
+                                titulo:
+                                    titulo ||
+                                    `Novo chamado ${chamadoId}`,
+
+                                mensagem:
+                                    mensagem
+                            })
+                    )
+            );
+
+        return resultados.every(
+            resultado =>
+                resultado.status ===
+                    'fulfilled' &&
+                resultado.value !== false
+        );
+    };
+
+    window.notificarNovoChamadoCriado =
+    async function (chamado) {
+        if (!chamado) {
+            return false;
+        }
+
+        const chamadoId =
+            chamado.id ||
+            chamado.chamado_id;
+
+        if (!chamadoId) {
+            console.warn(
+                '⚠️ Chamado sem ID. A notificação não foi criada.',
+                chamado
+            );
+
+            return false;
+        }
+
+        const numeroChamado =
+            chamado.codigo ||
+            chamado.numero ||
+            numeroChamadoNotif(
+                chamadoId
+            );
+
+        const assunto =
+            chamado.assunto ||
+            chamado.titulo ||
+            chamado.motivo ||
+            'Novo chamado';
+
+        return await window.notificarAdminsChamado({
+            chamadoId:
+                chamadoId,
+
+            tipo:
+                'novo_chamado',
+
+            titulo:
+                `🎫 Novo chamado ${numeroChamado}`,
+
+            mensagem:
+                assunto
+        });
+    };
 
 
     // ========================================================
@@ -1836,234 +1657,323 @@
         };
 
 
-    // ========================================================
-    // CARREGAR NOTIFICAÇÕES
-    //
-    // ESTA É A FUNÇÃO QUE ATUALIZA O VERMELHINHO SEM CLIQUE.
-    // ========================================================
-
     async function carregarNotificacoesChamados() {
+    if (carregandoNotificacoesChamados) {
+        return;
+    }
 
-        if (
-            carregandoNotificacoesChamados
-        ) {
+    const sb =
+        sbNotificacoesChamados();
 
-            return;
+    const username =
+        usernameAtualNotificacao();
 
-        }
+    const usuarioAtual =
+        usuarioAtualNotificacoes();
 
+    if (
+        !sb ||
+        !username
+    ) {
+        return;
+    }
 
-        // O sino deve existir mesmo antes
-        // de conseguirmos consultar o banco.
-        garantirSinoChamados();
+    carregandoNotificacoesChamados =
+        true;
 
+    try {
+        const normalizarNome = valor => {
+            return String(valor || '')
+                .trim()
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ''
+                );
+        };
 
-        const sb =
-            sbNotificacoesChamados();
+        const nomesUsuario = [
+            username,
+            usuarioAtual?.name,
+            usuarioAtual?.nome,
+            usuarioAtual?.username,
+            usuarioAtual?.login,
+            usuarioAtual?.usuario
+        ]
+            .map(normalizarNome)
+            .filter(Boolean);
 
+        const anterioresNaoLidas =
+            notificacoesChamadosCache
+                .filter(
+                    notificacao =>
+                        !notificacao.lida
+                )
+                .length;
 
-        const username =
-            usernameAtualNotificacao();
-
-
-        if (
-            !sb ||
-            !username
-        ) {
-
-            return;
-
-        }
-
-
-        carregandoNotificacoesChamados =
-            true;
-
-
-        try {
-
-            // ================================================
-            // LISTA
-            // ================================================
-
-            const {
-                data,
-                error
-            } =
-                await sb
-
-                    .from(
-                        NOTIF_CHAMADOS_CONFIG
-                            .tabela
-                    )
-
-                    .select('*')
-
-                    .eq(
-                        'destinatario_username',
-                        username
-                    )
-
-                    .order(
-                        'criado_em',
-                        {
-                            ascending:
-                                false
-                        }
-                    )
-
-                    .limit(
-                        NOTIF_CHAMADOS_CONFIG
-                            .limiteLista
-                    );
-
-
-            if (
-                error
-            ) {
-
-                throw error;
-
-            }
-
-
-            const quantidadeAnterior =
-                totalNaoLidasChamados;
-
-
-            notificacoesChamadosCache =
-                data ||
-                [];
-
-
-            // ================================================
-            // CONTAGEM EXATA DE NÃO LIDAS
-            // ================================================
-
-            let quantidadeNaoLidas =
-                notificacoesChamadosCache
-                    .filter(
-                        notificacao =>
-                            !notificacao.lida
-                    )
-                    .length;
-
-
-            try {
-
-                const {
-                    count,
-                    error:
-                        erroCount
-                } =
-                    await sb
-
-                        .from(
-                            NOTIF_CHAMADOS_CONFIG
-                                .tabela
-                        )
-
-                        .select(
-                            'id',
-                            {
-
-                                count:
-                                    'exact',
-
-                                head:
-                                    true
-
-                            }
-                        )
-
-                        .eq(
-                            'destinatario_username',
-                            username
-                        )
-
-                        .eq(
-                            'lida',
-                            false
-                        );
-
-
-                if (
-                    !erroCount &&
-                    count !== null &&
-                    count !== undefined
-                ) {
-
-                    quantidadeNaoLidas =
-                        Number(
-                            count
-                        );
-
-                }
-
-            } catch (
-                erroContagem
-            ) {
-
-                console.warn(
-                    '⚠️ Usando contagem local das notificações:',
-                    erroContagem
+        /*
+         * Busca notificações dos chamados.
+         */
+        const consultaChamados =
+            sb
+                .from(
+                    NOTIF_CHAMADOS_CONFIG.tabela
+                )
+                .select('*')
+                .eq(
+                    'destinatario_username',
+                    username
+                )
+                .order(
+                    'criado_em',
+                    {
+                        ascending: false
+                    }
+                )
+                .limit(
+                    NOTIF_CHAMADOS_CONFIG
+                        .limiteLista
                 );
 
-            }
+        /*
+         * Busca todas as OS que ainda não foram
+         * notificadas. O filtro do usuário é feito
+         * depois para aceitar nomes com ou sem acento.
+         */
+        const consultaOS =
+            sb
+                .from(
+                    'ordens_service'
+                )
+                .select(`
+                    id,
+                    codigo,
+                    produto_nome,
+                    responsavel,
+                    user_notified,
+                    data_criacao,
+                    etapa_fluxo,
+                    fluxo_renovacao
+                `)
+                .or(
+                    'user_notified.eq.false,user_notified.is.null'
+                )
+                .order(
+                    'data_criacao',
+                    {
+                        ascending: false
+                    }
+                )
+                .limit(100);
 
+        const [
+            resultadoChamados,
+            resultadoOS
+        ] = await Promise.all([
+            consultaChamados,
+            consultaOS
+        ]);
 
-            totalNaoLidasChamados =
-                quantidadeNaoLidas;
-
-
-            // ================================================
-            // RENDERIZA LISTA
-            // ================================================
-
-            renderizarNotificacoesChamados();
-
-
-            // ================================================
-            // ATUALIZA O BADGE VERMELHO
-            // ================================================
-
-            atualizarBadgeNotificacoesChamados(
-                quantidadeNaoLidas
-            );
-
-
-            // ================================================
-            // CHEGOU NOVA
-            // ================================================
-
-            if (
-                quantidadeNaoLidas >
-                quantidadeAnterior
-            ) {
-
-                animarSinoChamados();
-
-            }
-
-
-        } catch (
-            error
-        ) {
-
-            console.error(
-                '❌ Erro carregando notificações:',
-                error
-            );
-
-
-        } finally {
-
-            carregandoNotificacoesChamados =
-                false;
-
+        if (resultadoChamados.error) {
+            throw resultadoChamados.error;
         }
 
+        if (resultadoOS.error) {
+            throw resultadoOS.error;
+        }
+
+        const notificacoesDeChamados =
+            (
+                resultadoChamados.data ||
+                []
+            ).map(notificacao => ({
+                ...notificacao,
+
+                origem:
+                    'chamado',
+
+                chave_notificacao:
+                    `chamado-${notificacao.id}`
+            }));
+
+        const osDoUsuario =
+            (
+                resultadoOS.data ||
+                []
+            ).filter(os => {
+                const responsavel =
+                    normalizarNome(
+                        os.responsavel
+                    );
+
+                return nomesUsuario.some(
+                    nomeUsuario => {
+                        return (
+                            responsavel ===
+                                nomeUsuario ||
+                            responsavel.includes(
+                                nomeUsuario
+                            )
+                        );
+                    }
+                );
+            });
+
+        const notificacoesDeOS =
+            osDoUsuario.map(os => {
+                const etapa =
+                    normalizarNome(
+                        os.etapa_fluxo
+                    );
+
+                let mensagemEtapa =
+                    'Uma nova OS foi atribuída a você.';
+
+                if (
+                    etapa.includes(
+                        'leticia'
+                    )
+                ) {
+                    mensagemEtapa =
+                        'Verifique se o anúncio não possui vendas nos últimos meses.';
+                } else if (
+                    etapa.includes(
+                        'ronald'
+                    )
+                ) {
+                    mensagemEtapa =
+                        'Confira se a foto da bike corresponde à gancheira.';
+                } else if (
+                    etapa.includes(
+                        'elaine'
+                    )
+                ) {
+                    mensagemEtapa =
+                        'A OS foi aprovada e está pronta para tirar ou editar a foto.';
+                }
+
+                return {
+                    id:
+                        os.id,
+
+                    os_id:
+                        os.id,
+
+                    chamado_id:
+                        null,
+
+                    origem:
+                        'os',
+
+                    chave_notificacao:
+                        `os-${os.id}`,
+
+                    tipo:
+                        'nova_os',
+
+                    titulo:
+                        `Nova OS atribuída: ${
+                            os.codigo ||
+                            `OS-${os.id}`
+                        }`,
+
+                    mensagem:
+                        `${
+                            os.produto_nome ||
+                            'Ordem de serviço'
+                        } — ${mensagemEtapa}`,
+
+                    criado_em:
+                        os.data_criacao,
+
+                    lida:
+                        os.user_notified ===
+                        true,
+
+                    responsavel:
+                        os.responsavel,
+
+                    etapa_fluxo:
+                        os.etapa_fluxo,
+
+                    fluxo_renovacao:
+                        os.fluxo_renovacao
+                };
+            });
+
+        notificacoesChamadosCache = [
+            ...notificacoesDeChamados,
+            ...notificacoesDeOS
+        ]
+            .sort((a, b) => {
+                return (
+                    new Date(
+                        b.criado_em ||
+                        0
+                    ).getTime() -
+                    new Date(
+                        a.criado_em ||
+                        0
+                    ).getTime()
+                );
+            })
+            .slice(
+                0,
+                NOTIF_CHAMADOS_CONFIG
+                    .limiteLista
+            );
+
+        const novasNaoLidas =
+            notificacoesChamadosCache
+                .filter(
+                    notificacao =>
+                        !notificacao.lida
+                )
+                .length;
+
+        renderizarNotificacoesChamados();
+        atualizarBadgeNotificacoesChamados();
+
+        if (
+            novasNaoLidas >
+            anterioresNaoLidas
+        ) {
+            animarSinoChamados();
+        }
+
+        console.log(
+            '🔔 Notificações unificadas:',
+            {
+                usuario:
+                    username,
+
+                chamados:
+                    notificacoesDeChamados
+                        .filter(n => !n.lida)
+                        .length,
+
+                ordensServico:
+                    notificacoesDeOS
+                        .filter(n => !n.lida)
+                        .length,
+
+                total:
+                    novasNaoLidas
+            }
+        );
+
+    } catch (error) {
+        console.error(
+            '❌ Erro carregando notificações:',
+            error
+        );
+
+    } finally {
+        carregandoNotificacoesChamados =
+            false;
     }
+}
 
 
     // ========================================================
@@ -2231,441 +2141,453 @@
     }
 
 
-    // ========================================================
-    // RENDERIZA LISTA
-    // ========================================================
-
     function renderizarNotificacoesChamados() {
+    const lista =
+        document.getElementById(
+            'listaNotificacoesChamados'
+        );
 
-        const lista =
-            document.getElementById(
-                'listaNotificacoesChamados'
-            );
-
-
-        if (
-            !lista
-        ) {
-
-            return;
-
-        }
-
-
-        if (
-            !notificacoesChamadosCache.length
-        ) {
-
-            lista.innerHTML = `
-
-                <div
-                    class="notif-ch-vazio"
-                >
-
-                    <i
-                        class="
-                            far
-                            fa-bell
-                        "
-                    ></i>
-
-                    Nenhuma notificação.
-
-                </div>
-
-            `;
-
-
-            return;
-
-        }
-
-
-        lista.innerHTML =
-            notificacoesChamadosCache
-
-                .map(
-                    notificacao => {
-
-                        const icone =
-                            iconeTipoNotificacao(
-                                notificacao.tipo
-                            );
-
-
-                        return `
-
-                            <button
-                                type="button"
-
-                                class="
-                                    notif-ch-item
-
-                                    ${
-                                        !notificacao.lida
-                                            ? 'nao-lida'
-                                            : ''
-                                    }
-                                "
-
-                                onclick="
-                                    abrirNotificacaoChamados(
-                                        ${Number(
-                                            notificacao.id
-                                        )},
-
-                                        ${Number(
-                                            notificacao.chamado_id
-                                        )}
-                                    );
-                                "
-                            >
-
-                                <div
-                                    class="notif-ch-icone"
-                                >
-                                    ${icone}
-                                </div>
-
-
-                                <div
-                                    class="notif-ch-conteudo"
-                                >
-
-                                    <div
-                                        class="notif-ch-titulo"
-                                    >
-
-                                        ${escaparNotif(
-                                            notificacao.titulo ||
-                                            'Atualização no chamado'
-                                        )}
-
-                                    </div>
-
-
-                                    ${
-                                        notificacao.mensagem
-
-                                            ? `
-
-                                                <div
-                                                    class="notif-ch-mensagem"
-                                                >
-
-                                                    ${escaparNotif(
-                                                        notificacao.mensagem
-                                                    )}
-
-                                                </div>
-
-                                            `
-
-                                            : ''
-                                    }
-
-
-                                    <div
-                                        class="notif-ch-meta"
-                                    >
-
-                                        ${
-                                            !notificacao.lida
-
-                                                ? `
-
-                                                    <span
-                                                        class="notif-ch-bolinha"
-                                                    ></span>
-
-                                                `
-
-                                                : ''
-                                        }
-
-
-                                        #${numeroChamadoNotif(
-                                            notificacao.chamado_id
-                                        )}
-
-                                        •
-
-                                        ${escaparNotif(
-                                            formatarDataNotif(
-                                                notificacao.criado_em
-                                            )
-                                        )}
-
-                                    </div>
-
-                                </div>
-
-                            </button>
-
-                        `;
-
-                    }
-                )
-
-                .join(
-                    ''
-                );
-
+    if (!lista) {
+        return;
     }
 
+    if (
+        !notificacoesChamadosCache.length
+    ) {
+        lista.innerHTML = `
+            <div class="notif-ch-vazio">
+                <i class="far fa-bell"></i>
+                Nenhuma notificação.
+            </div>
+        `;
 
-    // ========================================================
-    // MARCAR UMA COMO LIDA
-    // ========================================================
+        return;
+    }
+
+    lista.innerHTML =
+        notificacoesChamadosCache
+            .map(notificacao => {
+                const ehOS =
+                    notificacao.origem ===
+                    'os';
+
+                const icone =
+                    ehOS
+                        ? '📋'
+                        : iconeTipoNotificacao(
+                            notificacao.tipo
+                        );
+
+                const id =
+                    Number(
+                        notificacao.id
+                    );
+
+                const chamadoId =
+                    notificacao.chamado_id
+                        ? Number(
+                            notificacao.chamado_id
+                        )
+                        : 0;
+
+                return `
+                    <button
+                        type="button"
+                        class="
+                            notif-ch-item
+                            ${
+                                !notificacao.lida
+                                    ? 'nao-lida'
+                                    : ''
+                            }
+                        "
+                        onclick="
+                            abrirNotificacaoUnificada(
+                                '${ehOS ? 'os' : 'chamado'}',
+                                ${id},
+                                ${chamadoId}
+                            )
+                        "
+                    >
+                        <div class="notif-ch-icone">
+                            ${icone}
+                        </div>
+
+                        <div class="notif-ch-conteudo">
+                            <div class="notif-ch-titulo">
+                                ${escaparNotif(
+                                    notificacao.titulo ||
+                                    (
+                                        ehOS
+                                            ? 'Nova ordem de serviço'
+                                            : 'Atualização no chamado'
+                                    )
+                                )}
+                            </div>
+
+                            ${
+                                notificacao.mensagem
+                                    ? `
+                                        <div class="notif-ch-mensagem">
+                                            ${escaparNotif(
+                                                notificacao.mensagem
+                                            )}
+                                        </div>
+                                    `
+                                    : ''
+                            }
+
+                            <div class="notif-ch-meta">
+                                ${
+                                    !notificacao.lida
+                                        ? `
+                                            <span
+                                                class="notif-ch-bolinha"
+                                            ></span>
+                                        `
+                                        : ''
+                                }
+
+                                ${
+                                    ehOS
+                                        ? escaparNotif(
+                                            notificacao
+                                                .etapa_fluxo ||
+                                            'Ordem de serviço'
+                                        )
+                                        : `#${numeroChamadoNotif(
+                                            notificacao.chamado_id
+                                        )}`
+                                }
+
+                                •
+
+                                ${escaparNotif(
+                                    formatarDataNotif(
+                                        notificacao.criado_em
+                                    )
+                                )}
+                            </div>
+                        </div>
+                    </button>
+                `;
+            })
+            .join('');
+}
+
 
     async function marcarNotificacaoChamadosLida(
-        id
-    ) {
+    id,
+    origem = 'chamado'
+) {
+    const sb =
+        sbNotificacoesChamados();
 
+    if (!sb) {
+        return false;
+    }
+
+    try {
+        const agora =
+            new Date().toISOString();
+
+        if (origem === 'os') {
+            const {
+                error
+            } = await sb
+                .from(
+                    'ordens_service'
+                )
+                .update({
+                    user_notified:
+                        true
+                })
+                .eq(
+                    'id',
+                    id
+                );
+
+            if (error) {
+                throw error;
+            }
+
+        } else {
+            const {
+                error
+            } = await sb
+                .from(
+                    NOTIF_CHAMADOS_CONFIG
+                        .tabela
+                )
+                .update({
+                    lida:
+                        true,
+
+                    lida_em:
+                        agora
+                })
+                .eq(
+                    'id',
+                    id
+                )
+                .eq(
+                    'destinatario_username',
+                    usernameAtualNotificacao()
+                );
+
+            if (error) {
+                throw error;
+            }
+        }
+
+        const notificacaoLocal =
+            notificacoesChamadosCache
+                .find(notificacao => {
+                    return (
+                        String(
+                            notificacao.id
+                        ) ===
+                            String(id) &&
+                        notificacao.origem ===
+                            origem
+                    );
+                });
+
+        if (notificacaoLocal) {
+            notificacaoLocal.lida =
+                true;
+
+            notificacaoLocal.lida_em =
+                agora;
+        }
+
+        atualizarBadgeNotificacoesChamados();
+        renderizarNotificacoesChamados();
+
+        return true;
+
+    } catch (error) {
+        console.error(
+            '❌ Erro marcando notificação como lida:',
+            error
+        );
+
+        return false;
+    }
+}
+
+window.abrirNotificacaoUnificada =
+    async function (
+        origem,
+        notificacaoId,
+        chamadoId = 0
+    ) {
+        await marcarNotificacaoChamadosLida(
+            notificacaoId,
+            origem
+        );
+
+        window
+            .fecharDropdownNotificacoesChamados();
+
+        if (origem === 'os') {
+            /*
+             * Abre a aba de OS usando as funções disponíveis
+             * no sistema.
+             */
+            if (
+                typeof window.showSystem ===
+                'function'
+            ) {
+                const possiveisIds = [
+                    'mainSystem',
+                    'osSystem',
+                    'ordemServicoSystem',
+                    'ordensServiceSystem'
+                ];
+
+                for (
+                    const idSistema of
+                    possiveisIds
+                ) {
+                    if (
+                        document.getElementById(
+                            idSistema
+                        )
+                    ) {
+                        window.showSystem(
+                            idSistema
+                        );
+
+                        break;
+                    }
+                }
+            }
+
+            if (
+                typeof window
+                    .openOrderDetails ===
+                'function'
+            ) {
+                window.openOrderDetails(
+                    notificacaoId
+                );
+            }
+
+            return;
+        }
+
+        if (
+            typeof window
+                .abrirSistemaChamados ===
+            'function'
+        ) {
+            await window
+                .abrirSistemaChamados();
+        }
+
+        if (
+            chamadoId &&
+            typeof window
+                .abrirDetalhesChamado ===
+            'function'
+        ) {
+            await window
+                .abrirDetalhesChamado(
+                    chamadoId
+                );
+        }
+    };
+
+
+    window.marcarTodasNotificacoesChamadosLidas =
+    async function () {
         const sb =
             sbNotificacoesChamados();
 
-
         const username =
             usernameAtualNotificacao();
-
 
         if (
             !sb ||
             !username
         ) {
-
-            return false;
-
+            return;
         }
-
 
         try {
-
             const agora =
-                new Date()
-                    .toISOString();
+                new Date().toISOString();
 
-
-            const {
-                error
-            } =
-                await sb
-
-                    .from(
-                        NOTIF_CHAMADOS_CONFIG
-                            .tabela
-                    )
-
-                    .update({
-
-                        lida:
-                            true,
-
-                        lida_em:
-                            agora
-
-                    })
-
-                    .eq(
-                        'id',
-                        id
-                    )
-
-                    .eq(
-                        'destinatario_username',
-                        username
-                    );
-
-
-            if (
-                error
-            ) {
-
-                throw error;
-
-            }
-
-
-            // ================================================
-            // ATUALIZA LOCAL
-            // ================================================
-
-            const local =
+            const idsOS =
                 notificacoesChamadosCache
-                    .find(
+                    .filter(
                         notificacao =>
+                            notificacao.origem ===
+                                'os' &&
+                            !notificacao.lida
+                    )
+                    .map(
+                        notificacao =>
+                            notificacao.id
+                    )
+                    .filter(Boolean);
 
-                            Number(
-                                notificacao.id
-                            ) ===
-                            Number(
-                                id
-                            )
-                    );
+            const idsChamados =
+                notificacoesChamadosCache
+                    .filter(
+                        notificacao =>
+                            notificacao.origem !==
+                                'os' &&
+                            !notificacao.lida
+                    )
+                    .map(
+                        notificacao =>
+                            notificacao.id
+                    )
+                    .filter(Boolean);
 
+            const atualizacoes =
+                [];
 
-            if (
-                local
-            ) {
-
-                local.lida =
-                    true;
-
-
-                local.lida_em =
-                    agora;
-
-            }
-
-
-            totalNaoLidasChamados =
-                Math.max(
-                    0,
-                    totalNaoLidasChamados -
-                    1
-                );
-
-
-            atualizarBadgeNotificacoesChamados(
-                totalNaoLidasChamados
-            );
-
-
-            renderizarNotificacoesChamados();
-
-
-            return true;
-
-
-        } catch (
-            error
-        ) {
-
-            console.error(
-                '❌ Erro marcando notificação como lida:',
-                error
-            );
-
-
-            return false;
-
-        }
-
-    }
-
-
-    // ========================================================
-    // MARCAR TODAS COMO LIDAS
-    // ========================================================
-
-    window.marcarTodasNotificacoesChamadosLidas =
-        async function() {
-
-            const sb =
-                sbNotificacoesChamados();
-
-
-            const username =
-                usernameAtualNotificacao();
-
-
-            if (
-                !sb ||
-                !username
-            ) {
-
-                return;
-
-            }
-
-
-            try {
-
-                const agora =
-                    new Date()
-                        .toISOString();
-
-
-                const {
-                    error
-                } =
-                    await sb
-
+            if (idsChamados.length) {
+                atualizacoes.push(
+                    sb
                         .from(
                             NOTIF_CHAMADOS_CONFIG
                                 .tabela
                         )
-
                         .update({
-
                             lida:
                                 true,
 
                             lida_em:
                                 agora
-
                         })
-
                         .eq(
                             'destinatario_username',
                             username
                         )
-
-                        .eq(
-                            'lida',
-                            false
-                        );
-
-
-                if (
-                    error
-                ) {
-
-                    throw error;
-
-                }
-
-
-                notificacoesChamadosCache
-                    .forEach(
-                        notificacao => {
-
-                            notificacao.lida =
-                                true;
-
-
-                            notificacao.lida_em =
-                                agora;
-
-                        }
-                    );
-
-
-                totalNaoLidasChamados =
-                    0;
-
-
-                atualizarBadgeNotificacoesChamados(
-                    0
+                        .in(
+                            'id',
+                            idsChamados
+                        )
                 );
-
-
-                renderizarNotificacoesChamados();
-
-
-            } catch (
-                error
-            ) {
-
-                console.error(
-                    '❌ Erro marcando notificações como lidas:',
-                    error
-                );
-
             }
 
-        };
+            if (idsOS.length) {
+                atualizacoes.push(
+                    sb
+                        .from(
+                            'ordens_service'
+                        )
+                        .update({
+                            user_notified:
+                                true
+                        })
+                        .in(
+                            'id',
+                            idsOS
+                        )
+                );
+            }
+
+            const resultados =
+                await Promise.all(
+                    atualizacoes
+                );
+
+            const erro =
+                resultados.find(
+                    resultado =>
+                        resultado.error
+                )?.error;
+
+            if (erro) {
+                throw erro;
+            }
+
+            notificacoesChamadosCache
+                .forEach(
+                    notificacao => {
+                        notificacao.lida =
+                            true;
+
+                        notificacao.lida_em =
+                            agora;
+                    }
+                );
+
+            renderizarNotificacoesChamados();
+            atualizarBadgeNotificacoesChamados();
+
+        } catch (error) {
+            console.error(
+                '❌ Erro marcando todas as notificações:',
+                error
+            );
+        }
+    };
 
 
     // ========================================================

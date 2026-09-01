@@ -24450,11 +24450,6 @@ async function buscarProdutosCadastroVendaNFE(
 }
 
 
-// =========================================================
-// CALCULAR QUANTAS UNIDADES DO ANÚNCIO PODERIAM SER
-// OFERTADAS COM O ESTOQUE CADASTRADO
-// =========================================================
-
 function calcularResumoCadastroAnuncioNFE(
     cadastro
 ) {
@@ -24468,8 +24463,7 @@ function calcularResumoCadastroAnuncioNFE(
 
 
     if (
-        detalhes.length ===
-        0
+        detalhes.length === 0
     ) {
 
         return {
@@ -24481,6 +24475,12 @@ function calcularResumoCadastroAnuncioNFE(
                 false,
 
             tem_estoque:
+                false,
+
+            algum_estoque_fisico:
+                false,
+
+            estoque_vendavel_real:
                 false,
 
             quantidade_total_anuncio:
@@ -24498,7 +24498,7 @@ function calcularResumoCadastroAnuncioNFE(
 
             const chave =
                 String(
-                    item.sku_anuncio ||
+                    item?.sku_anuncio ||
                     'SEM_SKU'
                 );
 
@@ -24527,20 +24527,20 @@ function calcularResumoCadastroAnuncioNFE(
     );
 
 
+    let temCadastro =
+        false;
+
+
     let todosCadastrados =
         true;
 
 
+    let algumEstoqueFisico =
+        false;
+
+
     let quantidadeTotal =
         0;
-
-
-    let temEstoque =
-        false;
-
-
-    let temCadastro =
-        false;
 
 
     for (
@@ -24548,36 +24548,43 @@ function calcularResumoCadastroAnuncioNFE(
         of grupos.values()
     ) {
 
-        const algumNaoCadastrado =
-            itens.some(
+        const naoCadastrados =
+            itens.filter(
                 item =>
-                    item.encontrado ===
-                    false
+                    item?.encontrado !==
+                    true
             );
-
-
-        if (
-            algumNaoCadastrado
-        ) {
-
-            todosCadastrados =
-                false;
-
-            continue;
-        }
 
 
         const cadastrados =
             itens.filter(
                 item =>
-                    item.encontrado ===
+                    item?.encontrado ===
                     true
             );
 
 
         if (
-            cadastrados.length ===
+            cadastrados.length >
             0
+        ) {
+
+            temCadastro =
+                true;
+        }
+
+
+        // =================================================
+        // SE ALGUM COMPONENTE DO SKU/KIT NÃO FOI
+        // ENCONTRADO, NÃO PODEMOS AFIRMAR QUE EXISTE
+        // ESTOQUE VENDÁVEL.
+        // =================================================
+
+        if (
+            naoCadastrados.length >
+                0 ||
+            cadastrados.length ===
+                0
         ) {
 
             todosCadastrados =
@@ -24585,10 +24592,6 @@ function calcularResumoCadastroAnuncioNFE(
 
             continue;
         }
-
-
-        temCadastro =
-            true;
 
 
         const capacidades =
@@ -24599,7 +24602,8 @@ function calcularResumoCadastroAnuncioNFE(
                         Math.max(
                             0,
                             Number(
-                                item.estoque_atual ||
+                                item
+                                    ?.estoque_atual ||
                                 0
                             )
                         );
@@ -24610,7 +24614,7 @@ function calcularResumoCadastroAnuncioNFE(
                             1,
                             Number(
                                 item
-                                    .quantidade_por_anuncio ||
+                                    ?.quantidade_por_anuncio ||
                                 1
                             )
                         );
@@ -24621,11 +24625,21 @@ function calcularResumoCadastroAnuncioNFE(
                         0
                     ) {
 
-                        temEstoque =
+                        algumEstoqueFisico =
                             true;
                     }
 
 
+                    // Exemplo:
+                    //
+                    // Kit precisa:
+                    // 1 eixo
+                    // 1 arruela
+                    //
+                    // eixo = 0
+                    // arruela = 100
+                    //
+                    // capacidade do KIT = 0
                     return Math.floor(
                         estoque /
                         precisa
@@ -24641,6 +24655,18 @@ function calcularResumoCadastroAnuncioNFE(
     }
 
 
+    const estoqueVendavelReal =
+
+        temCadastro ===
+            true &&
+
+        todosCadastrados ===
+            true &&
+
+        quantidadeTotal >
+            0;
+
+
     return {
 
         tem_cadastro:
@@ -24649,8 +24675,17 @@ function calcularResumoCadastroAnuncioNFE(
         todos_cadastrados:
             todosCadastrados,
 
+        // IMPORTANTE:
+        // agora significa estoque realmente vendável,
+        // e não "qualquer componente tem estoque".
         tem_estoque:
-            temEstoque,
+            estoqueVendavelReal,
+
+        algum_estoque_fisico:
+            algumEstoqueFisico,
+
+        estoque_vendavel_real:
+            estoqueVendavelReal,
 
         quantidade_total_anuncio:
             todosCadastrados
@@ -24758,10 +24793,11 @@ async function consultarSituacaoMLBFullNFE(
 
 
     // =====================================================
-    // CONSULTAR CADA USER PRODUCT
+    // CONSULTAR TODAS AS VARIAÇÕES / USER PRODUCTS
     //
-    // Fazemos sequencialmente para respeitar melhor
-    // o limite do endpoint /stock.
+    // MUITO IMPORTANTE:
+    // FULL zerado é referente ao ANÚNCIO TODO,
+    // não somente à variação que acabou de vender.
     // =====================================================
 
     for (
@@ -24791,27 +24827,82 @@ async function consultarSituacaoMLBFullNFE(
             ...unidade,
 
             consulta_ok:
-                estoque.success,
+                estoque.success ===
+                true,
+
+
+            // =============================================
+            // NÃO TRANSFORMAR FALHA DE CONSULTA EM ZERO.
+            //
+            // Esse era um dos riscos de gerar
+            // FULL ZERADO incorretamente.
+            // =============================================
 
             estoque_full:
-                estoque
-                    .estoque_full,
+
+                estoque.success ===
+                    true &&
+
+                Number.isFinite(
+                    Number(
+                        estoque
+                            .estoque_full
+                    )
+                )
+
+                    ? Number(
+                        estoque
+                            .estoque_full
+                    )
+
+                    : null,
+
 
             estoque_local_ml:
-                estoque
-                    .estoque_local,
+
+                estoque.success ===
+                    true &&
+
+                Number.isFinite(
+                    Number(
+                        estoque
+                            .estoque_local
+                    )
+                )
+
+                    ? Number(
+                        estoque
+                            .estoque_local
+                    )
+
+                    : null,
+
 
             tem_meli_facility:
-                estoque
-                    .tem_meli_facility,
+
+                estoque.success ===
+                    true
+
+                    ? estoque
+                        .tem_meli_facility ===
+                        true
+
+                    : null,
+
 
             locations:
-                estoque
-                    .locations,
+
+                Array.isArray(
+                    estoque.locations
+                )
+
+                    ? estoque.locations
+
+                    : [],
+
 
             erro:
-                estoque
-                    .error ||
+                estoque.error ||
                 null
         });
 
@@ -24833,9 +24924,15 @@ async function consultarSituacaoMLBFullNFE(
     }
 
 
+    // =====================================================
+    // TODAS AS VARIAÇÕES FORAM CONSULTADAS?
+    // =====================================================
+
     const todosConsultados =
+
         detalhes.length >
             0 &&
+
         detalhes.every(
             detalhe =>
                 detalhe
@@ -24844,40 +24941,149 @@ async function consultarSituacaoMLBFullNFE(
         );
 
 
+    // =====================================================
+    // TOTAL FULL DO ANÚNCIO TODO
+    // =====================================================
+
     const estoqueTotalFull =
         detalhes.reduce(
             (
                 total,
                 detalhe
-            ) =>
-                total +
-                Number(
-                    detalhe
-                        .estoque_full ||
-                    0
-                ),
+            ) => {
+
+                const numero =
+                    Number(
+                        detalhe
+                            .estoque_full
+                    );
+
+
+                return (
+                    total +
+                    (
+                        Number.isFinite(
+                            numero
+                        )
+                            ? numero
+                            : 0
+                    )
+                );
+            },
             0
         );
 
 
-    const estoqueTotalLocalML =
+    // =====================================================
+    // TOTAL LOCAL ML DO ANÚNCIO TODO
+    // =====================================================
+
+    const estoqueTotalLocal =
         detalhes.reduce(
             (
                 total,
                 detalhe
-            ) =>
-                total +
-                Number(
-                    detalhe
-                        .estoque_local_ml ||
-                    0
-                ),
+            ) => {
+
+                const numero =
+                    Number(
+                        detalhe
+                            .estoque_local_ml
+                    );
+
+
+                return (
+                    total +
+                    (
+                        Number.isFinite(
+                            numero
+                        )
+                            ? numero
+                            : 0
+                    )
+                );
+            },
             0
         );
 
 
+    // =====================================================
+    // QUANTIDADE TOTAL DISPONÍVEL NO ANÚNCIO
+    //
+    // Soma todas as variações.
+    // =====================================================
+
+    const estoqueTotalAnuncioVariacoes =
+        detalhes.reduce(
+            (
+                total,
+                detalhe
+            ) => {
+
+                const quantidade =
+                    Number(
+                        detalhe
+                            .available_quantity_item
+                    );
+
+
+                return (
+                    total +
+                    (
+                        Number.isFinite(
+                            quantidade
+                        )
+                            ? quantidade
+                            : 0
+                    )
+                );
+            },
+            0
+        );
+
+
+    const estoqueTotalAnuncioItem =
+        Number.isFinite(
+            Number(
+                item
+                    ?.available_quantity
+            )
+        )
+
+            ? Number(
+                item
+                    .available_quantity
+            )
+
+            : 0;
+
+
+    const estoqueTotalAnuncio =
+        Math.max(
+
+            estoqueTotalAnuncioVariacoes,
+
+            estoqueTotalAnuncioItem
+        );
+
+
+    // =====================================================
+    // FULL ZEROU?
+    //
+    // SOMENTE TRUE SE:
+    //
+    // 1. todas as variações foram consultadas;
+    // 2. todas as variações possuem FULL = 0.
+    //
+    // Se 1 variação tiver FULL = 2:
+    // NÃO ZEROU O FULL DO ANÚNCIO.
+    // =====================================================
+
     const todosFullZerados =
-        todosConsultados &&
+
+        todosConsultados ===
+            true &&
+
         detalhes.every(
             detalhe =>
                 Number(
@@ -24888,6 +25094,26 @@ async function consultarSituacaoMLBFullNFE(
                 0
         );
 
+
+    const algumaVariacaoFullComEstoque =
+
+        todosConsultados ===
+            true &&
+
+        detalhes.some(
+            detalhe =>
+                Number(
+                    detalhe
+                        .estoque_full ||
+                    0
+                ) >
+                0
+        );
+
+
+    // =====================================================
+    // EXPOSIÇÃO ATUAL
+    // =====================================================
 
     const listingTypeAtual =
         String(
@@ -24900,8 +25126,30 @@ async function consultarSituacaoMLBFullNFE(
 
 
     // =====================================================
-    // EXPOSIÇÃO CORRETA ENQUANTO EXISTE ESTOQUE FULL
+    // QUANTIDADE PARA REGRA DE EXPOSIÇÃO
+    //
+    // REGRA:
+    //
+    // 1 unidade  = CLÁSSICO
+    // 2 ou mais  = PREMIUM
+    //
+    // Usa o estoque disponível do anúncio.
+    // Se ML não retornar available_quantity corretamente,
+    // usa FULL + LOCAL como fallback.
     // =====================================================
+
+    const quantidadeBaseExposicao =
+
+        estoqueTotalAnuncio >
+            0
+
+            ? estoqueTotalAnuncio
+
+            : (
+                estoqueTotalFull +
+                estoqueTotalLocal
+            );
+
 
     let listingTypeEsperado =
         null;
@@ -24911,44 +25159,58 @@ async function consultarSituacaoMLBFullNFE(
         null;
 
 
+    // =====================================================
+    // REGRA FIXA GANHA SEMPRE
+    // =====================================================
+
     if (
-        estoqueTotalFull >
+        regraFixa
+    ) {
+
+        listingTypeEsperado =
+            regraFixa.tipo;
+
+
+        origemRegraExposicao =
+            'regra_fixa';
+
+
+    } else if (
+        quantidadeBaseExposicao >
         0
     ) {
 
-        if (
-            regraFixa
-        ) {
-
-            listingTypeEsperado =
-                regraFixa.tipo;
-
-
-            origemRegraExposicao =
-                'regra_fixa';
+        // Já existe no sistema e está correta:
+        //
+        // 1  -> gold_special = Clássico
+        // 2+ -> gold_pro     = Premium
+        listingTypeEsperado =
+            obterListingTypeEsperadoFullNFE(
+                quantidadeBaseExposicao
+            );
 
 
-        } else {
-
-            listingTypeEsperado =
-                obterListingTypeEsperadoFullNFE(
-                    estoqueTotalFull
-                );
-
-
-            origemRegraExposicao =
-                'estoque_full';
-        }
+        origemRegraExposicao =
+            'estoque_anuncio';
     }
 
 
+    // =====================================================
+    // INFORMAÇÕES DE LOGÍSTICA DO ITEM
+    //
+    // Apenas diagnóstico.
+    // =====================================================
+
     const logisticType =
         String(
+
             item
                 ?.shipping
                 ?.logistic_type ||
+
             item
                 ?.logistic_type ||
+
             ''
         )
             .trim()
@@ -24957,6 +25219,7 @@ async function consultarSituacaoMLBFullNFE(
 
     const tags =
         [
+
             ...(
                 Array.isArray(
                     item?.tags
@@ -24987,35 +25250,75 @@ async function consultarSituacaoMLBFullNFE(
 
 
     const itemAindaFulfillment =
+
         logisticType ===
             'fulfillment' ||
+
         tags.includes(
             'fulfillment'
         );
 
 
-    const aindaTemLocationFull =
-        detalhes.some(
-            detalhe =>
-                detalhe
-                    .tem_meli_facility ===
-                true
-        );
-
-
     // =====================================================
-    // CONSIDERAMOS QUE REALMENTE SAIU DO FULL SOMENTE SE:
+    // ESTÁ REALMENTE NO FULL?
     //
-    // - o item não estiver mais como fulfillment
-    // - nenhum UP continuar com meli_facility
+    // Fonte utilizada para confirmação:
+    //
+    // /user-products/{UP}/stock
+    //
+    // Se ALGUMA variação ainda possui uma location
+    // meli_facility, o anúncio ainda possui vínculo FULL.
+    //
+    // Isso funciona mesmo com quantity = 0.
+    //
+    // Se nenhuma possui meli_facility, consideramos
+    // saída do FULL confirmada.
+    //
+    // Se alguma consulta falhou:
+    // NÃO afirmamos que saiu do FULL.
     // =====================================================
+
+    const aindaTemLocationFull =
+
+        todosConsultados ===
+            true
+
+            ? detalhes.some(
+                detalhe =>
+                    detalhe
+                        .tem_meli_facility ===
+                    true
+            )
+
+            : null;
+
+
+    const aindaEstaNoFull =
+
+        todosConsultados ===
+            true
+
+            ? aindaTemLocationFull ===
+                true
+
+            : null;
+
 
     const saiuDoFull =
-        !itemAindaFulfillment &&
-        !aindaTemLocationFull;
 
+        todosConsultados ===
+            true &&
+
+        aindaEstaNoFull ===
+            false;
+
+
+    // =====================================================
+    // EXPOSIÇÃO
+    // =====================================================
 
     const exposicaoCorreta =
+
         listingTypeEsperado
 
             ? (
@@ -25023,74 +25326,111 @@ async function consultarSituacaoMLBFullNFE(
                 listingTypeEsperado
             )
 
-            : null;
+            : true;
 
 
     return {
 
         mlb,
 
+
         titulo:
-            item.title ||
+            item
+                ?.title ||
             '',
 
+
         item,
+
+
+        detalhes,
+
 
         total_variacoes:
             detalhes.length,
 
+
         todos_consultados:
             todosConsultados,
 
-        detalhes,
 
         estoque_total_full:
             estoqueTotalFull,
 
+
         estoque_total_local_ml:
-            estoqueTotalLocalML,
+            estoqueTotalLocal,
+
+
+        estoque_total_anuncio:
+            estoqueTotalAnuncio,
+
+
+        quantidade_base_exposicao:
+            quantidadeBaseExposicao,
+
 
         todos_full_zerados:
             todosFullZerados,
 
+
+        alguma_variacao_full_com_estoque:
+            algumaVariacaoFullComEstoque,
+
+
         logistic_type:
             logisticType,
+
 
         item_ainda_fulfillment:
             itemAindaFulfillment,
 
+
         ainda_tem_location_full:
             aindaTemLocationFull,
+
+
+        ainda_esta_no_full:
+            aindaEstaNoFull,
+
 
         saiu_do_full:
             saiuDoFull,
 
+
         listing_type_atual:
             listingTypeAtual,
+
 
         listing_type_atual_nome:
             nomeListingTypeFullNFE(
                 listingTypeAtual
             ),
 
+
         listing_type_esperado:
             listingTypeEsperado,
+
 
         listing_type_esperado_nome:
             nomeListingTypeFullNFE(
                 listingTypeEsperado
             ),
 
+
         exposicao_correta:
             exposicaoCorreta,
+
 
         possui_regra_fixa:
             Boolean(
                 regraFixa
             ),
 
+
         regra_fixa:
             regraFixa,
+
 
         origem_regra_exposicao:
             origemRegraExposicao
@@ -25870,18 +26210,18 @@ async function confirmarAjusteAnuncioFullNFE(
 
 
     let estado =
+
         window
             ._estadosFullNFE
-            .get(
+            ?.get(
                 texto
             ) ||
+
         null;
 
 
     // =====================================================
-    // COMPATIBILIDADE:
-    //
-    // CASO TENHA RECEBIDO SOMENTE MLB.
+    // FALLBACK SE RECEBEU MLB EM VEZ DA CHAVE DO ALERTA
     // =====================================================
 
     if (
@@ -25896,17 +26236,26 @@ async function confirmarAjusteAnuncioFullNFE(
 
         estado =
             Array.from(
+
                 window
                     ._estadosFullNFE
-                    .values()
+                    ?.values?.() ||
+
+                []
             )
                 .find(
                     item =>
-                        item.ativo ===
+
+                        item
+                            ?.ativo ===
                             true &&
-                        item.mlb ===
-                            mlbRecebido
+
+                        normalizarMLBFullNFE(
+                            item?.mlb
+                        ) ===
+                        mlbRecebido
                 ) ||
+
             null;
     }
 
@@ -25925,7 +26274,9 @@ async function confirmarAjusteAnuncioFullNFE(
 
 
     const mlb =
-        estado.mlb;
+        normalizarMLBFullNFE(
+            estado.mlb
+        );
 
 
     const vendaId =
@@ -25946,20 +26297,27 @@ async function confirmarAjusteAnuncioFullNFE(
             .find(
                 item =>
                     normalizarOrderIdML(
-                        item.id_venda_ml ||
-                        item.id
+
+                        item
+                            ?.id_venda_ml ||
+
+                        item
+                            ?.id
+
                     ) ===
                     vendaId
             ) ||
+
         null;
 
 
     if (
+        !mlb ||
         !venda
     ) {
 
         showToast(
-            '❌ Venda não localizada na tela.',
+            '❌ Venda ou anúncio não localizado na tela.',
             'error'
         );
 
@@ -25970,14 +26328,14 @@ async function confirmarAjusteAnuncioFullNFE(
     try {
 
         showToast(
-            `🔎 Verificando ${mlb}...`,
+            `🔎 Conferindo novamente ${mlb} no Mercado Livre...`,
             'info'
         );
 
 
-        // =================================================
-        // CONSULTAR NOVAMENTE O MERCADO LIVRE
-        // =================================================
+        // =====================================================
+        // CONSULTA FRESCA
+        // =====================================================
 
         const situacao =
             await consultarSituacaoMLBFullNFE(
@@ -25985,9 +26343,82 @@ async function confirmarAjusteAnuncioFullNFE(
             );
 
 
-        // =================================================
-        // REPROCESSAR SOMENTE ESTE ALERTA
-        // =================================================
+        // =====================================================
+        // NÃO ACEITAR COM CONSULTA PARCIAL
+        //
+        // Evita:
+        // 1 variação = 0
+        // outras não consultadas
+        // → sistema acreditar que FULL zerou.
+        // =====================================================
+
+        if (
+            situacao
+                .todos_consultados !==
+            true
+        ) {
+
+            showToast(
+                '❌ Não foi possível consultar todas as variações do anúncio. O ajuste não será aceito.',
+                'error'
+            );
+
+            return;
+        }
+
+
+        console.log(
+            '🔎 VALIDAÇÃO AJUSTE MLB:',
+            {
+
+                mlb,
+
+                total_variacoes:
+                    situacao
+                        .total_variacoes,
+
+                estoque_anuncio:
+                    situacao
+                        .estoque_total_anuncio,
+
+                estoque_full_total:
+                    situacao
+                        .estoque_total_full,
+
+                estoque_local_total:
+                    situacao
+                        .estoque_total_local_ml,
+
+                todos_full_zerados:
+                    situacao
+                        .todos_full_zerados,
+
+                ainda_tem_location_full:
+                    situacao
+                        .ainda_tem_location_full,
+
+                ainda_esta_no_full:
+                    situacao
+                        .ainda_esta_no_full,
+
+                saiu_do_full:
+                    situacao
+                        .saiu_do_full,
+
+                exposicao_atual:
+                    situacao
+                        .listing_type_atual,
+
+                exposicao_esperada:
+                    situacao
+                        .listing_type_esperado
+            }
+        );
+
+
+        // =====================================================
+        // REPROCESSAR COM A CONSULTA NOVA
+        // =====================================================
 
         const novoEstado =
             await processarMLBMonitorFullNFE(
@@ -25997,6 +26428,7 @@ async function confirmarAjusteAnuncioFullNFE(
                 venda,
 
                 {
+
                     forcar:
                         true,
 
@@ -26011,7 +26443,7 @@ async function confirmarAjusteAnuncioFullNFE(
         ) {
 
             showToast(
-                '❌ Não foi possível confirmar o ajuste.',
+                '❌ Não foi possível validar o ajuste.',
                 'error'
             );
 
@@ -26019,36 +26451,83 @@ async function confirmarAjusteAnuncioFullNFE(
         }
 
 
-        // =================================================
-        // REGRA ESPECIAL:
+        const resumo =
+            novoEstado
+                .resumo_automatico ||
+            {};
+
+
+        const usuario =
+            obterUsuarioOperacaoNFE();
+
+
+        // =====================================================
+        // FULL ZERADO MAS AINDA ESTÁ NO FULL
         //
-        // DEPÓSITO ZERADO
-        // +
-        // PRODUTO NÃO CADASTRADO
+        // NÃO ACEITAR.
         //
-        // Nesse cenário o usuário pode escolher deixar
-        // o depósito em ZERO porque o produto pode existir
-        // somente no FULL.
+        // Mesmo com:
+        // FULL = 0
         //
-        // O clique em AJUSTADO significa:
-        //
-        // "Sim, está correto permanecer zerado."
-        // =================================================
+        // se ainda existe meli_facility:
+        // continua vinculado ao FULL.
+        // =====================================================
 
         if (
             novoEstado.status ===
-                'deposito_zero' &&
-            novoEstado
-                ?.resumo_automatico
-                ?.estoque_cadastro_encontrado !==
-                true
+            'full_zero_aguardando_ajuste'
         ) {
 
-            const usuario =
-                obterUsuarioOperacaoNFE();
+            showToast(
+                '❌ Todas as variações FULL estão zeradas, mas o anúncio ainda possui localização meli_facility. Retire o anúncio do FULL e tente novamente.',
+                'error'
+            );
+
+            return;
+        }
 
 
-            const estadoResolvido = {
+        // =====================================================
+        // ANÚNCIO CONTINUA ZERADO
+        // =====================================================
+
+        if (
+            novoEstado.status ===
+            'anuncio_zero'
+        ) {
+
+            // =============================================
+            // TEM ESTOQUE INTERNO:
+            //
+            // NÃO PODE ACEITAR AJUSTADO.
+            // =============================================
+
+            if (
+                resumo
+                    .estoque_vendavel_real ===
+                true
+            ) {
+
+                showToast(
+                    `❌ O anúncio continua zerado no Mercado Livre e existem ${Number(
+                        resumo
+                            .estoque_cadastro_anuncio_total ||
+                        0
+                    )} un. vendáveis no estoque interno. Adicione estoque ao anúncio e clique em Ajustado novamente.`,
+                    'error'
+                );
+
+                return;
+            }
+
+
+            // =============================================
+            // NÃO HÁ ESTOQUE VENDÁVEL:
+            //
+            // pode aceitar permanecer zerado.
+            // =============================================
+
+            await salvarEstadoFullNFE({
 
                 ...novoEstado,
 
@@ -26056,26 +26535,16 @@ async function confirmarAjusteAnuncioFullNFE(
                     false,
 
                 status:
-                    'deposito_zero_aceito_sem_cadastro',
+                    'anuncio_zero_aceito',
 
                 mensagem:
-                    'Depósito zerado aceito manualmente. Produto não cadastrado no estoque interno.',
+                    'Anúncio zerado aceito porque não há estoque interno vendável para este anúncio.',
 
                 resumo_automatico: {
 
-                    ...(
-                        novoEstado
-                            .resumo_automatico ||
-                        {}
-                    ),
+                    ...resumo,
 
-                    zero_deposito_aceito:
-                        true,
-
-                    motivo_zero_aceito:
-                        'produto_nao_cadastrado',
-
-                    estoque_local_mantido_zero:
+                    zero_anuncio_aceito:
                         true
                 },
 
@@ -26088,19 +26557,14 @@ async function confirmarAjusteAnuncioFullNFE(
 
                 resolvido_por_nome:
                     usuario.nome
-            };
-
-
-            await salvarEstadoFullNFE(
-                estadoResolvido
-            );
+            });
 
 
             aplicarEstadosFullTabelaNFE();
 
 
             showToast(
-                '✅ Depósito zerado confirmado. Como o produto não está cadastrado no estoque interno, o anúncio pode permanecer com estoque local 0.',
+                '✅ Anúncio zerado confirmado. Não há estoque interno vendável.',
                 'success'
             );
 
@@ -26109,18 +26573,114 @@ async function confirmarAjusteAnuncioFullNFE(
         }
 
 
-        // =================================================
-        // AJUSTE REALMENTE CONFIRMADO
-        // =================================================
+        // =====================================================
+        // DEPÓSITO LOCAL CONTINUA ZERADO
+        // =====================================================
+
+        if (
+            novoEstado.status ===
+            'deposito_zero'
+        ) {
+
+            if (
+                resumo
+                    .estoque_vendavel_real ===
+                true
+            ) {
+
+                showToast(
+                    `❌ O depósito/local continua zerado e existem ${Number(
+                        resumo
+                            .estoque_cadastro_anuncio_total ||
+                        0
+                    )} un. vendáveis no estoque interno. Adicione estoque ao depósito e tente novamente.`,
+                    'error'
+                );
+
+                return;
+            }
+
+
+            // Sem estoque interno vendável:
+            // pode permanecer zero.
+            await salvarEstadoFullNFE({
+
+                ...novoEstado,
+
+                ativo:
+                    false,
+
+                status:
+                    'deposito_zero_aceito_sem_cadastro',
+
+                mensagem:
+                    'Depósito zerado aceito porque não há estoque interno vendável.',
+
+                resumo_automatico: {
+
+                    ...resumo,
+
+                    zero_deposito_aceito:
+                        true
+                },
+
+                resolvido_em:
+                    new Date()
+                        .toISOString(),
+
+                resolvido_por_username:
+                    usuario.username,
+
+                resolvido_por_nome:
+                    usuario.nome
+            });
+
+
+            aplicarEstadosFullTabelaNFE();
+
+
+            showToast(
+                '✅ Depósito zerado confirmado. Não há estoque interno vendável.',
+                'success'
+            );
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // EXPOSIÇÃO CONTINUA ERRADA
+        // =====================================================
+
+        if (
+            novoEstado.status ===
+            'exposicao_pendente'
+        ) {
+
+            showToast(
+                `❌ A exposição ainda está ${nomeListingTypeFullNFE(
+                    novoEstado
+                        .listing_type_atual
+                )}. O correto é ${nomeListingTypeFullNFE(
+                    novoEstado
+                        .listing_type_esperado
+                )}.`,
+                'error'
+            );
+
+            return;
+        }
+
+
+        // =====================================================
+        // ESTÁ CORRETO AGORA
+        // =====================================================
 
         if (
             novoEstado.ativo ===
             false
         ) {
-
-            const usuario =
-                obterUsuarioOperacaoNFE();
-
 
             await salvarEstadoFullNFE({
 
@@ -26144,104 +26704,37 @@ async function confirmarAjusteAnuncioFullNFE(
             aplicarEstadosFullTabelaNFE();
 
 
-            showToast(
-                '✅ Ajuste confirmado. O alerta foi encerrado.',
-                'success'
-            );
+            if (
+                novoEstado.status ===
+                'full_zero_resolvido'
+            ) {
+
+                showToast(
+                    '✅ Saída do FULL confirmada. O alerta foi encerrado.',
+                    'success'
+                );
+
+
+            } else {
+
+                showToast(
+                    '✅ Ajuste confirmado. O alerta foi encerrado.',
+                    'success'
+                );
+            }
 
 
             return;
         }
 
 
-        // =================================================
-        // CONTINUA COM PROBLEMA
-        // =================================================
-
         aplicarEstadosFullTabelaNFE();
 
 
-        switch (
-            novoEstado.status
-        ) {
-
-            // =============================================
-            // FULL ZERADO
-            //
-            // NÃO ACEITAMOS MANUALMENTE.
-            //
-            // Tem que realmente sair do FULL.
-            // =============================================
-
-            case 'full_zero_aguardando_ajuste':
-
-                showToast(
-                    '❌ O anúncio ainda está vinculado ao FULL. Retire do FULL e tente novamente.',
-                    'error'
-                );
-
-                break;
-
-
-            // =============================================
-            // EXPOSIÇÃO
-            //
-            // TEM QUE REALMENTE ESTAR CORRETA.
-            // =============================================
-
-            case 'exposicao_pendente':
-
-                showToast(
-                    `❌ A exposição ainda está ${nomeListingTypeFullNFE(
-                        novoEstado
-                            .listing_type_atual
-                    )}. O correto é ${nomeListingTypeFullNFE(
-                        novoEstado
-                            .listing_type_esperado
-                    )}.`,
-                    'error'
-                );
-
-                break;
-
-
-            // =============================================
-            // DEPÓSITO ZERO + PRODUTO CADASTRADO
-            //
-            // Aqui NÃO aceita continuar em zero.
-            // =============================================
-
-            case 'deposito_zero':
-
-                showToast(
-                    '❌ O depósito continua zerado e existe produto cadastrado no estoque interno. Adicione estoque ao depósito e tente novamente.',
-                    'error'
-                );
-
-                break;
-
-
-            // =============================================
-            // ANÚNCIO NORMAL ZERADO
-            // =============================================
-
-            case 'anuncio_zero':
-
-                showToast(
-                    '❌ O estoque do anúncio ainda está zerado.',
-                    'error'
-                );
-
-                break;
-
-
-            default:
-
-                showToast(
-                    '⚠️ O ajuste ainda não foi confirmado.',
-                    'warning'
-                );
-        }
+        showToast(
+            '⚠️ O ajuste ainda não foi confirmado.',
+            'warning'
+        );
 
 
     } catch (
@@ -26258,6 +26751,870 @@ async function confirmarAjusteAnuncioFullNFE(
             `❌ ${error.message}`,
             'error'
         );
+    }
+}
+
+async function processarMLBMonitorFullNFE(
+    mlb,
+    venda,
+    opcoes = {}
+) {
+
+    mlb =
+        normalizarMLBFullNFE(
+            mlb
+        );
+
+
+    const vendaId =
+        normalizarOrderIdML(
+
+            venda
+                ?.id_venda_ml ||
+
+            venda
+                ?.id
+        );
+
+
+    const chaveAlerta =
+        montarChaveAlertaEstoqueVendaNFE(
+            vendaId,
+            mlb
+        );
+
+
+    if (
+        !mlb ||
+        !vendaId ||
+        !chaveAlerta ||
+        !venda
+    ) {
+
+        return null;
+    }
+
+
+    try {
+
+        const situacao =
+
+            opcoes
+                .situacaoPrecarregada ||
+
+            await consultarSituacaoMLBFullNFE(
+                mlb
+            );
+
+
+        const estadoAnterior =
+
+            window
+                ._estadosFullNFE
+                ?.get(
+                    chaveAlerta
+                ) ||
+
+            null;
+
+
+        // =====================================================
+        // CONSULTA INCOMPLETA
+        //
+        // NÃO criar alerta FULL ZERADO com informação parcial.
+        //
+        // Exemplo:
+        //
+        // 5 variações:
+        // 1 consultada = FULL 0
+        // 4 falharam
+        //
+        // NÃO podemos dizer que o anúncio inteiro zerou.
+        // =====================================================
+
+        if (
+            situacao
+                .todos_consultados !==
+            true
+        ) {
+
+            if (
+                estadoAnterior
+            ) {
+
+                return estadoAnterior;
+            }
+
+
+            const estadoErro = {
+
+                chave_alerta:
+                    chaveAlerta,
+
+                mlb,
+
+                venda_id_origem:
+                    vendaId,
+
+                ativo:
+                    false,
+
+                status:
+                    'erro_consulta',
+
+                full_total:
+                    null,
+
+                listing_type_atual:
+                    situacao
+                        .listing_type_atual ||
+                    null,
+
+                listing_type_esperado:
+                    situacao
+                        .listing_type_esperado ||
+                    null,
+
+                mensagem:
+                    'Não foi possível consultar todas as variações do anúncio.',
+
+                detalhes_variacoes:
+                    compactarDetalhesMonitorEstoqueNFE(
+                        situacao.detalhes
+                    ),
+
+                estoque_local:
+                    [],
+
+                resumo_automatico: {
+
+                    contexto:
+                        'erro_consulta',
+
+                    estoque_full_atual:
+                        situacao
+                            .estoque_total_full,
+
+                    estoque_local_ml_atual:
+                        situacao
+                            .estoque_total_local_ml,
+
+                    estoque_anuncio_total_ml:
+                        situacao
+                            .estoque_total_anuncio
+                },
+
+                full_retirado_confirmado:
+                    false
+            };
+
+
+            await salvarEstadoFullNFE(
+                estadoErro
+            );
+
+
+            return estadoErro;
+        }
+
+
+        // =====================================================
+        // MODALIDADE DA VENDA
+        // =====================================================
+
+        const vendaFull =
+
+            Boolean(
+                venda
+                    ?._is_full
+            ) ||
+
+            detectarVendaFullNFE(
+                venda
+            );
+
+
+        // =====================================================
+        // ESTOQUE DAS VARIAÇÕES QUE PARTICIPARAM DESTA VENDA
+        //
+        // Para venda fora do FULL, é isso que usamos para
+        // descobrir se aquela variação ficou zerada.
+        // =====================================================
+
+        const resumoVenda =
+            obterResumoEstoqueAtualVendaNFE(
+
+                situacao,
+
+                venda,
+
+                mlb
+            );
+
+
+        // =====================================================
+        // ESTOQUE INTERNO
+        //
+        // SOMENTE produtos/SKUs ligados à venda.
+        // =====================================================
+
+        const cadastro =
+            await buscarProdutosCadastroVendaNFE(
+
+                situacao,
+
+                venda,
+
+                mlb,
+
+                false
+            );
+
+
+        const resumoCadastro =
+            calcularResumoCadastroAnuncioNFE(
+                cadastro
+            );
+
+
+        const estoqueVendavelReal =
+
+            resumoCadastro
+                .estoque_vendavel_real ===
+            true;
+
+
+        // =====================================================
+        // RESUMO COMUM
+        // =====================================================
+
+        const resumoAutomaticoBase = {
+
+            venda_full:
+                vendaFull,
+
+
+            estoque_full_atual:
+                Number(
+                    situacao
+                        .estoque_total_full ||
+                    0
+                ),
+
+
+            estoque_local_ml_atual:
+                Number(
+                    situacao
+                        .estoque_total_local_ml ||
+                    0
+                ),
+
+
+            estoque_anuncio_total_ml:
+                Number(
+                    situacao
+                        .estoque_total_anuncio ||
+                    0
+                ),
+
+
+            // Estoque da variação vendida
+            estoque_anuncio_venda:
+                resumoVenda
+                    .estoque_anuncio_min,
+
+
+            estoque_local_venda:
+                resumoVenda
+                    .estoque_local_min,
+
+
+            exposicao_atual:
+                situacao
+                    .listing_type_atual ||
+                '',
+
+
+            exposicao_atual_nome:
+                situacao
+                    .listing_type_atual_nome ||
+                '',
+
+
+            exposicao_esperada:
+                situacao
+                    .listing_type_esperado ||
+                '',
+
+
+            exposicao_esperada_nome:
+                situacao
+                    .listing_type_esperado_nome ||
+                '',
+
+
+            origem_regra_exposicao:
+                situacao
+                    .origem_regra_exposicao ||
+                '',
+
+
+            possui_regra_fixa:
+                situacao
+                    .possui_regra_fixa ===
+                true,
+
+
+            regra_fixa_nome:
+                situacao
+                    .regra_fixa
+                    ?.nome ||
+                null,
+
+
+            regra_fixa_tipo:
+                situacao
+                    .regra_fixa
+                    ?.tipo ||
+                null,
+
+
+            // =============================================
+            // ESTOQUE INTERNO
+            // =============================================
+
+            estoque_cadastro_encontrado:
+                resumoCadastro
+                    .tem_cadastro ===
+                true,
+
+
+            todos_cadastrados:
+                resumoCadastro
+                    .todos_cadastrados ===
+                true,
+
+
+            tem_estoque_cadastro:
+                estoqueVendavelReal,
+
+
+            estoque_vendavel_real:
+                estoqueVendavelReal,
+
+
+            estoque_cadastro_anuncio_total:
+                resumoCadastro
+                    .quantidade_total_anuncio,
+
+
+            // =============================================
+            // FULL
+            // =============================================
+
+            saiu_do_full:
+                situacao
+                    .saiu_do_full ===
+                true,
+
+
+            ainda_esta_no_full:
+                situacao
+                    .ainda_esta_no_full ===
+                true,
+
+
+            todas_variacoes_full_zeradas:
+                situacao
+                    .todos_full_zerados ===
+                true
+        };
+
+
+        const estadoBase = {
+
+            chave_alerta:
+                chaveAlerta,
+
+            mlb,
+
+            venda_id_origem:
+                vendaId,
+
+            full_total:
+                Number(
+                    situacao
+                        .estoque_total_full ||
+                    0
+                ),
+
+            listing_type_atual:
+                situacao
+                    .listing_type_atual ||
+                null,
+
+            listing_type_esperado:
+                situacao
+                    .listing_type_esperado ||
+                null,
+
+            detalhes_variacoes:
+                compactarDetalhesMonitorEstoqueNFE(
+                    situacao.detalhes
+                ),
+
+            // Aqui ficam os dados do estoque interno,
+            // usados pelo card.
+            estoque_local:
+
+                Array.isArray(
+                    cadastro
+                        ?.detalhes
+                )
+
+                    ? cadastro.detalhes
+
+                    : [],
+
+            full_retirado_confirmado:
+                false
+        };
+
+
+        // =====================================================
+        // SALVAR + RETORNAR
+        // =====================================================
+
+        const salvarERetornar =
+            async parcial => {
+
+                const estado = {
+
+                    ...estadoBase,
+
+                    ...parcial,
+
+                    resumo_automatico: {
+
+                        ...resumoAutomaticoBase,
+
+                        ...(
+                            parcial
+                                .resumo_automatico ||
+                            {}
+                        )
+                    }
+                };
+
+
+                await salvarEstadoFullNFE(
+                    estado
+                );
+
+
+                return estado;
+            };
+
+
+        // =====================================================
+        // VENDA FULL
+        // =====================================================
+
+        if (
+            vendaFull
+        ) {
+
+            // =================================================
+            // FULL ESGOTOU O ANÚNCIO TODO?
+            //
+            // NÃO usa somente a variação vendida.
+            //
+            // Exemplo:
+            //
+            // Variação A = 0
+            // Variação B = 2
+            //
+            // todos_full_zerados = FALSE
+            //
+            // portanto NÃO mostra FULL ESGOTADO.
+            // =================================================
+
+            if (
+                situacao
+                    .todos_full_zerados ===
+                true
+            ) {
+
+                const quantidadeCadastro =
+                    Number(
+                        resumoCadastro
+                            .quantidade_total_anuncio ||
+                        0
+                    );
+
+
+                // Quando zerou no ML, podemos recomendar
+                // exposição com base no estoque interno.
+                //
+                // Regra fixa continua ganhando.
+                const esperadoComEstoqueInterno =
+
+                    situacao
+                        .regra_fixa
+                        ?.tipo ||
+
+                    (
+                        quantidadeCadastro >
+                        0
+
+                            ? obterListingTypeEsperadoFullNFE(
+                                quantidadeCadastro
+                            )
+
+                            : (
+                                situacao
+                                    .listing_type_esperado ||
+                                null
+                            )
+                    );
+
+
+                // =================================================
+                // Ainda possui meli_facility?
+                //
+                // SIM = continua no FULL.
+                // NÃO = saída do FULL confirmada.
+                // =================================================
+
+                const aindaNoFull =
+                    situacao
+                        .ainda_esta_no_full ===
+                    true;
+
+
+                return await salvarERetornar({
+
+                    ativo:
+                        aindaNoFull,
+
+                    status:
+
+                        aindaNoFull
+
+                            ? 'full_zero_aguardando_ajuste'
+
+                            : 'full_zero_resolvido',
+
+                    listing_type_esperado:
+                        esperadoComEstoqueInterno,
+
+                    mensagem:
+
+                        aindaNoFull
+
+                            ? 'Todas as variações do anúncio ficaram com estoque FULL zerado. Retire o anúncio do FULL.'
+
+                            : 'Saída do FULL confirmada.',
+
+                    full_retirado_confirmado:
+                        !aindaNoFull,
+
+                    resumo_automatico: {
+
+                        contexto:
+                            'full_zero',
+
+                        exposicao_esperada:
+                            esperadoComEstoqueInterno ||
+                            '',
+
+                        exposicao_esperada_nome:
+
+                            esperadoComEstoqueInterno
+
+                                ? nomeListingTypeFullNFE(
+                                    esperadoComEstoqueInterno
+                                )
+
+                                : ''
+                    }
+                });
+            }
+
+
+            // =================================================
+            // SE CHEGOU AQUI:
+            //
+            // PELO MENOS UMA VARIAÇÃO AINDA TEM FULL.
+            //
+            // Logo NÃO existe alerta FULL ZERADO.
+            // =================================================
+
+
+            // =================================================
+            // EXPOSIÇÃO
+            // =================================================
+
+            if (
+                situacao
+                    .listing_type_esperado &&
+
+                situacao
+                    .exposicao_correta ===
+                false
+            ) {
+
+                return await salvarERetornar({
+
+                    ativo:
+                        true,
+
+                    status:
+                        'exposicao_pendente',
+
+                    mensagem:
+                        'A exposição do anúncio não corresponde ao estoque atual.',
+
+                    resumo_automatico: {
+
+                        contexto:
+                            'full_exposicao'
+                    }
+                });
+            }
+
+
+            return await salvarERetornar({
+
+                ativo:
+                    false,
+
+                status:
+                    'exposicao_ok',
+
+                mensagem:
+                    'Estoque FULL e exposição conferidos.',
+
+                resumo_automatico: {
+
+                    contexto:
+                        'full_exposicao'
+                }
+            });
+        }
+
+
+        // =====================================================
+        // VENDA FORA DO FULL
+        //
+        // Agora verificamos especificamente a(s)
+        // variação(ões) que participaram desta venda.
+        // =====================================================
+
+        const anuncioZerado =
+
+            resumoVenda
+                .algum_anuncio_zerado ===
+                true ||
+
+            resumoVenda
+                .estoque_anuncio_min ===
+                0;
+
+
+        const depositoZerado =
+
+            resumoVenda
+                .algum_local_zerado ===
+                true ||
+
+            resumoVenda
+                .estoque_local_min ===
+                0;
+
+
+        // =====================================================
+        // ANÚNCIO ZERADO
+        // =====================================================
+
+        if (
+            anuncioZerado
+        ) {
+
+            // Se o usuário já confirmou que pode permanecer
+            // em zero por não existir estoque vendável,
+            // não fazer o mesmo alerta reaparecer no F5.
+            const jaAceitoSemEstoque =
+
+                estadoAnterior
+                    ?.ativo ===
+                    false &&
+
+                estadoAnterior
+                    ?.status ===
+                    'anuncio_zero_aceito' &&
+
+                estoqueVendavelReal ===
+                    false;
+
+
+            return await salvarERetornar({
+
+                ativo:
+                    !jaAceitoSemEstoque,
+
+                status:
+
+                    jaAceitoSemEstoque
+
+                        ? 'anuncio_zero_aceito'
+
+                        : 'anuncio_zero',
+
+                mensagem:
+
+                    estoqueVendavelReal
+
+                        ? 'O anúncio está zerado e existe estoque interno disponível.'
+
+                        : 'O anúncio está zerado.',
+
+                resumo_automatico: {
+
+                    contexto:
+                        'estoque_normal'
+                }
+            });
+        }
+
+
+        // =====================================================
+        // DEPÓSITO LOCAL ZERADO
+        //
+        // Venda ME / fora do FULL.
+        //
+        // Pode existir estoque FULL no mesmo MLB.
+        // Mesmo assim o depósito local zerado deve alertar.
+        // =====================================================
+
+        if (
+            depositoZerado
+        ) {
+
+            const jaAceitoSemEstoque =
+
+                estadoAnterior
+                    ?.ativo ===
+                    false &&
+
+                estadoAnterior
+                    ?.status ===
+                    'deposito_zero_aceito_sem_cadastro' &&
+
+                estoqueVendavelReal ===
+                    false;
+
+
+            return await salvarERetornar({
+
+                ativo:
+                    !jaAceitoSemEstoque,
+
+                status:
+
+                    jaAceitoSemEstoque
+
+                        ? 'deposito_zero_aceito_sem_cadastro'
+
+                        : 'deposito_zero',
+
+                mensagem:
+
+                    estoqueVendavelReal
+
+                        ? 'O depósito/local do anúncio está zerado e existe estoque interno disponível.'
+
+                        : 'O depósito/local do anúncio está zerado.',
+
+                resumo_automatico: {
+
+                    contexto:
+                        'deposito_zero'
+                }
+            });
+        }
+
+
+        // =====================================================
+        // EXPOSIÇÃO
+        //
+        // 1 = Clássico
+        // 2+ = Premium
+        // =====================================================
+
+        if (
+            situacao
+                .listing_type_esperado &&
+
+            situacao
+                .exposicao_correta ===
+            false
+        ) {
+
+            return await salvarERetornar({
+
+                ativo:
+                    true,
+
+                status:
+                    'exposicao_pendente',
+
+                mensagem:
+                    'A exposição do anúncio está incorreta.',
+
+                resumo_automatico: {
+
+                    contexto:
+                        'estoque_exposicao'
+                }
+            });
+        }
+
+
+        // =====================================================
+        // TUDO CORRETO
+        // =====================================================
+
+        return await salvarERetornar({
+
+            ativo:
+                false,
+
+            status:
+                'ok',
+
+            mensagem:
+                'Estoque do anúncio e exposição conferidos.',
+
+            resumo_automatico: {
+
+                contexto:
+                    'estoque_normal'
+            }
+        });
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            `❌ Erro processando MLB ${mlb}:`,
+            error
+        );
+
+
+        return null;
     }
 }
 

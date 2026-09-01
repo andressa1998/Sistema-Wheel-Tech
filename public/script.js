@@ -3208,13 +3208,14 @@ const USER_EMAILS = {
 
 // Mapeamento de tipos de serviço (fotos)
 const PHOTO_TYPE_MAP = {
-    'estudio': 'Foto Estúdio',
-    'bike': 'Foto Bike',
-    'ambos': 'Foto em Ambos',
-    'edicao': 'Apenas edição',
-    'criar_anuncio': 'Criar anúncio',
-    'replicar_anuncio': 'Replicar anúncio',
-    'fotos_para_atualizar': 'Fotos para atualizar'  // NOVO
+    estudio: 'Foto Estúdio',
+    bike: 'Foto Bike',
+    ambos: 'Foto em Ambos',
+    edicao: 'Apenas edição',
+    criar_anuncio: 'Criar anúncio',
+    replicar_anuncio: 'Replicar anúncio',
+    fotos_para_atualizar: 'Fotos para atualizar',
+    renovacao_anuncio: 'Renovação de anúncio'
 };
 
 // ===== VARIÁVEIS PARA NOTIFICAÇÕES DO SISTEMA =====
@@ -3305,6 +3306,732 @@ function setupHeaderButtons() {
         logoutBtn.onclick = handleLogout;
     }
 }
+
+function configurarCampoRenovacaoAnuncio() {
+    const servico =
+        document.getElementById(
+            'photoType'
+        );
+
+    const responsavel =
+        document.getElementById(
+            'responsibleName'
+        );
+
+    const container =
+        document.getElementById(
+            'campoLinkFotoBikeRenovacao'
+        );
+
+    const linkFoto =
+        document.getElementById(
+            'linkFotoBikeRenovacao'
+        );
+
+    if (
+        !servico ||
+        !container ||
+        !linkFoto
+    ) {
+        return;
+    }
+
+    const atualizar =
+        () => {
+            const ehRenovacao =
+                servico.value ===
+                'renovacao_anuncio';
+
+            container.classList.toggle(
+                'hidden',
+                !ehRenovacao
+            );
+
+            linkFoto.required =
+                ehRenovacao;
+
+            if (responsavel) {
+                if (ehRenovacao) {
+                    /*
+                     * Elaine é a destinatária final.
+                     * No banco, a primeira responsável será Letícia.
+                     */
+                    responsavel.value =
+                        'Elaine';
+
+                    responsavel.disabled =
+                        true;
+                } else {
+                    responsavel.disabled =
+                        false;
+                }
+            }
+
+            if (!ehRenovacao) {
+                linkFoto.value =
+                    '';
+            }
+        };
+
+    servico.removeEventListener(
+        'change',
+        atualizar
+    );
+
+    servico.addEventListener(
+        'change',
+        atualizar
+    );
+
+    atualizar();
+}
+
+document.addEventListener(
+    'DOMContentLoaded',
+    configurarCampoRenovacaoAnuncio
+);
+
+function ehOSRenovacaoAnuncio(order) {
+    return (
+        String(
+            order?.photoType ||
+            order?.tipo_foto ||
+            ''
+        )
+            .trim()
+            .toLowerCase() ===
+        'renovacao_anuncio'
+    );
+}
+
+function obterNomeEtapaRenovacao(
+    etapa
+) {
+    const etapas = {
+        leticia_verificacao:
+            'Letícia: verificar vendas dos últimos 3 meses',
+
+        ronald_validacao:
+            'Ronald: validar foto da bike/gancheira',
+
+        elaine_execucao:
+            'Elaine: tirar ou editar a foto',
+
+        devolvida_arthur:
+            'Arthur: corrigir informações',
+
+        fluxo_normal:
+            'Aguardando conferência normal',
+
+        finalizada:
+            'Finalizada'
+    };
+
+    return (
+        etapas[etapa] ||
+        'Etapa não identificada'
+    );
+}
+
+function podeAtuarNaEtapaRenovacao(
+    order
+) {
+    if (
+        !currentUser ||
+        !ehOSRenovacaoAnuncio(order)
+    ) {
+        return false;
+    }
+
+    const username =
+        getUsernameAtualOS();
+
+    const etapa =
+        order.renovacaoEtapa;
+
+    if (
+        etapa ===
+            'leticia_verificacao' &&
+        username ===
+            'leticia'
+    ) {
+        return true;
+    }
+
+    if (
+        etapa ===
+            'ronald_validacao' &&
+        username ===
+            'ronald'
+    ) {
+        return true;
+    }
+
+    if (
+        etapa ===
+            'elaine_execucao' &&
+        username ===
+            'elaine'
+    ) {
+        return true;
+    }
+
+    if (
+        etapa ===
+            'devolvida_arthur' &&
+        username ===
+            'arthur'
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
+async function notificarResponsavelRenovacao(
+    order,
+    destinatario,
+    titulo,
+    texto
+) {
+    if (
+        !destinatario ||
+        destinatario ===
+            currentUser?.name
+    ) {
+        return;
+    }
+
+    try {
+        await enviarNotificacaoEmail(
+            destinatario,
+            titulo,
+            texto,
+            order
+        );
+    } catch (error) {
+        console.warn(
+            'A etapa avançou, mas houve erro ao enviar a notificação:',
+            error
+        );
+    }
+}
+
+async function atualizarEtapaRenovacao(
+    order,
+    {
+        etapa,
+        responsavel,
+        motivo = null,
+        etapaRetorno = null,
+        dadosAdicionais = {}
+    }
+) {
+    if (
+        !order ||
+        !supabaseClient
+    ) {
+        throw new Error(
+            'OS ou Supabase indisponível.'
+        );
+    }
+
+    const agora =
+        new Date().toISOString();
+
+    const historicoAtual =
+        Array.isArray(
+            order.renovacaoHistorico
+        )
+            ? order.renovacaoHistorico
+            : [];
+
+    const novoHistorico = [
+        ...historicoAtual,
+        {
+            etapa_anterior:
+                order.renovacaoEtapa ||
+                null,
+
+            nova_etapa:
+                etapa,
+
+            responsavel:
+                responsavel,
+
+            alterado_por:
+                currentUser.name,
+
+            motivo:
+                motivo,
+
+            data:
+                agora
+        }
+    ];
+
+    const dadosBanco = {
+        renovacao_etapa:
+            etapa,
+
+        renovacao_etapa_retorno:
+            etapaRetorno,
+
+        renovacao_motivo_reprovacao:
+            motivo,
+
+        renovacao_historico:
+            novoHistorico,
+
+        responsavel:
+            responsavel,
+
+        user_notified:
+            false,
+
+        ultima_atualizacao:
+            agora,
+
+        ...dadosAdicionais
+    };
+
+    const {
+        error
+    } =
+        await supabaseClient
+            .from(
+                'ordens_service'
+            )
+            .update(
+                dadosBanco
+            )
+            .eq(
+                'id',
+                order.id
+            );
+
+    if (error) {
+        throw error;
+    }
+
+    order.renovacaoEtapa =
+        etapa;
+
+    order.renovacaoEtapaRetorno =
+        etapaRetorno;
+
+    order.renovacaoMotivoReprovacao =
+        motivo;
+
+    order.renovacaoHistorico =
+        novoHistorico;
+
+    order.responsibleName =
+        responsavel;
+
+    order.user_notified =
+        false;
+
+    order.updatedAt =
+        agora;
+
+    Object.assign(
+        order,
+        dadosAdicionais
+    );
+
+    updateCounters();
+    renderOrdersTable();
+    updateOSNotificationBell();
+
+    return agora;
+}
+
+window.aprovarEtapaRenovacao =
+    async function(orderId) {
+        const order =
+            orders.find(
+                item =>
+                    String(item.id) ===
+                    String(orderId)
+            );
+
+        if (!order) {
+            showToast(
+                '❌ OS não encontrada.',
+                'error'
+            );
+
+            return;
+        }
+
+        if (
+            !podeAtuarNaEtapaRenovacao(
+                order
+            )
+        ) {
+            showToast(
+                '⚠️ Esta etapa não está atribuída ao seu usuário.',
+                'warning'
+            );
+
+            return;
+        }
+
+        const username =
+            getUsernameAtualOS();
+
+        try {
+            if (
+                order.renovacaoEtapa ===
+                    'leticia_verificacao' &&
+                username ===
+                    'leticia'
+            ) {
+                if (
+                    !confirm(
+                        'Você confirmou que este anúncio não teve vendas nos últimos 3 meses?'
+                    )
+                ) {
+                    return;
+                }
+
+                const agora =
+                    new Date().toISOString();
+
+                await atualizarEtapaRenovacao(
+                    order,
+                    {
+                        etapa:
+                            'ronald_validacao',
+
+                        responsavel:
+                            'Ronald',
+
+                        dadosAdicionais: {
+                            renovacao_aprovado_leticia_por:
+                                currentUser.name,
+
+                            renovacao_aprovado_leticia_em:
+                                agora
+                        }
+                    }
+                );
+
+                order.renovacaoAprovadoLeticiaPor =
+                    currentUser.name;
+
+                order.renovacaoAprovadoLeticiaEm =
+                    agora;
+
+                await notificarResponsavelRenovacao(
+                    order,
+                    'Ronald',
+                    `🔎 Renovação para validar: ${order.code}`,
+                    `A Letícia confirmou que o anúncio da OS ${order.code} não possui vendas nos últimos 3 meses.
+
+Agora você deve verificar se a foto da bike corresponde à gancheira.
+
+Produto: ${order.productName}
+Anúncio: ${order.linkAnuncio}
+Foto da bike: ${order.linkFotoBikeRenovacao}`
+                );
+
+                showToast(
+                    '✅ Verificação aprovada e enviada ao Ronald.',
+                    'success'
+                );
+
+                return;
+            }
+
+            if (
+                order.renovacaoEtapa ===
+                    'ronald_validacao' &&
+                username ===
+                    'ronald'
+            ) {
+                if (
+                    !confirm(
+                        'Você confirma que a foto da bike corresponde à gancheira deste anúncio?'
+                    )
+                ) {
+                    return;
+                }
+
+                const agora =
+                    new Date().toISOString();
+
+                await atualizarEtapaRenovacao(
+                    order,
+                    {
+                        etapa:
+                            'elaine_execucao',
+
+                        responsavel:
+                            order.renovacaoDestinatarioFinal ||
+                            'Elaine',
+
+                        dadosAdicionais: {
+                            renovacao_aprovado_ronald_por:
+                                currentUser.name,
+
+                            renovacao_aprovado_ronald_em:
+                                agora,
+
+                            status:
+                                'pendente'
+                        }
+                    }
+                );
+
+                order.status =
+                    'pendente';
+
+                order.renovacaoAprovadoRonaldPor =
+                    currentUser.name;
+
+                order.renovacaoAprovadoRonaldEm =
+                    agora;
+
+                await notificarResponsavelRenovacao(
+                    order,
+                    order.renovacaoDestinatarioFinal ||
+                        'Elaine',
+                    `📸 Renovação liberada: ${order.code}`,
+                    `O Ronald confirmou a foto da bike/gancheira da OS ${order.code}.
+
+A OS está liberada para tirar ou editar a foto.
+
+Produto: ${order.productName}
+Anúncio: ${order.linkAnuncio}
+Foto de referência: ${order.linkFotoBikeRenovacao}`
+                );
+
+                showToast(
+                    '✅ Foto validada e OS enviada para Elaine.',
+                    'success'
+                );
+
+                return;
+            }
+
+            showToast(
+                '⚠️ Esta etapa não pode ser aprovada pelo seu usuário.',
+                'warning'
+            );
+        } catch (error) {
+            console.error(
+                'Erro ao aprovar etapa da renovação:',
+                error
+            );
+
+            showToast(
+                '❌ Erro ao avançar etapa: ' +
+                error.message,
+                'error'
+            );
+        }
+    };
+
+window.reprovarEtapaRenovacao =
+    async function(orderId) {
+        const order =
+            orders.find(
+                item =>
+                    String(item.id) ===
+                    String(orderId)
+            );
+
+        if (
+            !order ||
+            !podeAtuarNaEtapaRenovacao(
+                order
+            )
+        ) {
+            showToast(
+                '⚠️ Esta etapa não está atribuída ao seu usuário.',
+                'warning'
+            );
+
+            return;
+        }
+
+        if (
+            ![
+                'leticia_verificacao',
+                'ronald_validacao'
+            ].includes(
+                order.renovacaoEtapa
+            )
+        ) {
+            showToast(
+                '⚠️ Esta etapa não permite devolução ao Arthur.',
+                'warning'
+            );
+
+            return;
+        }
+
+        const motivo =
+            prompt(
+                'Informe o motivo da reprovação. A OS voltará para Arthur:'
+            )?.trim();
+
+        if (!motivo) {
+            showToast(
+                '⚠️ Informe o motivo da reprovação.',
+                'warning'
+            );
+
+            return;
+        }
+
+        const etapaRetorno =
+            order.renovacaoEtapa;
+
+        try {
+            await atualizarEtapaRenovacao(
+                order,
+                {
+                    etapa:
+                        'devolvida_arthur',
+
+                    responsavel:
+                        'Arthur',
+
+                    motivo:
+                        motivo,
+
+                    etapaRetorno:
+                        etapaRetorno,
+
+                    dadosAdicionais: {
+                        status:
+                            'pendente'
+                    }
+                }
+            );
+
+            order.status =
+                'pendente';
+
+            await notificarResponsavelRenovacao(
+                order,
+                'Arthur',
+                `⚠️ Renovação devolvida: ${order.code}`,
+                `A OS ${order.code} foi devolvida para correção.
+
+Reprovada por: ${currentUser.name}
+Etapa: ${obterNomeEtapaRenovacao(etapaRetorno)}
+
+Motivo:
+${motivo}
+
+Após corrigir as informações, clique em “Reenviar fluxo”.`
+            );
+
+            showToast(
+                '✅ OS devolvida para Arthur.',
+                'success'
+            );
+        } catch (error) {
+            console.error(
+                'Erro ao reprovar renovação:',
+                error
+            );
+
+            showToast(
+                '❌ Erro ao devolver OS: ' +
+                error.message,
+                'error'
+            );
+        }
+    };
+
+window.reenviarFluxoRenovacao =
+    async function(orderId) {
+        const order =
+            orders.find(
+                item =>
+                    String(item.id) ===
+                    String(orderId)
+            );
+
+        if (
+            !order ||
+            getUsernameAtualOS() !==
+                'arthur' ||
+            order.renovacaoEtapa !==
+                'devolvida_arthur'
+        ) {
+            showToast(
+                '⚠️ Somente Arthur pode reenviar esta OS.',
+                'warning'
+            );
+
+            return;
+        }
+
+        const etapaRetorno =
+            order.renovacaoEtapaRetorno ||
+            'leticia_verificacao';
+
+        const responsavel =
+            etapaRetorno ===
+                'ronald_validacao'
+                ? 'Ronald'
+                : 'Leticia';
+
+        if (
+            !confirm(
+                `Reenviar esta OS para ${responsavel}?`
+            )
+        ) {
+            return;
+        }
+
+        try {
+            await atualizarEtapaRenovacao(
+                order,
+                {
+                    etapa:
+                        etapaRetorno,
+
+                    responsavel:
+                        responsavel,
+
+                    motivo:
+                        null,
+
+                    etapaRetorno:
+                        null
+                }
+            );
+
+            await notificarResponsavelRenovacao(
+                order,
+                responsavel,
+                `🔄 Renovação corrigida: ${order.code}`,
+                `Arthur corrigiu a OS ${order.code} e reenviou para sua validação.
+
+Produto: ${order.productName}
+Anúncio: ${order.linkAnuncio}
+Foto da bike: ${order.linkFotoBikeRenovacao}`
+            );
+
+            showToast(
+                `✅ OS reenviada para ${responsavel}.`,
+                'success'
+            );
+        } catch (error) {
+            showToast(
+                '❌ Erro ao reenviar OS: ' +
+                error.message,
+                'error'
+            );
+        }
+    };
 
 function highlightActiveFilterButton() {
     const buttons = document.querySelectorAll('.filter-group .btn');
@@ -3702,6 +4429,7 @@ function loadSessionFromStorage() {
         
         // Restaurar usuário
         currentUser = user;
+        iniciarMonitorNotificacoesOS();
         window.currentUser = currentUser;
         
        // 🔒 VERIFICAÇÃO DE BLOQUEIO (INSIRA AQUI)
@@ -5904,28 +6632,137 @@ function updateNotificationsUI() {
     content.innerHTML = html;
 }
 
-// Atualizar badge de notificação
-function updateNotificationBadge() {
-    const unreadCount = notificacoes.filter(n => !n.read).length;
-    
-    if (notificationCount) {
-        notificationCount.textContent = unreadCount;
-        if (unreadCount > 0) {
-            notificationBell.style.display = 'block';
+async function updateNotificationBadge() {
+    const notificationBell =
+        document.getElementById(
+            'notificationBell'
+        );
+
+    const notificationCount =
+        document.getElementById(
+            'notificationCount'
+        );
+
+    const reembolsoNotificationBell =
+        document.getElementById(
+            'reembolsoNotificationBell'
+        );
+
+    const reembolsoNotificationCount =
+        document.getElementById(
+            'reembolsoNotificationCount'
+        );
+
+    /*
+     * Notificações de reembolso ainda não lidas.
+     */
+    const quantidadeReembolsos =
+        Array.isArray(notificacoes)
+            ? notificacoes.filter(
+                notificacao =>
+                    !notificacao.read
+            ).length
+            : 0;
+
+    /*
+     * Notificações de OS do usuário logado,
+     * consultadas diretamente no Supabase.
+     */
+    let quantidadeOS =
+        0;
+
+    try {
+        if (
+            currentUser &&
+            supabaseClient &&
+            typeof obterOSNaoLidasUsuarioAtual ===
+                'function'
+        ) {
+            const osNaoLidas =
+                await obterOSNaoLidasUsuarioAtual();
+
+            quantidadeOS =
+                osNaoLidas.length;
+        }
+
+    } catch (error) {
+        console.error(
+            '❌ Erro contando notificações de OS:',
+            error
+        );
+    }
+
+    /*
+     * O sino principal mostra OS + reembolsos.
+     */
+    const quantidadeTotal =
+        quantidadeOS +
+        quantidadeReembolsos;
+
+    if (
+        notificationBell &&
+        notificationCount
+    ) {
+        notificationCount.textContent =
+            String(quantidadeTotal);
+
+        if (quantidadeTotal > 0) {
+            notificationBell.style.display =
+                'block';
+
+            notificationBell.style.visibility =
+                'visible';
+
+            notificationBell.classList.add(
+                'has-notifications'
+            );
+
         } else {
-            notificationBell.style.display = 'none';
+            notificationBell.style.display =
+                'none';
+
+            notificationBell.classList.remove(
+                'has-notifications'
+            );
         }
     }
-    
-    // Para reembolsos
-    if (reembolsoNotificationCount) {
-        reembolsoNotificationCount.textContent = unreadCount;
-        if (unreadCount > 0) {
-            reembolsoNotificationBell.style.display = 'block';
-        } else {
-            reembolsoNotificationBell.style.display = 'none';
-        }
+
+    /*
+     * O sino específico de reembolso continua
+     * mostrando apenas reembolsos.
+     */
+    if (
+        reembolsoNotificationBell &&
+        reembolsoNotificationCount
+    ) {
+        reembolsoNotificationCount.textContent =
+            String(
+                quantidadeReembolsos
+            );
+
+        reembolsoNotificationBell.style.display =
+            quantidadeReembolsos > 0
+                ? 'block'
+                : 'none';
     }
+
+    console.log(
+        '🔔 Notificações atualizadas:',
+        {
+            usuario:
+                currentUser?.name ||
+                currentUser?.username,
+
+            os:
+                quantidadeOS,
+
+            reembolsos:
+                quantidadeReembolsos,
+
+            total:
+                quantidadeTotal
+        }
+    );
 }
 
 // Marcar notificação como lida
@@ -7112,6 +7949,7 @@ async function loadOrders() {
                     anuncio_criado_data:
                         order.anuncio_criado_data ||
                         null
+                        
 
                 }));
 
@@ -7161,192 +7999,845 @@ async function loadOrders() {
     }
 }
 
-// ============================================
-// FUNÇÃO SALVAR OS (CORRIGIDA - INCLUIR "APENAS EDIÇÃO")
-// ============================================
 async function saveOrder() {
     if (!currentUser) {
-        showToast('⚠️ Faça login primeiro', 'warning');
-        return;
-    }
-    
-    const productName = document.getElementById('productName')?.value.trim();
-    const responsibleName = document.getElementById('responsibleName')?.value;
-    const linkAnuncio = document.getElementById('linkAnuncio')?.value.trim();
-    const photoType = document.getElementById('photoType')?.value;
-    
-    if (!productName || !responsibleName) {
-        showToast('⚠️ Preencha produto e responsável', 'warning');
-        return;
-    }
-    
-    const valorAnuncio = document.getElementById('valorAnuncio')?.value || 0;
-    const descricaoAnuncio = document.getElementById('descricaoAnuncio')?.value || '';
-    const linkNovoAnuncio = document.getElementById('linkNovoAnuncio')?.value || '';
-    const precisaFoto = document.getElementById('precisaFoto')?.value || 'nao';
+        showToast(
+            '⚠️ Faça login primeiro',
+            'warning'
+        );
 
-    let finalResponsibleName = responsibleName;
-    const tiposComAnuncio = ['criar_anuncio', 'replicar_anuncio', 'edicao'];
-    
-    if (tiposComAnuncio.includes(photoType) && precisaFoto === 'sim') {
-        if (responsibleName && responsibleName !== 'Elaine') {
-            finalResponsibleName = `${responsibleName} e Elaine`;
-            showToast('📸 Elaine adicionada como responsável (precisa de foto)', 'info');
-        } else if (responsibleName !== 'Elaine') {
-            finalResponsibleName = 'Elaine';
-            showToast('📸 Elaine definida como responsável (precisa de foto)', 'info');
+        return;
+    }
+
+    const normalizarTextoOS = valor => {
+        return String(valor || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(
+                /[\u0300-\u036f]/g,
+                ''
+            );
+    };
+
+    const productName =
+        document
+            .getElementById('productName')
+            ?.value
+            ?.trim() ||
+        '';
+
+    const responsibleName =
+        document
+            .getElementById('responsibleName')
+            ?.value ||
+        '';
+
+    const linkAnuncio =
+        document
+            .getElementById('linkAnuncio')
+            ?.value
+            ?.trim() ||
+        '';
+
+    const photoType =
+        document
+            .getElementById('photoType')
+            ?.value ||
+        '';
+
+    const valorAnuncio =
+        document
+            .getElementById('valorAnuncio')
+            ?.value ||
+        0;
+
+    const descricaoAnuncio =
+        document
+            .getElementById('descricaoAnuncio')
+            ?.value ||
+        '';
+
+    const linkNovoAnuncio =
+        document
+            .getElementById('linkNovoAnuncio')
+            ?.value
+            ?.trim() ||
+        '';
+
+    const precisaFoto =
+        document
+            .getElementById('precisaFoto')
+            ?.value ||
+        'nao';
+
+    const urgency =
+        document
+            .getElementById('urgency')
+            ?.value ||
+        'normal';
+
+    const osType =
+        document
+            .getElementById('osType')
+            ?.value ||
+        'normal';
+
+    const observations =
+        document
+            .getElementById('observations')
+            ?.value ||
+        '';
+
+    const skus =
+        (
+            document
+                .getElementById('skus')
+                ?.value ||
+            ''
+        )
+            .split(',')
+            .map(sku => sku.trim())
+            .filter(Boolean);
+
+    const prazoHorasValor =
+        document
+            .getElementById('prazoHoras')
+            ?.value;
+
+    const prazoHoras =
+        parseInt(
+            prazoHorasValor,
+            10
+        ) ||
+        null;
+
+    /*
+     * Identifica Renovação de anúncio pelo serviço selecionado.
+     * Aceita tanto valor com acento quanto sem acento.
+     */
+    const servicoNormalizado =
+        normalizarTextoOS(
+            photoType
+        );
+
+    const ehRenovacaoAnuncio =
+        servicoNormalizado.includes(
+            'renovacao'
+        ) &&
+        servicoNormalizado.includes(
+            'anuncio'
+        );
+
+    if (
+        !productName ||
+        !responsibleName
+    ) {
+        showToast(
+            '⚠️ Preencha produto e responsável',
+            'warning'
+        );
+
+        return;
+    }
+
+    /*
+     * Validações específicas da Renovação de anúncio.
+     */
+    if (ehRenovacaoAnuncio) {
+        if (!linkAnuncio) {
+            showToast(
+                '⚠️ Informe o link do anúncio',
+                'warning'
+            );
+
+            return;
+        }
+
+        const possuiFotoReferencia =
+            Array.isArray(selectedPhotos) &&
+            selectedPhotos.length > 0;
+
+        if (!possuiFotoReferencia) {
+            showToast(
+                '⚠️ Adicione o link ou arquivo da foto da bike/gancheira',
+                'warning'
+            );
+
+            return;
         }
     }
-    
-    let existingOrder = null;
+
+    let finalResponsibleName =
+        responsibleName;
+
+    const tiposComAnuncio = [
+        'criar_anuncio',
+        'replicar_anuncio',
+        'edicao'
+    ];
+
+    /*
+     * Regra antiga de inclusão da Elaine para serviços
+     * comuns que precisam de foto.
+     *
+     * Não executa essa regra na Renovação, porque a primeira
+     * responsável interna precisa ser a Letícia.
+     */
+    if (
+        !ehRenovacaoAnuncio &&
+        tiposComAnuncio.includes(
+            photoType
+        ) &&
+        precisaFoto === 'sim'
+    ) {
+        if (
+            responsibleName &&
+            normalizarTextoOS(
+                responsibleName
+            ) !== 'elaine'
+        ) {
+            finalResponsibleName =
+                `${responsibleName} e Elaine`;
+
+            showToast(
+                '📸 Elaine adicionada como responsável (precisa de foto)',
+                'info'
+            );
+
+        } else {
+            finalResponsibleName =
+                'Elaine';
+        }
+    }
+
+    let existingOrder =
+        null;
+
     if (editingOrderId) {
-        existingOrder = orders.find(o => o.id == editingOrderId);
+        existingOrder =
+            orders.find(
+                order =>
+                    String(order.id) ===
+                    String(editingOrderId)
+            );
+
+        if (!existingOrder) {
+            showToast(
+                '❌ Não foi possível encontrar a OS que está sendo editada',
+                'error'
+            );
+
+            return;
+        }
     }
-    
-    const prazoHoras = parseInt(document.getElementById('prazoHoras')?.value) || null;
-    
+
+    const agora =
+        new Date().toISOString();
+
     const formData = {
-        productName: productName,
-        responsibleName: finalResponsibleName,
-        linkAnuncio: linkAnuncio || '',
-        urgency: document.getElementById('urgency')?.value || 'normal',
-        osType: document.getElementById('osType')?.value || 'normal',
-        photoType: photoType,
-        skus: document.getElementById('skus')?.value.split(',').map(s => s.trim()).filter(s => s) || [],
-        observations: document.getElementById('observations')?.value || '',
-        valorAnuncio: parseFloat(valorAnuncio),
-        descricaoAnuncio: descricaoAnuncio,
-        linkNovoAnuncio: linkNovoAnuncio,
-        precisaFoto: precisaFoto,
-        photos: selectedPhotos,
-        updatedAt: new Date().toISOString(),
-        prazo_horas: prazoHoras,
-        prazo_esperado: null
+        productName:
+            productName,
+
+        responsibleName:
+            finalResponsibleName,
+
+        linkAnuncio:
+            linkAnuncio,
+
+        urgency:
+            urgency,
+
+        osType:
+            osType,
+
+        photoType:
+            photoType,
+
+        skus:
+            skus,
+
+        observations:
+            observations,
+
+        valorAnuncio:
+            parseFloat(
+                valorAnuncio
+            ) ||
+            0,
+
+        descricaoAnuncio:
+            descricaoAnuncio,
+
+        linkNovoAnuncio:
+            linkNovoAnuncio,
+
+        precisaFoto:
+            precisaFoto,
+
+        photos:
+            Array.isArray(selectedPhotos)
+                ? selectedPhotos
+                : [],
+
+        updatedAt:
+            agora,
+
+        prazo_horas:
+            prazoHoras,
+
+        prazo_esperado:
+            null,
+
+        /*
+         * Campos do fluxo de Renovação.
+         */
+        fluxoRenovacao:
+            ehRenovacaoAnuncio,
+
+        etapaFluxo:
+            null,
+
+        destinatarioFinal:
+            ehRenovacaoAnuncio
+                ? 'Elaine'
+                : finalResponsibleName,
+
+        etapaAtualizadaEm:
+            agora,
+
+        etapaAtualizadaPor:
+            currentUser.name ||
+            currentUser.username ||
+            ''
     };
-    
-    if (prazoHoras && prazoHoras > 0) {
-        formData.prazo_esperado = calcularPrazoPorPrioridade(new Date(), null, prazoHoras);
+
+    if (
+        prazoHoras &&
+        prazoHoras > 0
+    ) {
+        formData.prazo_esperado =
+            calcularPrazoPorPrioridade(
+                new Date(),
+                null,
+                prazoHoras
+            );
     }
-    
-    const isAnuncio = (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio');
-    
-    if (!editingOrderId) {
-        // Nova OS
-        formData.id = orderCounter;
-        formData.code = generateOSCode();
-        formData.status = 'pendente';
-        formData.photosTaken = 0;
-        formData.editsMade = 0;
-        formData.createdBy = currentUser.name;
-        formData.user_notified = (responsibleName !== currentUser.name) ? false : true;
-        formData.createdAt = new Date().toISOString();
-        formData.completionDate = null;
-        formData.conferido = false;
-        formData.conferidoPor = null;
-        formData.dataConferencia = null;
-        formData.motivo_rejeicao = null;
-        formData.rejeitado_por = null;
-        formData.data_rejeicao = null;
-        formData.anuncio_criado = isAnuncio ? false : null;
-        formData.anuncio_criado_por = null;
-        formData.anuncio_criado_data = null;
+
+    const isAnuncio =
+        photoType ===
+            'criar_anuncio' ||
+        photoType ===
+            'replicar_anuncio';
+
+    const criandoNovaOS =
+        !editingOrderId;
+
+    if (criandoNovaOS) {
+        formData.id =
+            orderCounter;
+
+        formData.code =
+            generateOSCode();
+
+        formData.status =
+            'pendente';
+
+        formData.photosTaken =
+            0;
+
+        formData.editsMade =
+            0;
+
+        formData.createdBy =
+            currentUser.name ||
+            currentUser.username ||
+            '';
+
+        formData.createdAt =
+            agora;
+
+        formData.completionDate =
+            null;
+
+        formData.conferido =
+            false;
+
+        formData.conferidoPor =
+            null;
+
+        formData.dataConferencia =
+            null;
+
+        formData.motivo_rejeicao =
+            null;
+
+        formData.rejeitado_por =
+            null;
+
+        formData.data_rejeicao =
+            null;
+
+        formData.anuncio_criado =
+            isAnuncio
+                ? false
+                : null;
+
+        formData.anuncio_criado_por =
+            null;
+
+        formData.anuncio_criado_data =
+            null;
+
+        /*
+         * Regra da Renovação:
+         *
+         * O campo visível do formulário continua Elaine,
+         * mas a responsável da primeira etapa é Letícia.
+         */
+        if (ehRenovacaoAnuncio) {
+            formData.responsibleName =
+                'Leticia';
+
+            formData.user_notified =
+                false;
+
+            formData.etapaFluxo =
+                'aguardando_leticia';
+
+            formData.destinatarioFinal =
+                'Elaine';
+
+            formData.status =
+                'pendente';
+
+            formData.conferido =
+                false;
+
+        } else {
+            const responsavelNormalizado =
+                normalizarTextoOS(
+                    finalResponsibleName
+                );
+
+            const usuarioAtualNormalizado =
+                normalizarTextoOS(
+                    currentUser.name ||
+                    currentUser.username
+                );
+
+            formData.user_notified =
+                responsavelNormalizado !==
+                usuarioAtualNormalizado;
+
+            /*
+             * user_notified precisa ser false para indicar
+             * que existe uma notificação ainda não lida.
+             */
+            formData.user_notified =
+                formData.user_notified
+                    ? false
+                    : true;
+        }
+
     } else {
-        // Edição: preserva campos não editáveis
-        formData.id = existingOrder.id;
-        formData.code = existingOrder.code;
-        formData.status = existingOrder.status;
-        formData.photosTaken = existingOrder.photosTaken || 0;
-        formData.editsMade = existingOrder.editsMade || 0;
-        formData.createdBy = existingOrder.createdBy;
-        formData.user_notified = existingOrder.user_notified;
-        formData.createdAt = existingOrder.createdAt;
-        formData.completionDate = existingOrder.completionDate || null;
-        formData.conferido = existingOrder.conferido || false;
-        formData.conferidoPor = existingOrder.conferidoPor || null;
-        formData.dataConferencia = existingOrder.dataConferencia || null;
-        formData.motivo_rejeicao = existingOrder.motivo_rejeicao || null;
-        formData.rejeitado_por = existingOrder.rejeitado_por || null;
-        formData.data_rejeicao = existingOrder.data_rejeicao || null;
-        formData.anuncio_criado = existingOrder.anuncio_criado || false;
-        formData.anuncio_criado_por = existingOrder.anuncio_criado_por || null;
-        formData.anuncio_criado_data = existingOrder.anuncio_criado_data || null;
-        
-        // 🔥 VALIDAÇÃO: Se a OS está sendo marcada como concluída e completionDate é inválida
-        if (formData.status === 'concluida' && formData.completionDate) {
-            const createdAtDate = new Date(formData.createdAt);
-            const completionDateObj = new Date(formData.completionDate);
-            if (completionDateObj < createdAtDate) {
-                console.warn(`Data de conclusão ${formData.completionDate} anterior à criação. Corrigindo para agora.`);
-                formData.completionDate = new Date().toISOString();
-                showToast('⚠️ Data de conclusão corrigida (estava anterior à criação)', 'warning');
+        /*
+         * Edição: preserva os campos de controle da OS.
+         */
+        formData.id =
+            existingOrder.id;
+
+        formData.code =
+            existingOrder.code;
+
+        formData.status =
+            existingOrder.status;
+
+        formData.photosTaken =
+            existingOrder.photosTaken ||
+            0;
+
+        formData.editsMade =
+            existingOrder.editsMade ||
+            0;
+
+        formData.createdBy =
+            existingOrder.createdBy;
+
+        formData.user_notified =
+            existingOrder.user_notified;
+
+        formData.createdAt =
+            existingOrder.createdAt;
+
+        formData.completionDate =
+            existingOrder.completionDate ||
+            null;
+
+        formData.conferido =
+            existingOrder.conferido ||
+            false;
+
+        formData.conferidoPor =
+            existingOrder.conferidoPor ||
+            null;
+
+        formData.dataConferencia =
+            existingOrder.dataConferencia ||
+            null;
+
+        formData.motivo_rejeicao =
+            existingOrder.motivo_rejeicao ||
+            null;
+
+        formData.rejeitado_por =
+            existingOrder.rejeitado_por ||
+            null;
+
+        formData.data_rejeicao =
+            existingOrder.data_rejeicao ||
+            null;
+
+        formData.anuncio_criado =
+            existingOrder.anuncio_criado ||
+            false;
+
+        formData.anuncio_criado_por =
+            existingOrder.anuncio_criado_por ||
+            null;
+
+        formData.anuncio_criado_data =
+            existingOrder.anuncio_criado_data ||
+            null;
+
+        /*
+         * Se a OS já pertence ao fluxo de Renovação,
+         * editar os dados não pode mandá-la diretamente
+         * para Elaine nem reiniciar o fluxo.
+         */
+        const existingEhRenovacao =
+            existingOrder.fluxoRenovacao ===
+                true ||
+            normalizarTextoOS(
+                existingOrder.photoType
+            ).includes(
+                'renovacao'
+            );
+
+        if (existingEhRenovacao) {
+            formData.fluxoRenovacao =
+                true;
+
+            formData.responsibleName =
+                existingOrder.responsibleName ||
+                'Leticia';
+
+            formData.etapaFluxo =
+                existingOrder.etapaFluxo ||
+                existingOrder.etapa_fluxo ||
+                'aguardando_leticia';
+
+            formData.destinatarioFinal =
+                existingOrder.destinatarioFinal ||
+                existingOrder.destinatario_final ||
+                'Elaine';
+
+            formData.etapaAtualizadaEm =
+                existingOrder.etapaAtualizadaEm ||
+                existingOrder.etapa_atualizada_em ||
+                agora;
+
+            formData.etapaAtualizadaPor =
+                existingOrder.etapaAtualizadaPor ||
+                existingOrder.etapa_atualizada_por ||
+                currentUser.name ||
+                currentUser.username ||
+                '';
+        }
+
+        /*
+         * Corrige data de conclusão inválida.
+         */
+        if (
+            formData.status ===
+                'concluida' &&
+            formData.completionDate
+        ) {
+            const createdAtDate =
+                new Date(
+                    formData.createdAt
+                );
+
+            const completionDateObj =
+                new Date(
+                    formData.completionDate
+                );
+
+            if (
+                completionDateObj <
+                createdAtDate
+            ) {
+                console.warn(
+                    `Data de conclusão ${formData.completionDate} anterior à criação. Corrigindo para agora.`
+                );
+
+                formData.completionDate =
+                    agora;
+
+                showToast(
+                    '⚠️ Data de conclusão corrigida',
+                    'warning'
+                );
             }
         }
-        
-        // Recalcular prazo se urgência ou horas mudaram
-        if (formData.status !== 'concluida' && (existingOrder.urgency !== formData.urgency || existingOrder.prazo_horas !== prazoHoras)) {
-            formData.prazo_esperado = calcularPrazoPorPrioridade(new Date(), null, prazoHoras);
+
+        /*
+         * Recalcula o prazo quando necessário.
+         */
+        if (
+            formData.status !==
+                'concluida' &&
+            (
+                existingOrder.urgency !==
+                    formData.urgency ||
+                existingOrder.prazo_horas !==
+                    prazoHoras
+            )
+        ) {
+            formData.prazo_esperado =
+                calcularPrazoPorPrioridade(
+                    new Date(),
+                    null,
+                    prazoHoras
+                );
+
         } else {
-            formData.prazo_esperado = existingOrder.prazo_esperado || null;
+            formData.prazo_esperado =
+                existingOrder.prazo_esperado ||
+                null;
         }
-        
-        if (isAnuncio && linkNovoAnuncio && linkNovoAnuncio.trim() !== '' && !existingOrder.anuncio_criado) {
-            formData.anuncio_criado = true;
-            formData.anuncio_criado_por = currentUser.name;
-            formData.anuncio_criado_data = new Date().toISOString();
-            showToast('✅ Link do novo anúncio adicionado!', 'success');
+
+        if (
+            isAnuncio &&
+            linkNovoAnuncio &&
+            !existingOrder.anuncio_criado
+        ) {
+            formData.anuncio_criado =
+                true;
+
+            formData.anuncio_criado_por =
+                currentUser.name ||
+                currentUser.username ||
+                '';
+
+            formData.anuncio_criado_data =
+                agora;
+
+            showToast(
+                '✅ Link do novo anúncio adicionado!',
+                'success'
+            );
         }
     }
-    
+
     if (saveOSBtn) {
-        saveOSBtn.innerHTML = '<span class="spinner"></span> Salvando...';
-        saveOSBtn.disabled = true;
+        saveOSBtn.innerHTML =
+            '<span class="spinner"></span> Salvando...';
+
+        saveOSBtn.disabled =
+            true;
     }
-    
+
     try {
         let result;
-        if (editingOrderId && supabaseClient) {
-            const oldOrder = orders.find(o => o.id == editingOrderId);
+
+        if (
+            editingOrderId &&
+            supabaseClient
+        ) {
+            const oldOrder =
+                orders.find(
+                    order =>
+                        String(order.id) ===
+                        String(editingOrderId)
+                );
+
             if (oldOrder) {
-                const dadosAntigos = { /* campos relevantes */ };
-                await salvarHistoricoOS(editingOrderId, dadosAntigos, formData, currentUser.name);
+                const dadosAntigos = {
+                    produto:
+                        oldOrder.productName,
+
+                    responsavel:
+                        oldOrder.responsibleName,
+
+                    urgencia:
+                        oldOrder.urgency,
+
+                    tipo_os:
+                        oldOrder.osType,
+
+                    servico:
+                        oldOrder.photoType,
+
+                    status:
+                        oldOrder.status,
+
+                    etapa_fluxo:
+                        oldOrder.etapaFluxo ||
+                        oldOrder.etapa_fluxo ||
+                        null
+                };
+
+                await salvarHistoricoOS(
+                    editingOrderId,
+                    dadosAntigos,
+                    formData,
+                    currentUser.name ||
+                    currentUser.username ||
+                    ''
+                );
             }
         }
-        
+
         if (supabaseClient) {
-            result = await saveOrderToSupabase(formData);
+            result =
+                await saveOrderToSupabase(
+                    formData
+                );
         } else {
-            result = { success: true, offline: true };
+            result = {
+                success: true,
+                offline: true
+            };
         }
-        
-        if (result.success) {
-            if (editingOrderId) {
-                const index = orders.findIndex(o => o.id == editingOrderId);
-                if (index !== -1) orders[index] = { ...orders[index], ...formData };
-                editingOrderId = null;
-                showToast(`✅ OS "${formData.productName}" atualizada`, 'success');
-            } else {
-                orders.unshift(formData);
-                orderCounter++;
-                showToast(`✅ OS "${formData.productName}" criada`, 'success');
-                if (responsibleName !== currentUser.name) {
-                    await notifyResponsibleNewOS(formData, responsibleName);
-                }
-                await notificarAdminSobreNovaOS(formData);
-                if (tiposComAnuncio.includes(photoType) && precisaFoto === 'sim') {
-                    await notificarElaineSobreFotos(formData);
-                }
+
+        if (!result?.success) {
+            throw new Error(
+                result?.error ||
+                'Não foi possível salvar a OS'
+            );
+        }
+
+        if (criandoNovaOS) {
+            /*
+             * Usa o ID retornado pelo Supabase, quando disponível.
+             */
+            const osSalva =
+                result.data ||
+                result.order ||
+                result.os ||
+                null;
+
+            if (osSalva?.id) {
+                formData.id =
+                    osSalva.id;
             }
-            updateCounters();
-            renderOrdersTable();
-            clearForm();
-            updateOSNotificationBell();
+
+            if (osSalva?.codigo) {
+                formData.code =
+                    osSalva.codigo;
+            }
+
+            orders.unshift(
+                formData
+            );
+
+            orderCounter++;
+
+            if (ehRenovacaoAnuncio) {
+                showToast(
+                    '✅ OS criada e enviada para a Letícia',
+                    'success'
+                );
+
+            } else {
+                showToast(
+                    `✅ OS "${formData.productName}" criada`,
+                    'success'
+                );
+            }
+
+            /*
+             * Não envia e-mail.
+             * O sino é controlado por:
+             *
+             * responsavel = usuário da etapa
+             * user_notified = false
+             */
+
         } else {
-            showToast('❌ Erro ao salvar: ' + result.error, 'error');
+            const index =
+                orders.findIndex(
+                    order =>
+                        String(order.id) ===
+                        String(formData.id)
+                );
+
+            if (index !== -1) {
+                orders[index] = {
+                    ...orders[index],
+                    ...formData
+                };
+            }
+
+            editingOrderId =
+                null;
+
+            showToast(
+                `✅ OS "${formData.productName}" atualizada`,
+                'success'
+            );
         }
+
+        if (
+            typeof updateCounters ===
+            'function'
+        ) {
+            updateCounters();
+        }
+
+        if (
+            typeof renderOrdersTable ===
+            'function'
+        ) {
+            renderOrdersTable();
+        }
+
+        if (
+            typeof clearForm ===
+            'function'
+        ) {
+            clearForm();
+        }
+
+        if (
+            typeof updateOSNotificationBell ===
+            'function'
+        ) {
+            await updateOSNotificationBell();
+        }
+
+    } catch (error) {
+        console.error(
+            '❌ Erro salvando OS:',
+            error
+        );
+
+        showToast(
+            `❌ Erro ao salvar: ${
+                error.message ||
+                error
+            }`,
+            'error'
+        );
+
     } finally {
         if (saveOSBtn) {
-            saveOSBtn.innerHTML = '<i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>';
-            saveOSBtn.disabled = false;
+            saveOSBtn.innerHTML =
+                '<i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>';
+
+            saveOSBtn.disabled =
+                false;
         }
     }
 }
@@ -7429,6 +8920,21 @@ async function saveOrderToSupabase(order) {
 
             responsavel:
                 order.responsibleName,
+            user_notified:
+                order.user_notified,    
+            fluxo_renovacao:
+                order.fluxoRenovacao,
+            etapa_fluxo:
+                order.etapaFluxo,
+
+            destinatario_final:
+                order.destinatarioFinal,
+
+            etapa_atualizada_em:
+                order.etapaAtualizadaEm,
+
+            etapa_atualizada_por:
+                order.etapaAtualizadaPor,  
 
             link_anuncio:
                 order.linkAnuncio || '',
@@ -14611,57 +16117,211 @@ async function notifyResponsibleNewOS(orderData, responsibleName) {
     await enviarNotificacaoEmail(responsibleName, assunto, mensagem);
 }
 
-// ============================================
-// ATUALIZAR O SINO DE NOTIFICAÇÕES DA OS
-// ============================================
-function updateOSNotificationBell() {
-    if (!currentUser) return;
-    const userOS = filterOrdersByUser(orders);
-    const unreadOS = userOS.filter(os =>
-        os.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) &&
-        os.user_notified === false
-    ).length;
+function normalizarNomeNotificacaoOS(valor) {
+    return String(valor || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
 
-    const notificationBell = document.getElementById('notificationBell');
-    const notificationCount = document.getElementById('notificationCount');
-    if (notificationCount) {
-        if (unreadOS > 0) {
-            notificationCount.textContent = unreadOS;
-            notificationBell.style.display = 'block';
-        } else {
-            notificationBell.style.display = 'none';
+async function obterOSNaoLidasUsuarioAtual() {
+    if (
+        !currentUser ||
+        !supabaseClient
+    ) {
+        return [];
+    }
+
+    const nomesUsuario = [
+        currentUser.name,
+        currentUser.nome,
+        currentUser.username,
+        currentUser.login,
+        currentUser.usuario
+    ]
+        .map(normalizarNomeNotificacaoOS)
+        .filter(Boolean);
+
+    if (!nomesUsuario.length) {
+        return [];
+    }
+
+    try {
+        const {
+            data,
+            error
+        } = await supabaseClient
+            .from('ordens_service')
+            .select(`
+                id,
+                codigo,
+                produto_nome,
+                responsavel,
+                user_notified,
+                data_criacao
+            `)
+            .or(
+                'user_notified.eq.false,user_notified.is.null'
+            )
+            .order(
+                'data_criacao',
+                {
+                    ascending: false
+                }
+            );
+
+        if (error) {
+            throw error;
         }
+
+        return (data || []).filter(os => {
+            const responsavel =
+                normalizarNomeNotificacaoOS(
+                    os.responsavel
+                );
+
+            return nomesUsuario.some(nome => {
+                return (
+                    responsavel === nome ||
+                    responsavel.includes(nome)
+                );
+            });
+        });
+
+    } catch (error) {
+        console.error(
+            '❌ Erro buscando notificações de OS:',
+            error
+        );
+
+        return [];
     }
 }
 
-// ============================================
-// MARCAR TODAS AS OS COMO LIDAS
-// ============================================
-async function marcarOSComoLidas() {
-    if (!currentUser || !supabaseClient) return;
+async function updateOSNotificationBell() {
+    try {
+        await updateNotificationBadge();
 
-    const osParaMarcar = orders.filter(os =>
-        os.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) &&
-        os.user_notified === false
+    } catch (error) {
+        console.error(
+            '❌ Erro atualizando o sino das OS:',
+            error
+        );
+    }
+}
+
+async function marcarOSComoLidas() {
+    if (
+        !currentUser ||
+        !supabaseClient
+    ) {
+        return;
+    }
+
+    try {
+        const osNaoLidas =
+            await obterOSNaoLidasUsuarioAtual();
+
+        const ids =
+            osNaoLidas
+                .map(os => os.id)
+                .filter(Boolean);
+
+        if (!ids.length) {
+            await updateOSNotificationBell();
+            return;
+        }
+
+        const {
+            error
+        } = await supabaseClient
+            .from('ordens_service')
+            .update({
+                user_notified: true
+            })
+            .in(
+                'id',
+                ids
+            );
+
+        if (error) {
+            throw error;
+        }
+
+        if (Array.isArray(orders)) {
+            orders.forEach(order => {
+                if (
+                    ids.some(
+                        id =>
+                            String(id) ===
+                            String(order.id)
+                    )
+                ) {
+                    order.user_notified =
+                        true;
+                }
+            });
+        }
+
+        await updateOSNotificationBell();
+
+        if (
+            typeof updateNotificationsUI ===
+            'function'
+        ) {
+            await updateNotificationsUI();
+        }
+
+    } catch (error) {
+        console.error(
+            '❌ Erro marcando notificações das OS como lidas:',
+            error
+        );
+    }
+}
+
+function iniciarMonitorNotificacoesOS() {
+    if (
+        window.__monitorNotificacoesOS
+    ) {
+        clearInterval(
+            window.__monitorNotificacoesOS
+        );
+    }
+
+    const atualizarSino =
+        async () => {
+            if (
+                typeof currentUser ===
+                    'undefined' ||
+                !currentUser ||
+                !supabaseClient
+            ) {
+                return;
+            }
+
+            try {
+                await updateNotificationBadge();
+
+            } catch (error) {
+                console.error(
+                    '❌ Erro no monitor de notificações:',
+                    error
+                );
+            }
+        };
+
+    setTimeout(
+        atualizarSino,
+        1000
     );
 
-    if (osParaMarcar.length === 0) return;
-
-    const ids = osParaMarcar.map(os => os.id);
-    try {
-        const { error } = await supabaseClient
-            .from('ordens_service')
-            .update({ user_notified: true })
-            .in('id', ids);
-
-        if (error) throw error;
-
-        osParaMarcar.forEach(os => os.user_notified = true);
-        updateOSNotificationBell();
-        showToast(`✅ Notificações marcadas como lidas`, 'success');
-    } catch (error) {
-        console.error('❌ Erro ao marcar OS como lidas:', error);
-    }
+    window.__monitorNotificacoesOS =
+        setInterval(
+            atualizarSino,
+            10000
+        );
 }
 
 // ============================================
@@ -19598,10 +21258,3474 @@ window.excluirPrecificacao = async function(id) {
     }
 };
 
-// Exportar funções
-window.emitirNFEVenda = emitirNFEVenda;
+// ============================================================
+// FLUXO DE RENOVAÇÃO DE ANÚNCIO
+// Arthur -> Letícia -> Ronald -> Elaine -> fluxo normal
+// ============================================================
+
+(function instalarFluxoRenovacaoAnuncio() {
+    if (
+        window.__fluxoRenovacaoAnuncioInstalado
+    ) {
+        return;
+    }
+
+    window.__fluxoRenovacaoAnuncioInstalado =
+        true;
+
+    const SERVICO_RENOVACAO =
+        'renovacao_anuncio';
+
+    const ETAPA_LETICIA =
+        'leticia_verificacao';
+
+    const ETAPA_RONALD =
+        'ronald_validacao';
+
+    const ETAPA_ELAINE =
+        'elaine_execucao';
+
+    const ETAPA_ARTHUR =
+        'devolvida_arthur';
+
+    const ETAPA_NORMAL =
+        'fluxo_normal';
+
+    const ETAPA_FINALIZADA =
+        'finalizada';
+
+    // ========================================================
+    // ADICIONAR SERVIÇO AO MAPA
+    // ========================================================
+
+    if (
+        typeof PHOTO_TYPE_MAP ===
+        'object'
+    ) {
+        PHOTO_TYPE_MAP[
+            SERVICO_RENOVACAO
+        ] =
+            'Renovação de anúncio';
+    }
+
+    // ========================================================
+    // FUNÇÕES AUXILIARES
+    // ========================================================
+
+    window.ehOSRenovacaoAnuncio =
+        function(order) {
+            return (
+                String(
+                    order?.photoType ||
+                    order?.tipo_foto ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase() ===
+                SERVICO_RENOVACAO
+            );
+        };
+
+    window.estaNoFluxoEspecialRenovacao =
+        function(order) {
+            if (
+                !window.ehOSRenovacaoAnuncio(
+                    order
+                )
+            ) {
+                return false;
+            }
+
+            return ![
+                ETAPA_NORMAL,
+                ETAPA_FINALIZADA
+            ].includes(
+                order.renovacaoEtapa
+            );
+        };
+
+    window.obterNomeEtapaRenovacao =
+        function(etapa) {
+            const etapas = {
+                [ETAPA_LETICIA]:
+                    'Letícia verifica as vendas dos últimos 3 meses',
+
+                [ETAPA_RONALD]:
+                    'Ronald valida a foto da bike/gancheira',
+
+                [ETAPA_ELAINE]:
+                    'Elaine tira ou edita a foto',
+
+                [ETAPA_ARTHUR]:
+                    'Arthur corrige as informações',
+
+                [ETAPA_NORMAL]:
+                    'Aguardando conferência normal',
+
+                [ETAPA_FINALIZADA]:
+                    'Finalizada'
+            };
+
+            return (
+                etapas[etapa] ||
+                'Etapa não identificada'
+            );
+        };
+
+    window.obterResponsavelEtapaRenovacao =
+        function(etapa) {
+            const responsaveis = {
+                [ETAPA_LETICIA]:
+                    'Leticia',
+
+                [ETAPA_RONALD]:
+                    'Ronald',
+
+                [ETAPA_ELAINE]:
+                    'Elaine',
+
+                [ETAPA_ARTHUR]:
+                    'Arthur',
+
+                [ETAPA_NORMAL]:
+                    'Ronald'
+            };
+
+            return (
+                responsaveis[etapa] ||
+                null
+            );
+        };
+
+    window.usuarioAtualEhResponsavelRenovacao =
+        function(order) {
+            if (
+                !currentUser ||
+                !order
+            ) {
+                return false;
+            }
+
+            return (
+                String(
+                    order.responsibleName ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase() ===
+                String(
+                    currentUser.name ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase()
+            );
+        };
+
+    window.podeAtuarNaEtapaRenovacao =
+        function(order) {
+            if (
+                !currentUser ||
+                !window.estaNoFluxoEspecialRenovacao(
+                    order
+                )
+            ) {
+                return false;
+            }
+
+            const username =
+                getUsernameAtualOS();
+
+            if (
+                order.renovacaoEtapa ===
+                    ETAPA_LETICIA
+            ) {
+                return (
+                    username ===
+                    'leticia'
+                );
+            }
+
+            if (
+                order.renovacaoEtapa ===
+                    ETAPA_RONALD
+            ) {
+                return (
+                    username ===
+                    'ronald'
+                );
+            }
+
+            if (
+                order.renovacaoEtapa ===
+                    ETAPA_ELAINE
+            ) {
+                return (
+                    username ===
+                    'elaine'
+                );
+            }
+
+            if (
+                order.renovacaoEtapa ===
+                    ETAPA_ARTHUR
+            ) {
+                return (
+                    username ===
+                    'arthur'
+                );
+            }
+
+            return false;
+        };
+
+    // ========================================================
+    // CAMPO DE LINK DA FOTO DA BIKE
+    // ========================================================
+
+    window.configurarCampoRenovacaoAnuncio =
+        function() {
+            const servico =
+                document.getElementById(
+                    'photoType'
+                );
+
+            const responsavel =
+                document.getElementById(
+                    'responsibleName'
+                );
+
+            const container =
+                document.getElementById(
+                    'campoLinkFotoBikeRenovacao'
+                );
+
+            const linkFoto =
+                document.getElementById(
+                    'linkFotoBikeRenovacao'
+                );
+
+            if (
+                !servico ||
+                !container ||
+                !linkFoto
+            ) {
+                return;
+            }
+
+            const atualizar =
+                function() {
+                    const ehRenovacao =
+                        servico.value ===
+                        SERVICO_RENOVACAO;
+
+                    container.classList.toggle(
+                        'hidden',
+                        !ehRenovacao
+                    );
+
+                    linkFoto.required =
+                        ehRenovacao;
+
+                    if (!responsavel) {
+                        return;
+                    }
+
+                    if (ehRenovacao) {
+                        /*
+                         * No formulário aparece Elaine porque ela
+                         * é a destinatária final.
+                         */
+                        if (!editingOrderId) {
+                            responsavel.value =
+                                'Elaine';
+                        }
+
+                        responsavel.disabled =
+                            true;
+                    } else {
+                        responsavel.disabled =
+                            false;
+                    }
+                };
+
+            if (
+                servico.dataset
+                    .eventoRenovacaoInstalado !==
+                '1'
+            ) {
+                servico.addEventListener(
+                    'change',
+                    atualizar
+                );
+
+                servico.dataset
+                    .eventoRenovacaoInstalado =
+                    '1';
+            }
+
+            atualizar();
+        };
+
+    window.notificarResponsavelFluxoRenovacao =
+    async function(
+        order,
+        destinatario,
+        titulo,
+        mensagem
+    ) {
+        if (
+            !order ||
+            !destinatario
+        ) {
+            return;
+        }
+
+        try {
+            /*
+             * Não envia mais e-mail.
+             *
+             * A notificação é criada pelo próprio registro da OS:
+             * - responsavel define quem receberá;
+             * - user_notified false ativa o sino.
+             */
+            if (supabaseClient) {
+                const agora =
+                    new Date().toISOString();
+
+                const {
+                    error
+                } =
+                    await supabaseClient
+                        .from(
+                            'ordens_service'
+                        )
+                        .update({
+                            responsavel:
+                                destinatario,
+
+                            user_notified:
+                                false,
+
+                            ultima_atualizacao:
+                                agora
+                        })
+                        .eq(
+                            'id',
+                            order.id
+                        );
+
+                if (error) {
+                    throw error;
+                }
+
+                order.responsibleName =
+                    destinatario;
+
+                order.user_notified =
+                    false;
+
+                order.updatedAt =
+                    agora;
+            }
+
+            /*
+             * Atualiza a interface caso o destinatário esteja
+             * usando esta mesma sessão.
+             */
+            if (
+                typeof updateOSNotificationBell ===
+                'function'
+            ) {
+                updateOSNotificationBell();
+            }
+
+            if (
+                typeof updateNotificationsUI ===
+                'function'
+            ) {
+                updateNotificationsUI();
+            }
+
+            console.log(
+                `🔔 Notificação da OS ${order.code} enviada somente ao sino de ${destinatario}.`,
+                {
+                    titulo:
+                        titulo,
+
+                    mensagem:
+                        mensagem
+                }
+            );
+        } catch (error) {
+            console.error(
+                'Erro ao gerar notificação no sino:',
+                error
+            );
+
+            throw error;
+        }
+    };
+
+    // ========================================================
+    // ATUALIZAR ETAPA NO BANCO E LOCALMENTE
+    // ========================================================
+
+    window.atualizarEtapaRenovacao =
+        async function(
+            order,
+            {
+                etapa,
+                responsavel,
+                motivo = null,
+                etapaRetorno = null,
+                dadosAdicionais = {}
+            }
+        ) {
+            if (!order) {
+                throw new Error(
+                    'OS não encontrada.'
+                );
+            }
+
+            if (!supabaseClient) {
+                throw new Error(
+                    'Supabase não conectado.'
+                );
+            }
+
+            const agora =
+                new Date().toISOString();
+
+            const historicoAtual =
+                Array.isArray(
+                    order.renovacaoHistorico
+                )
+                    ? order.renovacaoHistorico
+                    : [];
+
+            const novoHistorico = [
+                ...historicoAtual,
+                {
+                    etapa_anterior:
+                        order.renovacaoEtapa ||
+                        null,
+
+                    nova_etapa:
+                        etapa,
+
+                    responsavel:
+                        responsavel,
+
+                    alterado_por:
+                        currentUser?.name ||
+                        'Sistema',
+
+                    motivo:
+                        motivo,
+
+                    data:
+                        agora
+                }
+            ];
+
+            const dadosBanco = {
+                renovacao_etapa:
+                    etapa,
+
+                renovacao_etapa_retorno:
+                    etapaRetorno,
+
+                renovacao_motivo_reprovacao:
+                    motivo,
+
+                renovacao_historico:
+                    novoHistorico,
+
+                responsavel:
+                    responsavel,
+
+                user_notified:
+                    false,
+
+                ultima_atualizacao:
+                    agora,
+
+                ...dadosAdicionais
+            };
+
+            const {
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .update(
+                        dadosBanco
+                    )
+                    .eq(
+                        'id',
+                        order.id
+                    );
+
+            if (error) {
+                throw error;
+            }
+
+            order.renovacaoEtapa =
+                etapa;
+
+            order.renovacaoEtapaRetorno =
+                etapaRetorno;
+
+            order.renovacaoMotivoReprovacao =
+                motivo;
+
+            order.renovacaoHistorico =
+                novoHistorico;
+
+            order.responsibleName =
+                responsavel;
+
+            order.user_notified =
+                false;
+
+            order.updatedAt =
+                agora;
+
+            if (
+                Object.prototype
+                    .hasOwnProperty
+                    .call(
+                        dadosAdicionais,
+                        'status'
+                    )
+            ) {
+                order.status =
+                    dadosAdicionais.status;
+            }
+
+            if (
+                Object.prototype
+                    .hasOwnProperty
+                    .call(
+                        dadosAdicionais,
+                        'conferido'
+                    )
+            ) {
+                order.conferido =
+                    dadosAdicionais.conferido;
+            }
+
+            updateCounters();
+            renderOrdersTable();
+            updateOSNotificationBell();
+            updateNotificationsUI();
+
+            return agora;
+        };
+
+    // ========================================================
+    // LETÍCIA OU RONALD APROVAR ETAPA
+    // ========================================================
+
+    window.aprovarEtapaRenovacao =
+        async function(orderId) {
+            const order =
+                orders.find(
+                    item =>
+                        String(item.id) ===
+                        String(orderId)
+                );
+
+            if (!order) {
+                showToast(
+                    '❌ OS não encontrada.',
+                    'error'
+                );
+
+                return;
+            }
+
+            if (
+                !window.podeAtuarNaEtapaRenovacao(
+                    order
+                )
+            ) {
+                showToast(
+                    '⚠️ Esta etapa não pertence ao seu usuário.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            try {
+                if (
+                    order.renovacaoEtapa ===
+                        ETAPA_LETICIA
+                ) {
+                    if (
+                        !confirm(
+                            'Você confirma que este anúncio não teve nenhuma venda nos últimos 3 meses?'
+                        )
+                    ) {
+                        return;
+                    }
+
+                    const agora =
+                        new Date().toISOString();
+
+                    await window
+                        .atualizarEtapaRenovacao(
+                            order,
+                            {
+                                etapa:
+                                    ETAPA_RONALD,
+
+                                responsavel:
+                                    'Ronald',
+
+                                dadosAdicionais: {
+                                    renovacao_aprovado_leticia_por:
+                                        currentUser.name,
+
+                                    renovacao_aprovado_leticia_em:
+                                        agora
+                                }
+                            }
+                        );
+
+                    order.renovacaoAprovadoLeticiaPor =
+                        currentUser.name;
+
+                    order.renovacaoAprovadoLeticiaEm =
+                        agora;
+
+                    await window
+                        .notificarResponsavelFluxoRenovacao(
+                            order,
+                            'Ronald',
+                            `Renovação para validar: ${order.code}`,
+                            `A Letícia confirmou que o anúncio da OS ${order.code} não teve vendas nos últimos 3 meses.
+
+Agora verifique se a foto da bike corresponde à gancheira.
+
+Produto: ${order.productName}
+Anúncio: ${order.linkAnuncio}
+Foto da bike/gancheira: ${order.linkFotoBikeRenovacao}`
+                        );
+
+                    showToast(
+                        '✅ Etapa aprovada e enviada ao Ronald.',
+                        'success'
+                    );
+
+                    return;
+                }
+
+                if (
+                    order.renovacaoEtapa ===
+                        ETAPA_RONALD
+                ) {
+                    if (
+                        !confirm(
+                            'Você confirma que a foto da bike corresponde à gancheira deste anúncio?'
+                        )
+                    ) {
+                        return;
+                    }
+
+                    const agora =
+                        new Date().toISOString();
+
+                    await window
+                        .atualizarEtapaRenovacao(
+                            order,
+                            {
+                                etapa:
+                                    ETAPA_ELAINE,
+
+                                responsavel:
+                                    order
+                                        .renovacaoDestinatarioFinal ||
+                                    'Elaine',
+
+                                dadosAdicionais: {
+                                    renovacao_aprovado_ronald_por:
+                                        currentUser.name,
+
+                                    renovacao_aprovado_ronald_em:
+                                        agora,
+
+                                    status:
+                                        'pendente',
+
+                                    conferido:
+                                        false
+                                }
+                            }
+                        );
+
+                    order.status =
+                        'pendente';
+
+                    order.conferido =
+                        false;
+
+                    order.renovacaoAprovadoRonaldPor =
+                        currentUser.name;
+
+                    order.renovacaoAprovadoRonaldEm =
+                        agora;
+
+                    await window
+                        .notificarResponsavelFluxoRenovacao(
+                            order,
+                            order
+                                .renovacaoDestinatarioFinal ||
+                                'Elaine',
+                            `Renovação liberada: ${order.code}`,
+                            `O Ronald confirmou que a foto da bike corresponde à gancheira.
+
+A OS ${order.code} está liberada para tirar ou editar a foto.
+
+Produto: ${order.productName}
+Anúncio: ${order.linkAnuncio}
+Foto de referência: ${order.linkFotoBikeRenovacao}`
+                        );
+
+                    showToast(
+                        '✅ Foto validada e OS enviada para Elaine.',
+                        'success'
+                    );
+                }
+            } catch (error) {
+                console.error(
+                    'Erro ao aprovar etapa:',
+                    error
+                );
+
+                showToast(
+                    '❌ Erro ao avançar a etapa: ' +
+                    error.message,
+                    'error'
+                );
+            }
+        };
+
+    // ========================================================
+    // LETÍCIA OU RONALD REPROVAR
+    // ========================================================
+
+    window.reprovarEtapaRenovacao =
+        async function(orderId) {
+            const order =
+                orders.find(
+                    item =>
+                        String(item.id) ===
+                        String(orderId)
+                );
+
+            if (
+                !order ||
+                !window.podeAtuarNaEtapaRenovacao(
+                    order
+                )
+            ) {
+                showToast(
+                    '⚠️ Esta etapa não pertence ao seu usuário.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            if (
+                ![
+                    ETAPA_LETICIA,
+                    ETAPA_RONALD
+                ].includes(
+                    order.renovacaoEtapa
+                )
+            ) {
+                showToast(
+                    '⚠️ Esta etapa não permite reprovação.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            const motivo =
+                prompt(
+                    'Informe o motivo da reprovação. A OS voltará para Arthur:'
+                )?.trim();
+
+            if (!motivo) {
+                showToast(
+                    '⚠️ Informe o motivo da reprovação.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            const etapaRetorno =
+                order.renovacaoEtapa;
+
+            try {
+                await window
+                    .atualizarEtapaRenovacao(
+                        order,
+                        {
+                            etapa:
+                                ETAPA_ARTHUR,
+
+                            responsavel:
+                                'Arthur',
+
+                            motivo:
+                                motivo,
+
+                            etapaRetorno:
+                                etapaRetorno,
+
+                            dadosAdicionais: {
+                                status:
+                                    'pendente',
+
+                                conferido:
+                                    false
+                            }
+                        }
+                    );
+
+                order.status =
+                    'pendente';
+
+                order.conferido =
+                    false;
+
+                await window
+                    .notificarResponsavelFluxoRenovacao(
+                        order,
+                        'Arthur',
+                        `Renovação devolvida: ${order.code}`,
+                        `A OS ${order.code} foi devolvida para correção.
+
+Reprovada por: ${currentUser.name}
+Etapa: ${window.obterNomeEtapaRenovacao(etapaRetorno)}
+
+Motivo:
+${motivo}
+
+Corrija as informações e clique em "Reenviar fluxo".`
+                    );
+
+                showToast(
+                    '✅ OS devolvida para Arthur.',
+                    'success'
+                );
+            } catch (error) {
+                showToast(
+                    '❌ Erro ao devolver a OS: ' +
+                    error.message,
+                    'error'
+                );
+            }
+        };
+
+    // ========================================================
+    // ARTHUR REENVIAR APÓS CORREÇÃO
+    // ========================================================
+
+    window.reenviarFluxoRenovacao =
+        async function(orderId) {
+            const order =
+                orders.find(
+                    item =>
+                        String(item.id) ===
+                        String(orderId)
+                );
+
+            if (
+                !order ||
+                getUsernameAtualOS() !==
+                    'arthur' ||
+                order.renovacaoEtapa !==
+                    ETAPA_ARTHUR
+            ) {
+                showToast(
+                    '⚠️ Somente Arthur pode reenviar esta OS.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            const etapaRetorno =
+                order.renovacaoEtapaRetorno ||
+                ETAPA_LETICIA;
+
+            const responsavel =
+                window
+                    .obterResponsavelEtapaRenovacao(
+                        etapaRetorno
+                    );
+
+            if (!responsavel) {
+                showToast(
+                    '❌ Não foi possível identificar o responsável.',
+                    'error'
+                );
+
+                return;
+            }
+
+            if (
+                !confirm(
+                    `Reenviar esta OS para ${responsavel}?`
+                )
+            ) {
+                return;
+            }
+
+            try {
+                await window
+                    .atualizarEtapaRenovacao(
+                        order,
+                        {
+                            etapa:
+                                etapaRetorno,
+
+                            responsavel:
+                                responsavel,
+
+                            motivo:
+                                null,
+
+                            etapaRetorno:
+                                null,
+
+                            dadosAdicionais: {
+                                status:
+                                    'pendente'
+                            }
+                        }
+                    );
+
+                await window
+                    .notificarResponsavelFluxoRenovacao(
+                        order,
+                        responsavel,
+                        `Renovação corrigida: ${order.code}`,
+                        `Arthur corrigiu a OS ${order.code} e reenviou para sua validação.
+
+Produto: ${order.productName}
+Anúncio: ${order.linkAnuncio}
+Foto da bike/gancheira: ${order.linkFotoBikeRenovacao}`
+                    );
+
+                showToast(
+                    `✅ OS reenviada para ${responsavel}.`,
+                    'success'
+                );
+            } catch (error) {
+                showToast(
+                    '❌ Erro ao reenviar a OS: ' +
+                    error.message,
+                    'error'
+                );
+            }
+        };
+
+    // ========================================================
+    // ATUALIZAR A INTERFACE DO FORMULÁRIO
+    // ========================================================
+
+    const clearFormOriginalRenovacao =
+        clearForm;
+
+    clearForm =
+        function() {
+            clearFormOriginalRenovacao();
+
+            const linkFoto =
+                document.getElementById(
+                    'linkFotoBikeRenovacao'
+                );
+
+            const responsavel =
+                document.getElementById(
+                    'responsibleName'
+                );
+
+            if (linkFoto) {
+                linkFoto.value =
+                    '';
+            }
+
+            if (responsavel) {
+                responsavel.disabled =
+                    false;
+            }
+
+            setTimeout(
+                window
+                    .configurarCampoRenovacaoAnuncio,
+                0
+            );
+        };
+
+    const saveOrderOriginalRenovacao =
+    saveOrder;
+
+saveOrder =
+    async function() {
+        const servico =
+            document.getElementById(
+                'photoType'
+            )?.value || '';
+
+        const ehRenovacao =
+            servico ===
+            SERVICO_RENOVACAO;
+
+        const criandoNova =
+            !editingOrderId;
+
+        const linkAnuncio =
+            document.getElementById(
+                'linkAnuncio'
+            )?.value?.trim() || '';
+
+        /*
+         * Aceita o campo específico da renovação.
+         */
+        const campoEspecifico =
+            document.getElementById(
+                'linkFotoBikeRenovacao'
+            );
+
+        const linkCampoEspecifico =
+            campoEspecifico
+                ?.value
+                ?.trim() || '';
+
+        /*
+         * Aceita também o campo que já existe em:
+         * Fotos de Referência -> Adicionar foto por link.
+         */
+        const linkCampoFotoReferencia =
+            document.getElementById(
+                'photoLinkInput'
+            )?.value?.trim() || '';
+
+        /*
+         * Se o usuário já clicou em "Adicionar", procura
+         * também dentro das fotos de referência selecionadas.
+         */
+        let linkFotoSelecionada =
+            '';
+
+        if (
+            Array.isArray(
+                selectedPhotos
+            )
+        ) {
+            const fotoPorLink =
+                selectedPhotos.find(
+                    foto =>
+                        foto?.isLink ===
+                            true ||
+                        String(
+                            foto?.type ||
+                            ''
+                        )
+                            .trim()
+                            .toLowerCase() ===
+                            'link'
+                );
+
+            if (fotoPorLink) {
+                linkFotoSelecionada =
+                    String(
+                        fotoPorLink.data ||
+                        fotoPorLink.url ||
+                        fotoPorLink.link ||
+                        fotoPorLink.src ||
+                        ''
+                    ).trim();
+            }
+        }
+
+        /*
+         * Prioridade:
+         *
+         * 1. Campo específico da renovação;
+         * 2. Campo "Adicionar foto por link";
+         * 3. Foto por link já adicionada às referências.
+         */
+        const linkFotoBike =
+            linkCampoEspecifico ||
+            linkCampoFotoReferencia ||
+            linkFotoSelecionada;
+
+        const responsavel =
+            document.getElementById(
+                'responsibleName'
+            );
+
+        if (
+            ehRenovacao &&
+            criandoNova &&
+            getUsernameAtualOS() !==
+                'arthur'
+        ) {
+            showToast(
+                '⚠️ Somente Arthur pode criar uma OS de renovação de anúncio.',
+                'warning'
+            );
+
+            return;
+        }
+
+        if (
+            ehRenovacao &&
+            !linkAnuncio
+        ) {
+            showToast(
+                '⚠️ Informe o link do anúncio.',
+                'warning'
+            );
+
+            document
+                .getElementById(
+                    'linkAnuncio'
+                )
+                ?.focus();
+
+            return;
+        }
+
+        if (
+            ehRenovacao &&
+            !linkFotoBike
+        ) {
+            showToast(
+                '⚠️ Informe o link da foto da bike/gancheira em “Fotos de Referência”.',
+                'warning'
+            );
+
+            document
+                .getElementById(
+                    'photoLinkInput'
+                )
+                ?.focus();
+
+            return;
+        }
+
+        /*
+         * Garante que o restante do fluxo encontre o link,
+         * mesmo quando foi preenchido no campo já existente.
+         */
+        let campoLinkRenovacao =
+            document.getElementById(
+                'linkFotoBikeRenovacao'
+            );
+
+        if (!campoLinkRenovacao) {
+            campoLinkRenovacao =
+                document.createElement(
+                    'input'
+                );
+
+            campoLinkRenovacao.type =
+                'hidden';
+
+            campoLinkRenovacao.id =
+                'linkFotoBikeRenovacao';
+
+            document.body.appendChild(
+                campoLinkRenovacao
+            );
+        }
+
+        campoLinkRenovacao.value =
+            linkFotoBike;
+
+        /*
+         * Se o link ainda não foi adicionado às fotos de
+         * referência, adiciona automaticamente antes de salvar.
+         */
+        if (
+            ehRenovacao &&
+            linkFotoBike &&
+            Array.isArray(
+                selectedPhotos
+            )
+        ) {
+            const linkJaAdicionado =
+                selectedPhotos.some(
+                    foto =>
+                        String(
+                            foto?.data ||
+                            foto?.url ||
+                            foto?.link ||
+                            foto?.src ||
+                            ''
+                        ).trim() ===
+                        linkFotoBike
+                );
+
+            if (!linkJaAdicionado) {
+                selectedPhotos.push({
+                    name:
+                        'Foto de referência da bike',
+
+                    size:
+                        0,
+
+                    type:
+                        'link',
+
+                    data:
+                        linkFotoBike,
+
+                    url:
+                        linkFotoBike,
+
+                    isLink:
+                        true
+                });
+            }
+        }
+
+        /*
+         * Arthur escolhe Elaine visualmente, mas a primeira
+         * responsável real da etapa é Letícia.
+         */
+        if (
+            ehRenovacao &&
+            criandoNova &&
+            responsavel
+        ) {
+            responsavel.disabled =
+                false;
+
+            responsavel.value =
+                'Leticia';
+        }
+
+        try {
+            await saveOrderOriginalRenovacao();
+        } finally {
+            setTimeout(
+                window
+                    .configurarCampoRenovacaoAnuncio,
+                0
+            );
+        }
+    };
+
+    // ============================================================
+// CORRIGIR ETAPA NÃO IDENTIFICADA DA RENOVAÇÃO
+// E GARANTIR BOTÕES OK / RECUSADO
+// ============================================================
+
+window.normalizarEtapaRenovacao =
+    async function(order) {
+        if (
+            !order ||
+            !window.ehOSRenovacaoAnuncio(
+                order
+            )
+        ) {
+            return false;
+        }
+
+        if (
+            order.renovacaoEtapa
+        ) {
+            return false;
+        }
+
+        const responsavel =
+            String(
+                order.responsibleName ||
+                ''
+            )
+                .normalize('NFD')
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ''
+                )
+                .trim()
+                .toLowerCase();
+
+        let etapaCorreta =
+            ETAPA_LETICIA;
+
+        if (
+            responsavel ===
+            'ronald'
+        ) {
+            etapaCorreta =
+                ETAPA_RONALD;
+        } else if (
+            responsavel ===
+            'elaine'
+        ) {
+            etapaCorreta =
+                ETAPA_ELAINE;
+        } else if (
+            responsavel ===
+            'arthur'
+        ) {
+            etapaCorreta =
+                ETAPA_ARTHUR;
+        } else {
+            /*
+             * Renovação recém-criada começa obrigatoriamente
+             * pela Letícia.
+             */
+            etapaCorreta =
+                ETAPA_LETICIA;
+
+            order.responsibleName =
+                'Leticia';
+        }
+
+        order.renovacaoEtapa =
+            etapaCorreta;
+
+        order.renovacaoDestinatarioFinal =
+            order.renovacaoDestinatarioFinal ||
+            'Elaine';
+
+        if (supabaseClient) {
+            const {
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .update({
+                        renovacao_etapa:
+                            etapaCorreta,
+
+                        renovacao_destinatario_final:
+                            order
+                                .renovacaoDestinatarioFinal,
+
+                        responsavel:
+                            order
+                                .responsibleName,
+
+                        user_notified:
+                            false,
+
+                        ultima_atualizacao:
+                            new Date()
+                                .toISOString()
+                    })
+                    .eq(
+                        'id',
+                        order.id
+                    );
+
+            if (error) {
+                console.error(
+                    'Erro corrigindo etapa da renovação:',
+                    error
+                );
+
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+// ============================================================
+// SUBSTITUI A INTERFACE ANTERIOR DA RENOVAÇÃO
+// ============================================================
+
+window.aplicarInterfaceFluxoRenovacao =
+    async function() {
+        /*
+         * Primeiro corrige localmente todas as renovações
+         * que ficaram sem etapa.
+         */
+        const renovacoesSemEtapa =
+            orders.filter(
+                order =>
+                    window
+                        .ehOSRenovacaoAnuncio(
+                            order
+                        ) &&
+                    !order
+                        .renovacaoEtapa
+            );
+
+        for (
+            const order of
+            renovacoesSemEtapa
+        ) {
+            await window
+                .normalizarEtapaRenovacao(
+                    order
+                );
+        }
+
+        const linhas =
+            document.querySelectorAll(
+                '#osTableBody tr'
+            );
+
+        linhas.forEach(
+            linha => {
+                const botaoReferencia =
+                    linha.querySelector(
+                        'button[onclick*="viewOrderDetails"]'
+                    );
+
+                if (!botaoReferencia) {
+                    return;
+                }
+
+                const onclick =
+                    botaoReferencia.getAttribute(
+                        'onclick'
+                    ) || '';
+
+                const resultado =
+                    onclick.match(
+                        /viewOrderDetails\(['"]([^'"]+)['"]\)/
+                    );
+
+                if (!resultado) {
+                    return;
+                }
+
+                const orderId =
+                    resultado[1];
+
+                const order =
+                    orders.find(
+                        item =>
+                            String(item.id) ===
+                            String(orderId)
+                    );
+
+                if (
+                    !order ||
+                    !window
+                        .estaNoFluxoEspecialRenovacao(
+                            order
+                        )
+                ) {
+                    return;
+                }
+
+                const celulas =
+                    linha.querySelectorAll(
+                        'td'
+                    );
+
+                const primeiraCelula =
+                    celulas[0];
+
+                const celulaAcoes =
+                    celulas[
+                        celulas.length - 1
+                    ];
+
+                if (!celulaAcoes) {
+                    return;
+                }
+
+                const containerAcoes =
+                    celulaAcoes.querySelector(
+                        '.d-flex'
+                    ) ||
+                    celulaAcoes;
+
+                /*
+                 * Remove ações normais de andamento,
+                 * finalização e conferência durante as
+                 * etapas Letícia/Ronald/Arthur.
+                 */
+                containerAcoes
+                    .querySelectorAll(
+                        'button'
+                    )
+                    .forEach(
+                        botao => {
+                            const acao =
+                                botao.getAttribute(
+                                    'onclick'
+                                ) || '';
+
+                            const remover =
+                                acao.includes(
+                                    'startOrder'
+                                ) ||
+                                acao.includes(
+                                    'openCompleteModal'
+                                ) ||
+                                acao.includes(
+                                    'conferirOS'
+                                ) ||
+                                acao.includes(
+                                    'abrirRejeitarModal'
+                                ) ||
+                                acao.includes(
+                                    'marcarAlteracoesFeitas'
+                                ) ||
+                                acao.includes(
+                                    'aprovarEtapaRenovacao'
+                                ) ||
+                                acao.includes(
+                                    'reprovarEtapaRenovacao'
+                                ) ||
+                                acao.includes(
+                                    'reenviarFluxoRenovacao'
+                                );
+
+                            if (remover) {
+                                botao.remove();
+                            }
+                        }
+                    );
+
+                containerAcoes
+                    .querySelectorAll(
+                        '[data-botoes-renovacao]'
+                    )
+                    .forEach(
+                        elemento =>
+                            elemento.remove()
+                    );
+
+                const grupo =
+                    document.createElement(
+                        'span'
+                    );
+
+                grupo.setAttribute(
+                    'data-botoes-renovacao',
+                    '1'
+                );
+
+                grupo.style.display =
+                    'inline-flex';
+
+                grupo.style.gap =
+                    '4px';
+
+                grupo.style.alignItems =
+                    'center';
+
+                /*
+                 * ETAPA DA LETÍCIA
+                 */
+                if (
+                    order.renovacaoEtapa ===
+                        ETAPA_LETICIA &&
+                    getUsernameAtualOS() ===
+                        'leticia'
+                ) {
+                    grupo.innerHTML = `
+                        <button
+                            type="button"
+                            class="btn btn-success btn-sm"
+                            onclick="aprovarEtapaRenovacao('${order.id}')"
+                            title="Confirmar que não houve vendas nos últimos 3 meses"
+                        >
+                            <i class="fas fa-check"></i>
+                            OK
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn btn-danger btn-sm"
+                            onclick="reprovarEtapaRenovacao('${order.id}')"
+                            title="Recusar e devolver para Arthur"
+                        >
+                            <i class="fas fa-times"></i>
+                            Recusado
+                        </button>
+                    `;
+                }
+
+                /*
+                 * ETAPA DO RONALD
+                 */
+                if (
+                    order.renovacaoEtapa ===
+                        ETAPA_RONALD &&
+                    getUsernameAtualOS() ===
+                        'ronald'
+                ) {
+                    grupo.innerHTML = `
+                        <button
+                            type="button"
+                            class="btn btn-success btn-sm"
+                            onclick="aprovarEtapaRenovacao('${order.id}')"
+                            title="Confirmar que a foto corresponde à gancheira"
+                        >
+                            <i class="fas fa-check"></i>
+                            OK
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn btn-danger btn-sm"
+                            onclick="reprovarEtapaRenovacao('${order.id}')"
+                            title="Recusar e devolver para Arthur"
+                        >
+                            <i class="fas fa-times"></i>
+                            Recusado
+                        </button>
+                    `;
+                }
+
+                /*
+                 * OS DEVOLVIDA PARA ARTHUR
+                 */
+                if (
+                    order.renovacaoEtapa ===
+                        ETAPA_ARTHUR &&
+                    getUsernameAtualOS() ===
+                        'arthur'
+                ) {
+                    grupo.innerHTML = `
+                        <button
+                            type="button"
+                            class="btn btn-warning btn-sm"
+                            onclick="reenviarFluxoRenovacao('${order.id}')"
+                            title="Reenviar após corrigir"
+                        >
+                            <i class="fas fa-redo"></i>
+                            Reenviar
+                        </button>
+                    `;
+                }
+
+                /*
+                 * ETAPA DA ELAINE
+                 */
+                if (
+                    order.renovacaoEtapa ===
+                        ETAPA_ELAINE &&
+                    getUsernameAtualOS() ===
+                        'elaine'
+                ) {
+                    if (
+                        order.status ===
+                        'pendente'
+                    ) {
+                        grupo.innerHTML = `
+                            <button
+                                type="button"
+                                class="btn btn-success btn-sm"
+                                onclick="startOrder('${order.id}')"
+                            >
+                                <i class="fas fa-play"></i>
+                                Iniciar
+                            </button>
+                        `;
+                    }
+
+                    if (
+                        order.status ===
+                        'andamento'
+                    ) {
+                        grupo.innerHTML = `
+                            <button
+                                type="button"
+                                class="btn btn-info btn-sm"
+                                onclick="openCompleteModal('${order.id}')"
+                            >
+                                <i class="fas fa-flag-checkered"></i>
+                                Finalizar
+                            </button>
+                        `;
+                    }
+                }
+
+                if (
+                    grupo.innerHTML.trim()
+                ) {
+                    containerAcoes.appendChild(
+                        grupo
+                    );
+                }
+
+                /*
+                 * Atualiza a identificação visual da etapa.
+                 */
+                if (primeiraCelula) {
+                    primeiraCelula
+                        .querySelectorAll(
+                            '[data-etapa-renovacao]'
+                        )
+                        .forEach(
+                            elemento =>
+                                elemento.remove()
+                        );
+
+                    const etapa =
+                        document.createElement(
+                            'div'
+                        );
+
+                    etapa.setAttribute(
+                        'data-etapa-renovacao',
+                        '1'
+                    );
+
+                    etapa.style.marginTop =
+                        '4px';
+
+                    etapa.innerHTML = `
+                        <span class="badge badge-dark">
+                            Renovação: ${window.obterNomeEtapaRenovacao(order.renovacaoEtapa)}
+                        </span>
+                    `;
+
+                    primeiraCelula.appendChild(
+                        etapa
+                    );
+                }
+            }
+        );
+    };
+
+    // ========================================================
+    // ELAINE FINALIZOU
+    // Entra em Não Conferidas e passa para Ronald.
+    // ========================================================
+
+    const completeOrderOriginalRenovacao =
+        completeOrder;
+
+    completeOrder =
+        async function() {
+            const orderId =
+                completeOSId?.value;
+
+            const order =
+                orders.find(
+                    item =>
+                        String(item.id) ===
+                        String(orderId)
+                );
+
+            const eraRenovacaoElaine =
+                Boolean(
+                    order &&
+                    window
+                        .ehOSRenovacaoAnuncio(
+                            order
+                        ) &&
+                    order.renovacaoEtapa ===
+                        ETAPA_ELAINE &&
+                    getUsernameAtualOS() ===
+                        'elaine'
+                );
+
+            await completeOrderOriginalRenovacao();
+
+            if (
+                !eraRenovacaoElaine ||
+                !order ||
+                order.status !==
+                    'concluida'
+            ) {
+                return;
+            }
+
+            try {
+                await window
+                    .atualizarEtapaRenovacao(
+                        order,
+                        {
+                            etapa:
+                                ETAPA_NORMAL,
+
+                            responsavel:
+                                'Ronald',
+
+                            motivo:
+                                null,
+
+                            etapaRetorno:
+                                null,
+
+                            dadosAdicionais: {
+                                status:
+                                    'concluida',
+
+                                conferido:
+                                    false,
+
+                                conferido_por:
+                                    null,
+
+                                data_conferencia:
+                                    null
+                            }
+                        }
+                    );
+
+                order.status =
+                    'concluida';
+
+                order.conferido =
+                    false;
+
+                order.conferidoPor =
+                    null;
+
+                order.dataConferencia =
+                    null;
+
+                await window
+                    .notificarResponsavelFluxoRenovacao(
+                        order,
+                        'Ronald',
+                        `Renovação aguardando conferência: ${order.code}`,
+                        `Elaine finalizou a foto ou edição da OS ${order.code}.
+
+A OS agora está no fluxo normal, no filtro "Não Conferidas".
+
+Produto: ${order.productName}
+Anúncio: ${order.linkAnuncio}`
+                    );
+
+                showToast(
+                    '✅ Renovação finalizada e enviada para Não Conferidas.',
+                    'success'
+                );
+            } catch (error) {
+                console.error(
+                    'Erro enviando renovação para conferência:',
+                    error
+                );
+
+                showToast(
+                    '⚠️ A OS foi finalizada, mas houve erro ao encaminhar para Ronald: ' +
+                    error.message,
+                    'warning'
+                );
+            }
+        };
+
+    // ========================================================
+    // RONALD CONFERIU NO FLUXO NORMAL
+    // ========================================================
+
+    const conferirOSOriginalRenovacao =
+        window.conferirOS;
+
+    window.conferirOS =
+        async function(orderId) {
+            const order =
+                orders.find(
+                    item =>
+                        String(item.id) ===
+                        String(orderId)
+                );
+
+            const eraRenovacaoNormal =
+                Boolean(
+                    order &&
+                    window
+                        .ehOSRenovacaoAnuncio(
+                            order
+                        ) &&
+                    order.renovacaoEtapa ===
+                        ETAPA_NORMAL
+                );
+
+            await conferirOSOriginalRenovacao(
+                orderId
+            );
+
+            if (
+                !eraRenovacaoNormal ||
+                !order?.conferido
+            ) {
+                return;
+            }
+
+            try {
+                const agora =
+                    new Date().toISOString();
+
+                const historico =
+                    Array.isArray(
+                        order
+                            .renovacaoHistorico
+                    )
+                        ? order
+                            .renovacaoHistorico
+                        : [];
+
+                const novoHistorico = [
+                    ...historico,
+                    {
+                        etapa_anterior:
+                            ETAPA_NORMAL,
+
+                        nova_etapa:
+                            ETAPA_FINALIZADA,
+
+                        responsavel:
+                            order.responsibleName,
+
+                        alterado_por:
+                            currentUser.name,
+
+                        motivo:
+                            null,
+
+                        data:
+                            agora
+                    }
+                ];
+
+                const {
+                    error
+                } =
+                    await supabaseClient
+                        .from(
+                            'ordens_service'
+                        )
+                        .update({
+                            renovacao_etapa:
+                                ETAPA_FINALIZADA,
+
+                            renovacao_historico:
+                                novoHistorico,
+
+                            ultima_atualizacao:
+                                agora
+                        })
+                        .eq(
+                            'id',
+                            order.id
+                        );
+
+                if (error) {
+                    throw error;
+                }
+
+                order.renovacaoEtapa =
+                    ETAPA_FINALIZADA;
+
+                order.renovacaoHistorico =
+                    novoHistorico;
+            } catch (error) {
+                console.error(
+                    'Erro finalizando fluxo da renovação:',
+                    error
+                );
+            }
+        };
+
+    // ========================================================
+    // INICIALIZAÇÃO
+    // ========================================================
+
+    const iniciarModuloRenovacao =
+        function() {
+            window
+                .configurarCampoRenovacaoAnuncio();
+
+            updateCounters();
+            updateOSNotificationBell();
+
+            if (
+                typeof renderOrdersTable ===
+                'function'
+            ) {
+                renderOrdersTable();
+            }
+        };
+
+    if (
+        document.readyState ===
+        'loading'
+    ) {
+        document.addEventListener(
+            'DOMContentLoaded',
+            iniciarModuloRenovacao
+        );
+    } else {
+        iniciarModuloRenovacao();
+    }
+
+    console.log(
+        '✅ Fluxo de renovação de anúncio instalado.'
+    );
+})();
+
+// ============================================================
+// CORREÇÃO DEFINITIVA DO FLUXO DE RENOVAÇÃO
+// Cole no final do script.js
+// ============================================================
+
+(function corrigirFluxoDefinitivoRenovacao() {
+    const ETAPA_LETICIA =
+        'leticia_verificacao';
+
+    const ETAPA_RONALD =
+        'ronald_validacao';
+
+    const ETAPA_ELAINE =
+        'elaine_execucao';
+
+    const ETAPA_ARTHUR =
+        'devolvida_arthur';
+
+    const ETAPA_NORMAL =
+        'fluxo_normal';
+
+    const ETAPA_FINALIZADA =
+        'finalizada';
+
+    function normalizarUsuarioRenovacao(
+        valor
+    ) {
+        return String(valor || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(
+                /[\u0300-\u036f]/g,
+                ''
+            );
+    }
+
+    function obterUsuarioAtualRenovacao() {
+        return normalizarUsuarioRenovacao(
+            currentUser?.username ||
+            currentUser?.login ||
+            currentUser?.name ||
+            ''
+        );
+    }
+
+    function ehRenovacaoCorrecao(
+        order
+    ) {
+        const servico =
+            normalizarUsuarioRenovacao(
+                order?.photoType ||
+                order?.tipo_foto ||
+                ''
+            );
+
+        return (
+            servico ===
+                'renovacao_anuncio' ||
+            servico ===
+                'renovacao de anuncio'
+        );
+    }
+
+    function obterEtapaRenovacaoCorrecao(
+        order
+    ) {
+        const etapa =
+            order?.renovacaoEtapa ||
+            order?.etapaFluxo ||
+            order?.etapa_fluxo ||
+            '';
+
+        const mapa = {
+            aguardando_leticia:
+                ETAPA_LETICIA,
+
+            aguardando_ronald:
+                ETAPA_RONALD,
+
+            execucao_elaine:
+                ETAPA_ELAINE,
+
+            aguardando_conferencia:
+                ETAPA_NORMAL,
+
+            leticia_verificacao:
+                ETAPA_LETICIA,
+
+            ronald_validacao:
+                ETAPA_RONALD,
+
+            elaine_execucao:
+                ETAPA_ELAINE,
+
+            devolvida_arthur:
+                ETAPA_ARTHUR,
+
+            fluxo_normal:
+                ETAPA_NORMAL,
+
+            finalizada:
+                ETAPA_FINALIZADA
+        };
+
+        return (
+            mapa[etapa] ||
+            etapa
+        );
+    }
+
+    function obterEtapaBancoGenerica(
+        etapa
+    ) {
+        const mapa = {
+            [ETAPA_LETICIA]:
+                'aguardando_leticia',
+
+            [ETAPA_RONALD]:
+                'aguardando_ronald',
+
+            [ETAPA_ELAINE]:
+                'execucao_elaine',
+
+            [ETAPA_ARTHUR]:
+                'correcao_arthur',
+
+            [ETAPA_NORMAL]:
+                'aguardando_conferencia',
+
+            [ETAPA_FINALIZADA]:
+                'finalizada'
+        };
+
+        return (
+            mapa[etapa] ||
+            etapa
+        );
+    }
+
+    function obterNomeEtapaCorrecao(
+        etapa
+    ) {
+        const nomes = {
+            [ETAPA_LETICIA]:
+                'Letícia verifica as informações',
+
+            [ETAPA_RONALD]:
+                'Ronald confere a foto da bike/gancheira',
+
+            [ETAPA_ELAINE]:
+                'Elaine tira ou edita a foto',
+
+            [ETAPA_ARTHUR]:
+                'Arthur corrige as informações',
+
+            [ETAPA_NORMAL]:
+                'Aguardando conferência normal',
+
+            [ETAPA_FINALIZADA]:
+                'Finalizada'
+        };
+
+        return (
+            nomes[etapa] ||
+            'Etapa não identificada'
+        );
+    }
+
+    window.obterNomeEtapaRenovacao =
+        obterNomeEtapaCorrecao;
+
+    window.ehOSRenovacaoAnuncio =
+        ehRenovacaoCorrecao;
+
+    window.estaNoFluxoEspecialRenovacao =
+        function(order) {
+            if (
+                !ehRenovacaoCorrecao(
+                    order
+                )
+            ) {
+                return false;
+            }
+
+            const etapa =
+                obterEtapaRenovacaoCorrecao(
+                    order
+                );
+
+            return ![
+                ETAPA_NORMAL,
+                ETAPA_FINALIZADA
+            ].includes(
+                etapa
+            );
+        };
+
+    window.podeAtuarNaEtapaRenovacao =
+        function(order) {
+            if (
+                !currentUser ||
+                !ehRenovacaoCorrecao(
+                    order
+                )
+            ) {
+                return false;
+            }
+
+            const usuario =
+                obterUsuarioAtualRenovacao();
+
+            const etapa =
+                obterEtapaRenovacaoCorrecao(
+                    order
+                );
+
+            const responsaveis = {
+                [ETAPA_LETICIA]:
+                    'leticia',
+
+                [ETAPA_RONALD]:
+                    'ronald',
+
+                [ETAPA_ELAINE]:
+                    'elaine',
+
+                [ETAPA_ARTHUR]:
+                    'arthur'
+            };
+
+            return (
+                responsaveis[etapa] ===
+                usuario
+            );
+        };
+
+    // ========================================================
+    // ATUALIZAR ETAPA
+    // ========================================================
+
+    window.atualizarEtapaRenovacao =
+        async function(
+            order,
+            {
+                etapa,
+                responsavel,
+                motivo = null,
+                etapaRetorno = null,
+                dadosAdicionais = {}
+            }
+        ) {
+            if (!order) {
+                throw new Error(
+                    'OS não encontrada.'
+                );
+            }
+
+            if (!supabaseClient) {
+                throw new Error(
+                    'Supabase não conectado.'
+                );
+            }
+
+            const agora =
+                new Date().toISOString();
+
+            const etapaAnterior =
+                obterEtapaRenovacaoCorrecao(
+                    order
+                );
+
+            const historicoAtual =
+                Array.isArray(
+                    order.renovacaoHistorico
+                )
+                    ? order.renovacaoHistorico
+                    : [];
+
+            const novoHistorico = [
+                ...historicoAtual,
+                {
+                    etapa_anterior:
+                        etapaAnterior ||
+                        null,
+
+                    nova_etapa:
+                        etapa,
+
+                    responsavel:
+                        responsavel,
+
+                    alterado_por:
+                        currentUser?.name ||
+                        currentUser?.username ||
+                        'Sistema',
+
+                    motivo:
+                        motivo,
+
+                    data:
+                        agora
+                }
+            ];
+
+            const etapaGenerica =
+                obterEtapaBancoGenerica(
+                    etapa
+                );
+
+            const dadosBanco = {
+                fluxo_renovacao:
+                    true,
+
+                etapa_fluxo:
+                    etapaGenerica,
+
+                destinatario_final:
+                    'Elaine',
+
+                etapa_atualizada_em:
+                    agora,
+
+                etapa_atualizada_por:
+                    currentUser?.name ||
+                    currentUser?.username ||
+                    'Sistema',
+
+                renovacao_etapa:
+                    etapa,
+
+                renovacao_etapa_retorno:
+                    etapaRetorno,
+
+                renovacao_motivo_reprovacao:
+                    motivo,
+
+                renovacao_historico:
+                    novoHistorico,
+
+                renovacao_destinatario_final:
+                    'Elaine',
+
+                responsavel:
+                    responsavel,
+
+                user_notified:
+                    false,
+
+                ultima_atualizacao:
+                    agora,
+
+                ...dadosAdicionais
+            };
+
+            const {
+                error
+            } = await supabaseClient
+                .from(
+                    'ordens_service'
+                )
+                .update(
+                    dadosBanco
+                )
+                .eq(
+                    'id',
+                    order.id
+                );
+
+            if (error) {
+                throw error;
+            }
+
+            order.fluxoRenovacao =
+                true;
+
+            order.etapaFluxo =
+                etapaGenerica;
+
+            order.destinatarioFinal =
+                'Elaine';
+
+            order.etapaAtualizadaEm =
+                agora;
+
+            order.etapaAtualizadaPor =
+                currentUser?.name ||
+                currentUser?.username ||
+                'Sistema';
+
+            order.renovacaoEtapa =
+                etapa;
+
+            order.renovacaoEtapaRetorno =
+                etapaRetorno;
+
+            order.renovacaoMotivoReprovacao =
+                motivo;
+
+            order.renovacaoHistorico =
+                novoHistorico;
+
+            order.renovacaoDestinatarioFinal =
+                'Elaine';
+
+            order.responsibleName =
+                responsavel;
+
+            order.user_notified =
+                false;
+
+            order.updatedAt =
+                agora;
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    dadosAdicionais,
+                    'status'
+                )
+            ) {
+                order.status =
+                    dadosAdicionais.status;
+            }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    dadosAdicionais,
+                    'conferido'
+                )
+            ) {
+                order.conferido =
+                    dadosAdicionais.conferido;
+            }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    dadosAdicionais,
+                    'conferido_por'
+                )
+            ) {
+                order.conferidoPor =
+                    dadosAdicionais
+                        .conferido_por;
+            }
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    dadosAdicionais,
+                    'data_conferencia'
+                )
+            ) {
+                order.dataConferencia =
+                    dadosAdicionais
+                        .data_conferencia;
+            }
+
+            if (
+                typeof updateCounters ===
+                'function'
+            ) {
+                updateCounters();
+            }
+
+            if (
+                typeof renderOrdersTable ===
+                'function'
+            ) {
+                renderOrdersTable();
+            }
+
+            if (
+                typeof window
+                    .carregarNotificacoesChamados ===
+                'function'
+            ) {
+                await window
+                    .carregarNotificacoesChamados();
+            }
+
+            return agora;
+        };
+
+    // ========================================================
+    // APROVAR: LETÍCIA → RONALD → ELAINE
+    // ========================================================
+
+    window.aprovarEtapaRenovacao =
+        async function(orderId) {
+            const order =
+                orders.find(
+                    item =>
+                        String(item.id) ===
+                        String(orderId)
+                );
+
+            if (
+                !order ||
+                !window.podeAtuarNaEtapaRenovacao(
+                    order
+                )
+            ) {
+                showToast(
+                    '⚠️ Esta etapa não pertence ao seu usuário.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            const etapa =
+                obterEtapaRenovacaoCorrecao(
+                    order
+                );
+
+            try {
+                if (
+                    etapa ===
+                    ETAPA_LETICIA
+                ) {
+                    if (
+                        !confirm(
+                            'Confirmar que as informações estão corretas e enviar para Ronald?'
+                        )
+                    ) {
+                        return;
+                    }
+
+                    const agora =
+                        new Date()
+                            .toISOString();
+
+                    await window
+                        .atualizarEtapaRenovacao(
+                            order,
+                            {
+                                etapa:
+                                    ETAPA_RONALD,
+
+                                responsavel:
+                                    'Ronald',
+
+                                motivo:
+                                    null,
+
+                                etapaRetorno:
+                                    null,
+
+                                dadosAdicionais: {
+                                    status:
+                                        'pendente',
+
+                                    conferido:
+                                        false,
+
+                                    renovacao_aprovado_leticia_por:
+                                        currentUser.name,
+
+                                    renovacao_aprovado_leticia_em:
+                                        agora
+                                }
+                            }
+                        );
+
+                    order
+                        .renovacaoAprovadoLeticiaPor =
+                        currentUser.name;
+
+                    order
+                        .renovacaoAprovadoLeticiaEm =
+                        agora;
+
+                    showToast(
+                        '✅ Aprovada e enviada para Ronald.',
+                        'success'
+                    );
+
+                    return;
+                }
+
+                if (
+                    etapa ===
+                    ETAPA_RONALD
+                ) {
+                    if (
+                        !confirm(
+                            'Confirmar que a foto corresponde à gancheira e enviar para Elaine?'
+                        )
+                    ) {
+                        return;
+                    }
+
+                    const agora =
+                        new Date()
+                            .toISOString();
+
+                    await window
+                        .atualizarEtapaRenovacao(
+                            order,
+                            {
+                                etapa:
+                                    ETAPA_ELAINE,
+
+                                responsavel:
+                                    'Elaine',
+
+                                motivo:
+                                    null,
+
+                                etapaRetorno:
+                                    null,
+
+                                dadosAdicionais: {
+                                    status:
+                                        'pendente',
+
+                                    conferido:
+                                        false,
+
+                                    conferido_por:
+                                        null,
+
+                                    data_conferencia:
+                                        null,
+
+                                    renovacao_aprovado_ronald_por:
+                                        currentUser.name,
+
+                                    renovacao_aprovado_ronald_em:
+                                        agora
+                                }
+                            }
+                        );
+
+                    order
+                        .renovacaoAprovadoRonaldPor =
+                        currentUser.name;
+
+                    order
+                        .renovacaoAprovadoRonaldEm =
+                        agora;
+
+                    showToast(
+                        '✅ Aprovada e enviada para Elaine.',
+                        'success'
+                    );
+
+                    return;
+                }
+
+                showToast(
+                    '⚠️ Esta etapa não pode ser aprovada.',
+                    'warning'
+                );
+
+            } catch (error) {
+                console.error(
+                    'Erro ao aprovar renovação:',
+                    error
+                );
+
+                showToast(
+                    '❌ Erro ao aprovar: ' +
+                    error.message,
+                    'error'
+                );
+            }
+        };
+
+    // ========================================================
+    // RECUSAR
+    // LETÍCIA → ARTHUR
+    // RONALD → LETÍCIA
+    // ========================================================
+
+    window.reprovarEtapaRenovacao =
+        async function(orderId) {
+            const order =
+                orders.find(
+                    item =>
+                        String(item.id) ===
+                        String(orderId)
+                );
+
+            if (
+                !order ||
+                !window.podeAtuarNaEtapaRenovacao(
+                    order
+                )
+            ) {
+                showToast(
+                    '⚠️ Esta etapa não pertence ao seu usuário.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            const etapa =
+                obterEtapaRenovacaoCorrecao(
+                    order
+                );
+
+            if (
+                ![
+                    ETAPA_LETICIA,
+                    ETAPA_RONALD
+                ].includes(
+                    etapa
+                )
+            ) {
+                showToast(
+                    '⚠️ Esta etapa não permite recusa.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            const destino =
+                etapa === ETAPA_RONALD
+                    ? 'Leticia'
+                    : 'Arthur';
+
+            const novaEtapa =
+                etapa === ETAPA_RONALD
+                    ? ETAPA_LETICIA
+                    : ETAPA_ARTHUR;
+
+            const mensagemPrompt =
+                etapa === ETAPA_RONALD
+                    ? 'Informe o motivo. A OS voltará para Letícia:'
+                    : 'Informe o motivo. A OS voltará para Arthur:';
+
+            const motivo =
+                prompt(
+                    mensagemPrompt
+                )?.trim();
+
+            if (!motivo) {
+                showToast(
+                    '⚠️ Informe o motivo da recusa.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            try {
+                await window
+                    .atualizarEtapaRenovacao(
+                        order,
+                        {
+                            etapa:
+                                novaEtapa,
+
+                            responsavel:
+                                destino,
+
+                            motivo:
+                                motivo,
+
+                            etapaRetorno:
+                                etapa,
+
+                            dadosAdicionais: {
+                                status:
+                                    'pendente',
+
+                                conferido:
+                                    false
+                            }
+                        }
+                    );
+
+                showToast(
+                    `✅ OS devolvida para ${destino}.`,
+                    'success'
+                );
+
+            } catch (error) {
+                console.error(
+                    'Erro recusando renovação:',
+                    error
+                );
+
+                showToast(
+                    '❌ Erro ao recusar: ' +
+                    error.message,
+                    'error'
+                );
+            }
+        };
+
+    // ========================================================
+    // ARTHUR CORRIGIU → VOLTA PARA LETÍCIA
+    // ========================================================
+
+    window.reenviarFluxoRenovacao =
+        async function(orderId) {
+            const order =
+                orders.find(
+                    item =>
+                        String(item.id) ===
+                        String(orderId)
+                );
+
+            if (
+                !order ||
+                obterUsuarioAtualRenovacao() !==
+                    'arthur' ||
+                obterEtapaRenovacaoCorrecao(
+                    order
+                ) !==
+                    ETAPA_ARTHUR
+            ) {
+                showToast(
+                    '⚠️ Somente Arthur pode reenviar esta OS.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            if (
+                !confirm(
+                    'Reenviar esta OS para Letícia?'
+                )
+            ) {
+                return;
+            }
+
+            try {
+                await window
+                    .atualizarEtapaRenovacao(
+                        order,
+                        {
+                            etapa:
+                                ETAPA_LETICIA,
+
+                            responsavel:
+                                'Leticia',
+
+                            motivo:
+                                null,
+
+                            etapaRetorno:
+                                null,
+
+                            dadosAdicionais: {
+                                status:
+                                    'pendente',
+
+                                conferido:
+                                    false
+                            }
+                        }
+                    );
+
+                showToast(
+                    '✅ OS reenviada para Letícia.',
+                    'success'
+                );
+
+            } catch (error) {
+                console.error(
+                    'Erro reenviando renovação:',
+                    error
+                );
+
+                showToast(
+                    '❌ Erro ao reenviar: ' +
+                    error.message,
+                    'error'
+                );
+            }
+        };
+
+    // ========================================================
+    // FILTRO: SOMENTE RESPONSÁVEL DA ETAPA VISUALIZA
+    // ========================================================
+
+    const filtroOriginalRenovacao =
+        filterOrdersByUser;
+
+    filterOrdersByUser =
+        function(ordersList) {
+            if (!currentUser) {
+                return [];
+            }
+
+            const usuario =
+                obterUsuarioAtualRenovacao();
+
+            const ordensNormais =
+                ordersList.filter(
+                    order => {
+                        return !(
+                            ehRenovacaoCorrecao(
+                                order
+                            ) &&
+                            window
+                                .estaNoFluxoEspecialRenovacao(
+                                    order
+                                )
+                        );
+                    }
+                );
+
+            const renovacoesEspeciais =
+                ordersList.filter(
+                    order => {
+                        if (
+                            !ehRenovacaoCorrecao(
+                                order
+                            ) ||
+                            !window
+                                .estaNoFluxoEspecialRenovacao(
+                                    order
+                                )
+                        ) {
+                            return false;
+                        }
+
+                        const responsavel =
+                            normalizarUsuarioRenovacao(
+                                order.responsibleName
+                            );
+
+                        return (
+                            responsavel ===
+                            usuario
+                        );
+                    }
+                );
+
+            const resultadoNormal =
+                filtroOriginalRenovacao(
+                    ordensNormais
+                );
+
+            const idsPermitidos =
+                new Set([
+                    ...resultadoNormal.map(
+                        order =>
+                            String(order.id)
+                    ),
+
+                    ...renovacoesEspeciais.map(
+                        order =>
+                            String(order.id)
+                    )
+                ]);
+
+            return ordersList.filter(
+                order =>
+                    idsPermitidos.has(
+                        String(order.id)
+                    )
+            );
+        };
+
+    // ========================================================
+    // SINCRONIZA CAMPOS APÓS CARREGAR DO BANCO
+    // ========================================================
+
+    const carregarOrdensOriginalRenovacao =
+        loadOrders;
+
+    loadOrders =
+        async function() {
+            await carregarOrdensOriginalRenovacao();
+
+            if (
+                !supabaseClient ||
+                !Array.isArray(orders) ||
+                !orders.length
+            ) {
+                return;
+            }
+
+            try {
+                const {
+                    data,
+                    error
+                } = await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .select(`
+                        id,
+                        fluxo_renovacao,
+                        etapa_fluxo,
+                        destinatario_final,
+                        etapa_atualizada_em,
+                        etapa_atualizada_por,
+                        renovacao_etapa,
+                        renovacao_etapa_retorno,
+                        renovacao_motivo_reprovacao,
+                        renovacao_historico,
+                        renovacao_destinatario_final,
+                        renovacao_aprovado_leticia_por,
+                        renovacao_aprovado_leticia_em,
+                        renovacao_aprovado_ronald_por,
+                        renovacao_aprovado_ronald_em
+                    `);
+
+                if (error) {
+                    throw error;
+                }
+
+                const dadosPorId =
+                    new Map(
+                        (data || []).map(
+                            item => [
+                                String(item.id),
+                                item
+                            ]
+                        )
+                    );
+
+                orders.forEach(order => {
+                    const banco =
+                        dadosPorId.get(
+                            String(order.id)
+                        );
+
+                    if (!banco) {
+                        return;
+                    }
+
+                    order.fluxoRenovacao =
+                        banco.fluxo_renovacao ===
+                        true;
+
+                    order.etapaFluxo =
+                        banco.etapa_fluxo ||
+                        null;
+
+                    order.destinatarioFinal =
+                        banco.destinatario_final ||
+                        'Elaine';
+
+                    order.etapaAtualizadaEm =
+                        banco.etapa_atualizada_em ||
+                        null;
+
+                    order.etapaAtualizadaPor =
+                        banco.etapa_atualizada_por ||
+                        null;
+
+                    order.renovacaoEtapa =
+                        banco.renovacao_etapa ||
+                        obterEtapaRenovacaoCorrecao(
+                            {
+                                etapaFluxo:
+                                    banco.etapa_fluxo
+                            }
+                        );
+
+                    order.renovacaoEtapaRetorno =
+                        banco
+                            .renovacao_etapa_retorno ||
+                        null;
+
+                    order.renovacaoMotivoReprovacao =
+                        banco
+                            .renovacao_motivo_reprovacao ||
+                        null;
+
+                    order.renovacaoHistorico =
+                        banco
+                            .renovacao_historico ||
+                        [];
+
+                    order.renovacaoDestinatarioFinal =
+                        banco
+                            .renovacao_destinatario_final ||
+                        banco.destinatario_final ||
+                        'Elaine';
+
+                    order.renovacaoAprovadoLeticiaPor =
+                        banco
+                            .renovacao_aprovado_leticia_por ||
+                        null;
+
+                    order.renovacaoAprovadoLeticiaEm =
+                        banco
+                            .renovacao_aprovado_leticia_em ||
+                        null;
+
+                    order.renovacaoAprovadoRonaldPor =
+                        banco
+                            .renovacao_aprovado_ronald_por ||
+                        null;
+
+                    order.renovacaoAprovadoRonaldEm =
+                        banco
+                            .renovacao_aprovado_ronald_em ||
+                        null;
+                });
+
+                renderOrdersTable();
+
+            } catch (error) {
+                console.error(
+                    'Erro carregando campos da renovação:',
+                    error
+                );
+            }
+        };
+
+    // ========================================================
+    // BOTÕES E BLOQUEIO DA EXECUÇÃO ANTES DA ELAINE
+    // ========================================================
+
+    window.aplicarInterfaceFluxoRenovacao =
+        function() {
+            const linhas =
+                document.querySelectorAll(
+                    '#osTableBody tr'
+                );
+
+            linhas.forEach(linha => {
+                const botaoDetalhes =
+                    linha.querySelector(
+                        'button[onclick*="viewOrderDetails"]'
+                    );
+
+                if (!botaoDetalhes) {
+                    return;
+                }
+
+                const acaoDetalhes =
+                    botaoDetalhes.getAttribute(
+                        'onclick'
+                    ) ||
+                    '';
+
+                const resultado =
+                    acaoDetalhes.match(
+                        /viewOrderDetails\(['"]([^'"]+)['"]\)/
+                    );
+
+                if (!resultado) {
+                    return;
+                }
+
+                const order =
+                    orders.find(
+                        item =>
+                            String(item.id) ===
+                            String(resultado[1])
+                    );
+
+                if (
+                    !order ||
+                    !ehRenovacaoCorrecao(
+                        order
+                    )
+                ) {
+                    return;
+                }
+
+                const etapa =
+                    obterEtapaRenovacaoCorrecao(
+                        order
+                    );
+
+                if (
+                    [
+                        ETAPA_NORMAL,
+                        ETAPA_FINALIZADA
+                    ].includes(
+                        etapa
+                    )
+                ) {
+                    return;
+                }
+
+                const celulas =
+                    linha.querySelectorAll(
+                        'td'
+                    );
+
+                const primeiraCelula =
+                    celulas[0];
+
+                const celulaAcoes =
+                    celulas[
+                        celulas.length - 1
+                    ];
+
+                if (!celulaAcoes) {
+                    return;
+                }
+
+                const container =
+                    celulaAcoes.querySelector(
+                        '.d-flex'
+                    ) ||
+                    celulaAcoes;
+
+                container
+                    .querySelectorAll(
+                        'button'
+                    )
+                    .forEach(botao => {
+                        const acao =
+                            botao.getAttribute(
+                                'onclick'
+                            ) ||
+                            '';
+
+                        if (
+                            acao.includes(
+                                'startOrder'
+                            ) ||
+                            acao.includes(
+                                'openCompleteModal'
+                            ) ||
+                            acao.includes(
+                                'conferirOS'
+                            ) ||
+                            acao.includes(
+                                'abrirRejeitarModal'
+                            ) ||
+                            acao.includes(
+                                'marcarAlteracoesFeitas'
+                            ) ||
+                            acao.includes(
+                                'aprovarEtapaRenovacao'
+                            ) ||
+                            acao.includes(
+                                'reprovarEtapaRenovacao'
+                            ) ||
+                            acao.includes(
+                                'reenviarFluxoRenovacao'
+                            )
+                        ) {
+                            botao.remove();
+                        }
+                    });
+
+                container
+                    .querySelectorAll(
+                        '[data-fluxo-renovacao]'
+                    )
+                    .forEach(
+                        elemento =>
+                            elemento.remove()
+                    );
+
+                const grupo =
+                    document.createElement(
+                        'span'
+                    );
+
+                grupo.dataset
+                    .fluxoRenovacao =
+                    '1';
+
+                grupo.style.display =
+                    'inline-flex';
+
+                grupo.style.gap =
+                    '4px';
+
+                const usuario =
+                    obterUsuarioAtualRenovacao();
+
+                if (
+                    etapa ===
+                        ETAPA_LETICIA &&
+                    usuario ===
+                        'leticia'
+                ) {
+                    grupo.innerHTML = `
+                        <button
+                            class="btn btn-success btn-sm"
+                            onclick="aprovarEtapaRenovacao('${order.id}')"
+                            title="Aprovar e enviar para Ronald"
+                        >
+                            <i class="fas fa-check"></i>
+                            OK
+                        </button>
+
+                        <button
+                            class="btn btn-danger btn-sm"
+                            onclick="reprovarEtapaRenovacao('${order.id}')"
+                            title="Recusar e devolver para Arthur"
+                        >
+                            <i class="fas fa-times"></i>
+                            Recusado
+                        </button>
+                    `;
+                }
+
+                if (
+                    etapa ===
+                        ETAPA_RONALD &&
+                    usuario ===
+                        'ronald'
+                ) {
+                    grupo.innerHTML = `
+                        <button
+                            class="btn btn-success btn-sm"
+                            onclick="aprovarEtapaRenovacao('${order.id}')"
+                            title="Aprovar e enviar para Elaine"
+                        >
+                            <i class="fas fa-check"></i>
+                            OK
+                        </button>
+
+                        <button
+                            class="btn btn-danger btn-sm"
+                            onclick="reprovarEtapaRenovacao('${order.id}')"
+                            title="Recusar e devolver para Letícia"
+                        >
+                            <i class="fas fa-times"></i>
+                            Recusado
+                        </button>
+                    `;
+                }
+
+                if (
+                    etapa ===
+                        ETAPA_ARTHUR &&
+                    usuario ===
+                        'arthur'
+                ) {
+                    grupo.innerHTML = `
+                        <button
+                            class="btn btn-warning btn-sm"
+                            onclick="reenviarFluxoRenovacao('${order.id}')"
+                            title="Reenviar para Letícia"
+                        >
+                            <i class="fas fa-redo"></i>
+                            Reenviar
+                        </button>
+                    `;
+                }
+
+                if (
+                    etapa ===
+                        ETAPA_ELAINE &&
+                    usuario ===
+                        'elaine'
+                ) {
+                    if (
+                        order.status ===
+                        'pendente'
+                    ) {
+                        grupo.innerHTML = `
+                            <button
+                                class="btn btn-success btn-sm"
+                                onclick="startOrder('${order.id}')"
+                            >
+                                <i class="fas fa-play"></i>
+                                Iniciar
+                            </button>
+                        `;
+                    } else if (
+                        order.status ===
+                        'andamento'
+                    ) {
+                        grupo.innerHTML = `
+                            <button
+                                class="btn btn-info btn-sm"
+                                onclick="openCompleteModal('${order.id}')"
+                            >
+                                <i class="fas fa-flag-checkered"></i>
+                                Finalizar
+                            </button>
+                        `;
+                    }
+                }
+
+                if (
+                    grupo.innerHTML.trim()
+                ) {
+                    container.appendChild(
+                        grupo
+                    );
+                }
+
+                if (primeiraCelula) {
+                    primeiraCelula
+                        .querySelectorAll(
+                            '[data-etapa-renovacao]'
+                        )
+                        .forEach(
+                            elemento =>
+                                elemento.remove()
+                        );
+
+                    const indicador =
+                        document.createElement(
+                            'div'
+                        );
+
+                    indicador.dataset
+                        .etapaRenovacao =
+                        '1';
+
+                    indicador.style.marginTop =
+                        '4px';
+
+                    indicador.innerHTML = `
+                        <span class="badge badge-dark">
+                            Renovação: ${obterNomeEtapaCorrecao(etapa)}
+                        </span>
+                    `;
+
+                    primeiraCelula.appendChild(
+                        indicador
+                    );
+                }
+            });
+        };
+
+    // Garante que a interface especial seja aplicada
+    // sempre depois da tabela normal.
+    const renderizarTabelaOriginalRenovacao =
+        renderOrdersTable;
+
+    renderOrdersTable =
+        function() {
+            const retorno =
+                renderizarTabelaOriginalRenovacao();
+
+            setTimeout(
+                () => {
+                    window
+                        .aplicarInterfaceFluxoRenovacao();
+                },
+                0
+            );
+
+            return retorno;
+        };
+
+    console.log(
+        '✅ Correção definitiva do fluxo de renovação instalada.'
+    );
+})();
+
 
 // ===== EXPORTAR FUNÇÕES PARA USO GLOBAL =====
+window.emitirNFEVenda = emitirNFEVenda;
 window.testMLConnection = testMLConnection;
 window.checkMLTokenStatus = checkMLTokenStatus;
 window.initializeMLAuth = initializeMLAuth;

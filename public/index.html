@@ -1522,6 +1522,7 @@ body > * {
                                     <option value="criar_anuncio">Criar anúncio</option>
                                     <option value="replicar_anuncio">Replicar anúncio</option>
                                     <option value="fotos_para_atualizar">Fotos para atualizar</option>
+                                    <option value="renovacao_anuncio">Renovação de anúncio</option>
                                 </select>
                             </div>
                         </div>
@@ -1734,6 +1735,11 @@ body > * {
                 <span class="badge" id="countTotal">0</span>
             </button>
 
+            <button class="btn btn-dark btn-sm" onclick="filterOS('renovacao_anuncio')">
+                Renovação de anúncio
+            <span class="badge" id="countRenovacaoAnuncio">0</span>
+            </button>
+
         </div>
 
         <div
@@ -1933,6 +1939,7 @@ body > * {
                             <option value="edicao">Apenas edição</option>
                             <option value="criar_anuncio">Criar anúncio</option>
                             <option value="replicar_anuncio">Replicar anúncio</option>
+                            <option value="renovacao_anuncio">Renovação de anúncio</option>
                         </select>
                     </div>
                 </div>
@@ -1941,6 +1948,14 @@ body > * {
                 <label>Link do Anúncio</label>
                 <input type="url" id="editLinkAnuncio" class="form-control" placeholder="https://...">
             </div>
+            <div id="campoLinkFotoBikeRenovacao" class="form-group mb-4 hidden">
+            <label for="linkFotoBikeRenovacao">
+            <i class="fas fa-bicycle"></i>Link da foto da bike/gancheira *</label>
+            <input type="url" id="linkFotoBikeRenovacao" class="form-control" placeholder="https://exemplo.com/foto-da-bike">
+            <small class="text-muted">
+                Informe a foto que o Ronald deverá validar antes de enviar a OS para Elaine.
+            </small>
+        </div>
             <div class="form-group">
                 <label>SKUs (separados por vírgula)</label>
                 <input type="text" id="editSkus" class="form-control" placeholder="SKU001, SKU002">
