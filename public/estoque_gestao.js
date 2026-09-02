@@ -21864,7 +21864,7 @@ try {
                 tipo: 'full_puro',
                 ignorado: true,
                 sku: skuAnuncioLocal,
-                link: `https://www.mercadolivre.com.br/item/${itemId}`,
+                link: `https://www.mercadolivre.com.br/anuncios/${itemId}/modificar/`,
                 estoque: quantidadeReal,
                 nome: produto.nome || 'Produto'
                 });
@@ -22631,7 +22631,7 @@ function abrirModalFullDetectados(anunciosFull) {
     let html = '';
     fullDetectados.forEach((item, index) => {
         const mlb = item.codigo || item.itemId || item.mlb || `MLB-${index}`;
-        const link = item.link || `https://www.mercadolivre.com.br/item/${mlb}`;
+        const link = item.link || `https://www.mercadolivre.com.br/anuncios/${itemId}/modificar/`;
         const estoque = item.estoque || item.quantidade || '?';
         const nome = item.nome || item.titulo || 'Produto';
         const erro = item.erro || item.error || 'FULL - atualize manualmente';

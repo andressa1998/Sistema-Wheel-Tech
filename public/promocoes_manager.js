@@ -18,6 +18,7 @@
     let agendamentosPromocoes = [];
     let modalAvisoAgendamentoAberto = false;
     let timerAvisosAgendamento = null;
+    let itensAgendamentoEmMassa = [];
 
     // ============================================================
     // FUNÇÃO DE LOG
@@ -276,6 +277,98 @@ function criarInterfaceBulk() {
                 </div>
             </div>
         </div>
+
+        <!-- AGENDAMENTO EM MASSA POR LISTA DE MLBS -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fas fa-layer-group"></i>
+            Agendar lista de MLBs
+        </h2>
+    </div>
+
+    <div class="card-body">
+        <div class="form-group">
+            <label>Lista de MLBs *</label>
+
+            <textarea
+                id="agendaMassaListaMlbs"
+                class="form-control"
+                rows="6"
+                placeholder="Cole um MLB por linha, separados por espaço, vírgula ou ponto e vírgula."
+            ></textarea>
+
+            <small class="text-muted">
+                MLBs repetidos serão removidos automaticamente.
+            </small>
+        </div>
+
+        <button
+            type="button"
+            id="btnPesquisarAgendaMassa"
+            class="btn btn-primary"
+            onclick="pesquisarListaMLBsParaAgendamento()"
+        >
+            <i class="fas fa-search"></i>
+            Pesquisar lista
+        </button>
+
+        <div
+            id="agendaMassaProgresso"
+            class="mt-3"
+        ></div>
+
+        <div
+            id="agendaMassaResultados"
+            class="mt-3"
+        ></div>
+
+        <div
+            id="agendaMassaDatasContainer"
+            class="row mt-3 hidden"
+        >
+            <div class="col-md-5">
+                <div class="form-group">
+                    <label>Data e hora de ativação *</label>
+
+                    <input
+                        type="datetime-local"
+                        id="agendaMassaDataAtivacao"
+                        class="form-control"
+                    >
+                </div>
+            </div>
+
+            <div class="col-md-5">
+                <div class="form-group">
+                    <label>Data e hora de desativação *</label>
+
+                    <input
+                        type="datetime-local"
+                        id="agendaMassaDataDesativacao"
+                        class="form-control"
+                    >
+                </div>
+            </div>
+
+            <div
+                class="col-md-2"
+                style="display:flex; align-items:flex-end;"
+            >
+                <button
+                    type="button"
+                    id="btnSalvarAgendamentoMassa"
+                    class="btn btn-success"
+                    style="width:100%;"
+                    onclick="salvarAgendamentosEmMassa()"
+                >
+                    <i class="fas fa-calendar-check"></i>
+                    Agendar todos
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
         <!-- LISTA DE AGENDAMENTOS -->
         <div class="card mb-4">
@@ -2208,25 +2301,138 @@ async function ativarItemPromocao(
     }
 }
 
-// ============================================================
-// FUNÇÃO: EXCLUIR ITEM DE UMA PROMOÇÃO
-// ============================================================
-async function excluirItemPromocao(offerId, token) {
+async function excluirItemPromocao(
+    itemId,
+    promotionId,
+    promotionType,
+    token,
+    offerId = null
+) {
     try {
-        const url = `https://api.mercadolibre.com/seller-promotions/offers/${offerId}?app_version=v2`;
-        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
-        const response = await fetch(proxyUrl, {
-            method: 'DELETE'
+        const worker =
+            window.WORKER_URL ||
+            'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
+        const parametros = new URLSearchParams({
+            app_version: 'v2',
+            promotion_id: String(promotionId),
+            promotion_type: String(promotionType)
         });
-        
-        if (response.ok) {
-            return { success: true };
-        } else {
-            const errorText = await response.text();
-            return { success: false, error: errorText };
+
+        const url =
+            `https://api.mercadolibre.com/seller-promotions/items/` +
+            `${encodeURIComponent(itemId)}?${parametros.toString()}`;
+
+        const proxyUrl =
+            `${worker}/api/ml/proxy?url=${encodeURIComponent(url)}` +
+            `&token=${encodeURIComponent(token)}`;
+
+        const response = await fetch(proxyUrl, {
+            method: 'DELETE',
+            cache: 'no-store'
+        });
+
+        const responseText = await response.text();
+
+        let responseData = null;
+
+        if (responseText) {
+            try {
+                responseData = JSON.parse(responseText);
+            } catch {
+                responseData = responseText;
+            }
         }
+
+        log(
+            `📥 Desativação ${itemId} / ${promotionId} → ` +
+            `HTTP ${response.status}: ` +
+            `${responseText || 'sem conteúdo'}`,
+            response.ok ? 'success' : 'warning'
+        );
+
+        if (response.ok) {
+            return {
+                success: true,
+                status: response.status,
+                data: responseData,
+                endpoint: 'item'
+            };
+        }
+
+        /*
+         * Compatibilidade com ofertas antigas.
+         *
+         * O endpoint principal é /items/{item_id}.
+         * O endpoint /offers/{offer_id} é usado somente como
+         * alternativa quando existe um offer_id.
+         */
+        if (offerId) {
+            const fallbackUrl =
+                `https://api.mercadolibre.com/` +
+                `seller-promotions/offers/` +
+                `${encodeURIComponent(offerId)}?app_version=v2`;
+
+            const fallbackProxyUrl =
+                `${worker}/api/ml/proxy?` +
+                `url=${encodeURIComponent(fallbackUrl)}` +
+                `&token=${encodeURIComponent(token)}`;
+
+            const fallbackResponse = await fetch(
+                fallbackProxyUrl,
+                {
+                    method: 'DELETE',
+                    cache: 'no-store'
+                }
+            );
+
+            const fallbackText =
+                await fallbackResponse.text();
+
+            log(
+                `📥 Fallback offer ${offerId} → ` +
+                `HTTP ${fallbackResponse.status}: ` +
+                `${fallbackText || 'sem conteúdo'}`,
+                fallbackResponse.ok
+                    ? 'success'
+                    : 'warning'
+            );
+
+            if (fallbackResponse.ok) {
+                return {
+                    success: true,
+                    status: fallbackResponse.status,
+                    data: fallbackText,
+                    endpoint: 'offer'
+                };
+            }
+
+            return {
+                success: false,
+                status: fallbackResponse.status,
+                error:
+                    fallbackText ||
+                    responseText ||
+                    'Mercado Livre recusou a desativação'
+            };
+        }
+
+        return {
+            success: false,
+            status: response.status,
+            error:
+                responseData?.message ||
+                responseData?.error ||
+                responseText ||
+                `Erro HTTP ${response.status} ao desativar`
+        };
     } catch (error) {
-        return { success: false, error: error.message };
+        return {
+            success: false,
+            error:
+                error.message ||
+                'Erro desconhecido ao desativar a promoção'
+        };
     }
 }
 
@@ -3299,15 +3505,34 @@ async function buscarOfferIdDoItemAlternativo(itemId, promotionId, token) {
     }
 
     function usuarioPodeReceberAvisoAgenda() {
-        const usuario = window.currentUser || {};
-        const texto = [usuario.username, usuario.user, usuario.login, usuario.name]
-            .filter(Boolean)
-            .join(' ')
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase();
-        return /(^|\s)(bruna|ronald)(\s|$)/.test(texto);
-    }
+    const usuario =
+        window.currentUser || {};
+
+    const texto = [
+        usuario.username,
+        usuario.user,
+        usuario.login,
+        usuario.name
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    return texto
+        .split(/\s+/)
+        .some(parte => {
+            return (
+                parte === 'bruna' ||
+                parte.startsWith('bruna') ||
+                parte === 'ronald' ||
+                parte.startsWith('ronald')
+            );
+        });
+}
 
     function formatarDataAgenda(data) {
         if (!data) return '-';
@@ -3346,6 +3571,402 @@ async function buscarOfferIdDoItemAlternativo(itemId, promotionId, token) {
         inicio.value = localInput(agora);
         fim.value = localInput(depois);
     }
+
+    function obterListaMlbsAgendamentoEmMassa(valor) {
+    const partes = String(valor || '')
+        .toUpperCase()
+        .split(/[\s,;|]+/)
+        .map(normalizarMlbAgenda)
+        .filter(mlb => /^MLB\d+$/.test(mlb));
+
+    return [...new Set(partes)];
+}
+
+function definirDatasPadraoAgendaEmMassa() {
+    const inicio = document.getElementById(
+        'agendaMassaDataAtivacao'
+    );
+
+    const fim = document.getElementById(
+        'agendaMassaDataDesativacao'
+    );
+
+    if (!inicio || !fim || inicio.value || fim.value) {
+        return;
+    }
+
+    const agora = new Date();
+
+    agora.setSeconds(0, 0);
+    agora.setMinutes(agora.getMinutes() + 5);
+
+    const depois = new Date(agora);
+
+    depois.setDate(depois.getDate() + 7);
+
+    const localInput = data => {
+        const ajuste =
+            data.getTimezoneOffset() * 60000;
+
+        return new Date(
+            data.getTime() - ajuste
+        )
+            .toISOString()
+            .slice(0, 16);
+    };
+
+    inicio.value = localInput(agora);
+    fim.value = localInput(depois);
+}
+
+function renderizarResultadosAgendamentoEmMassa() {
+    const container = document.getElementById(
+        'agendaMassaResultados'
+    );
+
+    const datas = document.getElementById(
+        'agendaMassaDatasContainer'
+    );
+
+    if (!container) {
+        return;
+    }
+
+    if (!itensAgendamentoEmMassa.length) {
+        container.innerHTML = '';
+        datas?.classList.add('hidden');
+
+        return;
+    }
+
+    const quantidadeValidos =
+        itensAgendamentoEmMassa.filter(item => {
+            return item.promocoes.length > 0;
+        }).length;
+
+    container.innerHTML = `
+        <div
+            class="d-flex justify-content-between align-items-center mb-2"
+        >
+            <h5 style="margin:0;">
+                Confira a promoção e o valor de cada MLB
+            </h5>
+
+            <span class="badge badge-primary">
+                ${quantidadeValidos} de
+                ${itensAgendamentoEmMassa.length} disponíveis
+            </span>
+        </div>
+
+        <div class="table-responsive">
+            <table
+                class="table table-sm table-bordered table-hover"
+            >
+                <thead>
+                    <tr>
+                        <th
+                            style="
+                                width:45px;
+                                text-align:center;
+                            "
+                        >
+                            <input
+                                type="checkbox"
+                                checked
+                                onchange="
+                                    marcarTodosAgendamentosEmMassa(
+                                        this.checked
+                                    )
+                                "
+                                title="Marcar ou desmarcar todos"
+                            >
+                        </th>
+
+                        <th>MLB / anúncio</th>
+
+                        <th style="min-width:280px;">
+                            Promoção
+                        </th>
+
+                        <th style="width:190px;">
+                            Valor final
+                        </th>
+
+                        <th>Situação</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    ${itensAgendamentoEmMassa.map(
+                        (item, index) => {
+                            if (
+                                item.erro ||
+                                !item.promocoes.length
+                            ) {
+                                return `
+                                    <tr>
+                                        <td
+                                            style="
+                                                text-align:center;
+                                            "
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                disabled
+                                            >
+                                        </td>
+
+                                        <td>
+                                            <strong>
+                                                ${escaparHtmlAgenda(
+                                                    item.mlb
+                                                )}
+                                            </strong>
+
+                                            ${
+                                                item.titulo
+                                                    ? `
+                                                        <br>
+
+                                                        <small>
+                                                            ${escaparHtmlAgenda(
+                                                                item.titulo
+                                                            )}
+                                                        </small>
+                                                    `
+                                                    : ''
+                                            }
+                                        </td>
+
+                                        <td>—</td>
+                                        <td>—</td>
+
+                                        <td>
+                                            <span
+                                                class="text-danger"
+                                            >
+                                                ${escaparHtmlAgenda(
+                                                    item.erro ||
+                                                    'Nenhuma promoção candidata disponível'
+                                                )}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                `;
+                            }
+
+                            const promocaoSelecionada =
+                                item.promocoes[
+                                    item.promocaoSelecionada
+                                ] ||
+                                item.promocoes[0];
+
+                            return `
+                                <tr>
+                                    <td
+                                        style="
+                                            text-align:center;
+                                        "
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            class="
+                                                agenda-massa-item-check
+                                            "
+                                            data-index="${index}"
+                                            checked
+                                        >
+                                    </td>
+
+                                    <td>
+                                        <strong>
+                                            ${escaparHtmlAgenda(
+                                                item.mlb
+                                            )}
+                                        </strong>
+
+                                        <br>
+
+                                        <small>
+                                            ${escaparHtmlAgenda(
+                                                item.titulo ||
+                                                'Anúncio encontrado'
+                                            )}
+                                        </small>
+
+                                        <br>
+
+                                        <small
+                                            class="text-muted"
+                                        >
+                                            Preço atual: R$
+                                            ${Number(
+                                                item.precoAtual || 0
+                                            ).toFixed(2)}
+                                        </small>
+                                    </td>
+
+                                    <td>
+                                        <select
+                                            class="
+                                                form-control
+                                                form-control-sm
+                                                agenda-massa-promocao
+                                            "
+                                            data-index="${index}"
+                                            onchange="
+                                                alterarPromocaoAgendamentoEmMassa(
+                                                    ${index},
+                                                    this.value
+                                                )
+                                            "
+                                        >
+                                            ${item.promocoes.map(
+                                                (
+                                                    promocao,
+                                                    promocaoIndex
+                                                ) => {
+                                                    return `
+                                                        <option
+                                                            value="${promocaoIndex}"
+                                                            ${
+                                                                promocaoIndex ===
+                                                                item.promocaoSelecionada
+                                                                    ? 'selected'
+                                                                    : ''
+                                                            }
+                                                        >
+                                                            ${escaparHtmlAgenda(
+                                                                promocao.name
+                                                            )}
+                                                            —
+                                                            ${escaparHtmlAgenda(
+                                                                promocao.type
+                                                            )}
+                                                        </option>
+                                                    `;
+                                                }
+                                            ).join('')}
+                                        </select>
+
+                                        <small
+                                            class="
+                                                text-muted
+                                                agenda-massa-promocao-id
+                                            "
+                                            data-index="${index}"
+                                        >
+                                            ${escaparHtmlAgenda(
+                                                promocaoSelecionada.id
+                                            )}
+                                        </small>
+                                    </td>
+
+                                    <td>
+                                        <input
+                                            type="number"
+                                            min="0.01"
+                                            step="0.01"
+                                            class="
+                                                form-control
+                                                form-control-sm
+                                                agenda-massa-valor
+                                            "
+                                            data-index="${index}"
+                                            value="${
+                                                Number(
+                                                    promocaoSelecionada
+                                                        .valor || 0
+                                                ) > 0
+                                                    ? Number(
+                                                        promocaoSelecionada
+                                                            .valor
+                                                    ).toFixed(2)
+                                                    : ''
+                                            }"
+                                        >
+                                    </td>
+
+                                    <td>
+                                        <span
+                                            class="
+                                                badge
+                                                badge-success
+                                            "
+                                        >
+                                            Pronto para agendar
+                                        </span>
+                                    </td>
+                                </tr>
+                            `;
+                        }
+                    ).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    if (quantidadeValidos > 0) {
+        datas?.classList.remove('hidden');
+        definirDatasPadraoAgendaEmMassa();
+    } else {
+        datas?.classList.add('hidden');
+    }
+}
+
+window.marcarTodosAgendamentosEmMassa = function(
+    marcar
+) {
+    document
+        .querySelectorAll(
+            '.agenda-massa-item-check:not(:disabled)'
+        )
+        .forEach(checkbox => {
+            checkbox.checked = Boolean(marcar);
+        });
+};
+
+window.alterarPromocaoAgendamentoEmMassa =
+function(
+    index,
+    valorSelecionado
+) {
+    const item =
+        itensAgendamentoEmMassa[Number(index)];
+
+    const promocaoIndex =
+        Number(valorSelecionado);
+
+    const promocao =
+        item?.promocoes?.[promocaoIndex];
+
+    if (!item || !promocao) {
+        return;
+    }
+
+    item.promocaoSelecionada =
+        promocaoIndex;
+
+    const inputValor = document.querySelector(
+        `.agenda-massa-valor[data-index="${Number(index)}"]`
+    );
+
+    if (inputValor) {
+        inputValor.value =
+            Number(promocao.valor || 0) > 0
+                ? Number(promocao.valor).toFixed(2)
+                : '';
+    }
+
+    const textoId = document.querySelector(
+        `.agenda-massa-promocao-id[data-index="${Number(index)}"]`
+    );
+
+    if (textoId) {
+        textoId.textContent =
+            promocao.id;
+    }
+};
 
     window.pesquisarMLBParaAgendamento = async function() {
         const input = document.getElementById('agendaMlbPesquisa');
@@ -3442,6 +4063,294 @@ async function buscarOfferIdDoItemAlternativo(itemId, promotionId, token) {
         }
     };
 
+    window.pesquisarListaMLBsParaAgendamento =
+async function() {
+    const textarea = document.getElementById(
+        'agendaMassaListaMlbs'
+    );
+
+    const botao = document.getElementById(
+        'btnPesquisarAgendaMassa'
+    );
+
+    const progresso = document.getElementById(
+        'agendaMassaProgresso'
+    );
+
+    const resultados = document.getElementById(
+        'agendaMassaResultados'
+    );
+
+    const datas = document.getElementById(
+        'agendaMassaDatasContainer'
+    );
+
+    const mlbs = obterListaMlbsAgendamentoEmMassa(
+        textarea?.value
+    );
+
+    if (!mlbs.length) {
+        showToast(
+            '⚠️ Cole ao menos um MLB válido',
+            'warning'
+        );
+
+        textarea?.focus();
+
+        return;
+    }
+
+    if (textarea) {
+        textarea.value = mlbs.join('\n');
+    }
+
+    if (botao) {
+        botao.disabled = true;
+
+        botao.innerHTML = `
+            <i class="fas fa-spinner fa-spin"></i>
+            Pesquisando 0 de ${mlbs.length}
+        `;
+    }
+
+    if (resultados) {
+        resultados.innerHTML = '';
+    }
+
+    datas?.classList.add('hidden');
+
+    itensAgendamentoEmMassa = [];
+
+    try {
+        const tokenData =
+            await window.getValidToken?.();
+
+        const accessToken =
+            tokenData?.access_token ||
+            null;
+
+        if (!accessToken) {
+            throw new Error(
+                'Token do Mercado Livre não disponível'
+            );
+        }
+
+        const worker =
+            window.WORKER_URL ||
+            'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
+        let processados = 0;
+
+        const pesquisarMlb = async mlb => {
+            const resultado = {
+                mlb,
+                titulo: '',
+                precoAtual: 0,
+                promocoes: [],
+                promocaoSelecionada: 0,
+                erro: null
+            };
+
+            try {
+                const itemUrl =
+                    `https://api.mercadolibre.com/items/${mlb}`;
+
+                const itemResponse = await fetch(
+                    `${worker}/api/ml/proxy?` +
+                    `url=${encodeURIComponent(itemUrl)}` +
+                    `&token=${encodeURIComponent(accessToken)}`,
+                    {
+                        cache: 'no-store'
+                    }
+                );
+
+                if (!itemResponse.ok) {
+                    throw new Error(
+                        `MLB não encontrado ` +
+                        `(HTTP ${itemResponse.status})`
+                    );
+                }
+
+                const item =
+                    await itemResponse.json();
+
+                resultado.titulo =
+                    item.title ||
+                    'Anúncio encontrado';
+
+                resultado.precoAtual =
+                    Number(item.price || 0);
+
+                const promocoesItem =
+                    await buscarPromocoesDoItem(
+                        mlb,
+                        accessToken
+                    );
+
+                if (!Array.isArray(promocoesItem)) {
+                    throw new Error(
+                        'Não foi possível consultar as promoções'
+                    );
+                }
+
+                resultado.promocoes =
+                    promocoesItem
+                        .filter(promocao => {
+                            return (
+                                promocao.status ===
+                                'candidate'
+                            );
+                        })
+                        .map(promocao => ({
+                            id: String(
+                                promocao.id || ''
+                            ),
+
+                            name:
+                                promocao.name ||
+                                promocao.id ||
+                                'Promoção sem nome',
+
+                            type:
+                                promocao.type ||
+                                '',
+
+                            status:
+                                promocao.status,
+
+                            valor:
+                                valorPromocaoEmReais(
+                                    promocao
+                                )
+                        }))
+                        .filter(promocao => {
+                            return (
+                                promocao.id &&
+                                promocao.type
+                            );
+                        });
+
+                if (!resultado.promocoes.length) {
+                    resultado.erro =
+                        'Nenhuma promoção candidata disponível';
+                }
+            } catch (error) {
+                resultado.erro =
+                    error.message ||
+                    'Erro ao consultar o MLB';
+            } finally {
+                processados++;
+
+                if (botao) {
+                    botao.innerHTML = `
+                        <i
+                            class="
+                                fas
+                                fa-spinner
+                                fa-spin
+                            "
+                        ></i>
+
+                        Pesquisando
+                        ${processados} de ${mlbs.length}
+                    `;
+                }
+
+                if (progresso) {
+                    progresso.innerHTML = `
+                        <div class="alert alert-info">
+                            Consultando promoções:
+
+                            <strong>
+                                ${processados}/${mlbs.length}
+                            </strong>
+                        </div>
+                    `;
+                }
+            }
+
+            return resultado;
+        };
+
+        /*
+         * Pesquisa cinco MLBs simultaneamente.
+         * Isso evita sobrecarregar a API.
+         */
+        const tamanhoLote = 5;
+
+        for (
+            let inicioLote = 0;
+            inicioLote < mlbs.length;
+            inicioLote += tamanhoLote
+        ) {
+            const lote = mlbs.slice(
+                inicioLote,
+                inicioLote + tamanhoLote
+            );
+
+            const resultadosLote =
+                await Promise.all(
+                    lote.map(pesquisarMlb)
+                );
+
+            itensAgendamentoEmMassa.push(
+                ...resultadosLote
+            );
+        }
+
+        renderizarResultadosAgendamentoEmMassa();
+
+        const validos =
+            itensAgendamentoEmMassa.filter(item => {
+                return item.promocoes.length > 0;
+            }).length;
+
+        if (progresso) {
+            progresso.innerHTML =
+                validos > 0
+                    ? `
+                        <div class="alert alert-success">
+                            ${validos} de ${mlbs.length}
+                            MLB(s) estão prontos para agendar.
+                        </div>
+                    `
+                    : `
+                        <div class="alert alert-warning">
+                            Nenhum dos MLBs possui
+                            promoção candidata.
+                        </div>
+                    `;
+        }
+    } catch (error) {
+        log(
+            `Erro na pesquisa em massa: ${error.message}`,
+            'error'
+        );
+
+        if (progresso) {
+            progresso.innerHTML = `
+                <div class="alert alert-danger">
+                    ${escaparHtmlAgenda(error.message)}
+                </div>
+            `;
+        }
+
+        showToast(
+            `❌ ${error.message}`,
+            'error'
+        );
+    } finally {
+        if (botao) {
+            botao.disabled = false;
+
+            botao.innerHTML = `
+                <i class="fas fa-search"></i>
+                Pesquisar lista
+            `;
+        }
+    }
+};
+
     window.salvarAgendamentosSelecionados = async function() {
         const supabase = obterSupabasePromocoes();
         if (!supabase) return showToast('❌ Supabase não conectado', 'error');
@@ -3497,6 +4406,352 @@ async function buscarOfferIdDoItemAlternativo(itemId, promotionId, token) {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Programar'; }
         }
     };
+
+   window.salvarAgendamentosEmMassa =
+async function() {
+    const supabase =
+        obterSupabasePromocoes();
+
+    if (!supabase) {
+        showToast(
+            '❌ Supabase não conectado',
+            'error'
+        );
+
+        return;
+    }
+
+    const inicioValor =
+        document.getElementById(
+            'agendaMassaDataAtivacao'
+        )?.value;
+
+    const fimValor =
+        document.getElementById(
+            'agendaMassaDataDesativacao'
+        )?.value;
+
+    const selecionados = [
+        ...document.querySelectorAll(
+            '.agenda-massa-item-check:checked:not(:disabled)'
+        )
+    ];
+
+    if (!selecionados.length) {
+        showToast(
+            '⚠️ Marque ao menos um MLB para agendar',
+            'warning'
+        );
+
+        return;
+    }
+
+    if (!inicioValor || !fimValor) {
+        showToast(
+            '⚠️ Informe as datas de ativação e desativação',
+            'warning'
+        );
+
+        return;
+    }
+
+    const inicio =
+        new Date(inicioValor);
+
+    const fim =
+        new Date(fimValor);
+
+    if (
+        !Number.isFinite(inicio.getTime()) ||
+        !Number.isFinite(fim.getTime())
+    ) {
+        showToast(
+            '⚠️ Datas inválidas',
+            'warning'
+        );
+
+        return;
+    }
+
+    if (fim <= inicio) {
+        showToast(
+            '⚠️ A desativação deve ser posterior à ativação',
+            'warning'
+        );
+
+        return;
+    }
+
+    const registros = [];
+
+    for (const checkbox of selecionados) {
+        const index =
+            Number(checkbox.dataset.index);
+
+        const item =
+            itensAgendamentoEmMassa[index];
+
+        const promocao =
+            item?.promocoes?.[
+                item.promocaoSelecionada || 0
+            ];
+
+        const inputValor =
+            document.querySelector(
+                `.agenda-massa-valor[data-index="${index}"]`
+            );
+
+        const valor =
+            Number(inputValor?.value);
+
+        if (!item || !promocao) {
+            showToast(
+                '⚠️ Selecione uma promoção válida para todos os MLBs marcados',
+                'warning'
+            );
+
+            return;
+        }
+
+        if (
+            !Number.isFinite(valor) ||
+            valor <= 0
+        ) {
+            showToast(
+                `⚠️ Informe um valor válido para ${item.mlb}`,
+                'warning'
+            );
+
+            inputValor?.focus();
+
+            return;
+        }
+
+        registros.push({
+            mlb: item.mlb,
+            promotion_id: promocao.id,
+            promotion_name: promocao.name,
+            promotion_type: promocao.type,
+            valor_final: Number(
+                valor.toFixed(2)
+            ),
+            data_ativacao:
+                inicio.toISOString(),
+            data_desativacao:
+                fim.toISOString(),
+            status: 'agendada',
+            criada_por:
+                nomeUsuarioAgenda()
+        });
+    }
+
+    const confirmou = confirm(
+        `Agendar ${registros.length} MLB(s) ` +
+        `com as datas informadas?`
+    );
+
+    if (!confirmou) {
+        return;
+    }
+
+    const botao =
+        document.getElementById(
+            'btnSalvarAgendamentoMassa'
+        );
+
+    if (botao) {
+        botao.disabled = true;
+
+        botao.innerHTML = `
+            <i class="fas fa-spinner fa-spin"></i>
+            Salvando 0 de ${registros.length}
+        `;
+    }
+
+    let sucessos = 0;
+    const falhas = [];
+
+    try {
+        /*
+         * Salva individualmente para que um erro
+         * não impeça os demais agendamentos.
+         */
+        for (
+            let index = 0;
+            index < registros.length;
+            index++
+        ) {
+            const registro =
+                registros[index];
+
+            if (botao) {
+                botao.innerHTML = `
+                    <i
+                        class="
+                            fas
+                            fa-spinner
+                            fa-spin
+                        "
+                    ></i>
+
+                    Salvando
+                    ${index + 1} de ${registros.length}
+                `;
+            }
+
+            const { error } =
+                await supabase
+                    .from('promocoes_agendadas')
+                    .insert(registro);
+
+            if (error) {
+                falhas.push({
+                    mlb: registro.mlb,
+                    erro: error.message
+                });
+            } else {
+                sucessos++;
+            }
+        }
+
+        /*
+         * Atualiza a lista inferior antes de limpar
+         * o formulário de agendamento em massa.
+         */
+        await carregarAgendamentosPromocoes();
+
+        await verificarAvisosPromocoesAgendadas();
+
+        /*
+         * Se ao menos um agendamento foi salvo,
+         * limpa completamente a lista e a tabela superior.
+         */
+        if (sucessos > 0) {
+            const textarea =
+                document.getElementById(
+                    'agendaMassaListaMlbs'
+                );
+
+            const progresso =
+                document.getElementById(
+                    'agendaMassaProgresso'
+                );
+
+            const resultados =
+                document.getElementById(
+                    'agendaMassaResultados'
+                );
+
+            const datas =
+                document.getElementById(
+                    'agendaMassaDatasContainer'
+                );
+
+            const inicioInput =
+                document.getElementById(
+                    'agendaMassaDataAtivacao'
+                );
+
+            const fimInput =
+                document.getElementById(
+                    'agendaMassaDataDesativacao'
+                );
+
+            if (textarea) {
+                textarea.value = '';
+            }
+
+            if (progresso) {
+                progresso.innerHTML = '';
+            }
+
+            if (resultados) {
+                resultados.innerHTML = '';
+            }
+
+            if (inicioInput) {
+                inicioInput.value = '';
+            }
+
+            if (fimInput) {
+                fimInput.value = '';
+            }
+
+            datas?.classList.add('hidden');
+
+            /*
+             * Limpa também a lista mantida na memória.
+             */
+            itensAgendamentoEmMassa = [];
+        }
+
+        if (!falhas.length) {
+            showToast(
+                `✅ ${sucessos} MLB(s) ` +
+                `agendado(s) com sucesso`,
+                'success'
+            );
+
+            return;
+        }
+
+        log(
+            'Falhas no agendamento em massa',
+            'error',
+            falhas
+        );
+
+        if (sucessos > 0) {
+            showToast(
+                `⚠️ ${sucessos} agendado(s) e ` +
+                `${falhas.length} com erro. ` +
+                `Os agendados já estão na lista abaixo.`,
+                'warning'
+            );
+
+            return;
+        }
+
+        const todosDuplicados =
+            falhas.every(falha => {
+                return String(
+                    falha.erro || ''
+                )
+                    .toLowerCase()
+                    .includes('duplicate');
+            });
+
+        showToast(
+            todosDuplicados
+                ? '⚠️ Todos os agendamentos já existem'
+                : `❌ Nenhum MLB foi agendado. ` +
+                  `${falhas.length} erro(s).`,
+            todosDuplicados
+                ? 'warning'
+                : 'error'
+        );
+    } catch (error) {
+        log(
+            `Erro ao salvar agendamentos em massa: ` +
+            `${error.message}`,
+            'error'
+        );
+
+        showToast(
+            `❌ Erro ao salvar: ${error.message}`,
+            'error'
+        );
+    } finally {
+        if (botao) {
+            botao.disabled = false;
+
+            botao.innerHTML = `
+                <i class="fas fa-calendar-check"></i>
+                Agendar todos
+            `;
+        }
+    }
+};
 
     window.carregarAgendamentosPromocoes = async function() {
         const supabase = obterSupabasePromocoes();
@@ -4304,12 +5559,17 @@ async function consultarPromocaoAtivaNoML(
 
     const url =
         `https://api.mercadolibre.com/` +
-        `seller-promotions/items/${encodeURIComponent(itemId)}` +
+        `seller-promotions/items/` +
+        `${encodeURIComponent(itemId)}` +
         `?app_version=v2`;
 
+    const worker =
+        window.WORKER_URL ||
+        'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
     const proxyUrl =
-        `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}` +
-        `/api/ml/proxy?url=${encodeURIComponent(url)}` +
+        `${worker}/api/ml/proxy?` +
+        `url=${encodeURIComponent(url)}` +
         `&token=${encodeURIComponent(token)}`;
 
     try {
@@ -4355,8 +5615,8 @@ async function consultarPromocaoAtivaNoML(
         });
 
         /*
-         * Se a promoção não aparece mais para este MLB,
-         * o anúncio não está mais participando dela.
+         * Se a promoção não aparecer mais na lista de promoções
+         * desse MLB, o anúncio não participa mais dela.
          */
         if (!promocao) {
             log(
@@ -4386,15 +5646,41 @@ async function consultarPromocaoAtivaNoML(
         ).toLowerCase();
 
         /*
-         * IMPORTANTE:
-         *
-         * "started" pode ser apenas o status geral da campanha.
-         * Isso não significa que este MLB ainda esteja ativo nela.
-         *
-         * Para o anúncio estar efetivamente participando da promoção,
-         * precisa existir um offer_id.
+         * "started" representa participação ativa do MLB.
+         * Não podemos considerar desativada somente porque
+         * a resposta não trouxe offer_id.
          */
-        const ativa = Boolean(offerId);
+        const statusAtivos = [
+            'started',
+            'active',
+            'activated',
+            'pending'
+        ];
+
+        const statusInativos = [
+            'candidate',
+            'inactive',
+            'finished',
+            'closed',
+            'deleted',
+            'removed',
+            'cancelled',
+            'canceled'
+        ];
+
+        let ativa;
+
+        if (statusAtivos.includes(status)) {
+            ativa = true;
+        } else if (statusInativos.includes(status)) {
+            ativa = false;
+        } else {
+            /*
+             * Para status desconhecido, usa o offer_id como
+             * evidência complementar de participação.
+             */
+            ativa = Boolean(offerId);
+        }
 
         log(
             `🔍 Conferência ${itemId} / ${promotionId}: ` +
@@ -4411,8 +5697,8 @@ async function consultarPromocaoAtivaNoML(
             offerId,
             status,
             motivo: ativa
-                ? 'oferta_ativa'
-                : 'sem_offer_id'
+                ? 'participacao_ativa'
+                : 'participacao_inativa'
         };
     } catch (error) {
         log(
@@ -4563,7 +5849,8 @@ async function aguardarConfirmacaoDesativacaoML(
                 erro_desativacao: null,
                 quantidade_tentativas_desativacao:
                     Number(
-                        original.quantidade_tentativas_desativacao ||
+                        original
+                            .quantidade_tentativas_desativacao ||
                         0
                     ) + 1
             }
@@ -4580,9 +5867,15 @@ async function aguardarConfirmacaoDesativacaoML(
             return;
         }
 
+        /*
+         * Atualiza a tabela para mostrar que o item está
+         * sendo processado.
+         */
         await carregarAgendamentosPromocoes();
 
-        const tokenData = await window.getValidToken?.();
+        const tokenData =
+            await window.getValidToken?.();
+
         const accessToken =
             tokenData?.access_token ||
             null;
@@ -4594,15 +5887,15 @@ async function aguardarConfirmacaoDesativacaoML(
         }
 
         /*
-         * PRIMEIRA VERIFICAÇÃO:
-         * antes de tentar excluir, confere se a promoção ainda está
-         * realmente ativa no Mercado Livre.
+         * Antes de desativar, consulta o estado real do MLB
+         * dentro da promoção.
          */
-        const estadoAntes = await consultarPromocaoAtivaNoML(
-            reservado.mlb,
-            reservado.promotion_id,
-            accessToken
-        );
+        const estadoAntes =
+            await consultarPromocaoAtivaNoML(
+                reservado.mlb,
+                reservado.promotion_id,
+                accessToken
+            );
 
         if (!estadoAntes.success) {
             throw new Error(
@@ -4613,8 +5906,8 @@ async function aguardarConfirmacaoDesativacaoML(
 
         if (!estadoAntes.ativa) {
             /*
-             * Já estava desativada no Mercado Livre.
-             * Apenas corrige o status local e remove a notificação.
+             * O MLB já não participa da promoção.
+             * Nesse caso, somente corrige o status local.
              */
             desativacaoConfirmada = true;
 
@@ -4625,8 +5918,8 @@ async function aguardarConfirmacaoDesativacaoML(
             );
         } else {
             /*
-             * Ainda está ativa. Usa primeiro o offer_id retornado pela
-             * própria verificação, que é mais confiável.
+             * Procura o offer_id para permitir também o fallback
+             * de compatibilidade com ofertas antigas.
              */
             let offerId =
                 estadoAntes.offerId ||
@@ -4641,34 +5934,56 @@ async function aguardarConfirmacaoDesativacaoML(
                 );
             }
 
-            if (!offerId) {
+            /*
+             * O endpoint correto precisa do tipo da promoção.
+             * Primeiro usa o valor salvo no agendamento.
+             * Se não existir, usa o tipo retornado pelo ML.
+             */
+            const promotionType =
+                reservado.promotion_type ||
+                estadoAntes.promocao?.type ||
+                estadoAntes.promocao?.promotion_type ||
+                null;
+
+            if (!promotionType) {
                 throw new Error(
-                    'A promoção está ativa, mas o offer_id não foi encontrado'
+                    'O tipo da promoção não foi encontrado para realizar a desativação'
                 );
             }
 
-            const resultadoExclusao = await excluirItemPromocao(
-                offerId,
-                accessToken
-            );
+            /*
+             * Desativa pelo MLB + promoção + tipo.
+             * O offer_id é enviado apenas para o fallback.
+             */
+            const resultadoExclusao =
+                await excluirItemPromocao(
+                    reservado.mlb,
+                    reservado.promotion_id,
+                    promotionType,
+                    accessToken,
+                    offerId
+                );
 
             if (!resultadoExclusao?.success) {
                 /*
-                 * Mesmo quando o DELETE informa erro, ainda será feita
-                 * uma verificação, pois ela pode já ter sido desativada.
+                 * Não encerra imediatamente porque, em alguns casos,
+                 * o Mercado Livre executa a ação mesmo retornando erro.
+                 * A confirmação real será feita abaixo.
                  */
                 log(
-                    `⚠️ O Mercado Livre retornou erro no DELETE de ` +
+                    `⚠️ O Mercado Livre retornou erro ao desativar ` +
                     `${reservado.mlb}: ` +
-                    `${resultadoExclusao?.error || 'erro desconhecido'}`,
+                    `${
+                        resultadoExclusao?.error ||
+                        'erro desconhecido'
+                    }`,
                     'warning'
                 );
             }
 
             /*
-             * VERIFICAÇÃO FINAL:
-             * somente considera concluída se o Mercado Livre confirmar
-             * que o anúncio não está mais ativo nessa promoção.
+             * Consulta novamente o Mercado Livre.
+             * Só considera concluído quando o status real confirmar.
              */
             const confirmacao =
                 await aguardarConfirmacaoDesativacaoML(
@@ -4693,7 +6008,6 @@ async function aguardarConfirmacaoDesativacaoML(
             }
 
             desativacaoConfirmada = true;
-
             reservado.offer_id = offerId;
         }
 
@@ -4703,6 +6017,10 @@ async function aguardarConfirmacaoDesativacaoML(
             );
         }
 
+        /*
+         * Somente agora, após a confirmação do Mercado Livre,
+         * o status local é alterado para concluída.
+         */
         const {
             data,
             error
@@ -4712,7 +6030,9 @@ async function aguardarConfirmacaoDesativacaoML(
                 status: 'concluida',
                 desativada_por: nomeUsuarioAgenda(),
                 desativada_em: new Date().toISOString(),
-                offer_id: reservado.offer_id || null,
+                offer_id:
+                    reservado.offer_id ||
+                    null,
                 erro_desativacao: null
             })
             .eq('id', id)
@@ -4730,8 +6050,9 @@ async function aguardarConfirmacaoDesativacaoML(
         }
 
         /*
-         * Fecha imediatamente o aviso antigo.
-         * Como o status agora é "concluida", ele não será recriado.
+         * A notificação antiga é removida.
+         * Como o status agora é "concluida", ela não será
+         * criada novamente.
          */
         fecharModalAvisosPromocoes();
 
@@ -4740,15 +6061,15 @@ async function aguardarConfirmacaoDesativacaoML(
             'success'
         );
     } catch (error) {
-        /*
-         * Se não houve confirmação real, volta para erro_desativacao.
-         * Assim a notificação permanece e o botão Desativar continua
-         * disponível para uma nova tentativa.
-         */
         const mensagemErro =
             error.message ||
             'Erro desconhecido na desativação';
 
+        /*
+         * Se o Mercado Livre não confirmou, mantém o item como
+         * erro_desativacao. Assim, a notificação permanece e o
+         * botão pode ser utilizado novamente.
+         */
         await supabase
             .from('promocoes_agendadas')
             .update({
@@ -4769,6 +6090,10 @@ async function aguardarConfirmacaoDesativacaoML(
             'error'
         );
     } finally {
+        /*
+         * Recarrega os agendamentos e recria o aviso apenas se
+         * a promoção ainda estiver realmente pendente.
+         */
         await carregarAgendamentosPromocoes();
 
         fecharModalAvisosPromocoes();
@@ -4797,46 +6122,430 @@ async function aguardarConfirmacaoDesativacaoML(
     window.fecharModalAvisosPromocoes = fecharModalAvisosPromocoes;
 
     async function verificarAvisosPromocoesAgendadas() {
-        if (!usuarioPodeReceberAvisoAgenda() || modalAvisoAgendamentoAberto) return;
-        const supabase = obterSupabasePromocoes();
-        if (!supabase) return;
-        const agoraIso = new Date().toISOString();
-        const { data: ativacoes, error: erroA } = await supabase.from('promocoes_agendadas').select('*')
-            .in('status', ['agendada', 'erro_ativacao']).lte('data_ativacao', agoraIso).order('data_ativacao');
-        const { data: desativacoes, error: erroD } = await supabase.from('promocoes_agendadas').select('*')
-            .in('status', ['ativada', 'erro_desativacao']).lte('data_desativacao', agoraIso).order('data_desativacao');
-        if (erroA || erroD) {
-            log(`Erro ao verificar avisos: ${(erroA || erroD).message}`, 'warning');
-            return;
-        }
-        const pendencias = [
-            ...(ativacoes || []).map(item => ({ ...item, acao: 'ativar' })),
-            ...(desativacoes || []).map(item => ({ ...item, acao: 'desativar' }))
-        ];
-        if (!pendencias.length) return;
+    /*
+     * Confere o elemento real, pois o modal pode ter sido
+     * removido durante uma troca de tela.
+     */
+    const modalExistente =
+        document.getElementById(
+            'modalAvisosPromocoesAgendadas'
+        );
 
-        agendamentosPromocoes = agendamentosPromocoes.length ? agendamentosPromocoes : pendencias;
-        modalAvisoAgendamentoAberto = true;
-        const modal = document.createElement('div');
-        modal.id = 'modalAvisosPromocoesAgendadas';
-        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;';
-        modal.innerHTML = `<div style="background:#fff;border-radius:14px;width:min(900px,96vw);max-height:88vh;overflow:auto;padding:24px;box-shadow:0 15px 50px rgba(0,0,0,.3);">
-            <div style="display:flex;justify-content:space-between;gap:15px;align-items:flex-start;margin-bottom:15px;">
-                <div><h3 style="margin:0;color:#343a40;"><i class="fas fa-bell" style="color:#f0ad4e;"></i> Promoções aguardando ação</h3>
-                <p class="text-muted" style="margin:6px 0 0;">Bruna ou Ronald deve executar as ações abaixo.</p></div>
-                <button class="btn btn-sm btn-secondary" onclick="fecharModalAvisosPromocoes()">Lembrar depois</button>
-            </div>
-            <div class="table-responsive"><table class="table table-bordered table-hover"><thead><tr><th>Ação</th><th>MLB</th><th>Promoção</th><th>Data prevista</th><th></th></tr></thead>
-            <tbody>${pendencias.map(item => `<tr>
-                <td><span class="badge badge-${item.acao === 'ativar' ? 'success' : 'danger'}">${item.acao === 'ativar' ? 'ATIVAR' : 'DESATIVAR'}</span></td>
-                <td><strong>${escaparHtmlAgenda(item.mlb)}</strong></td><td>${escaparHtmlAgenda(item.promotion_name)}</td>
-                <td>${formatarDataAgenda(item.acao === 'ativar' ? item.data_ativacao : item.data_desativacao)}</td>
-                <td><button class="btn btn-sm btn-${item.acao === 'ativar' ? 'success' : 'danger'}" onclick="${item.acao === 'ativar' ? 'executarAtivacaoAgendada' : 'executarDesativacaoAgendada'}(${item.id})">${item.acao === 'ativar' ? 'Ativar' : 'Desativar'}</button></td>
-            </tr>`).join('')}</tbody></table></div>
-        </div>`;
-        document.body.appendChild(modal);
+    if (!modalExistente) {
+        modalAvisoAgendamentoAberto = false;
     }
+
+    if (
+        !usuarioPodeReceberAvisoAgenda() ||
+        modalAvisoAgendamentoAberto ||
+        modalExistente
+    ) {
+        return;
+    }
+
+    const supabase =
+        obterSupabasePromocoes();
+
+    if (!supabase) {
+        return;
+    }
+
+    const agoraIso =
+        new Date().toISOString();
+
+    /*
+     * Promoções cuja ativação já chegou.
+     */
+    const {
+        data: ativacoes,
+        error: erroAtivacoes
+    } = await supabase
+        .from('promocoes_agendadas')
+        .select('*')
+        .in(
+            'status',
+            [
+                'agendada',
+                'erro_ativacao'
+            ]
+        )
+        .lte(
+            'data_ativacao',
+            agoraIso
+        )
+        .order(
+            'data_ativacao'
+        );
+
+    /*
+     * Promoções cuja desativação já chegou.
+     */
+    const {
+        data: desativacoes,
+        error: erroDesativacoes
+    } = await supabase
+        .from('promocoes_agendadas')
+        .select('*')
+        .in(
+            'status',
+            [
+                'ativada',
+                'erro_desativacao'
+            ]
+        )
+        .lte(
+            'data_desativacao',
+            agoraIso
+        )
+        .order(
+            'data_desativacao'
+        );
+
+    if (
+        erroAtivacoes ||
+        erroDesativacoes
+    ) {
+        const erro =
+            erroAtivacoes ||
+            erroDesativacoes;
+
+        log(
+            `Erro ao verificar avisos: ${erro.message}`,
+            'warning'
+        );
+
+        return;
+    }
+
+    const pendencias = [
+        ...(ativacoes || []).map(item => ({
+            ...item,
+            acao: 'ativar'
+        })),
+
+        ...(desativacoes || []).map(item => ({
+            ...item,
+            acao: 'desativar'
+        }))
+    ];
+
+    if (!pendencias.length) {
+        return;
+    }
+
+    /*
+     * Adiciona as pendências encontradas à lista mantida
+     * em memória.
+     *
+     * Isso é necessário para os botões funcionarem mesmo
+     * quando a aba de promoções nunca foi aberta.
+     */
+    const mapaAgendamentos = new Map(
+        agendamentosPromocoes.map(item => [
+            Number(item.id),
+            item
+        ])
+    );
+
+    pendencias.forEach(item => {
+        mapaAgendamentos.set(
+            Number(item.id),
+            item
+        );
+    });
+
+    agendamentosPromocoes = [
+        ...mapaAgendamentos.values()
+    ];
+
+    modalAvisoAgendamentoAberto = true;
+
+    const modal =
+        document.createElement('div');
+
+    modal.id =
+        'modalAvisosPromocoesAgendadas';
+
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.68);
+        z-index: 100000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    `;
+
+    modal.innerHTML = `
+        <div
+            style="
+                background: #ffffff;
+                border-radius: 14px;
+                width: min(900px, 96vw);
+                max-height: 88vh;
+                overflow: auto;
+                padding: 24px;
+                box-shadow:
+                    0 15px 50px
+                    rgba(0, 0, 0, 0.30);
+            "
+        >
+            <div
+                style="
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 15px;
+                    align-items: flex-start;
+                    margin-bottom: 15px;
+                "
+            >
+                <div>
+                    <h3
+                        style="
+                            margin: 0;
+                            color: #343a40;
+                        "
+                    >
+                        <i
+                            class="fas fa-bell"
+                            style="color:#f0ad4e;"
+                        ></i>
+
+                        Promoções aguardando ação
+                    </h3>
+
+                    <p
+                        class="text-muted"
+                        style="margin:6px 0 0;"
+                    >
+                        Bruna ou Ronald deve executar
+                        as ações abaixo.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn btn-sm btn-secondary"
+                    onclick="fecharModalAvisosPromocoes()"
+                >
+                    Lembrar depois
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table
+                    class="
+                        table
+                        table-bordered
+                        table-hover
+                    "
+                >
+                    <thead>
+                        <tr>
+                            <th>Ação</th>
+                            <th>MLB</th>
+                            <th>Promoção</th>
+                            <th>Data prevista</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${pendencias.map(item => {
+                            const ativar =
+                                item.acao === 'ativar';
+
+                            const funcao =
+                                ativar
+                                    ? 'executarAtivacaoAgendada'
+                                    : 'executarDesativacaoAgendada';
+
+                            const texto =
+                                ativar
+                                    ? 'Ativar'
+                                    : 'Desativar';
+
+                            const cor =
+                                ativar
+                                    ? 'success'
+                                    : 'danger';
+
+                            const dataPrevista =
+                                ativar
+                                    ? item.data_ativacao
+                                    : item.data_desativacao;
+
+                            return `
+                                <tr>
+                                    <td>
+                                        <span
+                                            class="
+                                                badge
+                                                badge-${cor}
+                                            "
+                                        >
+                                            ${
+                                                ativar
+                                                    ? 'ATIVAR'
+                                                    : 'DESATIVAR'
+                                            }
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        <strong>
+                                            ${escaparHtmlAgenda(
+                                                item.mlb
+                                            )}
+                                        </strong>
+                                    </td>
+
+                                    <td>
+                                        ${escaparHtmlAgenda(
+                                            item.promotion_name
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${formatarDataAgenda(
+                                            dataPrevista
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        <button
+                                            type="button"
+                                            class="
+                                                btn
+                                                btn-sm
+                                                btn-${cor}
+                                            "
+                                            onclick="
+                                                ${funcao}(
+                                                    ${Number(item.id)}
+                                                )
+                                            "
+                                        >
+                                            ${texto}
+                                        </button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
     window.verificarAvisosPromocoesAgendadas = verificarAvisosPromocoesAgendadas;
+
+    function iniciarMonitorGlobalAvisosPromocoes() {
+    /*
+     * Impede que o sistema crie dois ou mais monitores
+     * caso o arquivo seja carregado novamente.
+     */
+    if (
+        window
+            .__monitorGlobalAvisosPromocoesIniciado
+    ) {
+        return;
+    }
+
+    window.__monitorGlobalAvisosPromocoesIniciado =
+        true;
+
+    const verificarAgora = () => {
+        verificarAvisosPromocoesAgendadas()
+            .catch(error => {
+                log(
+                    `Erro no monitor global de promoções: ` +
+                    `${error.message}`,
+                    'warning'
+                );
+            });
+    };
+
+    /*
+     * Verifica a cada 30 segundos, independentemente
+     * da aba interna que Ronald ou Bruna estiver usando.
+     */
+    timerAvisosAgendamento = setInterval(
+        verificarAgora,
+        30000
+    );
+
+    /*
+     * Verifica quando o usuário volta para a janela.
+     */
+    window.addEventListener(
+        'focus',
+        verificarAgora
+    );
+
+    /*
+     * Verifica quando a página volta a ficar visível.
+     */
+    document.addEventListener(
+        'visibilitychange',
+        () => {
+            if (!document.hidden) {
+                verificarAgora();
+            }
+        }
+    );
+
+    /*
+     * Verifica ao clicar em botões, links e abas internas.
+     * O pequeno intervalo permite que a nova aba termine
+     * de abrir antes do modal ser mostrado.
+     */
+    document.addEventListener(
+        'click',
+        event => {
+            const elemento =
+                event.target?.closest?.(
+                    [
+                        'button',
+                        'a',
+                        '[role="tab"]',
+                        '[data-tab]',
+                        '[onclick]'
+                    ].join(', ')
+                );
+
+            if (!elemento) {
+                return;
+            }
+
+            setTimeout(
+                verificarAgora,
+                500
+            );
+        },
+        true
+    );
+
+    /*
+     * Primeiras verificações após o carregamento.
+     * A segunda também cobre o caso em que o arquivo
+     * carregou antes de o login terminar.
+     */
+    setTimeout(
+        verificarAgora,
+        1000
+    );
+
+    setTimeout(
+        verificarAgora,
+        5000
+    );
+}
+
+window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes;
 
     // ============================================================
     // FUNÇÕES: BARRA DE PROGRESSO
@@ -4913,19 +6622,7 @@ async function aguardarConfirmacaoDesativacaoML(
         }
     });
 
-    // O arquivo pode carregar antes do login. A verificação periódica detecta
-    // quando Bruna ou Ronald entra no sistema e também novas ações vencidas.
-    if (!timerAvisosAgendamento) {
-        timerAvisosAgendamento = setInterval(() => {
-            verificarAvisosPromocoesAgendadas().catch(error => {
-                log(`Erro na verificação periódica dos agendamentos: ${error.message}`, 'warning');
-            });
-        }, 60000);
-
-        setTimeout(() => {
-            verificarAvisosPromocoesAgendadas().catch(() => {});
-        }, 3000);
-    }
+    iniciarMonitorGlobalAvisosPromocoes();
 
     // ============================================================
     // INICIALIZAÇÃO

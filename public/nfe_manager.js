@@ -32585,6 +32585,49 @@ function obterRegraExposicaoEsperadaVendaNFE(
     };
 }
 
+function montarBotaoDetalhesVendaNFE(
+    vendaId
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        return '';
+    }
+
+
+    return `
+        <button
+            type="button"
+            class="btn btn-sm btn-info btn-detalhes-venda-nfe"
+            onclick="
+                event.preventDefault();
+                event.stopPropagation();
+
+                abrirDetalhesVendaNFE(
+                    '${escaparHTMLNFE(
+                        vendaId
+                    )}'
+                );
+            "
+            title="Ver detalhes completos da venda"
+            style="
+                margin-right:5px;
+                min-width:34px;
+            "
+        >
+            <i class="fas fa-eye"></i>
+        </button>
+    `;
+}
+
 function renderizarVendasNFETabela(vendas) {
     garantirEstiloAlertaExposicaoFullNFE();
 
@@ -34465,6 +34508,39 @@ function renderizarVendasNFETabela(vendas) {
                     }
 
                     // =================================================
+// BOTÃO DE DETALHES
+//
+// SEMPRE APARECE EM TODAS AS VENDAS:
+// - normal
+// - FULL
+// - emitida
+// - cancelada
+// =================================================
+
+const botaoDetalhes =
+    montarBotaoDetalhesVendaNFE(
+        vendaId
+    );
+
+
+acoes = `
+    <div
+        style="
+            display:flex;
+            align-items:center;
+            gap:4px;
+            flex-wrap:wrap;
+        "
+    >
+        ${botaoDetalhes}
+
+        <div>
+            ${acoes}
+        </div>
+    </div>
+`;
+
+                    // =================================================
                     // LINHA
                     //
                     // A ORDEM DESTAS TDs PRECISA SER A MESMA DE:
@@ -34774,6 +34850,3461 @@ function renderizarVendasNFETabela(vendas) {
             }
         );
 }
+
+// =========================================================
+// 👁️ DETALHES COMPLETOS DA VENDA - NF-E
+// =========================================================
+
+window._cacheDetalhesVendaNFE =
+    window._cacheDetalhesVendaNFE ||
+    new Map();
+
+
+// =========================================================
+// DATA/HORA
+// =========================================================
+
+function formatarDataHoraDetalhesNFE(
+    valor
+) {
+
+    if (
+        !valor
+    ) {
+
+        return '-';
+    }
+
+
+    try {
+
+        const data =
+            new Date(
+                valor
+            );
+
+
+        if (
+            Number.isNaN(
+                data.getTime()
+            )
+        ) {
+
+            return String(
+                valor
+            );
+        }
+
+
+        return data
+            .toLocaleString(
+                'pt-BR',
+                {
+                    timeZone:
+                        'America/Sao_Paulo',
+
+                    day:
+                        '2-digit',
+
+                    month:
+                        '2-digit',
+
+                    year:
+                        'numeric',
+
+                    hour:
+                        '2-digit',
+
+                    minute:
+                        '2-digit',
+
+                    second:
+                        '2-digit'
+                }
+            );
+
+
+    } catch (
+        error
+    ) {
+
+        return String(
+            valor ||
+            '-'
+        );
+    }
+}
+
+
+// =========================================================
+// STATUS DO ENVIO
+// =========================================================
+
+function traduzirStatusEnvioDetalhesNFE(
+    status,
+    substatus = ''
+) {
+
+    status =
+        String(
+            status ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    substatus =
+        String(
+            substatus ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    // =====================================================
+    // SUBSTATUS IMPORTANTES
+    // =====================================================
+
+    const substatusMap = {
+
+        invoice_pending:
+            'Aguardando NF-e',
+
+        ready_to_print:
+            'Documento fiscal processado / etiqueta liberada',
+
+        printed:
+            'Etiqueta impressa',
+
+        picked_up:
+            'Coletado pela transportadora',
+
+        authorized_by_carrier:
+            'Recebido pela transportadora',
+
+        in_hub:
+            'No centro de distribuição',
+
+        out_for_delivery:
+            'Saiu para entrega',
+
+        soon_deliver:
+            'Próxima entrega',
+
+        at_the_door:
+            'Transportadora no endereço',
+
+        receiver_absent:
+            'Comprador ausente',
+
+        bad_address:
+            'Endereço incorreto',
+
+        closed_by_user:
+            'Envio encerrado'
+    };
+
+
+    if (
+        substatusMap[
+            substatus
+        ]
+    ) {
+
+        return substatusMap[
+            substatus
+        ];
+    }
+
+
+    // =====================================================
+    // STATUS PRINCIPAIS
+    // =====================================================
+
+    const statusMap = {
+
+        pending:
+            'Pendente',
+
+        handling:
+            'Em preparação',
+
+        ready_to_ship:
+            'Pronto para envio',
+
+        shipped:
+            'A caminho',
+
+        delivered:
+            'Entregue',
+
+        not_delivered:
+            'Não entregue',
+
+        cancelled:
+            'Envio cancelado',
+
+        canceled:
+            'Envio cancelado',
+
+        to_be_agreed:
+            'Entrega a combinar'
+    };
+
+
+    return (
+        statusMap[
+            status
+        ] ||
+        status ||
+        'Não informado'
+    );
+}
+
+
+// =========================================================
+// MOTIVO DO CANCELAMENTO
+// =========================================================
+
+function traduzirMotivoCancelamentoNFE(
+    motivo
+) {
+
+    motivo =
+        String(
+            motivo ||
+            ''
+        )
+            .trim()
+            .toUpperCase();
+
+
+    if (
+        !motivo
+    ) {
+
+        return 'Motivo não informado pelo Mercado Livre';
+    }
+
+
+    const mapa = {
+
+        OUT_OF_STOCK:
+            'Sem estoque',
+
+        BUYER_NOT_ENOUGH_MONEY:
+            'Comprador sem saldo/dinheiro suficiente',
+
+        BUYER_REGRETS:
+            'Comprador se arrependeu da compra',
+
+        SELLER_REGRETS:
+            'Vendedor desistiu da venda',
+
+        BUYER_DID_NOT_ANSWER:
+            'Comprador não respondeu',
+
+        SELLER_DID_NOT_ANSWER:
+            'Vendedor não respondeu',
+
+        THEY_NOT_HONORING_POLICIES:
+            'Uma das partes não cumpriu as políticas',
+
+        OTHER_MY_RESPONSIBILITY:
+            'Outro motivo de responsabilidade própria',
+
+        OTHER_THEIR_RESPONSIBILITY:
+            'Outro motivo de responsabilidade da outra parte',
+
+        DUBIOUS_BUYER:
+            'Comprador considerado não confiável',
+
+        UNAVAILABLE_PRODUCT:
+            'Produto indisponível',
+
+        WRONG_RECEIVER_ADDRESS:
+            'Endereço de entrega incorreto',
+
+        HIGH_SHIPMENT_COST:
+            'Custo de envio muito alto',
+
+        WRONG_SHIPMENT_COST:
+            'Custo de envio calculado incorretamente',
+
+        UNPRINTED_LABEL:
+            'Não foi possível imprimir a etiqueta',
+
+        UNWITHDRAWN_PRODUCT_BY_DELIVER_COMPANY:
+            'Transportadora não coletou o produto',
+
+        DENIED_PACKAGE:
+            'Transportadora recusou o pacote',
+
+        UNABLE_TO_READ_LABEL:
+            'Transportadora não conseguiu ler a etiqueta',
+
+        SHIPMENT_PROBLEM_OTHER:
+            'Outro problema no envio',
+
+        DELIVERY_COMPANY_PROBLEM_OTHER:
+            'Problema com a transportadora',
+
+        DESCRIPTION_DIDNT_MATCH_ARTICLE:
+            'Produto não correspondia à descrição',
+
+        BUYER_PAID_BUT_DID_NOT_RECEIVE:
+            'Comprador pagou, mas não recebeu'
+    };
+
+
+    return (
+        mapa[
+            motivo
+        ] ||
+        motivo
+    );
+}
+
+
+// =========================================================
+// FETCH PADRÃO PELO WORKER
+// =========================================================
+
+async function buscarJsonMLDetalhesNFE(
+    url,
+    token,
+    opcoes = {}
+) {
+
+    const proxy =
+        `${window.WORKER_URL}/api/ml/proxy?url=` +
+        `${encodeURIComponent(
+            url
+        )}` +
+        `&token=${encodeURIComponent(
+            token
+        )}`;
+
+
+    const response =
+        await fetch(
+            proxy,
+            {
+                method:
+                    'GET',
+
+                headers: {
+                    'Accept':
+                        'application/json',
+
+                    'x-format-new':
+                        'true'
+                },
+
+                cache:
+                    'no-store'
+            }
+        );
+
+
+    if (
+        response.status ===
+            404 &&
+        opcoes
+            .aceitar404 ===
+            true
+    ) {
+
+        return null;
+    }
+
+
+    const texto =
+        await response
+            .text();
+
+
+    let dados =
+        null;
+
+
+    try {
+
+        dados =
+            texto
+                ? JSON.parse(
+                    texto
+                )
+                : null;
+
+    } catch (
+        error
+    ) {
+
+        dados =
+            null;
+    }
+
+
+    if (
+        !response.ok
+    ) {
+
+        throw new Error(
+            dados
+                ?.message ||
+            dados
+                ?.error ||
+            `Mercado Livre HTTP ${response.status}`
+        );
+    }
+
+
+    return dados;
+}
+
+
+// =========================================================
+// LOCALIZAR VENDA NA MEMÓRIA
+// =========================================================
+
+function localizarVendaDetalhesNFE(
+    vendaId
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    const listas = [
+
+        Array.isArray(
+            vendasPendentes
+        )
+            ? vendasPendentes
+            : [],
+
+        Array.isArray(
+            window
+                ._vendasTabelaNFEBase
+        )
+            ? window
+                ._vendasTabelaNFEBase
+            : []
+    ];
+
+
+    for (
+        const lista
+        of listas
+    ) {
+
+        for (
+            const venda
+            of lista
+        ) {
+
+            const id =
+                normalizarOrderIdML(
+                    venda
+                        ?.id_venda_ml ||
+                    venda
+                        ?.id
+                );
+
+
+            if (
+                id ===
+                vendaId
+            ) {
+
+                return venda;
+            }
+
+
+            if (
+                Array.isArray(
+                    venda
+                        ?._order_ids_pack
+                ) &&
+                venda
+                    ._order_ids_pack
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .includes(
+                        vendaId
+                    )
+            ) {
+
+                return venda;
+            }
+        }
+    }
+
+
+    return null;
+}
+
+
+// =========================================================
+// PERFIL DO COMPRADOR
+//
+// Também verifica se esse comprador possui anúncios.
+// =========================================================
+
+async function buscarPerfilCompradorNFE(
+    buyerId,
+    token
+) {
+
+    if (
+        !buyerId
+    ) {
+
+        return null;
+    }
+
+
+    buyerId =
+        String(
+            buyerId
+        );
+
+
+    let perfil =
+        null;
+
+
+    try {
+
+        perfil =
+            await buscarJsonMLDetalhesNFE(
+
+                `https://api.mercadolibre.com/users/${encodeURIComponent(
+                    buyerId
+                )}`,
+
+                token
+            );
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            `⚠️ Perfil comprador ${buyerId}:`,
+            error
+        );
+    }
+
+
+    let totalAnuncios =
+        null;
+
+
+    try {
+
+        const anuncios =
+            await buscarJsonMLDetalhesNFE(
+
+                `https://api.mercadolibre.com/users/${encodeURIComponent(
+                    buyerId
+                )}/items/search?status=active&limit=1`,
+
+                token
+            );
+
+
+        totalAnuncios =
+            Number(
+                anuncios
+                    ?.paging
+                    ?.total ??
+                (
+                    Array.isArray(
+                        anuncios?.results
+                    )
+                        ? anuncios.results.length
+                        : 0
+                )
+            );
+
+
+    } catch (
+        error
+    ) {
+
+        console.debug(
+            `ℹ️ Comprador ${buyerId}: não foi possível consultar anúncios.`,
+            error
+        );
+    }
+
+
+    const temAnuncios =
+        Number.isFinite(
+            totalAnuncios
+        )
+
+            ? totalAnuncios >
+                0
+
+            : null;
+
+
+    // =====================================================
+    // LINK DIRETO PARA OS ANÚNCIOS DO USUÁRIO
+    // =====================================================
+
+    const urlAnuncios =
+        temAnuncios ===
+            true
+
+            ? `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
+                buyerId
+            )}`
+
+            : null;
+
+
+    return {
+
+        id:
+            buyerId,
+
+        nickname:
+            perfil
+                ?.nickname ||
+            '',
+
+        permalink:
+            perfil
+                ?.permalink ||
+            null,
+
+        site_id:
+            perfil
+                ?.site_id ||
+            'MLB',
+
+        total_anuncios:
+            totalAnuncios,
+
+        tem_anuncios:
+            temAnuncios,
+
+        url_anuncios:
+            urlAnuncios
+    };
+}
+
+
+// =========================================================
+// DETALHES DO ENVIO
+// =========================================================
+
+async function buscarDetalhesEnvioNFE(
+    shipmentId,
+    token
+) {
+
+    if (
+        !shipmentId
+    ) {
+
+        return {
+            existe:
+                false,
+
+            shipment:
+                null,
+
+            historico:
+                [],
+
+            carrier:
+                null
+        };
+    }
+
+
+    shipmentId =
+        String(
+            shipmentId
+        );
+
+
+    const shipment =
+        await buscarJsonMLDetalhesNFE(
+
+            `https://api.mercadolibre.com/shipments/${encodeURIComponent(
+                shipmentId
+            )}`,
+
+            token
+        );
+
+
+    // =====================================================
+    // HISTÓRICO + TRANSPORTADORA
+    // =====================================================
+
+    const [
+        historicoResposta,
+        carrier
+    ] =
+        await Promise.all([
+
+            buscarJsonMLDetalhesNFE(
+
+                `https://api.mercadolibre.com/shipments/${encodeURIComponent(
+                    shipmentId
+                )}/history`,
+
+                token,
+
+                {
+                    aceitar404:
+                        true
+                }
+            )
+                .catch(
+                    error => {
+
+                        console.warn(
+                            '⚠️ Histórico shipment:',
+                            error
+                        );
+
+                        return null;
+                    }
+                ),
+
+
+            buscarJsonMLDetalhesNFE(
+
+                `https://api.mercadolibre.com/shipments/${encodeURIComponent(
+                    shipmentId
+                )}/carrier`,
+
+                token,
+
+                {
+                    aceitar404:
+                        true
+                }
+            )
+                .catch(
+                    error => {
+
+                        console.debug(
+                            'ℹ️ Carrier não disponível:',
+                            error
+                        );
+
+                        return null;
+                    }
+                )
+        ]);
+
+
+    let historico =
+        [];
+
+
+    if (
+        Array.isArray(
+            historicoResposta
+        )
+    ) {
+
+        historico =
+            historicoResposta;
+
+    } else if (
+        Array.isArray(
+            historicoResposta
+                ?.history
+        )
+    ) {
+
+        historico =
+            historicoResposta
+                .history;
+    }
+
+
+    historico =
+        historico
+            .filter(
+                item =>
+                    item &&
+                    (
+                        item.status ||
+                        item.substatus
+                    )
+            )
+            .sort(
+                (
+                    a,
+                    b
+                ) => {
+
+                    const da =
+                        new Date(
+                            a.date ||
+                            0
+                        )
+                            .getTime();
+
+
+                    const db =
+                        new Date(
+                            b.date ||
+                            0
+                        )
+                            .getTime();
+
+
+                    return da -
+                        db;
+                }
+            );
+
+
+    const statusAtual =
+        String(
+            shipment
+                ?.status ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    const substatusAtual =
+        String(
+            shipment
+                ?.substatus ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    // =====================================================
+    // IDENTIFICAR EVENTO DE DESPACHO
+    //
+    // FULL:
+    // shipped
+    //
+    // Cross Docking:
+    // ready_to_ship + picked_up / authorized_by_carrier
+    // =====================================================
+
+    const eventoDespacho =
+        historico.find(
+            evento => {
+
+                const status =
+                    String(
+                        evento
+                            ?.status ||
+                        ''
+                    )
+                        .toLowerCase();
+
+
+                const substatus =
+                    String(
+                        evento
+                            ?.substatus ||
+                        ''
+                    )
+                        .toLowerCase();
+
+
+                return (
+
+                    status ===
+                        'shipped' ||
+
+                    (
+                        status ===
+                            'ready_to_ship' &&
+                        [
+                            'picked_up',
+                            'authorized_by_carrier',
+                            'in_hub'
+                        ].includes(
+                            substatus
+                        )
+                    )
+                );
+            }
+        ) ||
+        null;
+
+
+    const eventoEntregue =
+        historico.find(
+            evento =>
+                String(
+                    evento
+                        ?.status ||
+                    ''
+                )
+                    .toLowerCase() ===
+                'delivered'
+        ) ||
+        null;
+
+
+    const foiEnviado =
+
+        Boolean(
+            eventoDespacho
+        ) ||
+
+        [
+            'shipped',
+            'delivered',
+            'not_delivered'
+        ].includes(
+            statusAtual
+        ) ||
+
+        (
+            statusAtual ===
+                'ready_to_ship' &&
+            [
+                'picked_up',
+                'authorized_by_carrier',
+                'in_hub'
+            ].includes(
+                substatusAtual
+            )
+        );
+
+
+    // =====================================================
+    // EVENTO EM QUE O ML LIBEROU A ETAPA DA NF-E
+    // =====================================================
+
+    const eventoInvoicePending =
+        historico.find(
+            evento =>
+
+                String(
+                    evento
+                        ?.status ||
+                    ''
+                )
+                    .toLowerCase() ===
+                    'ready_to_ship' &&
+
+                String(
+                    evento
+                        ?.substatus ||
+                    ''
+                )
+                    .toLowerCase() ===
+                    'invoice_pending'
+        ) ||
+        null;
+
+
+    // =====================================================
+    // ÚLTIMA ATUALIZAÇÃO
+    // =====================================================
+
+    const ultimoHistorico =
+        historico.length >
+            0
+
+            ? historico[
+                historico.length -
+                1
+            ]
+
+            : null;
+
+
+    const ultimaAtualizacao =
+
+        shipment
+            ?.last_updated ||
+
+        shipment
+            ?.date_last_updated ||
+
+        ultimoHistorico
+            ?.date ||
+
+        null;
+
+
+    // =====================================================
+    // PRAZOS
+    // =====================================================
+
+    const prazoDespacho =
+
+        shipment
+            ?.lead_time
+            ?.estimated_handling_limit
+            ?.date ||
+
+        shipment
+            ?.shipping_option
+            ?.estimated_handling_limit
+            ?.date ||
+
+        shipment
+            ?.estimated_handling_limit
+            ?.date ||
+
+        null;
+
+
+    const previsaoEntrega =
+
+        shipment
+            ?.lead_time
+            ?.estimated_delivery_time
+            ?.date ||
+
+        shipment
+            ?.shipping_option
+            ?.estimated_delivery_time
+            ?.date ||
+
+        shipment
+            ?.estimated_delivery_time
+            ?.date ||
+
+        shipment
+            ?.estimated_delivery_final ||
+
+        shipment
+            ?.estimated_delivery_limit ||
+
+        null;
+
+
+    return {
+
+        existe:
+            true,
+
+        id:
+            shipmentId,
+
+        shipment,
+
+        historico,
+
+        carrier,
+
+        status:
+            statusAtual,
+
+        substatus:
+            substatusAtual,
+
+        status_nome:
+            traduzirStatusEnvioDetalhesNFE(
+                statusAtual,
+                substatusAtual
+            ),
+
+        foi_enviado:
+            foiEnviado,
+
+        data_envio:
+            eventoDespacho
+                ?.date ||
+            shipment
+                ?.date_shipped ||
+            null,
+
+        entregue:
+            statusAtual ===
+                'delivered',
+
+        data_entrega:
+            eventoEntregue
+                ?.date ||
+            shipment
+                ?.date_delivered ||
+            null,
+
+        ultima_atualizacao:
+            ultimaAtualizacao,
+
+        prazo_despacho:
+            prazoDespacho,
+
+        previsao_entrega:
+            previsaoEntrega,
+
+        tracking_number:
+            shipment
+                ?.tracking_number ||
+            null,
+
+        carrier_nome:
+            carrier
+                ?.name ||
+            null,
+
+        carrier_url:
+            carrier
+                ?.url ||
+            null,
+
+        evento_invoice_pending:
+            eventoInvoicePending,
+
+        liberacao_fiscal_em:
+            eventoInvoicePending
+                ?.date ||
+            null
+    };
+}
+
+
+// =========================================================
+// FEEDBACK / MOTIVO DO CANCELAMENTO
+// =========================================================
+
+async function buscarMotivoCancelamentoVendaNFE(
+    orderId,
+    token
+) {
+
+    orderId =
+        normalizarOrderIdML(
+            orderId
+        );
+
+
+    if (
+        !orderId
+    ) {
+
+        return {
+            motivo_codigo:
+                null,
+
+            motivo:
+                'Motivo não informado pelo Mercado Livre',
+
+            feedback:
+                null
+        };
+    }
+
+
+    try {
+
+        const feedback =
+            await buscarJsonMLDetalhesNFE(
+
+                `https://api.mercadolibre.com/orders/${encodeURIComponent(
+                    orderId
+                )}/feedback`,
+
+                token,
+
+                {
+                    aceitar404:
+                        true
+                }
+            );
+
+
+        if (
+            !feedback
+        ) {
+
+            return {
+                motivo_codigo:
+                    null,
+
+                motivo:
+                    'Motivo não informado pelo Mercado Livre',
+
+                feedback:
+                    null
+            };
+        }
+
+
+        const motivoCodigo =
+
+            feedback
+                ?.sale
+                ?.reason ||
+
+            feedback
+                ?.purchase
+                ?.reason ||
+
+            feedback
+                ?.reason ||
+
+            null;
+
+
+        return {
+
+            motivo_codigo:
+                motivoCodigo,
+
+            motivo:
+                traduzirMotivoCancelamentoNFE(
+                    motivoCodigo
+                ),
+
+            mensagem:
+                feedback
+                    ?.sale
+                    ?.message ||
+                feedback
+                    ?.purchase
+                    ?.message ||
+                feedback
+                    ?.message ||
+                null,
+
+            feedback
+        };
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            `⚠️ Feedback venda ${orderId}:`,
+            error
+        );
+
+
+        return {
+
+            motivo_codigo:
+                null,
+
+            motivo:
+                'Motivo não informado pelo Mercado Livre',
+
+            feedback:
+                null
+        };
+    }
+}
+
+
+// =========================================================
+// LIBERAÇÃO PARA NF-E
+// =========================================================
+
+function calcularLiberacaoEmissaoVendaNFE(
+    vendaLocal,
+    order,
+    envio,
+    opcoes = {}
+) {
+
+    const isFull =
+        opcoes.isFull ===
+            true;
+
+
+    const temNfe =
+        opcoes.temNfe ===
+            true;
+
+
+    const cancelada =
+        opcoes.cancelada ===
+            true;
+
+
+    const separado =
+
+        isFull ===
+            true ||
+
+        vendaEstaSeparadaNFE(
+            vendaLocal
+        );
+
+
+    const info =
+        parseInformacoesEnvioNFE(
+            vendaLocal
+        );
+
+
+    const statusLiberacaoLocal =
+        String(
+
+            vendaLocal
+                ?.status_liberacao ||
+
+            info
+                ?.status_liberacao ||
+
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    const dataLiberacaoLocal =
+
+        vendaLocal
+            ?.data_liberacao ||
+
+        info
+            ?.data_liberacao ||
+
+        null;
+
+
+    const statusShipment =
+        String(
+            envio
+                ?.status ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    const substatusShipment =
+        String(
+            envio
+                ?.substatus ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    // =====================================================
+    // FULL
+    // =====================================================
+
+    if (
+        isFull
+    ) {
+
+        return {
+
+            ml_liberou:
+                true,
+
+            pode_emitir_sistema:
+                false,
+
+            tipo:
+                'full',
+
+            titulo:
+                'NF-e automática pelo Mercado Livre',
+
+            mensagem:
+                'Venda FULL. A NF-e não deve ser emitida manualmente pelo sistema.',
+
+            liberado_em:
+                null,
+
+            separado:
+                true
+        };
+    }
+
+
+    // =====================================================
+    // CANCELADA
+    // =====================================================
+
+    if (
+        cancelada
+    ) {
+
+        return {
+
+            ml_liberou:
+                false,
+
+            pode_emitir_sistema:
+                false,
+
+            tipo:
+                'cancelada',
+
+            titulo:
+                'Venda cancelada',
+
+            mensagem:
+                'A emissão está bloqueada porque a venda foi cancelada.',
+
+            liberado_em:
+                null,
+
+            separado
+        };
+    }
+
+
+    // =====================================================
+    // JÁ EMITIDA
+    // =====================================================
+
+    if (
+        temNfe
+    ) {
+
+        return {
+
+            ml_liberou:
+                true,
+
+            pode_emitir_sistema:
+                false,
+
+            tipo:
+                'emitida',
+
+            titulo:
+                'NF-e já emitida',
+
+            mensagem:
+                'Esta venda já possui NF-e emitida pelo sistema.',
+
+            liberado_em:
+
+                envio
+                    ?.liberacao_fiscal_em ||
+
+                dataLiberacaoLocal ||
+
+                null,
+
+            separado
+        };
+    }
+
+
+    // =====================================================
+    // ML ESTÁ AGUARDANDO A NF-E
+    //
+    // É O ESTADO MAIS FORTE DE LIBERAÇÃO.
+    // =====================================================
+
+    const mlAguardandoNfe =
+
+        statusShipment ===
+            'ready_to_ship' &&
+
+        substatusShipment ===
+            'invoice_pending';
+
+
+    // =====================================================
+    // SINAL JÁ EXISTENTE NO SEU CACHE
+    // =====================================================
+
+    const liberadoLocal =
+        [
+            'liberado',
+            'released'
+        ].includes(
+            statusLiberacaoLocal
+        );
+
+
+    const mlLiberou =
+        mlAguardandoNfe ||
+        liberadoLocal;
+
+
+    // =====================================================
+    // ML JÁ PASSOU DA ETAPA DA NF-E
+    //
+    // Pode significar que documento fiscal já foi enviado.
+    // =====================================================
+
+    const fiscalJaProcessadoML =
+
+        statusShipment ===
+            'ready_to_ship' &&
+
+        [
+            'ready_to_print',
+            'printed'
+        ].includes(
+            substatusShipment
+        );
+
+
+    if (
+        fiscalJaProcessadoML
+    ) {
+
+        return {
+
+            ml_liberou:
+                true,
+
+            pode_emitir_sistema:
+                false,
+
+            tipo:
+                'fiscal_processado_ml',
+
+            titulo:
+                'Etapa fiscal já processada no Mercado Livre',
+
+            mensagem:
+                'O Mercado Livre já passou da etapa invoice_pending. Confira se já existe documento fiscal vinculado antes de emitir novamente.',
+
+            liberado_em:
+
+                envio
+                    ?.liberacao_fiscal_em ||
+
+                dataLiberacaoLocal ||
+
+                null,
+
+            separado
+        };
+    }
+
+
+    // =====================================================
+    // LIBERADA PELO ML MAS AINDA NÃO SEPARADA
+    // =====================================================
+
+    if (
+        mlLiberou &&
+        !separado
+    ) {
+
+        return {
+
+            ml_liberou:
+                true,
+
+            pode_emitir_sistema:
+                false,
+
+            tipo:
+                'aguardando_separacao',
+
+            titulo:
+                'Mercado Livre liberou a NF-e',
+
+            mensagem:
+                'O ML já liberou o faturamento, mas o produto ainda precisa ser marcado como Separado no sistema.',
+
+            liberado_em:
+
+                envio
+                    ?.liberacao_fiscal_em ||
+
+                dataLiberacaoLocal ||
+
+                null,
+
+            separado:
+                false
+        };
+    }
+
+
+    // =====================================================
+    // LIBERADA E SEPARADA
+    // =====================================================
+
+    if (
+        mlLiberou &&
+        separado
+    ) {
+
+        return {
+
+            ml_liberou:
+                true,
+
+            pode_emitir_sistema:
+                true,
+
+            tipo:
+                'liberada',
+
+            titulo:
+                'Emissão liberada',
+
+            mensagem:
+                'O Mercado Livre está aguardando a NF-e e a venda já foi separada. Pode emitir agora.',
+
+            liberado_em:
+
+                envio
+                    ?.liberacao_fiscal_em ||
+
+                dataLiberacaoLocal ||
+
+                null,
+
+            separado:
+                true
+        };
+    }
+
+
+    // =====================================================
+    // AINDA NÃO LIBERADA
+    // =====================================================
+
+    return {
+
+        ml_liberou:
+            false,
+
+        pode_emitir_sistema:
+            false,
+
+        tipo:
+            'aguardando_ml',
+
+        titulo:
+            'Ainda não liberada pelo Mercado Livre',
+
+        mensagem:
+            'O envio ainda não entrou em ready_to_ship / invoice_pending. Aguarde a liberação do Mercado Livre.',
+
+        liberado_em:
+            null,
+
+        separado
+    };
+}
+
+function garantirCacheDetalhesVendaNFE() {
+
+    if (
+        !(
+            window._cacheDetalhesVendaNFE
+            instanceof Map
+        )
+    ) {
+
+        console.warn(
+            '⚠️ Cache de detalhes NF-e não existia. Recriando Map.'
+        );
+
+
+        window._cacheDetalhesVendaNFE =
+            new Map();
+    }
+
+
+    return window._cacheDetalhesVendaNFE;
+}
+
+// =========================================================
+// BUSCAR DETALHES COMPLETOS
+// =========================================================
+
+async function buscarDetalhesCompletosVendaNFE(
+    vendaId,
+    forcar = false
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        throw new Error(
+            'Venda inválida.'
+        );
+    }
+
+
+    // =====================================================
+    // CACHE CURTO - 2 MINUTOS
+    // =====================================================
+
+    if (
+        !forcar
+    ) {
+
+        const cache =
+            window
+                ._cacheDetalhesVendaNFE
+                .get(
+                    vendaId
+                );
+
+
+        if (
+            cache &&
+            Date.now() -
+                cache.carregado_em <
+                120000
+        ) {
+
+            return cache.dados;
+        }
+    }
+
+
+    const vendaLocal =
+        localizarVendaDetalhesNFE(
+            vendaId
+        );
+
+
+    if (
+        !vendaLocal
+    ) {
+
+        throw new Error(
+            'Venda não localizada na tabela.'
+        );
+    }
+
+
+    const token =
+        await obterTokenMLNFE();
+
+
+    if (
+        !token
+    ) {
+
+        throw new Error(
+            'Token Mercado Livre não disponível.'
+        );
+    }
+
+
+    // =====================================================
+    // ORDERS DO PACK
+    // =====================================================
+
+    const orderIds =
+        [
+            ...new Set(
+                (
+                    Array.isArray(
+                        vendaLocal
+                            ._order_ids_pack
+                    ) &&
+                    vendaLocal
+                        ._order_ids_pack
+                        .length >
+                        0
+
+                        ? vendaLocal
+                            ._order_ids_pack
+
+                        : [
+                            vendaId
+                        ]
+                )
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(
+                        Boolean
+                    )
+            )
+        ];
+
+
+    const orders =
+        await Promise.all(
+            orderIds.map(
+                async orderId => {
+
+                    try {
+
+                        return await buscarJsonMLDetalhesNFE(
+
+                            `https://api.mercadolibre.com/orders/${encodeURIComponent(
+                                orderId
+                            )}`,
+
+                            token
+                        );
+
+
+                    } catch (
+                        error
+                    ) {
+
+                        console.warn(
+                            `⚠️ Order ${orderId}:`,
+                            error
+                        );
+
+
+                        return null;
+                    }
+                }
+            )
+        );
+
+
+    const ordersValidas =
+        orders.filter(
+            Boolean
+        );
+
+
+    if (
+        ordersValidas.length ===
+        0
+    ) {
+
+        throw new Error(
+            'Não foi possível consultar a venda no Mercado Livre.'
+        );
+    }
+
+
+    const orderPrincipal =
+        ordersValidas.find(
+            order =>
+                normalizarOrderIdML(
+                    order.id
+                ) ===
+                vendaId
+        ) ||
+        ordersValidas[0];
+
+
+    const buyerId =
+        orderPrincipal
+            ?.buyer
+            ?.id ||
+        vendaLocal
+            ?.buyer
+            ?.id ||
+        null;
+
+
+    const shipmentId =
+
+        obterShipmentIdNFE(
+            vendaLocal
+        ) ||
+
+        orderPrincipal
+            ?.shipping
+            ?.id ||
+
+        ordersValidas
+            .map(
+                order =>
+                    order
+                        ?.shipping
+                        ?.id
+            )
+            .find(
+                Boolean
+            ) ||
+
+        null;
+
+
+    const isFull =
+
+        vendaLocal
+            ?._is_full ===
+            true ||
+
+        detectarVendaFullNFE(
+            vendaLocal
+        ) ||
+
+        ordersValidas.some(
+            order =>
+                isFullByAnyField(
+                    order
+                )
+        );
+
+
+    const temNfe =
+        Boolean(
+            vendaLocal
+                ?._tem_nfe
+        );
+
+
+    const canceladaLocal =
+        vendaEstaCanceladaNFE(
+            vendaLocal
+        );
+
+
+    const canceladas =
+        ordersValidas.filter(
+            order =>
+                [
+                    'cancelled',
+                    'canceled'
+                ].includes(
+                    String(
+                        order
+                            ?.status ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase()
+                )
+        );
+
+
+    const cancelada =
+        canceladaLocal ||
+        canceladas.length >
+            0;
+
+
+    // =====================================================
+    // PERFIL + ENVIO
+    // =====================================================
+
+    const [
+        perfilComprador,
+        envio
+    ] =
+        await Promise.all([
+
+            buscarPerfilCompradorNFE(
+                buyerId,
+                token
+            ),
+
+            buscarDetalhesEnvioNFE(
+                shipmentId,
+                token
+            )
+                .catch(
+                    error => {
+
+                        console.warn(
+                            '⚠️ Detalhes de envio:',
+                            error
+                        );
+
+
+                        return {
+                            existe:
+                                false,
+
+                            historico:
+                                []
+                        };
+                    }
+                )
+        ]);
+
+
+    // =====================================================
+    // CANCELAMENTOS
+    // =====================================================
+
+    const detalhesCancelamentos =
+        [];
+
+
+    if (
+        cancelada
+    ) {
+
+        const ordersCancelamento =
+            canceladas.length >
+                0
+
+                ? canceladas
+
+                : [
+                    orderPrincipal
+                ];
+
+
+        for (
+            const order
+            of ordersCancelamento
+        ) {
+
+            const orderId =
+                normalizarOrderIdML(
+                    order
+                        ?.id
+                );
+
+
+            const feedback =
+                await buscarMotivoCancelamentoVendaNFE(
+                    orderId,
+                    token
+                );
+
+
+            detalhesCancelamentos.push({
+
+                order_id:
+                    orderId,
+
+                cancelado_em:
+
+                    order
+                        ?.date_closed ||
+
+                    order
+                        ?.date_last_updated ||
+
+                    vendaLocal
+                        ?._venda_cancelada_em ||
+
+                    vendaLocal
+                        ?.venda_cancelada_em ||
+
+                    null,
+
+                motivo_codigo:
+                    feedback
+                        .motivo_codigo,
+
+                motivo:
+                    feedback
+                        .motivo,
+
+                mensagem:
+                    feedback
+                        .mensagem ||
+                    null
+            });
+        }
+    }
+
+
+    // =====================================================
+    // LIBERAÇÃO DA NF-E
+    // =====================================================
+
+    const liberacao =
+        calcularLiberacaoEmissaoVendaNFE(
+
+            vendaLocal,
+
+            orderPrincipal,
+
+            envio,
+
+            {
+                isFull,
+                temNfe,
+                cancelada
+            }
+        );
+
+
+    const dados = {
+
+        venda_id:
+            vendaId,
+
+        order_ids:
+            orderIds,
+
+        venda_local:
+            vendaLocal,
+
+        order:
+            orderPrincipal,
+
+        orders:
+            ordersValidas,
+
+        comprador:
+            perfilComprador,
+
+        envio,
+
+        is_full:
+            isFull,
+
+        tem_nfe:
+            temNfe,
+
+        separado:
+            isFull
+                ? true
+                : vendaEstaSeparadaNFE(
+                    vendaLocal
+                ),
+
+        cancelada,
+
+        cancelamentos:
+            detalhesCancelamentos,
+
+        liberacao
+    };
+
+
+    window
+        ._cacheDetalhesVendaNFE
+        .set(
+            vendaId,
+            {
+                carregado_em:
+                    Date.now(),
+
+                dados
+            }
+        );
+
+
+    return dados;
+}
+
+
+// =========================================================
+// MODAL
+// =========================================================
+
+function renderizarModalDetalhesVendaNFE(
+    dados
+) {
+
+    document
+        .getElementById(
+            'modalDetalhesVendaNFE'
+        )
+        ?.remove();
+
+
+    const venda =
+        dados
+            .venda_local ||
+        {};
+
+
+    const order =
+        dados
+            .order ||
+        {};
+
+
+    const comprador =
+        dados
+            .comprador ||
+        {};
+
+
+    const envio =
+        dados
+            .envio ||
+        {};
+
+
+    const liberacao =
+        dados
+            .liberacao ||
+        {};
+
+
+    const clienteNome =
+
+        order
+            ?.buyer
+            ?.nickname ||
+
+        comprador
+            ?.nickname ||
+
+        venda
+            ?.cliente_nome ||
+
+        venda
+            ?.comprador ||
+
+        'Cliente';
+
+
+    const dataVenda =
+
+        order
+            ?.date_created ||
+
+        venda
+            ?.date_created ||
+
+        venda
+            ?.data_venda ||
+
+        null;
+
+
+    // =====================================================
+    // CLIENTE / VENDEDOR
+    // =====================================================
+
+    let clienteHtml = `
+        <div
+            style="
+                font-size:14px;
+                font-weight:700;
+            "
+        >
+            ${escaparHTMLNFE(
+                clienteNome
+            )}
+        </div>
+
+        ${
+            comprador?.id
+                ? `
+                    <div
+                        style="
+                            margin-top:3px;
+                            color:#6c757d;
+                            font-size:11px;
+                        "
+                    >
+                        ID:
+                        ${escaparHTMLNFE(
+                            comprador.id
+                        )}
+                    </div>
+                `
+                : ''
+        }
+    `;
+
+
+    if (
+        comprador
+            ?.tem_anuncios ===
+        true
+    ) {
+
+        clienteHtml += `
+            <div
+                style="
+                    margin-top:8px;
+                    padding:8px 10px;
+                    background:#e8f5e9;
+                    border:1px solid #c8e6c9;
+                    border-radius:7px;
+                "
+            >
+                <div
+                    style="
+                        color:#155724;
+                        font-weight:700;
+                        font-size:12px;
+                    "
+                >
+                    <i class="fas fa-store"></i>
+                    Este cliente também vende no Mercado Livre
+                </div>
+
+                <div
+                    style="
+                        margin-top:3px;
+                        font-size:11px;
+                    "
+                >
+                    Anúncios ativos:
+                    <strong>
+                        ${Number(
+                            comprador.total_anuncios ||
+                            0
+                        )}
+                    </strong>
+                </div>
+
+                <a
+                    href="${escaparHTMLNFE(
+                        comprador.url_anuncios ||
+                        comprador.permalink ||
+                        '#'
+                    )}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="btn btn-sm btn-success"
+                    style="
+                        margin-top:7px;
+                        text-decoration:none;
+                    "
+                >
+                    <i class="fas fa-external-link-alt"></i>
+                    Ver anúncios do cliente
+                </a>
+            </div>
+        `;
+    }
+
+
+    // =====================================================
+    // ENVIO
+    // =====================================================
+
+    let envioHtml = '';
+
+
+    if (
+        !envio
+            ?.existe
+    ) {
+
+        envioHtml = `
+            <div
+                style="
+                    color:#6c757d;
+                    font-size:12px;
+                "
+            >
+                Nenhum shipment disponível para esta venda.
+            </div>
+        `;
+
+
+    } else {
+
+        const corStatus =
+
+            envio.entregue
+
+                ? '#28a745'
+
+                : (
+                    envio.foi_enviado
+                        ? '#007bff'
+                        : '#ffc107'
+                );
+
+
+        const historicoHtml =
+            (
+                Array.isArray(
+                    envio.historico
+                )
+                    ? envio.historico
+                    : []
+            )
+                .map(
+                    evento => `
+                        <div
+                            style="
+                                display:grid;
+                                grid-template-columns:155px 1fr;
+                                gap:8px;
+                                padding:6px 0;
+                                border-bottom:1px solid #f1f3f5;
+                                font-size:11px;
+                            "
+                        >
+                            <div
+                                style="
+                                    color:#6c757d;
+                                    white-space:nowrap;
+                                "
+                            >
+                                ${escaparHTMLNFE(
+                                    formatarDataHoraDetalhesNFE(
+                                        evento.date
+                                    )
+                                )}
+                            </div>
+
+                            <div>
+                                <strong>
+                                    ${escaparHTMLNFE(
+                                        traduzirStatusEnvioDetalhesNFE(
+                                            evento.status,
+                                            evento.substatus
+                                        )
+                                    )}
+                                </strong>
+
+                                <div
+                                    style="
+                                        font-size:9px;
+                                        color:#adb5bd;
+                                    "
+                                >
+                                    ${escaparHTMLNFE(
+                                        evento.status ||
+                                        ''
+                                    )}
+
+                                    ${
+                                        evento.substatus
+                                            ? ` / ${escaparHTMLNFE(
+                                                evento.substatus
+                                            )}`
+                                            : ''
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    `
+                )
+                .join(
+                    ''
+                );
+
+
+        envioHtml = `
+            <div
+                style="
+                    display:flex;
+                    align-items:center;
+                    gap:8px;
+                    margin-bottom:10px;
+                    flex-wrap:wrap;
+                "
+            >
+                <span
+                    style="
+                        display:inline-block;
+                        padding:5px 9px;
+                        border-radius:6px;
+                        background:${corStatus};
+                        color:white;
+                        font-size:11px;
+                        font-weight:700;
+                    "
+                >
+                    ${escaparHTMLNFE(
+                        envio.status_nome ||
+                        'Não informado'
+                    )}
+                </span>
+
+                <span
+                    style="
+                        color:#6c757d;
+                        font-size:10px;
+                    "
+                >
+                    Shipment:
+                    ${escaparHTMLNFE(
+                        envio.id ||
+                        ''
+                    )}
+                </span>
+            </div>
+
+            <div
+                style="
+                    display:grid;
+                    grid-template-columns:
+                        repeat(auto-fit,minmax(190px,1fr));
+                    gap:8px;
+                    font-size:11px;
+                "
+            >
+                <div>
+                    <strong>Foi enviado?</strong><br>
+                    ${
+                        envio.foi_enviado
+                            ? '✅ Sim'
+                            : '⏳ Ainda não'
+                    }
+                </div>
+
+                <div>
+                    <strong>Despachado em:</strong><br>
+                    ${escaparHTMLNFE(
+                        formatarDataHoraDetalhesNFE(
+                            envio.data_envio
+                        )
+                    )}
+                </div>
+
+                <div>
+                    <strong>Última atualização:</strong><br>
+                    ${escaparHTMLNFE(
+                        formatarDataHoraDetalhesNFE(
+                            envio.ultima_atualizacao
+                        )
+                    )}
+                </div>
+
+                <div>
+                    <strong>Previsão de entrega:</strong><br>
+                    ${escaparHTMLNFE(
+                        formatarDataHoraDetalhesNFE(
+                            envio.previsao_entrega
+                        )
+                    )}
+                </div>
+            </div>
+
+            ${
+                envio.carrier_nome ||
+                envio.tracking_number
+
+                    ? `
+                        <div
+                            style="
+                                margin-top:10px;
+                                padding:9px;
+                                background:#f8f9fa;
+                                border-radius:7px;
+                                font-size:11px;
+                            "
+                        >
+                            <strong>
+                                Transportadora:
+                            </strong>
+
+                            ${escaparHTMLNFE(
+                                envio.carrier_nome ||
+                                'Não informada'
+                            )}
+
+                            ${
+                                envio.tracking_number
+                                    ? `
+                                        <br>
+                                        <strong>Rastreio:</strong>
+                                        ${escaparHTMLNFE(
+                                            envio.tracking_number
+                                        )}
+                                    `
+                                    : ''
+                            }
+
+                            ${
+                                envio.carrier_url
+                                    ? `
+                                        <br>
+
+                                        <a
+                                            href="${escaparHTMLNFE(
+                                                envio.carrier_url
+                                            )}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            class="btn btn-sm btn-primary"
+                                            style="
+                                                margin-top:7px;
+                                                text-decoration:none;
+                                            "
+                                        >
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            Acompanhar envio
+                                        </a>
+                                    `
+                                    : ''
+                            }
+                        </div>
+                    `
+
+                    : ''
+            }
+
+            ${
+                historicoHtml
+                    ? `
+                        <details
+                            style="
+                                margin-top:12px;
+                            "
+                            open
+                        >
+                            <summary
+                                style="
+                                    cursor:pointer;
+                                    font-weight:700;
+                                    font-size:12px;
+                                "
+                            >
+                                Linha do tempo do envio
+                            </summary>
+
+                            <div
+                                style="
+                                    margin-top:7px;
+                                "
+                            >
+                                ${historicoHtml}
+                            </div>
+                        </details>
+                    `
+                    : ''
+            }
+        `;
+    }
+
+
+    // =====================================================
+    // CANCELAMENTO
+    // =====================================================
+
+    let cancelamentoHtml = '';
+
+
+    if (
+        dados.cancelada
+    ) {
+
+        cancelamentoHtml =
+            (
+                dados.cancelamentos ||
+                []
+            )
+                .map(
+                    cancelamento => `
+                        <div
+                            style="
+                                padding:9px;
+                                border:1px solid #f5c6cb;
+                                background:#fff5f5;
+                                border-radius:7px;
+                                margin-bottom:7px;
+                            "
+                        >
+                            <div
+                                style="
+                                    font-weight:700;
+                                    color:#dc3545;
+                                "
+                            >
+                                🚫 Venda cancelada
+                            </div>
+
+                            <div
+                                style="
+                                    margin-top:5px;
+                                    font-size:11px;
+                                "
+                            >
+                                <strong>Pedido:</strong>
+                                ${escaparHTMLNFE(
+                                    cancelamento.order_id ||
+                                    dados.venda_id
+                                )}
+                            </div>
+
+                            <div
+                                style="
+                                    font-size:11px;
+                                "
+                            >
+                                <strong>Data/hora:</strong>
+                                ${escaparHTMLNFE(
+                                    formatarDataHoraDetalhesNFE(
+                                        cancelamento.cancelado_em
+                                    )
+                                )}
+                            </div>
+
+                            <div
+                                style="
+                                    font-size:11px;
+                                "
+                            >
+                                <strong>Motivo:</strong>
+                                ${escaparHTMLNFE(
+                                    cancelamento.motivo
+                                )}
+                            </div>
+
+                            ${
+                                cancelamento.motivo_codigo
+                                    ? `
+                                        <div
+                                            style="
+                                                font-size:9px;
+                                                color:#6c757d;
+                                            "
+                                        >
+                                            Código:
+                                            ${escaparHTMLNFE(
+                                                cancelamento.motivo_codigo
+                                            )}
+                                        </div>
+                                    `
+                                    : ''
+                            }
+
+                            ${
+                                cancelamento.mensagem
+                                    ? `
+                                        <div
+                                            style="
+                                                margin-top:5px;
+                                                font-size:10px;
+                                                color:#495057;
+                                            "
+                                        >
+                                            ${escaparHTMLNFE(
+                                                cancelamento.mensagem
+                                            )}
+                                        </div>
+                                    `
+                                    : ''
+                            }
+                        </div>
+                    `
+                )
+                .join(
+                    '');
+
+
+        if (
+            !cancelamentoHtml
+        ) {
+
+            cancelamentoHtml = `
+                <div
+                    style="
+                        color:#dc3545;
+                        font-weight:700;
+                    "
+                >
+                    🚫 Venda cancelada
+                </div>
+            `;
+        }
+
+
+    } else {
+
+        cancelamentoHtml = `
+            <div
+                style="
+                    color:#28a745;
+                    font-weight:700;
+                    font-size:12px;
+                "
+            >
+                ✅ Venda não cancelada
+            </div>
+        `;
+    }
+
+
+    // =====================================================
+    // NF-E / LIBERAÇÃO
+    // =====================================================
+
+    let corLiberacao =
+        '#ffc107';
+
+
+    if (
+        liberacao
+            .pode_emitir_sistema ===
+        true
+    ) {
+
+        corLiberacao =
+            '#28a745';
+
+    } else if (
+        [
+            'cancelada',
+            'fiscal_processado_ml'
+        ].includes(
+            liberacao.tipo
+        )
+    ) {
+
+        corLiberacao =
+            '#dc3545';
+
+    } else if (
+        liberacao.tipo ===
+        'full'
+    ) {
+
+        corLiberacao =
+            '#6c757d';
+    }
+
+
+    const liberacaoHtml = `
+        <div
+            style="
+                padding:10px;
+                border:2px solid ${corLiberacao};
+                border-radius:8px;
+                background:#fff;
+            "
+        >
+            <div
+                style="
+                    font-size:13px;
+                    font-weight:800;
+                    color:${corLiberacao};
+                "
+            >
+                ${escaparHTMLNFE(
+                    liberacao.titulo ||
+                    'Situação fiscal'
+                )}
+            </div>
+
+            <div
+                style="
+                    margin-top:6px;
+                    font-size:11px;
+                "
+            >
+                ${escaparHTMLNFE(
+                    liberacao.mensagem ||
+                    ''
+                )}
+            </div>
+
+            <div
+                style="
+                    margin-top:8px;
+                    font-size:11px;
+                "
+            >
+                <strong>
+                    Mercado Livre liberou faturamento?
+                </strong>
+
+                ${
+                    liberacao.ml_liberou
+                        ? '✅ SIM'
+                        : '🔒 NÃO'
+                }
+            </div>
+
+            <div
+                style="
+                    font-size:11px;
+                "
+            >
+                <strong>
+                    Produto separado?
+                </strong>
+
+                ${
+                    liberacao.separado
+                        ? '✅ SIM'
+                        : '❌ NÃO'
+                }
+            </div>
+
+            <div
+                style="
+                    font-size:11px;
+                    margin-top:3px;
+                "
+            >
+                <strong>
+                    Pode emitir pelo sistema agora?
+                </strong>
+
+                ${
+                    liberacao
+                        .pode_emitir_sistema
+                        ? `
+                            <span
+                                style="
+                                    color:#28a745;
+                                    font-weight:800;
+                                "
+                            >
+                                ✅ SIM
+                            </span>
+                        `
+                        : `
+                            <span
+                                style="
+                                    color:#dc3545;
+                                    font-weight:800;
+                                "
+                            >
+                                ❌ NÃO
+                            </span>
+                        `
+                }
+            </div>
+
+            ${
+                liberacao.liberado_em
+                    ? `
+                        <div
+                            style="
+                                margin-top:5px;
+                                font-size:10px;
+                                color:#495057;
+                            "
+                        >
+                            <strong>ML liberou em:</strong>
+
+                            ${escaparHTMLNFE(
+                                formatarDataHoraDetalhesNFE(
+                                    liberacao.liberado_em
+                                )
+                            )}
+                        </div>
+                    `
+                    : ''
+            }
+
+            ${
+                envio?.prazo_despacho
+                    ? `
+                        <div
+                            style="
+                                margin-top:5px;
+                                font-size:10px;
+                                color:#6c757d;
+                            "
+                        >
+                            Prazo de despacho informado pelo ML:
+
+                            <strong>
+                                ${escaparHTMLNFE(
+                                    formatarDataHoraDetalhesNFE(
+                                        envio.prazo_despacho
+                                    )
+                                )}
+                            </strong>
+                        </div>
+                    `
+                    : ''
+            }
+        </div>
+    `;
+
+
+    // =====================================================
+    // MODAL
+    // =====================================================
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalDetalhesVendaNFE';
+
+
+    modal.style.cssText = `
+        position:fixed;
+        inset:0;
+        z-index:100000;
+        background:rgba(0,0,0,.55);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        padding:15px;
+    `;
+
+
+    modal.innerHTML = `
+        <div
+            style="
+                width:min(980px,96vw);
+                max-height:94vh;
+                overflow-y:auto;
+                background:white;
+                border-radius:12px;
+                box-shadow:0 12px 40px rgba(0,0,0,.30);
+            "
+        >
+            <div
+                style="
+                    position:sticky;
+                    top:0;
+                    z-index:2;
+                    background:white;
+                    border-bottom:1px solid #dee2e6;
+                    padding:15px 18px;
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                "
+            >
+                <div>
+                    <div
+                        style="
+                            font-size:18px;
+                            font-weight:800;
+                        "
+                    >
+                        <i class="fas fa-eye"></i>
+                        Detalhes da venda
+                    </div>
+
+                    <div
+                        style="
+                            font-size:11px;
+                            color:#6c757d;
+                            margin-top:2px;
+                        "
+                    >
+                        Pedido:
+                        ${escaparHTMLNFE(
+                            dados.venda_id
+                        )}
+
+                        ${
+                            dados.order_ids.length >
+                                1
+                                ? ` • Pack com ${dados.order_ids.length} pedidos`
+                                : ''
+                        }
+                    </div>
+                </div>
+
+                <button
+                    type="button"
+                    onclick="fecharDetalhesVendaNFE()"
+                    style="
+                        border:0;
+                        background:transparent;
+                        font-size:25px;
+                        cursor:pointer;
+                    "
+                >
+                    &times;
+                </button>
+            </div>
+
+
+            <div
+                style="
+                    padding:18px;
+                    display:grid;
+                    gap:14px;
+                "
+            >
+
+                <!-- PEDIDO -->
+
+                <section
+                    style="
+                        border:1px solid #dee2e6;
+                        border-radius:9px;
+                        padding:13px;
+                    "
+                >
+                    <h4
+                        style="
+                            margin:0 0 10px;
+                        "
+                    >
+                        🛒 Pedido
+                    </h4>
+
+                    <div
+                        style="
+                            display:grid;
+                            grid-template-columns:
+                                repeat(auto-fit,minmax(190px,1fr));
+                            gap:8px;
+                            font-size:11px;
+                        "
+                    >
+                        <div>
+                            <strong>Venda:</strong><br>
+                            ${escaparHTMLNFE(
+                                dados.venda_id
+                            )}
+                        </div>
+
+                        <div>
+                            <strong>Realizada em:</strong><br>
+                            ${escaparHTMLNFE(
+                                formatarDataHoraDetalhesNFE(
+                                    dataVenda
+                                )
+                            )}
+                        </div>
+
+                        <div>
+                            <strong>Status ML:</strong><br>
+                            ${escaparHTMLNFE(
+                                order.status ||
+                                venda.ml_status ||
+                                '-'
+                            )}
+                        </div>
+
+                        <div>
+                            <strong>Modalidade:</strong><br>
+                            ${
+                                dados.is_full
+                                    ? 'FULL'
+                                    : 'Mercado Envios / Local'
+                            }
+                        </div>
+                    </div>
+
+                    ${
+                        dados.order_ids.length >
+                            1
+                            ? `
+                                <div
+                                    style="
+                                        margin-top:8px;
+                                        font-size:10px;
+                                        color:#6c757d;
+                                    "
+                                >
+                                    Pedidos do pacote:
+                                    ${dados.order_ids
+                                        .map(
+                                            escaparHTMLNFE
+                                        )
+                                        .join(
+                                            ' / '
+                                        )}
+                                </div>
+                            `
+                            : ''
+                    }
+                </section>
+
+
+                <!-- CLIENTE -->
+
+                <section
+                    style="
+                        border:1px solid #dee2e6;
+                        border-radius:9px;
+                        padding:13px;
+                    "
+                >
+                    <h4
+                        style="
+                            margin:0 0 10px;
+                        "
+                    >
+                        👤 Cliente
+                    </h4>
+
+                    ${clienteHtml}
+                </section>
+
+
+                <!-- ENVIO -->
+
+                <section
+                    style="
+                        border:1px solid #dee2e6;
+                        border-radius:9px;
+                        padding:13px;
+                    "
+                >
+                    <h4
+                        style="
+                            margin:0 0 10px;
+                        "
+                    >
+                        🚚 Envio
+                    </h4>
+
+                    ${envioHtml}
+                </section>
+
+
+                <!-- CANCELAMENTO -->
+
+                <section
+                    style="
+                        border:1px solid #dee2e6;
+                        border-radius:9px;
+                        padding:13px;
+                    "
+                >
+                    <h4
+                        style="
+                            margin:0 0 10px;
+                        "
+                    >
+                        🚫 Cancelamento
+                    </h4>
+
+                    ${cancelamentoHtml}
+                </section>
+
+
+                <!-- NF-E -->
+
+                <section
+                    style="
+                        border:1px solid #dee2e6;
+                        border-radius:9px;
+                        padding:13px;
+                    "
+                >
+                    <h4
+                        style="
+                            margin:0 0 10px;
+                        "
+                    >
+                        🧾 NF-e / liberação
+                    </h4>
+
+                    ${liberacaoHtml}
+                </section>
+
+
+                <div
+                    style="
+                        display:flex;
+                        justify-content:flex-end;
+                        gap:7px;
+                        padding-top:3px;
+                    "
+                >
+                    <button
+                        type="button"
+                        class="btn btn-primary"
+                        onclick="
+                            abrirDetalhesVendaNFE(
+                                '${escaparHTMLNFE(
+                                    dados.venda_id
+                                )}',
+                                true
+                            )
+                        "
+                    >
+                        <i class="fas fa-sync-alt"></i>
+                        Atualizar agora
+                    </button>
+
+                    <button
+                        type="button"
+                        class="btn btn-secondary"
+                        onclick="
+                            fecharDetalhesVendaNFE()
+                        "
+                    >
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+
+    modal.addEventListener(
+        'click',
+        event => {
+
+            if (
+                event.target ===
+                modal
+            ) {
+
+                fecharDetalhesVendaNFE();
+            }
+        }
+    );
+
+
+    document.body.appendChild(
+        modal
+    );
+}
+
+
+// =========================================================
+// ABRIR
+// =========================================================
+
+async function abrirDetalhesVendaNFE(
+    vendaId,
+    forcar = false
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // MODAL DE LOADING
+    // =====================================================
+
+    document
+        .getElementById(
+            'modalDetalhesVendaNFE'
+        )
+        ?.remove();
+
+
+    const loading =
+        document.createElement(
+            'div'
+        );
+
+
+    loading.id =
+        'modalDetalhesVendaNFE';
+
+
+    loading.style.cssText = `
+        position:fixed;
+        inset:0;
+        z-index:100000;
+        background:rgba(0,0,0,.55);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+    `;
+
+
+    loading.innerHTML = `
+        <div
+            style="
+                background:white;
+                border-radius:10px;
+                padding:25px 35px;
+                min-width:300px;
+                text-align:center;
+                box-shadow:0 10px 35px rgba(0,0,0,.3);
+            "
+        >
+            <i
+                class="fas fa-spinner fa-spin"
+                style="
+                    font-size:28px;
+                    color:#007bff;
+                "
+            ></i>
+
+            <div
+                style="
+                    margin-top:12px;
+                    font-weight:700;
+                "
+            >
+                Buscando detalhes da venda...
+            </div>
+
+            <div
+                style="
+                    margin-top:5px;
+                    color:#6c757d;
+                    font-size:11px;
+                "
+            >
+                Pedido, cliente, envio, cancelamento e liberação da NF-e
+            </div>
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        loading
+    );
+
+
+    try {
+
+        const dados =
+            await buscarDetalhesCompletosVendaNFE(
+                vendaId,
+                forcar
+            );
+
+
+        renderizarModalDetalhesVendaNFE(
+            dados
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Detalhes da venda:',
+            error
+        );
+
+
+        fecharDetalhesVendaNFE();
+
+
+        showToast(
+            `❌ Não foi possível carregar os detalhes: ${error.message}`,
+            'error'
+        );
+    }
+}
+
+
+// =========================================================
+// FECHAR
+// =========================================================
+
+function fecharDetalhesVendaNFE() {
+
+    document
+        .getElementById(
+            'modalDetalhesVendaNFE'
+        )
+        ?.remove();
+}
+
+// =========================================================
+// EXPORTAR
+// =========================================================
+
+window.abrirDetalhesVendaNFE = abrirDetalhesVendaNFE;
+window.fecharDetalhesVendaNFE = fecharDetalhesVendaNFE;
+window.buscarDetalhesCompletosVendaNFE = buscarDetalhesCompletosVendaNFE;
+
+// =========================================================
+// INICIALIZAR
+// =========================================================
+
+instalarDetalhesVendaNFE();
 
 async function sincronizarEstoqueVendaManual(
     vendaId
