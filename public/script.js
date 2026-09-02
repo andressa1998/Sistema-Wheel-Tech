@@ -4056,21 +4056,6 @@ const VIDEO_OS_MAP = {
     nao: 'Não'
 };
 
-// Filtros independentes por coluna, no estilo Excel.
-let filtrosColunasOS = {
-    codigo: '',
-    produto: '',
-    responsavel: '',
-    servico: '',
-    local_foto: '',
-    video: '',
-    urgencia: '',
-    status: '',
-    tempo: '',
-    criado_em: '',
-    links: ''
-};
-
 // ===== VARIÁVEIS PARA NOTIFICAÇÕES DO SISTEMA =====
 let systemNotifications = [];
 let unreadNotifications = 0;
@@ -12136,65 +12121,57 @@ document.addEventListener(
     }
 );
 
+    // ============================================================
+// ORDENAÇÃO DA TABELA DE OS
+// Clique no cabeçalho:
+// 1º clique = crescente
+// 2º clique = decrescente
 // ============================================================
-// FILTROS DE COLUNA DA TABELA DE OS - ESTILO EXCEL
-// ============================================================
 
-function dataLocalFiltroOS(valor) {
-
-    if (!valor) {
-        return '';
-    }
+let ordenacaoTabelaOS = {
+    coluna: null,
+    direcao: 'asc'
+};
 
 
-    const data =
-        new Date(
-            valor
-        );
+window.ordenarTabelaOS =
+    function(coluna) {
+
+        if (
+            ordenacaoTabelaOS.coluna ===
+            coluna
+        ) {
+
+            ordenacaoTabelaOS.direcao =
+                ordenacaoTabelaOS.direcao ===
+                'asc'
+                    ? 'desc'
+                    : 'asc';
+
+        } else {
+
+            ordenacaoTabelaOS.coluna =
+                coluna;
+
+            ordenacaoTabelaOS.direcao =
+                'asc';
+        }
 
 
-    if (
-        isNaN(
-            data.getTime()
-        )
-    ) {
-
-        return '';
-    }
+        paginaAtualOS =
+            1;
 
 
-    const ano =
-        data.getFullYear();
+        renderOrdersTable();
+    };
 
 
-    const mes =
-        String(
-            data.getMonth() + 1
-        ).padStart(
-            2,
-            '0'
-        );
-
-
-    const dia =
-        String(
-            data.getDate()
-        ).padStart(
-            2,
-            '0'
-        );
-
-
-    return `${ano}-${mes}-${dia}`;
-}
-
-
-function obterValorFiltroColunaOS(
+function obterValorOrdenacaoOS(
     order,
-    campo
+    coluna
 ) {
 
-    switch (campo) {
+    switch (coluna) {
 
         case 'codigo':
 
@@ -12224,92 +12201,169 @@ function obterValorFiltroColunaOS(
         case 'servico':
 
             return String(
+                PHOTO_TYPE_MAP[
+                    order.photoType
+                ] ||
                 order.photoType ||
                 ''
             );
 
 
-        case 'local_foto':
+        case 'localFoto':
 
             return String(
+                LOCAL_FOTO_MAP[
+                    order.localFoto
+                ] ||
                 order.localFoto ||
-                'sem_foto'
+                ''
             );
 
 
         case 'video':
 
-            return String(
-                order.video ||
-                'nao'
+            return (
+                order.video ===
+                'sim'
+            )
+                ? 'Sim'
+                : 'Não';
+
+
+        case 'urgencia': {
+
+            /*
+             * Ordem lógica:
+             * Baixa -> Normal -> Alta
+             */
+            const ordemUrgencia = {
+                baixa: 1,
+                normal: 2,
+                alta: 3
+            };
+
+
+            return (
+                ordemUrgencia[
+                    order.urgency
+                ] ||
+                0
             );
+        }
 
 
-        case 'urgencia':
+        case 'status': {
 
-            return String(
-                order.urgency ||
-                'normal'
+            const ordemStatus = {
+                pendente: 1,
+                andamento: 2,
+                concluida: 3
+            };
+
+
+            return (
+                ordemStatus[
+                    order.status
+                ] ||
+                0
             );
+        }
 
 
-        case 'status':
+        case 'tempo': {
 
-            return String(
-                order.status ||
-                'pendente'
-            );
+            /*
+             * Se estiver concluída, usa diferença
+             * entre início e conclusão.
+             *
+             * Se estiver em andamento, usa diferença
+             * entre início e agora.
+             */
+
+            if (!order.startedAt) {
+
+                return 0;
+            }
 
 
-        case 'tempo':
+            const inicio =
+                new Date(
+                    order.startedAt
+                ).getTime();
+
 
             if (
-                order.status ===
-                'concluida'
+                isNaN(
+                    inicio
+                )
             ) {
 
-                return 'concluida';
+                return 0;
+            }
+
+
+            let fim;
+
+
+            if (
+                order.completionDate
+            ) {
+
+                fim =
+                    new Date(
+                        order.completionDate
+                    ).getTime();
+
+            } else {
+
+                fim =
+                    Date.now();
             }
 
 
             if (
-                order.startedAt ||
-                order.status ===
-                'andamento'
+                isNaN(
+                    fim
+                )
             ) {
 
-                return 'em_execucao';
+                return 0;
             }
 
 
-            return 'nao_iniciado';
-
-
-        case 'criado_em':
-
-            return dataLocalFiltroOS(
-                order.createdAt
+            return (
+                fim -
+                inicio
             );
+        }
+
+
+        case 'criadoEm': {
+
+            const data =
+                new Date(
+                    order.createdAt
+                );
+
+
+            return (
+                isNaN(
+                    data.getTime()
+                )
+            )
+                ? 0
+                : data.getTime();
+        }
 
 
         case 'links':
 
             return (
-                (
-                    order.linkAnuncio &&
-                    String(
-                        order.linkAnuncio
-                    ).trim()
-                ) ||
-                (
-                    order.linkNovoAnuncio &&
-                    String(
-                        order.linkNovoAnuncio
-                    ).trim()
-                )
+                order.linkAnuncio ||
+                order.linkNovoAnuncio
             )
-                ? 'com_link'
-                : 'sem_link';
+                ? 1
+                : 0;
 
 
         default:
@@ -12319,336 +12373,167 @@ function obterValorFiltroColunaOS(
 }
 
 
-function obterRotuloFiltroColunaOS(
-    campo,
-    valor
+function compararValoresOrdenacaoOS(
+    valorA,
+    valorB
 ) {
 
-    const mapas = {
-
-        servico:
-            PHOTO_TYPE_MAP,
-
-        local_foto:
-            LOCAL_FOTO_MAP,
-
-        video:
-            VIDEO_OS_MAP,
-
-        urgencia: {
-
-            alta:
-                'Alta',
-
-            normal:
-                'Normal',
-
-            baixa:
-                'Baixa'
-        },
-
-        status: {
-
-            pendente:
-                'Pendente',
-
-            andamento:
-                'Em Andamento',
-
-            concluida:
-                'Concluída'
-        },
-
-        tempo: {
-
-            nao_iniciado:
-                'Não iniciado',
-
-            em_execucao:
-                'Em execução',
-
-            concluida:
-                'Concluída'
-        },
-
-        links: {
-
-            com_link:
-                'Com link',
-
-            sem_link:
-                'Sem link'
-        }
-    };
-
-
+    /*
+     * Número
+     */
     if (
-        campo ===
-        'criado_em'
+        typeof valorA ===
+            'number' &&
+        typeof valorB ===
+            'number'
     ) {
 
-        const partes =
-            String(
-                valor ||
-                ''
-            ).split(
-                '-'
-            );
+        if (
+            valorA <
+            valorB
+        ) {
+
+            return -1;
+        }
 
 
         if (
-            partes.length ===
-            3
+            valorA >
+            valorB
         ) {
 
-            return (
-                `${partes[2]}/` +
-                `${partes[1]}/` +
-                `${partes[0]}`
-            );
+            return 1;
         }
+
+
+        return 0;
     }
 
 
-    return (
-        mapas[
-            campo
-        ]?.[
-            valor
-        ] ||
-        valor ||
-        '-'
-    );
-}
+    /*
+     * Texto
+     */
+    return String(
+        valorA ??
+        ''
+    ).localeCompare(
+        String(
+            valorB ??
+            ''
+        ),
+        'pt-BR',
+        {
+            sensitivity:
+                'base',
 
-
-function preencherFiltrosColunasOS(
-    listaBase
-) {
-
-    const selects =
-        document.querySelectorAll(
-            '#osTable select[data-os-filter]'
-        );
-
-
-    selects.forEach(
-        select => {
-
-            const campo =
-                select.dataset.osFilter;
-
-
-            const selecionado =
-                filtrosColunasOS[
-                    campo
-                ] ||
-                '';
-
-
-            const valores =
-                Array.from(
-                    new Set(
-                        (
-                            listaBase ||
-                            []
-                        )
-                            .map(
-                                order =>
-                                    obterValorFiltroColunaOS(
-                                        order,
-                                        campo
-                                    )
-                            )
-                            .filter(
-                                valor =>
-                                    valor !==
-                                    ''
-                            )
-                    )
-                );
-
-
-            if (
-                selecionado &&
-                !valores.includes(
-                    selecionado
-                )
-            ) {
-
-                valores.push(
-                    selecionado
-                );
-            }
-
-
-            valores.sort(
-                (
-                    a,
-                    b
-                ) =>
-
-                    String(
-                        obterRotuloFiltroColunaOS(
-                            campo,
-                            a
-                        )
-                    ).localeCompare(
-                        String(
-                            obterRotuloFiltroColunaOS(
-                                campo,
-                                b
-                            )
-                        ),
-                        'pt-BR',
-                        {
-                            numeric:
-                                true,
-
-                            sensitivity:
-                                'base'
-                        }
-                    )
-            );
-
-
-            select.innerHTML =
-                '<option value="">Todos</option>' +
-
-                valores
-                    .map(
-                        valor => {
-
-                            const rotulo =
-                                obterRotuloFiltroColunaOS(
-                                    campo,
-                                    valor
-                                );
-
-
-                            return (
-                                `<option value="${escapeHtml(
-                                    String(
-                                        valor
-                                    )
-                                )}">${escapeHtml(
-                                    String(
-                                        rotulo
-                                    )
-                                )}</option>`
-                            );
-                        }
-                    )
-                    .join(
-                        ''
-                    );
-
-
-            select.value =
-                selecionado;
+            numeric:
+                true
         }
     );
 }
 
 
-function aplicarFiltrosColunasOS(
+function aplicarOrdenacaoTabelaOS(
     lista
 ) {
 
-    return (
-        lista ||
-        []
-    ).filter(
-        order => {
+    /*
+     * Nenhuma coluna clicada:
+     * mantém a ordenação padrão antiga.
+     */
+    if (
+        !ordenacaoTabelaOS.coluna
+    ) {
 
-            return Object.entries(
-                filtrosColunasOS
-            ).every(
-                (
-                    [
-                        campo,
-                        valorSelecionado
-                    ]
-                ) => {
-
-                    if (
-                        !valorSelecionado
-                    ) {
-
-                        return true;
-                    }
+        return lista;
+    }
 
 
-                    return (
-                        obterValorFiltroColunaOS(
-                            order,
-                            campo
-                        ) ===
-                        valorSelecionado
-                    );
-                }
+    const coluna =
+        ordenacaoTabelaOS.coluna;
+
+
+    const multiplicador =
+        ordenacaoTabelaOS.direcao ===
+        'desc'
+            ? -1
+            : 1;
+
+
+    return [
+        ...lista
+    ].sort(
+        (
+            a,
+            b
+        ) => {
+
+            const valorA =
+                obterValorOrdenacaoOS(
+                    a,
+                    coluna
+                );
+
+
+            const valorB =
+                obterValorOrdenacaoOS(
+                    b,
+                    coluna
+                );
+
+
+            return (
+                compararValoresOrdenacaoOS(
+                    valorA,
+                    valorB
+                ) *
+                multiplicador
             );
         }
     );
 }
 
 
-window.aplicarFiltroColunaOS =
-    function(
-        campo,
-        valor
-    ) {
+function atualizarIndicadoresOrdenacaoOS() {
 
-        if (
-            !Object.prototype
-                .hasOwnProperty
-                .call(
-                    filtrosColunasOS,
-                    campo
-                )
-        ) {
+    document
+        .querySelectorAll(
+            '#osTable [data-sort-icon]'
+        )
+        .forEach(
+            elemento => {
 
-            return;
-        }
-
-
-        filtrosColunasOS[
-            campo
-        ] =
-            valor ||
-            '';
-
-
-        paginaAtualOS =
-            1;
-
-
-        renderOrdersTable();
-    };
-
-
-window.limparFiltrosColunasOS =
-    function() {
-
-        Object.keys(
-            filtrosColunasOS
-        ).forEach(
-            campo => {
-
-                filtrosColunasOS[
-                    campo
-                ] =
+                elemento.textContent =
                     '';
             }
         );
 
 
-        paginaAtualOS =
-            1;
+    if (
+        !ordenacaoTabelaOS.coluna
+    ) {
+
+        return;
+    }
 
 
-        renderOrdersTable();
-    };
+    const indicador =
+        document.querySelector(
+            `#osTable [data-sort-icon="${ordenacaoTabelaOS.coluna}"]`
+        );
+
+
+    if (
+        indicador
+    ) {
+
+        indicador.textContent =
+            ordenacaoTabelaOS.direcao ===
+            'asc'
+                ? '▲'
+                : '▼';
+    }
+}
 
 function renderOrdersTable() {
 
@@ -12996,22 +12881,6 @@ function renderOrdersTable() {
             );
     }
 
-
-    // ========================================
-    // FILTROS EXCEL
-    // ========================================
-
-    preencherFiltrosColunasOS(
-        filteredOrders
-    );
-
-
-    filteredOrders =
-        aplicarFiltrosColunasOS(
-            filteredOrders
-        );
-
-
     // ========================================
     // ORDENAÇÃO
     // ========================================
@@ -13102,6 +12971,20 @@ function renderOrdersTable() {
             );
         }
     );
+
+    // ========================================
+// ORDENAÇÃO MANUAL PELO CABEÇALHO
+// ========================================
+
+if (
+    ordenacaoTabelaOS.coluna
+) {
+
+    filteredOrders =
+        aplicarOrdenacaoTabelaOS(
+            filteredOrders
+        );
+}
 
 
     todasOSFiltradas =
@@ -14145,6 +14028,8 @@ function renderOrdersTable() {
 
 
     atualizarRelogiosOSTabela();
+
+    atualizarIndicadoresOrdenacaoOS();
 
 
     console.log(

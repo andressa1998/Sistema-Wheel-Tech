@@ -1101,6 +1101,34 @@ body > * {
     text-decoration: underline;
 }
 /* ============================================================
+   ORDENAÇÃO DA TABELA OS PELO CABEÇALHO
+   ============================================================ */
+
+#osTable thead th.os-sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    transition: background-color 0.15s ease;
+}
+
+#osTable thead th.os-sortable:hover {
+    background-color: #e9ecef;
+}
+
+#osTable thead th.os-sortable [data-sort-icon] {
+    display: inline-block;
+    margin-left: 5px;
+    min-width: 12px;
+    color: #00ADEE;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+#osTable thead th.os-sortable:hover [data-sort-icon]:empty::after {
+    content: "↕";
+    color: #adb5bd;
+}
+/* ============================================================
    ALERTA - ESTOQUE DEPÓSITO ZERADO COM ESTOQUE INTERNO
    ============================================================ */
 
@@ -1943,35 +1971,56 @@ body > * {
                 <div class="table-responsive">
                     <table class="table" id="osTable">
                         <thead>
-                            <tr>
-                                <th>Código</th>
-                                <th>Produto</th>
-                                <th>Responsável</th>
-                                <th>Serviço</th>
-                                <th>Local da foto</th>
-                                <th>Vídeo?</th>
-                                <th>Urgência</th>
-                                <th>Status</th>
-                                <th>Tempo Exec.</th>
-                                <th>Criado em</th>
-                                <th>Links</th>
-                                <th>Ações</th>
-                            </tr>
-                            <tr class="os-column-filter-row">
-                                <th><select class="os-column-filter" data-os-filter="codigo" onchange="aplicarFiltroColunaOS('codigo', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="produto" onchange="aplicarFiltroColunaOS('produto', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="responsavel" onchange="aplicarFiltroColunaOS('responsavel', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="servico" onchange="aplicarFiltroColunaOS('servico', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="local_foto" onchange="aplicarFiltroColunaOS('local_foto', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="video" onchange="aplicarFiltroColunaOS('video', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="urgencia" onchange="aplicarFiltroColunaOS('urgencia', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="status" onchange="aplicarFiltroColunaOS('status', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="tempo" onchange="aplicarFiltroColunaOS('tempo', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="criado_em" onchange="aplicarFiltroColunaOS('criado_em', this.value)"><option value="">Todos</option></select></th>
-                                <th><select class="os-column-filter" data-os-filter="links" onchange="aplicarFiltroColunaOS('links', this.value)"><option value="">Todos</option></select></th>
-                                <th><button type="button" class="btn btn-sm btn-secondary os-filter-clear" onclick="limparFiltrosColunasOS()"><i class="fas fa-filter-circle-xmark"></i> Limpar filtros</button></th>
-                            </tr>
-                        </thead>
+    <tr>
+        <th onclick="ordenarTabelaOS('codigo')" class="os-sortable">
+            Código <span data-sort-icon="codigo"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('produto')" class="os-sortable">
+            Produto <span data-sort-icon="produto"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('responsavel')" class="os-sortable">
+            Responsável <span data-sort-icon="responsavel"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('servico')" class="os-sortable">
+            Serviço <span data-sort-icon="servico"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('localFoto')" class="os-sortable">
+            Local da foto <span data-sort-icon="localFoto"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('video')" class="os-sortable">
+            Vídeo? <span data-sort-icon="video"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('urgencia')" class="os-sortable">
+            Urgência <span data-sort-icon="urgencia"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('status')" class="os-sortable">
+            Status <span data-sort-icon="status"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('tempo')" class="os-sortable">
+            Tempo Exec. <span data-sort-icon="tempo"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('criadoEm')" class="os-sortable">
+            Criado em <span data-sort-icon="criadoEm"></span>
+        </th>
+
+        <th onclick="ordenarTabelaOS('links')" class="os-sortable">
+            Links <span data-sort-icon="links"></span>
+        </th>
+
+        <th>
+            Ações
+        </th>
+    </tr>
+</thead>
                         <tbody id="osTableBody"></tbody>
                     </table>
                 </div>
