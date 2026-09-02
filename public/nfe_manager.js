@@ -32640,31 +32640,6 @@ function montarAvisoConcorrenteCacheNFE(
     }
 
 
-    const nickname =
-        String(
-            venda
-                ?.buyer
-                ?.nickname ||
-
-            venda
-                ?.cliente ||
-
-            venda
-                ?.buyer_nickname ||
-
-            ''
-        )
-            .trim();
-
-
-    if (
-        !nickname
-    ) {
-
-        return '';
-    }
-
-
     if (
         !(
             window._cacheConcorrentesNFE
@@ -32676,58 +32651,101 @@ function montarAvisoConcorrenteCacheNFE(
     }
 
 
-    const chaveNickname =
-        `nickname:${nickname.toUpperCase()}`;
+    const nickname =
+        obterNicknameVendaConcorrenteNFE(
+            venda
+        );
+
+
+    const buyerId =
+
+        venda
+            ?.buyer
+            ?.id ||
+
+        venda
+            ?.buyer_id ||
+
+        venda
+            ?.comprador_id ||
+
+        venda
+            ?._buyer_id_concorrente ||
+
+        null;
+
+
+    const sellerId =
+
+        venda
+            ?._seller_id_concorrente ||
+
+        null;
 
 
     let dados =
-        window
-            ._cacheConcorrentesNFE
-            .get(
-                chaveNickname
-            ) ||
         null;
 
 
     // =====================================================
-    // FALLBACK
+    // 1. NICKNAME
     //
-    // Algumas versões antigas do código salvaram o cache
-    // pelo buyer_id em vez do nickname.
+    // É a chave mais importante para a tabela.
     // =====================================================
 
     if (
-        !dados
+        nickname
     ) {
 
-        const buyerId =
-            venda
-                ?.buyer
-                ?.id ||
-
-            venda
-                ?.buyer_id ||
-
-            venda
-                ?._buyer_id_concorrente ||
-
+        dados =
+            window
+                ._cacheConcorrentesNFE
+                .get(
+                    `nickname:${nickname.toUpperCase()}`
+                ) ||
             null;
+    }
 
 
-        if (
-            buyerId
-        ) {
+    // =====================================================
+    // 2. BUYER ID
+    // =====================================================
 
-            dados =
-                window
-                    ._cacheConcorrentesNFE
-                    .get(
-                        String(
-                            buyerId
-                        )
-                    ) ||
-                null;
-        }
+    if (
+        !dados &&
+        buyerId
+    ) {
+
+        dados =
+            window
+                ._cacheConcorrentesNFE
+                .get(
+                    String(
+                        buyerId
+                    )
+                ) ||
+            null;
+    }
+
+
+    // =====================================================
+    // 3. SELLER ID
+    // =====================================================
+
+    if (
+        !dados &&
+        sellerId
+    ) {
+
+        dados =
+            window
+                ._cacheConcorrentesNFE
+                .get(
+                    `seller:${String(
+                        sellerId
+                    )}`
+                ) ||
+            null;
     }
 
 
@@ -32756,12 +32774,37 @@ function montarAvisoConcorrenteCacheNFE(
 
 
     const titulo =
+
         total >
-            0
+        0
 
             ? `${total} anúncio(s) ativo(s) encontrado(s). Clique para verificar.`
 
             : 'Cliente possui anúncios ativos no Mercado Livre.';
+
+
+    const conteudo = `
+        <i class="fas fa-exclamation-triangle"></i>
+        Possível concorrente, verificar
+    `;
+
+
+    const estilo = `
+        display:block;
+        width:max-content;
+        max-width:180px;
+        margin-top:5px;
+        padding:4px 7px;
+        border-radius:5px;
+        background:#fff3cd;
+        border:1px solid #ffc107;
+        color:#856404;
+        font-size:9px;
+        line-height:13px;
+        font-weight:800;
+        white-space:normal;
+        text-decoration:none;
+    `;
 
 
     if (
@@ -32779,28 +32822,10 @@ function montarAvisoConcorrenteCacheNFE(
                 title="${escaparHTMLNFE(
                     titulo
                 )}"
-                onclick="
-                    event.stopPropagation();
-                "
-                style="
-                    display:block;
-                    width:max-content;
-                    max-width:180px;
-                    margin-top:5px;
-                    padding:4px 7px;
-                    border-radius:5px;
-                    background:#fff3cd;
-                    border:1px solid #ffc107;
-                    color:#856404;
-                    font-size:9px;
-                    line-height:13px;
-                    font-weight:800;
-                    white-space:normal;
-                    text-decoration:none;
-                "
+                onclick="event.stopPropagation();"
+                style="${estilo}"
             >
-                <i class="fas fa-exclamation-triangle"></i>
-                possível concorrente - verificar
+                ${conteudo}
             </a>
         `;
     }
@@ -32812,24 +32837,9 @@ function montarAvisoConcorrenteCacheNFE(
             title="${escaparHTMLNFE(
                 titulo
             )}"
-            style="
-                display:block;
-                width:max-content;
-                max-width:180px;
-                margin-top:5px;
-                padding:4px 7px;
-                border-radius:5px;
-                background:#fff3cd;
-                border:1px solid #ffc107;
-                color:#856404;
-                font-size:9px;
-                line-height:13px;
-                font-weight:800;
-                white-space:normal;
-            "
+            style="${estilo}"
         >
-            <i class="fas fa-exclamation-triangle"></i>
-            possível concorrente - verificar
+            ${conteudo}
         </div>
     `;
 }
@@ -35999,10 +36009,7 @@ async function buscarPerfilCompradorNFE(
     token
 ) {
 
-    if (
-        !buyerId
-    ) {
-
+    if (!buyerId) {
         return null;
     }
 
@@ -36010,13 +36017,12 @@ async function buscarPerfilCompradorNFE(
     buyerId =
         String(
             buyerId
-        )
-            .trim();
+        ).trim();
 
 
-    // =====================================================
-    // PERFIL
-    // =====================================================
+    // =========================================================
+    // 1. BUSCAR PERFIL DO USUÁRIO
+    // =========================================================
 
     let perfil =
         null;
@@ -36026,11 +36032,9 @@ async function buscarPerfilCompradorNFE(
 
         perfil =
             await buscarJsonMLDetalhesNFE(
-
                 `https://api.mercadolibre.com/users/${encodeURIComponent(
                     buyerId
                 )}`,
-
                 token
             );
 
@@ -36040,16 +36044,29 @@ async function buscarPerfilCompradorNFE(
     ) {
 
         console.warn(
-            `⚠️ Perfil comprador ${buyerId}:`,
+            `⚠️ [CONCORRENTE] Erro buscando perfil ${buyerId}:`,
             error
         );
+
+
+        return null;
+    }
+
+
+    if (!perfil) {
+
+        console.warn(
+            `⚠️ [CONCORRENTE] Perfil ${buyerId} não retornado.`
+        );
+
+
+        return null;
     }
 
 
     const nickname =
         String(
-            perfil
-                ?.nickname ||
+            perfil?.nickname ||
             ''
         )
             .trim();
@@ -36057,175 +36074,71 @@ async function buscarPerfilCompradorNFE(
 
     const siteId =
         String(
-            perfil
-                ?.site_id ||
+            perfil?.site_id ||
             'MLB'
         )
             .trim()
             .toUpperCase();
 
 
+    console.log(
+        '👤 [CONCORRENTE] Perfil encontrado:',
+        {
+            buyer_id:
+                buyerId,
+
+            nickname,
+
+            site_id:
+                siteId,
+
+            seller_reputation:
+                perfil?.seller_reputation,
+
+            status:
+                perfil?.status
+        }
+    );
+
+
+    // =========================================================
+    // RESULTADOS
+    // =========================================================
+
     let totalAnuncios =
-        null;
+        0;
 
 
     let origemDeteccao =
         null;
 
 
-    // =====================================================
-    // 1. ITENS DO USER_ID
-    // =====================================================
-
-    try {
-
-        const resposta =
-            await buscarJsonMLDetalhesNFE(
-
-                `https://api.mercadolibre.com/users/${encodeURIComponent(
-                    buyerId
-                )}/items/search?status=active&limit=1`,
-
-                token
-            );
+    let consultaAnunciosFuncionou =
+        false;
 
 
-        const total =
-            Number(
-                resposta
-                    ?.paging
-                    ?.total
-            );
-
-
-        if (
-            Number.isFinite(
-                total
-            ) &&
-            total >
-                0
-        ) {
-
-            totalAnuncios =
-                total;
-
-
-            origemDeteccao =
-                'users_items_search';
-        }
-
-
-    } catch (
-        error
-    ) {
-
-        console.debug(
-            `ℹ️ /users/${buyerId}/items/search não confirmou anúncios:`,
-            error
-        );
-    }
-
-
-    // =====================================================
-    // 2. BUSCA PÚBLICA POR SELLER_ID
+    // =========================================================
+    // 2. BUSCA POR NICKNAME
     //
-    // Se a primeira consulta não confirmou, não assumimos
-    // imediatamente que não vende.
-    // =====================================================
+    // Para BIKEROSPORT esta deve ser a principal.
+    // =========================================================
 
-    if (
-        !Number.isFinite(
-            totalAnuncios
-        ) ||
-        totalAnuncios <=
-            0
-    ) {
+    if (nickname) {
 
         try {
 
-            const resposta =
-                await buscarJsonMLDetalhesNFE(
-
-                    `https://api.mercadolibre.com/sites/${encodeURIComponent(
-                        siteId
-                    )}/search?seller_id=${encodeURIComponent(
-                        buyerId
-                    )}&limit=1`,
-
-                    token
-                );
-
-
-            const total =
-                Number(
-                    resposta
-                        ?.paging
-                        ?.total
-                );
-
-
-            if (
-                Number.isFinite(
-                    total
-                ) &&
-                total >
-                    0
-            ) {
-
-                totalAnuncios =
-                    total;
-
-
-                origemDeteccao =
-                    'site_seller_id';
-            }
-
-
-        } catch (
-            error
-        ) {
-
-            console.debug(
-                `ℹ️ Busca pública por seller_id ${buyerId} não confirmou anúncios:`,
-                error
+            console.log(
+                `🔎 [CONCORRENTE] Consultando anúncios pelo nickname ${nickname}...`
             );
-        }
-    }
 
-
-    // =====================================================
-    // 3. BUSCA PÚBLICA POR NICKNAME
-    //
-    // Muito útil justamente para clientes como:
-    //
-    // BIKEROSPORT
-    //
-    // quando sabemos pelo próprio perfil que existe
-    // nickname de vendedor.
-    // =====================================================
-
-    if (
-        (
-            !Number.isFinite(
-                totalAnuncios
-            ) ||
-            totalAnuncios <=
-                0
-        ) &&
-        nickname
-    ) {
-
-        try {
 
             const resposta =
                 await buscarJsonMLDetalhesNFE(
-
                     `https://api.mercadolibre.com/sites/${encodeURIComponent(
                         siteId
                     )}/search?nickname=${encodeURIComponent(
                         nickname
                     )}&limit=1`,
-
                     token
                 );
 
@@ -36238,12 +36151,52 @@ async function buscarPerfilCompradorNFE(
                 );
 
 
+            consultaAnunciosFuncionou =
+                true;
+
+
+            console.log(
+                '🔎 [CONCORRENTE] Resposta nickname:',
+                {
+                    nickname,
+
+                    total:
+
+                        Number.isFinite(
+                            total
+                        )
+
+                            ? total
+
+                            : null,
+
+                    paging:
+                        resposta
+                            ?.paging ||
+
+                        null,
+
+                    quantidade_resultados:
+                        Array.isArray(
+                            resposta
+                                ?.results
+                        )
+
+                            ? resposta
+                                .results
+                                .length
+
+                            : 0
+                }
+            );
+
+
             if (
                 Number.isFinite(
                     total
                 ) &&
                 total >
-                    0
+                0
             ) {
 
                 totalAnuncios =
@@ -36259,66 +36212,495 @@ async function buscarPerfilCompradorNFE(
             error
         ) {
 
-            console.debug(
-                `ℹ️ Busca pública pelo nickname ${nickname} não confirmou anúncios:`,
+            console.warn(
+                `⚠️ [CONCORRENTE] Busca nickname ${nickname} falhou:`,
                 error
             );
         }
     }
 
 
-    // =====================================================
-    // RESULTADO
-    // =====================================================
+    // =========================================================
+    // 3. BUSCA POR SELLER_ID
+    // =========================================================
 
-    const temAnuncios =
-        Number.isFinite(
-            Number(
-                totalAnuncios
-            )
-        ) &&
+    if (
+        totalAnuncios <=
+        0
+    ) {
+
+        try {
+
+            console.log(
+                `🔎 [CONCORRENTE] Consultando seller_id ${buyerId}...`
+            );
+
+
+            const resposta =
+                await buscarJsonMLDetalhesNFE(
+                    `https://api.mercadolibre.com/sites/${encodeURIComponent(
+                        siteId
+                    )}/search?seller_id=${encodeURIComponent(
+                        buyerId
+                    )}&limit=1`,
+                    token
+                );
+
+
+            const total =
+                Number(
+                    resposta
+                        ?.paging
+                        ?.total
+                );
+
+
+            consultaAnunciosFuncionou =
+                true;
+
+
+            console.log(
+                '🔎 [CONCORRENTE] Resposta seller_id:',
+                {
+                    buyerId,
+
+                    total:
+
+                        Number.isFinite(
+                            total
+                        )
+
+                            ? total
+
+                            : null
+                }
+            );
+
+
+            if (
+                Number.isFinite(
+                    total
+                ) &&
+                total >
+                0
+            ) {
+
+                totalAnuncios =
+                    total;
+
+
+                origemDeteccao =
+                    'site_seller_id';
+            }
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                `⚠️ [CONCORRENTE] Busca seller_id ${buyerId} falhou:`,
+                error
+            );
+        }
+    }
+
+
+    // =========================================================
+    // 4. FALLBACK POR SELLERID
+    //
+    // Tenta também sem "_" para cobrir outro formato.
+    // =========================================================
+
+    if (
+        totalAnuncios <=
+        0
+    ) {
+
+        try {
+
+            console.log(
+                `🔎 [CONCORRENTE] Consultando sellerid ${buyerId}...`
+            );
+
+
+            const resposta =
+                await buscarJsonMLDetalhesNFE(
+                    `https://api.mercadolibre.com/sites/${encodeURIComponent(
+                        siteId
+                    )}/search?sellerid=${encodeURIComponent(
+                        buyerId
+                    )}&limit=1`,
+                    token
+                );
+
+
+            const total =
+                Number(
+                    resposta
+                        ?.paging
+                        ?.total
+                );
+
+
+            consultaAnunciosFuncionou =
+                true;
+
+
+            console.log(
+                '🔎 [CONCORRENTE] Resposta sellerid:',
+                {
+                    buyerId,
+
+                    total:
+
+                        Number.isFinite(
+                            total
+                        )
+
+                            ? total
+
+                            : null
+                }
+            );
+
+
+            if (
+                Number.isFinite(
+                    total
+                ) &&
+                total >
+                0
+            ) {
+
+                totalAnuncios =
+                    total;
+
+
+                origemDeteccao =
+                    'site_sellerid';
+            }
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                `⚠️ [CONCORRENTE] Busca sellerid ${buyerId} falhou:`,
+                error
+            );
+        }
+    }
+
+
+    // =========================================================
+    // 5. ITEMS/SEARCH DIRETAMENTE NO USER
+    // =========================================================
+
+    if (
+        totalAnuncios <=
+        0
+    ) {
+
+        try {
+
+            console.log(
+                `🔎 [CONCORRENTE] Consultando items/search ${buyerId}...`
+            );
+
+
+            const resposta =
+                await buscarJsonMLDetalhesNFE(
+                    `https://api.mercadolibre.com/users/${encodeURIComponent(
+                        buyerId
+                    )}/items/search?status=active&limit=1`,
+                    token
+                );
+
+
+            const total =
+                Number(
+                    resposta
+                        ?.paging
+                        ?.total
+                );
+
+
+            consultaAnunciosFuncionou =
+                true;
+
+
+            console.log(
+                '🔎 [CONCORRENTE] Resposta items/search:',
+                {
+                    buyerId,
+
+                    total:
+
+                        Number.isFinite(
+                            total
+                        )
+
+                            ? total
+
+                            : null
+                }
+            );
+
+
+            if (
+                Number.isFinite(
+                    total
+                ) &&
+                total >
+                0
+            ) {
+
+                totalAnuncios =
+                    total;
+
+
+                origemDeteccao =
+                    'users_items_search';
+            }
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                `⚠️ [CONCORRENTE] items/search ${buyerId} falhou:`,
+                error
+            );
+        }
+    }
+
+
+    // =========================================================
+    // 6. IDENTIFICAR SE O PERFIL É/FOI VENDEDOR
+    //
+    // MUITO IMPORTANTE:
+    //
+    // Existem casos onde a busca de anúncios não devolve os
+    // resultados esperados, mas /users/{id} informa claramente
+    // que aquele usuário possui atividade como vendedor.
+    //
+    // Como nosso aviso diz "POSSÍVEL concorrente", nesses casos
+    // também vamos alertar para conferência manual.
+    // =========================================================
+
+    const sellerReputation =
+        perfil
+            ?.seller_reputation ||
+        {};
+
+
+    const transactions =
+        sellerReputation
+            ?.transactions ||
+        {};
+
+
+    const totalTransacoes =
         Number(
-            totalAnuncios
-        ) >
-            0;
+            transactions
+                ?.total ||
+            0
+        );
 
 
-    const urlAnuncios =
+    const transacoesConcluidas =
+        Number(
+            transactions
+                ?.completed ||
+            0
+        );
 
-        temAnuncios
 
-            ? (
-                nickname
+    const transacoesCanceladas =
+        Number(
+            transactions
+                ?.canceled ||
+            0
+        );
 
-                    ? `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
-                        buyerId
-                    )}`
 
-                    : `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
-                        buyerId
-                    )}`
-            )
+    const levelId =
+        sellerReputation
+            ?.level_id ||
+        null;
 
-            : null;
+
+    const powerSellerStatus =
+        sellerReputation
+            ?.power_seller_status ||
+        null;
+
+
+    const sellerStatus =
+        perfil
+            ?.status
+            ?.site_status ||
+        null;
+
+
+    // =========================================================
+    // Também verifica campos que algumas respostas da API
+    // retornam relacionados ao vendedor.
+    // =========================================================
+
+    const possuiSellerReputation =
+        Boolean(
+            perfil
+                ?.seller_reputation &&
+            typeof perfil
+                .seller_reputation ===
+            'object'
+        );
+
+
+    const possuiHistoricoVendedor =
+
+        totalTransacoes >
+        0 ||
+
+        transacoesConcluidas >
+        0 ||
+
+        Boolean(
+            levelId
+        ) ||
+
+        Boolean(
+            powerSellerStatus
+        );
 
 
     console.log(
-        '🕵️ [CONCORRENTE NFE]',
+        '🏪 [CONCORRENTE] Análise de vendedor:',
         {
-
             buyer_id:
                 buyerId,
 
             nickname,
 
-            site_id:
-                siteId,
+            possui_seller_reputation:
+                possuiSellerReputation,
+
+            total_transacoes:
+                totalTransacoes,
+
+            concluidas:
+                transacoesConcluidas,
+
+            canceladas:
+                transacoesCanceladas,
+
+            level_id:
+                levelId,
+
+            power_seller_status:
+                powerSellerStatus,
+
+            site_status:
+                sellerStatus,
+
+            anuncios_encontrados:
+                totalAnuncios,
+
+            consulta_anuncios_funcionou:
+                consultaAnunciosFuncionou
+        }
+    );
+
+
+    // =========================================================
+    // 7. RESULTADO
+    // =========================================================
+
+    let temAnuncios =
+        totalAnuncios >
+        0;
+
+
+    let possivelVendedorPorPerfil =
+        false;
+
+
+    // =========================================================
+    // FALLBACK
+    //
+    // Se não conseguimos confirmar anúncios pela busca,
+    // mas o perfil mostra atividade de vendedor, marcamos para
+    // conferência.
+    //
+    // NÃO estamos afirmando que definitivamente possui anúncio.
+    // O aviso é justamente "Possível concorrente, verificar".
+    // =========================================================
+
+    if (
+        !temAnuncios &&
+        possuiHistoricoVendedor
+    ) {
+
+        temAnuncios =
+            true;
+
+
+        possivelVendedorPorPerfil =
+            true;
+
+
+        origemDeteccao =
+            origemDeteccao ||
+            'seller_reputation_fallback';
+
+
+        console.warn(
+            '⚠️ [CONCORRENTE] Marcando como possível concorrente pelo histórico de vendedor:',
+            {
+                buyerId,
+                nickname,
+                totalTransacoes,
+                transacoesConcluidas
+            }
+        );
+    }
+
+
+    // =========================================================
+    // URL PARA CONFERÊNCIA
+    // =========================================================
+
+    const urlAnuncios =
+
+        temAnuncios
+
+            ? `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
+                buyerId
+            )}`
+
+            : null;
+
+
+    console.log(
+        '🕵️ [CONCORRENTE NFE - RESULTADO FINAL]',
+        {
+            buyer_id:
+                buyerId,
+
+            nickname,
 
             tem_anuncios:
                 temAnuncios,
 
             total_anuncios:
                 totalAnuncios,
+
+            possivel_por_perfil:
+                possivelVendedorPorPerfil,
 
             origem:
                 origemDeteccao
@@ -36331,38 +36713,45 @@ async function buscarPerfilCompradorNFE(
         id:
             buyerId,
 
+        buyer_id:
+            buyerId,
+
+        seller_id:
+            buyerId,
 
         nickname,
-
 
         permalink:
             perfil
                 ?.permalink ||
             null,
 
-
         site_id:
             siteId,
 
-
         total_anuncios:
-
-            temAnuncios
-
-                ? Number(
-                    totalAnuncios
-                )
-
-                : 0,
-
+            totalAnuncios,
 
         tem_anuncios:
             temAnuncios,
 
+        possivel_vendedor_por_perfil:
+            possivelVendedorPorPerfil,
+
+        total_vendas_historicas:
+            totalTransacoes,
+
+        vendas_concluidas:
+            transacoesConcluidas,
+
+        nivel_vendedor:
+            levelId,
+
+        mercado_lider:
+            powerSellerStatus,
 
         origem_deteccao:
             origemDeteccao,
-
 
         url_anuncios:
             urlAnuncios
@@ -36388,7 +36777,7 @@ window._consultaConcorrentesNFEEmAndamento =
 // =========================================================
 
 const CHAVE_CACHE_CONCORRENTES_NFE =
-    'wheeltech_nfe_concorrentes_v2';
+    'wheeltech_nfe_concorrentes_v4';
 
 
 // =========================================================
@@ -37146,6 +37535,361 @@ async function obterBuyerIdVendaConcorrenteNFE(
     return null;
 }
 
+function normalizarNicknameConcorrenteNFE(valor) {
+
+    return String(
+        valor ||
+        ''
+    )
+        .trim();
+}
+
+
+function obterNicknameVendaConcorrenteNFE(
+    venda
+) {
+
+    if (
+        !venda
+    ) {
+
+        return '';
+    }
+
+
+    return normalizarNicknameConcorrenteNFE(
+
+        venda
+            ?.buyer
+            ?.nickname ||
+
+        venda
+            ?.buyer_nickname ||
+
+        venda
+            ?.cliente ||
+
+        ''
+    );
+}
+
+
+// =========================================================
+// BUSCAR CONCORRENTE DIRETAMENTE PELO NICKNAME
+//
+// ESTA É A VERIFICAÇÃO PRINCIPAL.
+//
+// Exemplo:
+// BIKEROSPORT
+//
+// Não depende do buyer_id da venda.
+// =========================================================
+
+async function buscarConcorrentePorNicknameNFE(
+    nickname,
+    token
+) {
+
+    nickname =
+        normalizarNicknameConcorrenteNFE(
+            nickname
+        );
+
+
+    if (
+        !nickname
+    ) {
+
+        return null;
+    }
+
+
+    const siteId =
+        'MLB';
+
+
+    try {
+
+        console.log(
+            `🔎 [CONCORRENTE] Pesquisando vendedor pelo nickname: ${nickname}`
+        );
+
+
+        const resposta =
+            await buscarJsonMLDetalhesNFE(
+
+                `https://api.mercadolibre.com/sites/${siteId}/search?nickname=${encodeURIComponent(
+                    nickname
+                )}&limit=1`,
+
+                token
+            );
+
+
+        const totalBruto =
+            Number(
+                resposta
+                    ?.paging
+                    ?.total
+            );
+
+
+        const total =
+            Number.isFinite(
+                totalBruto
+            )
+                ? totalBruto
+                : 0;
+
+
+        // O Mercado Livre pode devolver o seller
+        // tanto no nível principal como dentro do resultado.
+
+        const sellerId =
+
+            resposta
+                ?.seller
+                ?.id ||
+
+            resposta
+                ?.results
+                ?.[0]
+                ?.seller
+                ?.id ||
+
+            null;
+
+
+        const temAnuncios =
+            total >
+            0;
+
+
+        console.log(
+            '🔎 [CONCORRENTE NICKNAME]',
+            {
+                nickname,
+                seller_id:
+                    sellerId,
+                total_anuncios:
+                    total,
+                tem_anuncios:
+                    temAnuncios
+            }
+        );
+
+
+        return {
+
+            nickname,
+
+            seller_id:
+                sellerId
+                    ? String(
+                        sellerId
+                    )
+                    : null,
+
+            buyer_id:
+                null,
+
+            site_id:
+                siteId,
+
+            tem_anuncios:
+                temAnuncios,
+
+            total_anuncios:
+                temAnuncios
+                    ? total
+                    : 0,
+
+            origem_deteccao:
+                'site_nickname_direto',
+
+            url_anuncios:
+
+                temAnuncios &&
+                sellerId
+
+                    ? `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
+                        String(
+                            sellerId
+                        )
+                    )}`
+
+                    : null
+        };
+
+
+    } catch (
+        error
+    ) {
+
+        console.debug(
+            `ℹ️ [CONCORRENTE] Busca por nickname ${nickname} falhou:`,
+            error
+        );
+
+
+        return null;
+    }
+}
+
+
+// =========================================================
+// COLOCAR/ATUALIZAR AVISO DIRETAMENTE NA LINHA
+//
+// Isso elimina o problema em que o resultado foi encontrado
+// mas a tabela não foi re-renderizada por ser cache_hit.
+// =========================================================
+
+function aplicarAvisoConcorrenteNaLinhaNFE(
+    venda
+) {
+
+    if (
+        !venda
+    ) {
+
+        return;
+    }
+
+
+    const vendaId =
+        normalizarOrderIdML(
+
+            venda
+                ?.id_venda_ml ||
+
+            venda
+                ?.id
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        return;
+    }
+
+
+    const tbody =
+
+        typeof localizarTbodyVendasNFEUniversal ===
+            'function'
+
+            ? localizarTbodyVendasNFEUniversal()
+
+            : document.getElementById(
+                'vendasPendentesBody'
+            );
+
+
+    if (
+        !tbody
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // LOCALIZAR A LINHA DA VENDA
+    // =====================================================
+
+    const linha =
+        Array.from(
+
+            tbody.querySelectorAll(
+                'tr[data-venda-id-nfe]'
+            )
+
+        )
+            .find(
+                tr => {
+
+                    const idLinha =
+                        normalizarOrderIdML(
+                            tr
+                                .dataset
+                                ?.vendaIdNfe
+                        );
+
+
+                    return (
+                        idLinha ===
+                        vendaId
+                    );
+                }
+            );
+
+
+    if (
+        !linha
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // COLUNA CLIENTE
+    //
+    // Cliente atualmente é a terceira coluna da tabela.
+    // Deixamos também suporte futuro para data-coluna-nfe.
+    // =====================================================
+
+    const celulaCliente =
+
+        linha.querySelector(
+            '[data-coluna-nfe="cliente"]'
+        ) ||
+
+        linha.children
+            ?.[2] ||
+
+        null;
+
+
+    if (
+        !celulaCliente
+    ) {
+
+        return;
+    }
+
+
+    // Remove aviso antigo antes de atualizar.
+
+    celulaCliente
+        .querySelectorAll(
+            '.aviso-concorrente-nfe'
+        )
+        .forEach(
+            elemento =>
+                elemento.remove()
+        );
+
+
+    const html =
+        montarAvisoConcorrenteCacheNFE(
+            venda
+        );
+
+
+    if (
+        html
+    ) {
+
+        celulaCliente
+            .insertAdjacentHTML(
+                'beforeend',
+                html
+            );
+    }
+}
 
 async function consultarPossivelConcorrenteNFE(
     venda,
@@ -37162,13 +37906,18 @@ async function consultarPossivelConcorrenteNFE(
 
 
     const forcar =
-        opcoes?.forcar ===
+        opcoes
+            ?.forcar ===
         true;
 
 
     window._cacheConcorrentesNFE =
-        window._cacheConcorrentesNFE instanceof Map
+
+        window._cacheConcorrentesNFE
+        instanceof Map
+
             ? window._cacheConcorrentesNFE
+
             : new Map();
 
 
@@ -37192,69 +37941,49 @@ async function consultarPossivelConcorrenteNFE(
 
 
     // =====================================================
-    // NICKNAME MOSTRADO NA TABELA
+    // NICKNAME QUE JÁ TEMOS NA VENDA
+    //
+    // NÃO vamos mais depender do buyer_id para começar.
     // =====================================================
 
     const nicknameTabela =
-        String(
-
+        obterNicknameVendaConcorrenteNFE(
             venda
-                ?.buyer
-                ?.nickname ||
-
-            venda
-                ?.cliente ||
-
-            venda
-                ?.buyer_nickname ||
-
-            ''
-        )
-            .trim();
+        );
 
 
     // =====================================================
-    // BUYER ID REAL
-    //
-    // Se não estiver salvo na venda,
-    // consulta /orders/{id}.
+    // BUYER ID JÁ CONHECIDO
     // =====================================================
 
-    const buyerId =
-        await obterBuyerIdVendaConcorrenteNFE(
-            venda,
-            token
-        );
+    let buyerId =
+
+        venda
+            ?.buyer
+            ?.id ||
+
+        venda
+            ?.buyer_id ||
+
+        venda
+            ?.comprador_id ||
+
+        venda
+            ?._buyer_id_concorrente ||
+
+        null;
 
 
-    if (
-        !buyerId
-    ) {
-
-        console.warn(
-            '⚠️ [CONCORRENTE] Buyer ID não localizado:',
-            {
-                venda:
-                    venda?.id_venda_ml ||
-                    venda?.id,
-
-                cliente:
-                    nicknameTabela
-            }
-        );
-
-
-        return null;
-    }
-
-
-    const chaveBuyer =
-        String(
-            buyerId
-        );
+    buyerId =
+        buyerId
+            ? String(
+                buyerId
+            )
+            : null;
 
 
     const chaveNickname =
+
         nicknameTabela
 
             ? `nickname:${nicknameTabela.toUpperCase()}`
@@ -37262,8 +37991,21 @@ async function consultarPossivelConcorrenteNFE(
             : null;
 
 
+    const chaveBuyer =
+
+        buyerId
+
+            ? String(
+                buyerId
+            )
+
+            : null;
+
+
     // =====================================================
     // CACHE
+    //
+    // NICKNAME PRIMEIRO.
     // =====================================================
 
     if (
@@ -37271,16 +38013,10 @@ async function consultarPossivelConcorrenteNFE(
     ) {
 
         let cache =
-            window
-                ._cacheConcorrentesNFE
-                .get(
-                    chaveBuyer
-                ) ||
             null;
 
 
         if (
-            !cache &&
             chaveNickname
         ) {
 
@@ -37295,24 +38031,45 @@ async function consultarPossivelConcorrenteNFE(
 
 
         if (
+            !cache &&
+            chaveBuyer
+        ) {
+
+            cache =
+                window
+                    ._cacheConcorrentesNFE
+                    .get(
+                        chaveBuyer
+                    ) ||
+                null;
+        }
+
+
+        if (
             cache
         ) {
 
             const idade =
                 Date.now() -
                 Number(
-                    cache.consultado_em ||
+                    cache
+                        .consultado_em ||
                     0
                 );
 
 
+            // Positivos ficam 6 horas.
+            // Negativos só 2 minutos.
+
             const ttl =
-                cache.tem_anuncios ===
-                    true
+
+                cache
+                    .tem_anuncios ===
+                true
 
                     ? TTL_CACHE_CONCORRENTES_NFE
 
-                    : 5 * 60 * 1000;
+                    : 2 * 60 * 1000;
 
 
             if (
@@ -37333,100 +38090,376 @@ async function consultarPossivelConcorrenteNFE(
 
 
     // =====================================================
-    // CONSULTAR PERFIL DO COMPRADOR
+    // 1. PESQUISAR DIRETAMENTE PELO NICKNAME
     //
-    // buscarPerfilCompradorNFE já verifica se esse
-    // mesmo usuário possui anúncios como vendedor.
+    // Exemplo:
+    //
+    // BIKEROSPORT
+    //
+    // Essa consulta não depende do buyer ID.
     // =====================================================
 
-    const perfil =
-        await buscarPerfilCompradorNFE(
-            chaveBuyer,
-            token
-        );
+    let resultadoNickname =
+        null;
 
 
     if (
-        !perfil
+        nicknameTabela
     ) {
 
-        console.warn(
-            `⚠️ [CONCORRENTE] Perfil ${chaveBuyer} não retornado.`
-        );
+        resultadoNickname =
+            await buscarConcorrentePorNicknameNFE(
+
+                nicknameTabela,
+
+                token
+            );
 
 
-        return null;
+        // =================================================
+        // SE JÁ ACHOU ANÚNCIOS, NÃO PRECISAMOS ESPERAR
+        // BUYER ID PARA MARCAR A LINHA.
+        // =================================================
+
+        if (
+            resultadoNickname
+                ?.tem_anuncios ===
+            true
+        ) {
+
+            const resultado = {
+
+                ...resultadoNickname,
+
+                buyer_id:
+                    buyerId,
+
+                consultado_em:
+                    Date.now()
+            };
+
+
+            // =============================================
+            // GUARDAR SELLER ID NA VENDA
+            // =============================================
+
+            if (
+                resultado
+                    .seller_id
+            ) {
+
+                venda._seller_id_concorrente =
+                    String(
+                        resultado
+                            .seller_id
+                    );
+            }
+
+
+            // =============================================
+            // CACHE PELO BUYER
+            // =============================================
+
+            if (
+                buyerId
+            ) {
+
+                window
+                    ._cacheConcorrentesNFE
+                    .set(
+                        String(
+                            buyerId
+                        ),
+                        resultado
+                    );
+            }
+
+
+            // =============================================
+            // CACHE PELO SELLER
+            // =============================================
+
+            if (
+                resultado
+                    .seller_id
+            ) {
+
+                window
+                    ._cacheConcorrentesNFE
+                    .set(
+
+                        `seller:${String(
+                            resultado
+                                .seller_id
+                        )}`,
+
+                        resultado
+                    );
+            }
+
+
+            // =============================================
+            // CACHE PELO NICKNAME
+            // =============================================
+
+            if (
+                chaveNickname
+            ) {
+
+                window
+                    ._cacheConcorrentesNFE
+                    .set(
+                        chaveNickname,
+                        resultado
+                    );
+            }
+
+
+            salvarCacheConcorrentesLocalNFE();
+
+
+            console.log(
+                '🕵️ [CONCORRENTE RESULTADO - NICKNAME]',
+                {
+
+                    venda:
+                        venda
+                            ?.id_venda_ml ||
+                        venda
+                            ?.id,
+
+                    nickname:
+                        nicknameTabela,
+
+                    seller_id:
+                        resultado
+                            .seller_id,
+
+                    total_anuncios:
+                        resultado
+                            .total_anuncios
+                }
+            );
+
+
+            return {
+
+                ...resultado,
+
+                _cache_hit:
+                    false
+            };
+        }
     }
 
 
-    const nickname =
-        String(
-            perfil.nickname ||
-            nicknameTabela ||
-            ''
-        )
-            .trim();
+    // =====================================================
+    // 2. NÃO ACHOU PELO NICKNAME?
+    //
+    // AGORA SIM tentamos localizar o buyer ID.
+    // =====================================================
 
+    if (
+        !buyerId
+    ) {
+
+        buyerId =
+            await obterBuyerIdVendaConcorrenteNFE(
+
+                venda,
+
+                token
+            );
+
+
+        if (
+            buyerId
+        ) {
+
+            buyerId =
+                String(
+                    buyerId
+                );
+        }
+    }
+
+
+    // =====================================================
+    // 3. PESQUISAR PELO BUYER ID
+    // =====================================================
+
+    let perfil =
+        null;
+
+
+    if (
+        buyerId
+    ) {
+
+        try {
+
+            perfil =
+                await buscarPerfilCompradorNFE(
+
+                    buyerId,
+
+                    token
+                );
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                `⚠️ [CONCORRENTE] Não foi possível consultar buyer ${buyerId}:`,
+                error
+            );
+
+
+            perfil =
+                null;
+        }
+    }
+
+
+    // =====================================================
+    // NICKNAME FINAL
+    // =====================================================
+
+    const nicknameFinal =
+        normalizarNicknameConcorrenteNFE(
+
+            perfil
+                ?.nickname ||
+
+            nicknameTabela ||
+
+            ''
+        );
+
+
+    // =====================================================
+    // RESULTADO FINAL
+    // =====================================================
 
     const temAnuncios =
-        perfil.tem_anuncios ===
+
+        perfil
+            ?.tem_anuncios ===
+        true ||
+
+        resultadoNickname
+            ?.tem_anuncios ===
         true;
 
 
     const totalAnuncios =
-        Number.isFinite(
-            Number(
-                perfil.total_anuncios
-            )
-        )
+
+        perfil
+            ?.tem_anuncios ===
+        true
 
             ? Number(
-                perfil.total_anuncios
+                perfil
+                    ?.total_anuncios ||
+                0
             )
 
-            : 0;
+            : Number(
+                resultadoNickname
+                    ?.total_anuncios ||
+                0
+            );
+
+
+    let sellerId =
+        null;
+
+
+    if (
+        perfil
+            ?.tem_anuncios ===
+        true
+    ) {
+
+        sellerId =
+            String(
+
+                perfil
+                    ?.id ||
+
+                buyerId ||
+
+                ''
+            ) ||
+            null;
+
+
+    } else if (
+        resultadoNickname
+            ?.seller_id
+    ) {
+
+        sellerId =
+            String(
+                resultadoNickname
+                    .seller_id
+            );
+    }
 
 
     const resultado = {
 
         buyer_id:
-            chaveBuyer,
-
+            buyerId ||
+            null,
 
         seller_id:
-            chaveBuyer,
+            sellerId,
 
-
-        nickname,
-
+        nickname:
+            nicknameFinal,
 
         tem_anuncios:
             temAnuncios,
 
-
         total_anuncios:
-            totalAnuncios,
 
+            temAnuncios
+
+                ? totalAnuncios
+
+                : 0,
 
         origem_deteccao:
-            perfil.origem_deteccao ||
-            null,
 
+            perfil
+                ?.tem_anuncios ===
+            true
+
+                ? (
+                    perfil
+                        ?.origem_deteccao ||
+                    'buyer_id'
+                )
+
+                : (
+                    resultadoNickname
+                        ?.origem_deteccao ||
+                    'sem_anuncios'
+                ),
 
         url_anuncios:
 
-            perfil.url_anuncios ||
+            temAnuncios &&
+            sellerId
 
-            (
-                temAnuncios
+                ? `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
+                    sellerId
+                )}`
 
-                    ? `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
-                        chaveBuyer
-                    )}`
-
-                    : null
-            ),
-
+                : null,
 
         consultado_em:
             Date.now()
@@ -37434,36 +38467,79 @@ async function consultarPossivelConcorrenteNFE(
 
 
     // =====================================================
-    // SALVAR POR BUYER ID
-    // =====================================================
-
-    window
-        ._cacheConcorrentesNFE
-        .set(
-            chaveBuyer,
-            resultado
-        );
-
-
-    // =====================================================
-    // SALVAR TAMBÉM PELO NICKNAME
-    //
-    // montarAvisoConcorrenteCacheNFE() procura por
-    // nickname:BIKEROSPORT
+    // GUARDAR BUYER ID NA VENDA
     // =====================================================
 
     if (
-        nickname
+        buyerId
+    ) {
+
+        venda._buyer_id_concorrente =
+            String(
+                buyerId
+            );
+
+
+        window
+            ._cacheConcorrentesNFE
+            .set(
+                String(
+                    buyerId
+                ),
+                resultado
+            );
+    }
+
+
+    // =====================================================
+    // GUARDAR SELLER ID
+    // =====================================================
+
+    if (
+        sellerId
+    ) {
+
+        venda._seller_id_concorrente =
+            String(
+                sellerId
+            );
+
+
+        window
+            ._cacheConcorrentesNFE
+            .set(
+
+                `seller:${String(
+                    sellerId
+                )}`,
+
+                resultado
+            );
+    }
+
+
+    // =====================================================
+    // CACHE PELO NICKNAME RETORNADO
+    // =====================================================
+
+    if (
+        nicknameFinal
     ) {
 
         window
             ._cacheConcorrentesNFE
             .set(
-                `nickname:${nickname.toUpperCase()}`,
+
+                `nickname:${nicknameFinal.toUpperCase()}`,
+
                 resultado
             );
     }
 
+
+    // =====================================================
+    // CACHE PELO NICKNAME DA TABELA
+    // =====================================================
 
     if (
         nicknameTabela
@@ -37472,7 +38548,9 @@ async function consultarPossivelConcorrenteNFE(
         window
             ._cacheConcorrentesNFE
             .set(
+
                 `nickname:${nicknameTabela.toUpperCase()}`,
+
                 resultado
             );
     }
@@ -37484,23 +38562,33 @@ async function consultarPossivelConcorrenteNFE(
     console.log(
         '🕵️ [CONCORRENTE RESULTADO]',
         {
+
             venda:
-                venda?.id_venda_ml ||
-                venda?.id,
+                venda
+                    ?.id_venda_ml ||
+                venda
+                    ?.id,
 
             buyer_id:
-                chaveBuyer,
+                buyerId,
 
-            nickname,
+            seller_id:
+                sellerId,
+
+            nickname:
+                nicknameFinal,
 
             tem_anuncios:
-                temAnuncios,
+                resultado
+                    .tem_anuncios,
 
             total_anuncios:
-                totalAnuncios,
+                resultado
+                    .total_anuncios,
 
             origem:
-                resultado.origem_deteccao
+                resultado
+                    .origem_deteccao
         }
     );
 
@@ -37521,17 +38609,13 @@ async function verificarPossiveisConcorrentesTabelaNFE(
 ) {
 
     const forcar =
-        opcoes?.forcar ===
+        opcoes
+            ?.forcar ===
         true;
 
 
-    const reRender =
-        opcoes?.reRender !==
-        false;
-
-
     // =====================================================
-    // EVITAR DUAS VARREDURAS SIMULTÂNEAS
+    // NÃO DEIXAR DUAS VARREDURAS RODAREM AO MESMO TEMPO
     // =====================================================
 
     if (
@@ -37550,16 +38634,7 @@ async function verificarPossiveisConcorrentesTabelaNFE(
 
 
     // =====================================================
-    // LOCALIZAR AS VENDAS
-    //
-    // PRIORIDADE:
-    //
-    // 1. vendas recebidas diretamente do render
-    // 2. window._vendasTabelaNFEBase
-    // 3. vendasPendentes
-    //
-    // IMPORTANTE:
-    // uma lista vazia NÃO bloqueia os fallbacks.
+    // DESCOBRIR LISTA DE VENDAS
     // =====================================================
 
     let vendas =
@@ -37571,7 +38646,7 @@ async function verificarPossiveisConcorrentesTabelaNFE(
             vendasRecebidas
         ) &&
         vendasRecebidas.length >
-            0
+        0
     ) {
 
         vendas =
@@ -37579,23 +38654,33 @@ async function verificarPossiveisConcorrentesTabelaNFE(
 
 
     } else if (
+
         Array.isArray(
-            window._vendasTabelaNFEBase
+            window
+                ._vendasTabelaNFEBase
         ) &&
-        window._vendasTabelaNFEBase.length >
-            0
+
+        window
+            ._vendasTabelaNFEBase
+            .length >
+        0
+
     ) {
 
         vendas =
-            window._vendasTabelaNFEBase;
+            window
+                ._vendasTabelaNFEBase;
 
 
     } else if (
+
         Array.isArray(
             vendasPendentes
         ) &&
+
         vendasPendentes.length >
-            0
+        0
+
     ) {
 
         vendas =
@@ -37603,39 +38688,13 @@ async function verificarPossiveisConcorrentesTabelaNFE(
     }
 
 
-    // =====================================================
-    // NENHUMA VENDA
-    // =====================================================
-
     if (
         vendas.length ===
         0
     ) {
 
         console.warn(
-            'ℹ️ [CONCORRENTE] Nenhuma venda para verificar.',
-            {
-                recebidas:
-                    Array.isArray(
-                        vendasRecebidas
-                    )
-                        ? vendasRecebidas.length
-                        : 'não-array',
-
-                base:
-                    Array.isArray(
-                        window._vendasTabelaNFEBase
-                    )
-                        ? window._vendasTabelaNFEBase.length
-                        : 'não-array',
-
-                pendentes:
-                    Array.isArray(
-                        vendasPendentes
-                    )
-                        ? vendasPendentes.length
-                        : 'não-array'
-            }
+            'ℹ️ [CONCORRENTE] Nenhuma venda para verificar.'
         );
 
 
@@ -37644,7 +38703,7 @@ async function verificarPossiveisConcorrentesTabelaNFE(
 
 
     // =====================================================
-    // REMOVER DUPLICADOS DA MESMA VENDA
+    // REMOVER VENDAS DUPLICADAS
     // =====================================================
 
     const mapaVendas =
@@ -37699,11 +38758,6 @@ async function verificarPossiveisConcorrentesTabelaNFE(
         0
     ) {
 
-        console.warn(
-            '⚠️ [CONCORRENTE] As vendas não possuem IDs válidos.'
-        );
-
-
         return;
     }
 
@@ -37717,10 +38771,6 @@ async function verificarPossiveisConcorrentesTabelaNFE(
     window
         ._consultaConcorrentesNFEEmAndamento =
         true;
-
-
-    let encontrouResultadoNovo =
-        false;
 
 
     try {
@@ -37747,10 +38797,13 @@ async function verificarPossiveisConcorrentesTabelaNFE(
 
 
         // =================================================
-        // EVITAR REPETIR BUYERS NESTA MESMA EXECUÇÃO
+        // RESULTADOS JÁ CONSULTADOS NESTA EXECUÇÃO
+        //
+        // Evita consultar BIKEROSPORT várias vezes caso
+        // tenha comprado mais de um produto.
         // =================================================
 
-        const resultadosPorBuyer =
+        const resultadosExecucao =
             new Map();
 
 
@@ -37779,36 +38832,66 @@ async function verificarPossiveisConcorrentesTabelaNFE(
 
                         try {
 
-                            // =================================
-                            // DESCOBRIR BUYER
-                            // =================================
-
-                            const buyerId =
-                                await obterBuyerIdVendaConcorrenteNFE(
-                                    venda,
-                                    token
+                            const nickname =
+                                obterNicknameVendaConcorrenteNFE(
+                                    venda
                                 );
 
 
-                            if (
-                                !buyerId
-                            ) {
+                            const buyerConhecido =
 
-                                return;
-                            }
+                                venda
+                                    ?.buyer
+                                    ?.id ||
+
+                                venda
+                                    ?.buyer_id ||
+
+                                venda
+                                    ?.comprador_id ||
+
+                                venda
+                                    ?._buyer_id_concorrente ||
+
+                                null;
 
 
-                            const chaveBuyer =
-                                String(
-                                    buyerId
-                                );
+                            // =================================
+                            // CHAVE DESTA EXECUÇÃO
+                            //
+                            // Não obrigamos mais buyer ID.
+                            // =================================
+
+                            const chaveExecucao =
+
+                                buyerConhecido
+
+                                    ? `buyer:${String(
+                                        buyerConhecido
+                                    )}`
+
+                                    : (
+
+                                        nickname
+
+                                            ? `nickname:${nickname.toUpperCase()}`
+
+                                            : `venda:${normalizarOrderIdML(
+                                                venda
+                                                    ?.id_venda_ml ||
+                                                venda
+                                                    ?.id
+                                            )}`
+                                    );
 
 
                             let resultado =
-                                resultadosPorBuyer
+
+                                resultadosExecucao
                                     .get(
-                                        chaveBuyer
+                                        chaveExecucao
                                     ) ||
+
                                 null;
 
 
@@ -37829,11 +38912,16 @@ async function verificarPossiveisConcorrentesTabelaNFE(
                                     );
 
 
-                                resultadosPorBuyer
-                                    .set(
-                                        chaveBuyer,
-                                        resultado
-                                    );
+                                if (
+                                    resultado
+                                ) {
+
+                                    resultadosExecucao
+                                        .set(
+                                            chaveExecucao,
+                                            resultado
+                                        );
+                                }
                             }
 
 
@@ -37845,37 +38933,52 @@ async function verificarPossiveisConcorrentesTabelaNFE(
                             }
 
 
-                            if (
-                                resultado._cache_hit !==
-                                true
-                            ) {
+                            // =================================
+                            // ATUALIZAR A LINHA AGORA
+                            //
+                            // Funciona inclusive se veio do
+                            // cache.
+                            // =================================
 
-                                encontrouResultadoNovo =
-                                    true;
-                            }
+                            aplicarAvisoConcorrenteNaLinhaNFE(
+                                venda
+                            );
 
 
                             console.log(
                                 '🕵️ [CONCORRENTE]',
                                 {
+
                                     venda:
-                                        venda.id_venda_ml ||
-                                        venda.id,
+                                        venda
+                                            ?.id_venda_ml ||
+                                        venda
+                                            ?.id,
 
                                     cliente:
-                                        resultado.nickname,
+                                        resultado
+                                            .nickname ||
+                                        nickname,
 
                                     buyer:
-                                        resultado.buyer_id,
+                                        resultado
+                                            .buyer_id,
+
+                                    seller:
+                                        resultado
+                                            .seller_id,
 
                                     tem_anuncios:
-                                        resultado.tem_anuncios,
+                                        resultado
+                                            .tem_anuncios,
 
                                     total:
-                                        resultado.total_anuncios,
+                                        resultado
+                                            .total_anuncios,
 
                                     cache:
-                                        resultado._cache_hit ===
+                                        resultado
+                                            ._cache_hit ===
                                         true
                                 }
                             );
@@ -37888,9 +38991,12 @@ async function verificarPossiveisConcorrentesTabelaNFE(
                             console.warn(
                                 '⚠️ [CONCORRENTE] Erro:',
                                 {
+
                                     venda:
-                                        venda?.id_venda_ml ||
-                                        venda?.id,
+                                        venda
+                                            ?.id_venda_ml ||
+                                        venda
+                                            ?.id,
 
                                     error
                                 }
@@ -37902,12 +39008,12 @@ async function verificarPossiveisConcorrentesTabelaNFE(
 
 
             // =============================================
-            // PAUSA ENTRE LOTES
+            // PEQUENA PAUSA ENTRE OS LOTES
             // =============================================
 
             if (
                 i +
-                    TAMANHO_LOTE <
+                TAMANHO_LOTE <
                 vendas.length
             ) {
 
@@ -37927,44 +39033,6 @@ async function verificarPossiveisConcorrentesTabelaNFE(
         window
             ._consultaConcorrentesNFEEmAndamento =
             false;
-    }
-
-
-    // =====================================================
-    // RE-RENDERIZAR SOMENTE SE HOUVE CONSULTA NOVA
-    //
-    // O aviso NÃO é mais injetado manualmente no DOM.
-    //
-    // montarAvisoConcorrenteCacheNFE()
-    // já coloca o aviso durante o próprio render.
-    // =====================================================
-
-    if (
-        encontrouResultadoNovo &&
-        reRender
-    ) {
-
-        const vendasParaRender =
-
-            Array.isArray(
-                window._vendasTabelaNFEBase
-            ) &&
-            window._vendasTabelaNFEBase.length >
-                0
-
-                ? window._vendasTabelaNFEBase
-
-                : vendas;
-
-
-        console.log(
-            '🔄 [CONCORRENTE] Atualizando tabela com os resultados.'
-        );
-
-
-        renderizarVendasNFETabela(
-            vendasParaRender
-        );
     }
 }
 
