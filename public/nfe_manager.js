@@ -42384,6 +42384,82 @@ async function atualizarTabelaVendasNFEPosEstoque() {
     }
 }
 
+function obterSeparacaoLocalPersistidaNFE(
+    vendaId
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        return null;
+    }
+
+
+    try {
+
+        const bruto =
+            localStorage.getItem(
+                `wheeltech_nfe_separado_${vendaId}`
+            );
+
+
+        if (
+            !bruto
+        ) {
+
+            return null;
+        }
+
+
+        const dados =
+            JSON.parse(
+                bruto
+            );
+
+
+        if (
+            dados?.separado !==
+            true
+        ) {
+
+            return null;
+        }
+
+
+        return {
+
+            separado:
+                true,
+
+            separado_em:
+                dados.separado_em ||
+                null,
+
+            separado_por_username:
+                dados.separado_por_username ||
+                null,
+
+            separado_por_nome:
+                dados.separado_por_nome ||
+                null
+        };
+
+
+    } catch (
+        error
+    ) {
+
+        return null;
+    }
+}
+
 async function salvarVendasCacheNFE(
     vendas
 ) {
@@ -42453,33 +42529,38 @@ async function salvarVendasCacheNFE(
                         'vendas_nfe_cache'
                     )
                     .select(`
-                        id_venda_ml,
+    id_venda_ml,
 
-                        tem_nfe,
-                        nfe_emitida_por_username,
-                        nfe_emitida_por_nome,
+    separado,
+    separado_em,
+    separado_por_username,
+    separado_por_nome,
 
-                        estoque_baixado,
-                        estoque_status,
-                        estoque_baixado_em,
-                        estoque_baixado_por_username,
-                        estoque_baixado_por_nome,
-                        estoque_detalhes,
-                        estoque_anuncio_pos_venda,
+    tem_nfe,
+    nfe_emitida_por_username,
+    nfe_emitida_por_nome,
 
-                        ml_status,
-                        venda_cancelada,
-                        venda_cancelada_em,
-                        estoque_restaurado_cancelamento,
-                        estoque_restaurado_cancelamento_em,
+    estoque_baixado,
+    estoque_status,
+    estoque_baixado_em,
+    estoque_baixado_por_username,
+    estoque_baixado_por_nome,
+    estoque_detalhes,
+    estoque_anuncio_pos_venda,
 
-                        metodo_pagamento_id,
-                        tipo_pagamento,
-                        metodo_pagamento_nome,
-                        parcelas,
-                        parcelamento_nome,
-                        valor_parcela
-                    `)
+    ml_status,
+    venda_cancelada,
+    venda_cancelada_em,
+    estoque_restaurado_cancelamento,
+    estoque_restaurado_cancelamento_em,
+
+    metodo_pagamento_id,
+    tipo_pagamento,
+    metodo_pagamento_nome,
+    parcelas,
+    parcelamento_nome,
+    valor_parcela
+`)
                     .in(
                         'id_venda_ml',
                         ids
@@ -42569,6 +42650,144 @@ async function salvarVendasCacheNFE(
                     idVenda
                 ) ||
                 {};
+
+                // =========================================================
+// SEPARAÇÃO É IRREVERSÍVEL
+//
+// TRUE SEMPRE PREVALECE.
+//
+// Fontes:
+// 1. Banco
+// 2. Objeto atual
+// 3. localStorage
+// =========================================================
+
+const separacaoLocal =
+    obterSeparacaoLocalPersistidaNFE(
+        idVenda
+    );
+
+
+const separadoPersistido =
+
+    anterior.separado ===
+        true ||
+
+    venda._separado ===
+        true ||
+
+    venda.separado ===
+        true ||
+
+    separacaoLocal?.separado ===
+        true;
+
+
+// =========================================================
+// MANTER OS DADOS DA PRIMEIRA SEPARAÇÃO
+// =========================================================
+
+const separadoEmPersistido =
+
+    separadoPersistido
+
+        ? (
+            anterior.separado_em ||
+
+            venda._separado_em ||
+
+            venda.separado_em ||
+
+            separacaoLocal
+                ?.separado_em ||
+
+            null
+        )
+
+        : null;
+
+
+const separadoPorUsernamePersistido =
+
+    separadoPersistido
+
+        ? (
+            anterior
+                .separado_por_username ||
+
+            venda
+                ._separado_por_username ||
+
+            venda
+                .separado_por_username ||
+
+            separacaoLocal
+                ?.separado_por_username ||
+
+            null
+        )
+
+        : null;
+
+
+const separadoPorNomePersistido =
+
+    separadoPersistido
+
+        ? (
+            anterior
+                .separado_por_nome ||
+
+            venda
+                ._separado_por_nome ||
+
+            venda
+                .separado_por_nome ||
+
+            separacaoLocal
+                ?.separado_por_nome ||
+
+            null
+        )
+
+        : null;
+
+
+// =========================================================
+// REFORÇAR BACKUP LOCAL
+// =========================================================
+
+if (
+    separadoPersistido
+) {
+
+    try {
+
+        localStorage.setItem(
+
+            `wheeltech_nfe_separado_${idVenda}`,
+
+            JSON.stringify({
+
+                separado:
+                    true,
+
+                separado_em:
+                    separadoEmPersistido,
+
+                separado_por_username:
+                    separadoPorUsernamePersistido,
+
+                separado_por_nome:
+                    separadoPorNomePersistido
+            })
+        );
+
+
+    } catch (
+        error
+    ) {}
+}
 
 
             const info =
@@ -43166,6 +43385,34 @@ if (
 
                 ...venda,
 
+                                // =============================================
+                // SEPARAÇÃO PERSISTENTE
+                // =============================================
+
+                _separado:
+                    separadoPersistido,
+
+                separado:
+                    separadoPersistido,
+
+                _separado_em:
+                    separadoEmPersistido,
+
+                separado_em:
+                    separadoEmPersistido,
+
+                _separado_por_username:
+                    separadoPorUsernamePersistido,
+
+                separado_por_username:
+                    separadoPorUsernamePersistido,
+
+                _separado_por_nome:
+                    separadoPorNomePersistido,
+
+                separado_por_nome:
+                    separadoPorNomePersistido,
+
                 id:
                     idVenda,
 
@@ -43272,11 +43519,29 @@ if (
 
             registros.push({
 
-                id_venda_ml:
-                    idVenda,
+    id_venda_ml:
+        idVenda,
 
-                data_venda:
-                    dataVenda,
+
+    // =====================================================
+    // SEPARAÇÃO - ESTADO IRREVERSÍVEL
+    // =====================================================
+
+    separado:
+        separadoPersistido,
+
+    separado_em:
+        separadoEmPersistido,
+
+    separado_por_username:
+        separadoPorUsernamePersistido,
+
+    separado_por_nome:
+        separadoPorNomePersistido,
+
+
+    data_venda:
+        dataVenda,
 
                 shipment_id:
                     shipmentId
@@ -43536,6 +43801,105 @@ async function carregarVendasCacheNFE(
                         .venda_json ||
                     {};
 
+                    const idVenda =
+    normalizarOrderIdML(
+        registro.id_venda_ml
+    );
+
+
+const separacaoLocal =
+    obterSeparacaoLocalPersistidaNFE(
+        idVenda
+    );
+
+
+// =========================================================
+// SEPARAÇÃO
+//
+// Novamente:
+// TRUE sempre vence.
+// =========================================================
+
+const separadoPersistido =
+
+    registro.separado ===
+        true ||
+
+    venda._separado ===
+        true ||
+
+    venda.separado ===
+        true ||
+
+    separacaoLocal?.separado ===
+        true;
+
+
+const separadoEmPersistido =
+
+    separadoPersistido
+
+        ? (
+            registro.separado_em ||
+
+            venda._separado_em ||
+
+            venda.separado_em ||
+
+            separacaoLocal
+                ?.separado_em ||
+
+            null
+        )
+
+        : null;
+
+
+const separadoPorUsernamePersistido =
+
+    separadoPersistido
+
+        ? (
+            registro
+                .separado_por_username ||
+
+            venda
+                ._separado_por_username ||
+
+            venda
+                .separado_por_username ||
+
+            separacaoLocal
+                ?.separado_por_username ||
+
+            null
+        )
+
+        : null;
+
+
+const separadoPorNomePersistido =
+
+    separadoPersistido
+
+        ? (
+            registro
+                .separado_por_nome ||
+
+            venda
+                ._separado_por_nome ||
+
+            venda
+                .separado_por_nome ||
+
+            separacaoLocal
+                ?.separado_por_nome ||
+
+            null
+        )
+
+        : null;
+
 
                 if (
                     typeof venda ===
@@ -43731,6 +44095,34 @@ async function carregarVendasCacheNFE(
                 return {
 
                     ...venda,
+
+                    // =====================================================
+// SEPARAÇÃO
+// =====================================================
+
+_separado:
+    separadoPersistido,
+
+separado:
+    separadoPersistido,
+
+_separado_em:
+    separadoEmPersistido,
+
+separado_em:
+    separadoEmPersistido,
+
+_separado_por_username:
+    separadoPorUsernamePersistido,
+
+separado_por_username:
+    separadoPorUsernamePersistido,
+
+_separado_por_nome:
+    separadoPorNomePersistido,
+
+separado_por_nome:
+    separadoPorNomePersistido,
 
 
                     id:
@@ -45216,25 +45608,32 @@ async function sincronizarVendasPendentesML(
         );
     }
 
-    // =====================================================
-    // TELA FINAL
-    // =====================================================
-
     if (
-        dataEnvio ||
-        window._nfeFiltroTodas
-    ) {
+    dataEnvio ||
+    window._nfeFiltroTodas
+) {
 
-        const telaFinal =
-            await carregarVendasCacheNFE(
-                dataEnvio ||
+    const telaFinal =
+        window._nfeFiltroTodas
+
+            ? await carregarVendasCachePeriodoNFE(
+                null,
                 null
+            )
+
+            : await carregarVendasCachePeriodoNFE(
+                dataEnvio,
+                dataEnvio
             );
 
-        renderizarVendasNFETabela(
-            telaFinal
-        );
-    }
+
+    renderizarVendasNFETabela(
+        telaFinal
+    );
+
+
+    aplicarPreferenciasColunasNFE();
+}
 
     const total =
         processadasBanco

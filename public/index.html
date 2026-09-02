@@ -1167,6 +1167,97 @@ body > * {
     font-weight: 700;
     text-decoration: none;
 }
+
+/* ============================================================
+   OS - TABELA AMPLA + FILTROS POR COLUNA
+   ============================================================ */
+#mainSystem > .container,
+#mainSystem .container {
+    max-width: 98vw !important;
+    width: 98vw !important;
+}
+
+#mainSystem .table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+}
+
+#osTable {
+    width: max-content !important;
+    min-width: 2200px !important;
+    table-layout: auto !important;
+}
+
+#osTable th,
+#osTable td {
+    white-space: nowrap !important;
+    vertical-align: middle !important;
+}
+
+#osTable th:nth-child(1),
+#osTable td:nth-child(1) { min-width: 150px; }
+#osTable th:nth-child(2),
+#osTable td:nth-child(2) { min-width: 300px; }
+#osTable th:nth-child(3),
+#osTable td:nth-child(3) { min-width: 190px; }
+#osTable th:nth-child(4),
+#osTable td:nth-child(4) { min-width: 180px; }
+#osTable th:nth-child(5),
+#osTable td:nth-child(5) { min-width: 140px; }
+#osTable th:nth-child(6),
+#osTable td:nth-child(6) { min-width: 95px; }
+#osTable th:nth-child(7),
+#osTable td:nth-child(7) { min-width: 125px; }
+#osTable th:nth-child(8),
+#osTable td:nth-child(8) { min-width: 145px; }
+#osTable th:nth-child(9),
+#osTable td:nth-child(9) { min-width: 125px; }
+#osTable th:nth-child(10),
+#osTable td:nth-child(10) { min-width: 155px; }
+#osTable th:nth-child(11),
+#osTable td:nth-child(11) { min-width: 130px; }
+#osTable th:nth-child(12),
+#osTable td:nth-child(12) { min-width: 390px; }
+
+#osTable .os-actions {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    gap: 3px;
+}
+
+#osTable .os-column-filter-row th {
+    background: #ffffff !important;
+    padding: 6px !important;
+    border-bottom: 2px solid #dfe3e8 !important;
+}
+
+#osTable .os-column-filter {
+    width: 100%;
+    min-width: 90px;
+    height: 30px;
+    padding: 3px 24px 3px 7px;
+    border: 1px solid #cfd4da;
+    border-radius: 5px;
+    background: #fff;
+    font-size: 11px !important;
+    font-weight: 400;
+    color: #495057;
+}
+
+#osTable .os-column-filter:focus {
+    outline: none;
+    border-color: #00ADEE;
+    box-shadow: 0 0 0 2px rgba(0, 173, 238, 0.12);
+}
+
+#osTable .os-filter-clear {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+    white-space: nowrap;
+}
+
     </style>
 </head>
 <body>
@@ -1511,13 +1602,10 @@ body > * {
                     </div>
                     
                     <div class="d-flex flex-wrap gap-3 mb-4">
-                        <div style="flex: 1; min-width: 250px;">
+                        <div style="flex: 1; min-width: 220px;">
                             <div class="form-group">
                                 <label for="photoType"><i class="fas fa-camera"></i> Serviço(s)</label>
                                 <select id="photoType" class="form-control">
-                                    <option value="estudio">Foto Estúdio</option>
-                                    <option value="bike">Foto Bike</option>
-                                    <option value="ambos">Foto em Ambos</option>
                                     <option value="edicao">Apenas edição</option>
                                     <option value="criar_anuncio">Criar anúncio</option>
                                     <option value="replicar_anuncio">Replicar anúncio</option>
@@ -1527,7 +1615,29 @@ body > * {
                             </div>
                         </div>
                         
-                        <div style="flex: 1; min-width: 250px;">
+                        <div style="flex: 1; min-width: 220px;">
+                            <div class="form-group">
+                                <label for="localFoto"><i class="fas fa-location-dot"></i> Local da foto</label>
+                                <select id="localFoto" class="form-control">
+                                    <option value="studio">Stúdio</option>
+                                    <option value="externa">Externa</option>
+                                    <option value="ambos">Ambos</option>
+                                    <option value="sem_foto" selected>Sem foto</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style="flex: 1; min-width: 180px;">
+                            <div class="form-group">
+                                <label for="temVideo"><i class="fas fa-video"></i> Vídeo?</label>
+                                <select id="temVideo" class="form-control">
+                                    <option value="nao" selected>Não</option>
+                                    <option value="sim">Sim</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style="flex: 1; min-width: 220px;">
                             <div class="form-group">
                                 <label for="createdBy"><i class="fas fa-user-tag"></i> Criado por</label>
                                 <input type="text" id="createdBy" class="form-control" readonly>
@@ -1837,12 +1947,29 @@ body > * {
                                 <th>Código</th>
                                 <th>Produto</th>
                                 <th>Responsável</th>
+                                <th>Serviço</th>
+                                <th>Local da foto</th>
+                                <th>Vídeo?</th>
                                 <th>Urgência</th>
                                 <th>Status</th>
                                 <th>Tempo Exec.</th>
                                 <th>Criado em</th>
                                 <th>Links</th>
                                 <th>Ações</th>
+                            </tr>
+                            <tr class="os-column-filter-row">
+                                <th><select class="os-column-filter" data-os-filter="codigo" onchange="aplicarFiltroColunaOS('codigo', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="produto" onchange="aplicarFiltroColunaOS('produto', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="responsavel" onchange="aplicarFiltroColunaOS('responsavel', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="servico" onchange="aplicarFiltroColunaOS('servico', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="local_foto" onchange="aplicarFiltroColunaOS('local_foto', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="video" onchange="aplicarFiltroColunaOS('video', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="urgencia" onchange="aplicarFiltroColunaOS('urgencia', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="status" onchange="aplicarFiltroColunaOS('status', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="tempo" onchange="aplicarFiltroColunaOS('tempo', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="criado_em" onchange="aplicarFiltroColunaOS('criado_em', this.value)"><option value="">Todos</option></select></th>
+                                <th><select class="os-column-filter" data-os-filter="links" onchange="aplicarFiltroColunaOS('links', this.value)"><option value="">Todos</option></select></th>
+                                <th><button type="button" class="btn btn-sm btn-secondary os-filter-clear" onclick="limparFiltrosColunasOS()"><i class="fas fa-filter-circle-xmark"></i> Limpar filtros</button></th>
                             </tr>
                         </thead>
                         <tbody id="osTableBody"></tbody>
@@ -1980,17 +2107,39 @@ body > * {
                     <div class="form-group">
                         <label>Serviço(s)</label>
                         <select id="editPhotoType" class="form-control">
-                            <option value="estudio">Foto Estúdio</option>
-                            <option value="bike">Foto Bike</option>
-                            <option value="ambos">Ambos</option>
+                            <option value="">Selecione</option>
                             <option value="edicao">Apenas edição</option>
                             <option value="criar_anuncio">Criar anúncio</option>
                             <option value="replicar_anuncio">Replicar anúncio</option>
+                            <option value="fotos_para_atualizar">Fotos para atualizar</option>
                             <option value="renovacao_anuncio">Renovação de anúncio</option>
                         </select>
                     </div>
                 </div>
             </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>Local da foto</label>
+                        <select id="editLocalFoto" class="form-control">
+                            <option value="studio">Stúdio</option>
+                            <option value="externa">Externa</option>
+                            <option value="ambos">Ambos</option>
+                            <option value="sem_foto">Sem foto</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>Vídeo?</label>
+                        <select id="editTemVideo" class="form-control">
+                            <option value="nao">Não</option>
+                            <option value="sim">Sim</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
             <div class="form-group">
                 <label>Link do Anúncio</label>
                 <input type="url" id="editLinkAnuncio" class="form-control" placeholder="https://...">

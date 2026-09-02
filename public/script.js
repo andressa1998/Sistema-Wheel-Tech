@@ -4023,16 +4023,52 @@ const USER_EMAILS = {
     'AndressaMiotto': 'andmiotto1998@gmail.com'
 };
 
-// Mapeamento de tipos de serviço (fotos)
 const PHOTO_TYPE_MAP = {
-    estudio: 'Foto Estúdio',
-    bike: 'Foto Bike',
-    ambos: 'Foto em Ambos',
     edicao: 'Apenas edição',
     criar_anuncio: 'Criar anúncio',
     replicar_anuncio: 'Replicar anúncio',
     fotos_para_atualizar: 'Fotos para atualizar',
-    renovacao_anuncio: 'Renovação de anúncio'
+    renovacao_anuncio: 'Renovação de anúncio',
+
+    // Legado - não aparecem mais no formulário de novas OS.
+    estudio: 'Foto Estúdio',
+    bike: 'Foto Bike',
+    ambos: 'Foto em Ambos'
+};
+
+const SERVICOS_OS_ATIVOS = [
+    'edicao',
+    'criar_anuncio',
+    'replicar_anuncio',
+    'fotos_para_atualizar',
+    'renovacao_anuncio'
+];
+
+const LOCAL_FOTO_MAP = {
+    studio: 'Stúdio',
+    externa: 'Externa',
+    ambos: 'Ambos',
+    sem_foto: 'Sem foto'
+};
+
+const VIDEO_OS_MAP = {
+    sim: 'Sim',
+    nao: 'Não'
+};
+
+// Filtros independentes por coluna, no estilo Excel.
+let filtrosColunasOS = {
+    codigo: '',
+    produto: '',
+    responsavel: '',
+    servico: '',
+    local_foto: '',
+    video: '',
+    urgencia: '',
+    status: '',
+    tempo: '',
+    criado_em: '',
+    links: ''
 };
 
 // ===== VARIÁVEIS PARA NOTIFICAÇÕES DO SISTEMA =====
@@ -8560,9 +8596,6 @@ async function testSupabaseConnection() {
     }
 }
 
-// ============================================
-// CARREGAR ORDENS
-// ============================================
 async function loadOrders() {
 
     if (!currentUser) {
@@ -8656,23 +8689,23 @@ async function loadOrders() {
                         order.urgencia ||
                         'normal',
 
-                        transferenciaPendente:
-                            order.transferencia_pendente || false,
+                    transferenciaPendente:
+                        order.transferencia_pendente || false,
 
-                        instrucaoTransferencia:
-                            order.instrucao_transferencia || '',
+                    instrucaoTransferencia:
+                        order.instrucao_transferencia || '',
 
-                        responsavelAnterior:
-                            order.responsavel_anterior || null,
+                    responsavelAnterior:
+                        order.responsavel_anterior || null,
 
-                        transferidoPor:
-                            order.transferido_por || null,
+                    transferidoPor:
+                        order.transferido_por || null,
 
-                        dataTransferencia:
-                            order.data_transferencia || null,
+                    dataTransferencia:
+                        order.data_transferencia || null,
 
-                        statusAnteriorTransferencia:
-                            order.status_anterior_transferencia || null,
+                    statusAnteriorTransferencia:
+                        order.status_anterior_transferencia || null,
 
                     osType:
                         order.tipo_os ||
@@ -8684,7 +8717,20 @@ async function loadOrders() {
 
                     photoType:
                         order.tipo_foto ||
-                        'estudio',
+                        'edicao',
+
+                    localFoto:
+                        order.local_foto ||
+                        'sem_foto',
+
+                    video:
+                        (
+                            order.tem_video === true ||
+                            String(order.tem_video || '').toLowerCase() === 'sim' ||
+                            String(order.tem_video || '').toLowerCase() === 'true'
+                        )
+                            ? 'sim'
+                            : 'nao',
 
                     skus:
                         order.skus || [],
@@ -8712,7 +8758,6 @@ async function loadOrders() {
                     createdAt:
                         order.data_criacao,
 
-                    // NOVO
                     startedAt:
                         order.data_inicio ||
                         null,
@@ -8784,7 +8829,6 @@ async function loadOrders() {
                     anuncio_criado_data:
                         order.anuncio_criado_data ||
                         null
-                        
 
                 }));
 
@@ -8808,34 +8852,59 @@ async function loadOrders() {
             );
 
         } else {
+
             orders = [];
-            showToast('📭 Nenhuma ordem encontrada', 'info');
+
+            showToast(
+                '📭 Nenhuma ordem encontrada',
+                'info'
+            );
         }
 
+
         updateCounters();
+
         renderOrdersTable();
 
 
     } catch (error) {
-        console.error('❌ Erro ao carregar ordens:', error);
-        showToast('❌ Erro ao carregar ordens', 'error');
+
+        console.error(
+            '❌ Erro ao carregar ordens:',
+            error
+        );
+
+        showToast(
+            '❌ Erro ao carregar ordens',
+            'error'
+        );
+
 
         orders = [];
 
+
         updateCounters();
+
         renderOrdersTable();
 
+
     } finally {
+
         if (reloadBtn) {
+
             reloadBtn.innerHTML =
                 '<i class="fas fa-sync-alt"></i> Recarregar';
-            reloadBtn.disabled = false;
+
+            reloadBtn.disabled =
+                false;
         }
     }
 }
 
 async function saveOrder() {
+
     if (!currentUser) {
+
         showToast(
             '⚠️ Faça login primeiro',
             'warning'
@@ -8844,101 +8913,167 @@ async function saveOrder() {
         return;
     }
 
-    const normalizarTextoOS = valor => {
-        return String(valor || '')
-            .trim()
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(
-                /[\u0300-\u036f]/g,
-                ''
-            );
-    };
+
+    const normalizarTextoOS =
+        valor => {
+
+            return String(
+                valor || ''
+            )
+                .trim()
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ''
+                );
+        };
+
 
     const productName =
         document
-            .getElementById('productName')
+            .getElementById(
+                'productName'
+            )
             ?.value
             ?.trim() ||
         '';
+
 
     const responsibleName =
         document
-            .getElementById('responsibleName')
+            .getElementById(
+                'responsibleName'
+            )
             ?.value ||
         '';
+
 
     const linkAnuncio =
         document
-            .getElementById('linkAnuncio')
+            .getElementById(
+                'linkAnuncio'
+            )
             ?.value
             ?.trim() ||
         '';
+
 
     const photoType =
         document
-            .getElementById('photoType')
+            .getElementById(
+                'photoType'
+            )
             ?.value ||
         '';
+
+
+    const localFoto =
+        document
+            .getElementById(
+                'localFoto'
+            )
+            ?.value ||
+        'sem_foto';
+
+
+    const video =
+        document
+            .getElementById(
+                'temVideo'
+            )
+            ?.value ||
+        'nao';
+
 
     const valorAnuncio =
         document
-            .getElementById('valorAnuncio')
+            .getElementById(
+                'valorAnuncio'
+            )
             ?.value ||
         0;
 
+
     const descricaoAnuncio =
         document
-            .getElementById('descricaoAnuncio')
+            .getElementById(
+                'descricaoAnuncio'
+            )
             ?.value ||
         '';
 
+
     const linkNovoAnuncio =
         document
-            .getElementById('linkNovoAnuncio')
+            .getElementById(
+                'linkNovoAnuncio'
+            )
             ?.value
             ?.trim() ||
         '';
 
+
     const precisaFoto =
         document
-            .getElementById('precisaFoto')
+            .getElementById(
+                'precisaFoto'
+            )
             ?.value ||
         'nao';
 
+
     const urgency =
         document
-            .getElementById('urgency')
+            .getElementById(
+                'urgency'
+            )
             ?.value ||
         'normal';
+
 
     const osType =
         document
-            .getElementById('osType')
+            .getElementById(
+                'osType'
+            )
             ?.value ||
         'normal';
 
+
     const observations =
         document
-            .getElementById('observations')
+            .getElementById(
+                'observations'
+            )
             ?.value ||
         '';
+
 
     const skus =
         (
             document
-                .getElementById('skus')
+                .getElementById(
+                    'skus'
+                )
                 ?.value ||
             ''
         )
             .split(',')
-            .map(sku => sku.trim())
+            .map(
+                sku =>
+                    sku.trim()
+            )
             .filter(Boolean);
+
 
     const prazoHorasValor =
         document
-            .getElementById('prazoHoras')
+            .getElementById(
+                'prazoHoras'
+            )
             ?.value;
+
 
     const prazoHoras =
         parseInt(
@@ -8947,14 +9082,15 @@ async function saveOrder() {
         ) ||
         null;
 
+
     /*
      * Identifica Renovação de anúncio pelo serviço selecionado.
-     * Aceita tanto valor com acento quanto sem acento.
      */
     const servicoNormalizado =
         normalizarTextoOS(
             photoType
         );
+
 
     const ehRenovacaoAnuncio =
         servicoNormalizado.includes(
@@ -8964,10 +9100,12 @@ async function saveOrder() {
             'anuncio'
         );
 
+
     if (
         !productName ||
         !responsibleName
     ) {
+
         showToast(
             '⚠️ Preencha produto e responsável',
             'warning'
@@ -8976,11 +9114,35 @@ async function saveOrder() {
         return;
     }
 
+
+    if (
+        !SERVICOS_OS_ATIVOS.includes(
+            photoType
+        )
+    ) {
+
+        showToast(
+            '⚠️ Selecione um serviço válido para a OS',
+            'warning'
+        );
+
+        document
+            .getElementById(
+                'photoType'
+            )
+            ?.focus();
+
+        return;
+    }
+
+
     /*
      * Validações específicas da Renovação de anúncio.
      */
     if (ehRenovacaoAnuncio) {
+
         if (!linkAnuncio) {
+
             showToast(
                 '⚠️ Informe o link do anúncio',
                 'warning'
@@ -8989,11 +9151,16 @@ async function saveOrder() {
             return;
         }
 
+
         const possuiFotoReferencia =
-            Array.isArray(selectedPhotos) &&
+            Array.isArray(
+                selectedPhotos
+            ) &&
             selectedPhotos.length > 0;
 
+
         if (!possuiFotoReferencia) {
+
             showToast(
                 '⚠️ Adicione o link ou arquivo da foto da bike/gancheira',
                 'warning'
@@ -9003,8 +9170,10 @@ async function saveOrder() {
         }
     }
 
+
     let finalResponsibleName =
         responsibleName;
+
 
     const tiposComAnuncio = [
         'criar_anuncio',
@@ -9012,28 +9181,29 @@ async function saveOrder() {
         'edicao'
     ];
 
+
     /*
-     * Regra antiga de inclusão da Elaine para serviços
-     * comuns que precisam de foto.
-     *
-     * Não executa essa regra na Renovação, porque a primeira
-     * responsável interna precisa ser a Letícia.
+     * Regra antiga de inclusão da Elaine.
      */
     if (
         !ehRenovacaoAnuncio &&
         tiposComAnuncio.includes(
             photoType
         ) &&
-        precisaFoto === 'sim'
+        precisaFoto ===
+        'sim'
     ) {
+
         if (
             responsibleName &&
             normalizarTextoOS(
                 responsibleName
             ) !== 'elaine'
         ) {
+
             finalResponsibleName =
                 `${responsibleName} e Elaine`;
+
 
             showToast(
                 '📸 Elaine adicionada como responsável (precisa de foto)',
@@ -9041,23 +9211,33 @@ async function saveOrder() {
             );
 
         } else {
+
             finalResponsibleName =
                 'Elaine';
         }
     }
 
+
     let existingOrder =
         null;
 
+
     if (editingOrderId) {
+
         existingOrder =
             orders.find(
                 order =>
-                    String(order.id) ===
-                    String(editingOrderId)
+                    String(
+                        order.id
+                    ) ===
+                    String(
+                        editingOrderId
+                    )
             );
 
+
         if (!existingOrder) {
+
             showToast(
                 '❌ Não foi possível encontrar a OS que está sendo editada',
                 'error'
@@ -9067,10 +9247,14 @@ async function saveOrder() {
         }
     }
 
+
     const agora =
-        new Date().toISOString();
+        new Date()
+            .toISOString();
+
 
     const formData = {
+
         productName:
             productName,
 
@@ -9088,6 +9272,12 @@ async function saveOrder() {
 
         photoType:
             photoType,
+
+        localFoto:
+            localFoto,
+
+        video:
+            video,
 
         skus:
             skus,
@@ -9111,7 +9301,9 @@ async function saveOrder() {
             precisaFoto,
 
         photos:
-            Array.isArray(selectedPhotos)
+            Array.isArray(
+                selectedPhotos
+            )
                 ? selectedPhotos
                 : [],
 
@@ -9124,9 +9316,6 @@ async function saveOrder() {
         prazo_esperado:
             null,
 
-        /*
-         * Campos do fluxo de Renovação.
-         */
         fluxoRenovacao:
             ehRenovacaoAnuncio,
 
@@ -9147,10 +9336,12 @@ async function saveOrder() {
             ''
     };
 
+
     if (
         prazoHoras &&
         prazoHoras > 0
     ) {
+
         formData.prazo_esperado =
             calcularPrazoPorPrioridade(
                 new Date(),
@@ -9159,101 +9350,129 @@ async function saveOrder() {
             );
     }
 
+
     const isAnuncio =
         photoType ===
             'criar_anuncio' ||
         photoType ===
             'replicar_anuncio';
 
+
     const criandoNovaOS =
         !editingOrderId;
 
+
     if (criandoNovaOS) {
+
         formData.id =
             orderCounter;
+
 
         formData.code =
             generateOSCode();
 
+
         formData.status =
             'pendente';
+
 
         formData.photosTaken =
             0;
 
+
         formData.editsMade =
             0;
+
 
         formData.createdBy =
             currentUser.name ||
             currentUser.username ||
             '';
 
+
         formData.createdAt =
             agora;
+
 
         formData.completionDate =
             null;
 
+
         formData.conferido =
             false;
+
 
         formData.conferidoPor =
             null;
 
+
         formData.dataConferencia =
             null;
+
 
         formData.motivo_rejeicao =
             null;
 
+
         formData.rejeitado_por =
             null;
 
+
         formData.data_rejeicao =
             null;
+
 
         formData.anuncio_criado =
             isAnuncio
                 ? false
                 : null;
 
+
         formData.anuncio_criado_por =
             null;
+
 
         formData.anuncio_criado_data =
             null;
 
+
         /*
-         * Regra da Renovação:
-         *
-         * O campo visível do formulário continua Elaine,
-         * mas a responsável da primeira etapa é Letícia.
+         * Renovação:
+         * primeira etapa continua sendo Letícia.
          */
         if (ehRenovacaoAnuncio) {
+
             formData.responsibleName =
                 'Leticia';
+
 
             formData.user_notified =
                 false;
 
+
             formData.etapaFluxo =
                 'aguardando_leticia';
+
 
             formData.destinatarioFinal =
                 'Elaine';
 
+
             formData.status =
                 'pendente';
+
 
             formData.conferido =
                 false;
 
+
         } else {
+
             const responsavelNormalizado =
                 normalizarTextoOS(
                     finalResponsibleName
                 );
+
 
             const usuarioAtualNormalizado =
                 normalizarTextoOS(
@@ -9261,95 +9480,105 @@ async function saveOrder() {
                     currentUser.username
                 );
 
+
             formData.user_notified =
                 responsavelNormalizado !==
                 usuarioAtualNormalizado;
 
-            /*
-             * user_notified precisa ser false para indicar
-             * que existe uma notificação ainda não lida.
-             */
+
             formData.user_notified =
                 formData.user_notified
                     ? false
                     : true;
         }
 
+
     } else {
-        /*
-         * Edição: preserva os campos de controle da OS.
-         */
+
         formData.id =
             existingOrder.id;
+
 
         formData.code =
             existingOrder.code;
 
+
         formData.status =
             existingOrder.status;
+
 
         formData.photosTaken =
             existingOrder.photosTaken ||
             0;
 
+
         formData.editsMade =
             existingOrder.editsMade ||
             0;
 
+
         formData.createdBy =
             existingOrder.createdBy;
+
 
         formData.user_notified =
             existingOrder.user_notified;
 
+
         formData.createdAt =
             existingOrder.createdAt;
+
 
         formData.completionDate =
             existingOrder.completionDate ||
             null;
 
+
         formData.conferido =
             existingOrder.conferido ||
             false;
+
 
         formData.conferidoPor =
             existingOrder.conferidoPor ||
             null;
 
+
         formData.dataConferencia =
             existingOrder.dataConferencia ||
             null;
+
 
         formData.motivo_rejeicao =
             existingOrder.motivo_rejeicao ||
             null;
 
+
         formData.rejeitado_por =
             existingOrder.rejeitado_por ||
             null;
+
 
         formData.data_rejeicao =
             existingOrder.data_rejeicao ||
             null;
 
+
         formData.anuncio_criado =
             existingOrder.anuncio_criado ||
             false;
+
 
         formData.anuncio_criado_por =
             existingOrder.anuncio_criado_por ||
             null;
 
+
         formData.anuncio_criado_data =
             existingOrder.anuncio_criado_data ||
             null;
 
-        /*
-         * Se a OS já pertence ao fluxo de Renovação,
-         * editar os dados não pode mandá-la diretamente
-         * para Elaine nem reiniciar o fluxo.
-         */
+
         const existingEhRenovacao =
             existingOrder.fluxoRenovacao ===
                 true ||
@@ -9359,28 +9588,35 @@ async function saveOrder() {
                 'renovacao'
             );
 
+
         if (existingEhRenovacao) {
+
             formData.fluxoRenovacao =
                 true;
+
 
             formData.responsibleName =
                 existingOrder.responsibleName ||
                 'Leticia';
+
 
             formData.etapaFluxo =
                 existingOrder.etapaFluxo ||
                 existingOrder.etapa_fluxo ||
                 'aguardando_leticia';
 
+
             formData.destinatarioFinal =
                 existingOrder.destinatarioFinal ||
                 existingOrder.destinatario_final ||
                 'Elaine';
 
+
             formData.etapaAtualizadaEm =
                 existingOrder.etapaAtualizadaEm ||
                 existingOrder.etapa_atualizada_em ||
                 agora;
+
 
             formData.etapaAtualizadaPor =
                 existingOrder.etapaAtualizadaPor ||
@@ -9390,34 +9626,38 @@ async function saveOrder() {
                 '';
         }
 
-        /*
-         * Corrige data de conclusão inválida.
-         */
+
         if (
             formData.status ===
                 'concluida' &&
             formData.completionDate
         ) {
+
             const createdAtDate =
                 new Date(
                     formData.createdAt
                 );
+
 
             const completionDateObj =
                 new Date(
                     formData.completionDate
                 );
 
+
             if (
                 completionDateObj <
                 createdAtDate
             ) {
+
                 console.warn(
                     `Data de conclusão ${formData.completionDate} anterior à criação. Corrigindo para agora.`
                 );
 
+
                 formData.completionDate =
                     agora;
+
 
                 showToast(
                     '⚠️ Data de conclusão corrigida',
@@ -9426,9 +9666,7 @@ async function saveOrder() {
             }
         }
 
-        /*
-         * Recalcula o prazo quando necessário.
-         */
+
         if (
             formData.status !==
                 'concluida' &&
@@ -9439,6 +9677,7 @@ async function saveOrder() {
                     prazoHoras
             )
         ) {
+
             formData.prazo_esperado =
                 calcularPrazoPorPrioridade(
                     new Date(),
@@ -9446,27 +9685,34 @@ async function saveOrder() {
                     prazoHoras
                 );
 
+
         } else {
+
             formData.prazo_esperado =
                 existingOrder.prazo_esperado ||
                 null;
         }
+
 
         if (
             isAnuncio &&
             linkNovoAnuncio &&
             !existingOrder.anuncio_criado
         ) {
+
             formData.anuncio_criado =
                 true;
+
 
             formData.anuncio_criado_por =
                 currentUser.name ||
                 currentUser.username ||
                 '';
 
+
             formData.anuncio_criado_data =
                 agora;
+
 
             showToast(
                 '✅ Link do novo anúncio adicionado!',
@@ -9475,30 +9721,44 @@ async function saveOrder() {
         }
     }
 
+
     if (saveOSBtn) {
+
         saveOSBtn.innerHTML =
             '<span class="spinner"></span> Salvando...';
+
 
         saveOSBtn.disabled =
             true;
     }
 
+
     try {
+
         let result;
+
 
         if (
             editingOrderId &&
             supabaseClient
         ) {
+
             const oldOrder =
                 orders.find(
                     order =>
-                        String(order.id) ===
-                        String(editingOrderId)
+                        String(
+                            order.id
+                        ) ===
+                        String(
+                            editingOrderId
+                        )
                 );
 
+
             if (oldOrder) {
+
                 const dadosAntigos = {
+
                     produto:
                         oldOrder.productName,
 
@@ -9514,6 +9774,12 @@ async function saveOrder() {
                     servico:
                         oldOrder.photoType,
 
+                    local_foto:
+                        oldOrder.localFoto,
+
+                    video:
+                        oldOrder.video,
+
                     status:
                         oldOrder.status,
 
@@ -9522,6 +9788,7 @@ async function saveOrder() {
                         oldOrder.etapa_fluxo ||
                         null
                 };
+
 
                 await salvarHistoricoOS(
                     editingOrderId,
@@ -9534,89 +9801,120 @@ async function saveOrder() {
             }
         }
 
+
         if (supabaseClient) {
+
             result =
                 await saveOrderToSupabase(
                     formData
                 );
+
         } else {
+
             result = {
-                success: true,
-                offline: true
+                success:
+                    true,
+
+                offline:
+                    true
             };
         }
 
+
         if (!result?.success) {
+
             throw new Error(
                 result?.error ||
                 'Não foi possível salvar a OS'
             );
         }
 
+
         if (criandoNovaOS) {
-            /*
-             * Usa o ID retornado pelo Supabase, quando disponível.
-             */
+
             const osSalva =
                 result.data ||
                 result.order ||
                 result.os ||
                 null;
 
-            if (osSalva?.id) {
+
+            /*
+             * .insert().select() normalmente retorna array.
+             */
+            const registroSalvo =
+                Array.isArray(
+                    osSalva
+                )
+                    ? osSalva[0]
+                    : osSalva;
+
+
+            if (registroSalvo?.id) {
+
                 formData.id =
-                    osSalva.id;
+                    registroSalvo.id;
             }
 
-            if (osSalva?.codigo) {
+
+            if (registroSalvo?.codigo) {
+
                 formData.code =
-                    osSalva.codigo;
+                    registroSalvo.codigo;
             }
+
 
             orders.unshift(
                 formData
             );
 
+
             orderCounter++;
 
+
             if (ehRenovacaoAnuncio) {
+
                 showToast(
                     '✅ OS criada e enviada para a Letícia',
                     'success'
                 );
 
+
             } else {
+
                 showToast(
                     `✅ OS "${formData.productName}" criada`,
                     'success'
                 );
             }
 
-            /*
-             * Não envia e-mail.
-             * O sino é controlado por:
-             *
-             * responsavel = usuário da etapa
-             * user_notified = false
-             */
 
         } else {
+
             const index =
                 orders.findIndex(
                     order =>
-                        String(order.id) ===
-                        String(formData.id)
+                        String(
+                            order.id
+                        ) ===
+                        String(
+                            formData.id
+                        )
                 );
 
+
             if (index !== -1) {
+
                 orders[index] = {
                     ...orders[index],
                     ...formData
                 };
             }
 
+
             editingOrderId =
                 null;
+
 
             showToast(
                 `✅ OS "${formData.productName}" atualizada`,
@@ -9624,39 +9922,50 @@ async function saveOrder() {
             );
         }
 
+
         if (
             typeof updateCounters ===
             'function'
         ) {
+
             updateCounters();
         }
+
 
         if (
             typeof renderOrdersTable ===
             'function'
         ) {
+
             renderOrdersTable();
         }
+
 
         if (
             typeof clearForm ===
             'function'
         ) {
+
             clearForm();
         }
+
 
         if (
             typeof updateOSNotificationBell ===
             'function'
         ) {
+
             await updateOSNotificationBell();
         }
 
+
     } catch (error) {
+
         console.error(
             '❌ Erro salvando OS:',
             error
         );
+
 
         showToast(
             `❌ Erro ao salvar: ${
@@ -9666,10 +9975,14 @@ async function saveOrder() {
             'error'
         );
 
+
     } finally {
+
         if (saveOSBtn) {
+
             saveOSBtn.innerHTML =
                 '<i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>';
+
 
             saveOSBtn.disabled =
                 false;
@@ -10310,64 +10623,274 @@ window.conferirOS =
         }
     };
 
-// ============================================
-// FUNÇÕES DO FORMULÁRIO (ATUALIZADAS COM FOTOS)
-// ============================================
 function clearForm() {
-    const productNameInput = document.getElementById('productName');
-    const responsibleNameInput = document.getElementById('responsibleName');
-    const linkAnuncioInput = document.getElementById('linkAnuncio');
-    const urgencySelect = document.getElementById('urgency');
-    const osTypeSelect = document.getElementById('osType');
-    const photoTypeSelect = document.getElementById('photoType');
-    const skusInput = document.getElementById('skus');
-    const observationsInput = document.getElementById('observations');
-    const valorAnuncioInput = document.getElementById('valorAnuncio');
-    const descricaoAnuncioInput = document.getElementById('descricaoAnuncio');
-    const linkNovoAnuncioInput = document.getElementById('linkNovoAnuncio');
-    const precisaFotoSelect = document.getElementById('precisaFoto');
-    const photoLinkInput = document.getElementById('photoLinkInput');
-    const prazoHorasInput = document.getElementById('prazoHoras');
-    
-    if (productNameInput) { productNameInput.value = ''; contarCaracteres(); }
-    if (responsibleNameInput) responsibleNameInput.value = '';
-    if (linkAnuncioInput) linkAnuncioInput.value = '';
-    if (urgencySelect) urgencySelect.value = 'normal';
-    if (osTypeSelect) osTypeSelect.value = 'normal';
-    if (photoTypeSelect) photoTypeSelect.value = 'estudio';
-    if (skusInput) skusInput.value = '';
-    if (observationsInput) observationsInput.value = '';
-    if (valorAnuncioInput) valorAnuncioInput.value = '';
-    if (descricaoAnuncioInput) descricaoAnuncioInput.value = '';
-    if (linkNovoAnuncioInput) linkNovoAnuncioInput.value = '';
-    if (precisaFotoSelect) precisaFotoSelect.value = 'nao';
-    if (photoLinkInput) photoLinkInput.value = '';
-    
-    // 🔥 Resetar campo de prazo (horas) para o valor padrão da urgência normal (48)
-    if (prazoHorasInput) prazoHorasInput.value = 48;
-    
-    updateProductCounter(productNameInput, 'productCounter');
-    
-    // Ocultar campos de anúncio
-    document.getElementById('camposAnuncio').classList.add('hidden');
-    
-    // Limpar fotos
-    selectedPhotos = [];
-    const previewArea = document.getElementById('photoPreviews');
+
+    const productNameInput =
+        document.getElementById(
+            'productName'
+        );
+
+    const responsibleNameInput =
+        document.getElementById(
+            'responsibleName'
+        );
+
+    const linkAnuncioInput =
+        document.getElementById(
+            'linkAnuncio'
+        );
+
+    const urgencySelect =
+        document.getElementById(
+            'urgency'
+        );
+
+    const osTypeSelect =
+        document.getElementById(
+            'osType'
+        );
+
+    const photoTypeSelect =
+        document.getElementById(
+            'photoType'
+        );
+
+    const localFotoSelect =
+        document.getElementById(
+            'localFoto'
+        );
+
+    const temVideoSelect =
+        document.getElementById(
+            'temVideo'
+        );
+
+    const skusInput =
+        document.getElementById(
+            'skus'
+        );
+
+    const observationsInput =
+        document.getElementById(
+            'observations'
+        );
+
+    const valorAnuncioInput =
+        document.getElementById(
+            'valorAnuncio'
+        );
+
+    const descricaoAnuncioInput =
+        document.getElementById(
+            'descricaoAnuncio'
+        );
+
+    const linkNovoAnuncioInput =
+        document.getElementById(
+            'linkNovoAnuncio'
+        );
+
+    const precisaFotoSelect =
+        document.getElementById(
+            'precisaFoto'
+        );
+
+    const photoLinkInput =
+        document.getElementById(
+            'photoLinkInput'
+        );
+
+    const prazoHorasInput =
+        document.getElementById(
+            'prazoHoras'
+        );
+
+
+    if (productNameInput) {
+
+        productNameInput.value =
+            '';
+
+        contarCaracteres();
+    }
+
+
+    if (responsibleNameInput) {
+        responsibleNameInput.value =
+            '';
+    }
+
+
+    if (linkAnuncioInput) {
+        linkAnuncioInput.value =
+            '';
+    }
+
+
+    if (urgencySelect) {
+        urgencySelect.value =
+            'normal';
+    }
+
+
+    if (osTypeSelect) {
+        osTypeSelect.value =
+            'normal';
+    }
+
+
+    if (photoTypeSelect) {
+        photoTypeSelect.value =
+            'edicao';
+    }
+
+
+    if (localFotoSelect) {
+        localFotoSelect.value =
+            'sem_foto';
+    }
+
+
+    if (temVideoSelect) {
+        temVideoSelect.value =
+            'nao';
+    }
+
+
+    if (skusInput) {
+        skusInput.value =
+            '';
+    }
+
+
+    if (observationsInput) {
+        observationsInput.value =
+            '';
+    }
+
+
+    if (valorAnuncioInput) {
+        valorAnuncioInput.value =
+            '';
+    }
+
+
+    if (descricaoAnuncioInput) {
+        descricaoAnuncioInput.value =
+            '';
+    }
+
+
+    if (linkNovoAnuncioInput) {
+        linkNovoAnuncioInput.value =
+            '';
+    }
+
+
+    if (precisaFotoSelect) {
+        precisaFotoSelect.value =
+            'nao';
+    }
+
+
+    if (photoLinkInput) {
+        photoLinkInput.value =
+            '';
+    }
+
+
+    if (prazoHorasInput) {
+        prazoHorasInput.value =
+            48;
+    }
+
+
+    updateProductCounter(
+        productNameInput,
+        'productCounter'
+    );
+
+
+    const camposAnuncio =
+        document.getElementById(
+            'camposAnuncio'
+        );
+
+
+    if (camposAnuncio) {
+        camposAnuncio.classList.add(
+            'hidden'
+        );
+    }
+
+
+    selectedPhotos =
+        [];
+
+
+    const previewArea =
+        document.getElementById(
+            'photoPreviews'
+        );
+
+
     if (previewArea) {
-        previewArea.innerHTML = '';
-        previewArea.style.display = 'none';
+
+        previewArea.innerHTML =
+            '';
+
+        previewArea.style.display =
+            'none';
     }
-    const uploadArea = document.getElementById('photoUploadArea');
+
+
+    const uploadArea =
+        document.getElementById(
+            'photoUploadArea'
+        );
+
+
     if (uploadArea) {
-        uploadArea.querySelector('p:first-of-type').textContent = 'Clique ou arraste fotos aqui';
+
+        const texto =
+            uploadArea.querySelector(
+                'p:first-of-type'
+            );
+
+        if (texto) {
+
+            texto.textContent =
+                'Clique ou arraste fotos aqui';
+        }
     }
-    
-    editingOrderId = null;
-    if (formTitle) formTitle.textContent = 'Nova Ordem de Serviço';
-    if (submitBtnText) submitBtnText.textContent = 'Salvar OS';
-    if (cancelEditBtn) cancelEditBtn.classList.add('hidden');
-    
+
+
+    editingOrderId =
+        null;
+
+
+    if (formTitle) {
+
+        formTitle.textContent =
+            'Nova Ordem de Serviço';
+    }
+
+
+    if (submitBtnText) {
+
+        submitBtnText.textContent =
+            'Salvar OS';
+    }
+
+
+    if (cancelEditBtn) {
+
+        cancelEditBtn.classList.add(
+            'hidden'
+        );
+    }
+
+
     generateOSCode();
 }
 
@@ -11613,10 +12136,520 @@ document.addEventListener(
     }
 );
 
-// ============================================
-// RENDERIZAR TABELA DE OS
-// COM PAGINAÇÃO + BUSCA + TEMPO ÚTIL
-// ============================================
+// ============================================================
+// FILTROS DE COLUNA DA TABELA DE OS - ESTILO EXCEL
+// ============================================================
+
+function dataLocalFiltroOS(valor) {
+
+    if (!valor) {
+        return '';
+    }
+
+
+    const data =
+        new Date(
+            valor
+        );
+
+
+    if (
+        isNaN(
+            data.getTime()
+        )
+    ) {
+
+        return '';
+    }
+
+
+    const ano =
+        data.getFullYear();
+
+
+    const mes =
+        String(
+            data.getMonth() + 1
+        ).padStart(
+            2,
+            '0'
+        );
+
+
+    const dia =
+        String(
+            data.getDate()
+        ).padStart(
+            2,
+            '0'
+        );
+
+
+    return `${ano}-${mes}-${dia}`;
+}
+
+
+function obterValorFiltroColunaOS(
+    order,
+    campo
+) {
+
+    switch (campo) {
+
+        case 'codigo':
+
+            return String(
+                order.code ||
+                order.id ||
+                ''
+            );
+
+
+        case 'produto':
+
+            return String(
+                order.productName ||
+                ''
+            );
+
+
+        case 'responsavel':
+
+            return String(
+                order.responsibleName ||
+                ''
+            );
+
+
+        case 'servico':
+
+            return String(
+                order.photoType ||
+                ''
+            );
+
+
+        case 'local_foto':
+
+            return String(
+                order.localFoto ||
+                'sem_foto'
+            );
+
+
+        case 'video':
+
+            return String(
+                order.video ||
+                'nao'
+            );
+
+
+        case 'urgencia':
+
+            return String(
+                order.urgency ||
+                'normal'
+            );
+
+
+        case 'status':
+
+            return String(
+                order.status ||
+                'pendente'
+            );
+
+
+        case 'tempo':
+
+            if (
+                order.status ===
+                'concluida'
+            ) {
+
+                return 'concluida';
+            }
+
+
+            if (
+                order.startedAt ||
+                order.status ===
+                'andamento'
+            ) {
+
+                return 'em_execucao';
+            }
+
+
+            return 'nao_iniciado';
+
+
+        case 'criado_em':
+
+            return dataLocalFiltroOS(
+                order.createdAt
+            );
+
+
+        case 'links':
+
+            return (
+                (
+                    order.linkAnuncio &&
+                    String(
+                        order.linkAnuncio
+                    ).trim()
+                ) ||
+                (
+                    order.linkNovoAnuncio &&
+                    String(
+                        order.linkNovoAnuncio
+                    ).trim()
+                )
+            )
+                ? 'com_link'
+                : 'sem_link';
+
+
+        default:
+
+            return '';
+    }
+}
+
+
+function obterRotuloFiltroColunaOS(
+    campo,
+    valor
+) {
+
+    const mapas = {
+
+        servico:
+            PHOTO_TYPE_MAP,
+
+        local_foto:
+            LOCAL_FOTO_MAP,
+
+        video:
+            VIDEO_OS_MAP,
+
+        urgencia: {
+
+            alta:
+                'Alta',
+
+            normal:
+                'Normal',
+
+            baixa:
+                'Baixa'
+        },
+
+        status: {
+
+            pendente:
+                'Pendente',
+
+            andamento:
+                'Em Andamento',
+
+            concluida:
+                'Concluída'
+        },
+
+        tempo: {
+
+            nao_iniciado:
+                'Não iniciado',
+
+            em_execucao:
+                'Em execução',
+
+            concluida:
+                'Concluída'
+        },
+
+        links: {
+
+            com_link:
+                'Com link',
+
+            sem_link:
+                'Sem link'
+        }
+    };
+
+
+    if (
+        campo ===
+        'criado_em'
+    ) {
+
+        const partes =
+            String(
+                valor ||
+                ''
+            ).split(
+                '-'
+            );
+
+
+        if (
+            partes.length ===
+            3
+        ) {
+
+            return (
+                `${partes[2]}/` +
+                `${partes[1]}/` +
+                `${partes[0]}`
+            );
+        }
+    }
+
+
+    return (
+        mapas[
+            campo
+        ]?.[
+            valor
+        ] ||
+        valor ||
+        '-'
+    );
+}
+
+
+function preencherFiltrosColunasOS(
+    listaBase
+) {
+
+    const selects =
+        document.querySelectorAll(
+            '#osTable select[data-os-filter]'
+        );
+
+
+    selects.forEach(
+        select => {
+
+            const campo =
+                select.dataset.osFilter;
+
+
+            const selecionado =
+                filtrosColunasOS[
+                    campo
+                ] ||
+                '';
+
+
+            const valores =
+                Array.from(
+                    new Set(
+                        (
+                            listaBase ||
+                            []
+                        )
+                            .map(
+                                order =>
+                                    obterValorFiltroColunaOS(
+                                        order,
+                                        campo
+                                    )
+                            )
+                            .filter(
+                                valor =>
+                                    valor !==
+                                    ''
+                            )
+                    )
+                );
+
+
+            if (
+                selecionado &&
+                !valores.includes(
+                    selecionado
+                )
+            ) {
+
+                valores.push(
+                    selecionado
+                );
+            }
+
+
+            valores.sort(
+                (
+                    a,
+                    b
+                ) =>
+
+                    String(
+                        obterRotuloFiltroColunaOS(
+                            campo,
+                            a
+                        )
+                    ).localeCompare(
+                        String(
+                            obterRotuloFiltroColunaOS(
+                                campo,
+                                b
+                            )
+                        ),
+                        'pt-BR',
+                        {
+                            numeric:
+                                true,
+
+                            sensitivity:
+                                'base'
+                        }
+                    )
+            );
+
+
+            select.innerHTML =
+                '<option value="">Todos</option>' +
+
+                valores
+                    .map(
+                        valor => {
+
+                            const rotulo =
+                                obterRotuloFiltroColunaOS(
+                                    campo,
+                                    valor
+                                );
+
+
+                            return (
+                                `<option value="${escapeHtml(
+                                    String(
+                                        valor
+                                    )
+                                )}">${escapeHtml(
+                                    String(
+                                        rotulo
+                                    )
+                                )}</option>`
+                            );
+                        }
+                    )
+                    .join(
+                        ''
+                    );
+
+
+            select.value =
+                selecionado;
+        }
+    );
+}
+
+
+function aplicarFiltrosColunasOS(
+    lista
+) {
+
+    return (
+        lista ||
+        []
+    ).filter(
+        order => {
+
+            return Object.entries(
+                filtrosColunasOS
+            ).every(
+                (
+                    [
+                        campo,
+                        valorSelecionado
+                    ]
+                ) => {
+
+                    if (
+                        !valorSelecionado
+                    ) {
+
+                        return true;
+                    }
+
+
+                    return (
+                        obterValorFiltroColunaOS(
+                            order,
+                            campo
+                        ) ===
+                        valorSelecionado
+                    );
+                }
+            );
+        }
+    );
+}
+
+
+window.aplicarFiltroColunaOS =
+    function(
+        campo,
+        valor
+    ) {
+
+        if (
+            !Object.prototype
+                .hasOwnProperty
+                .call(
+                    filtrosColunasOS,
+                    campo
+                )
+        ) {
+
+            return;
+        }
+
+
+        filtrosColunasOS[
+            campo
+        ] =
+            valor ||
+            '';
+
+
+        paginaAtualOS =
+            1;
+
+
+        renderOrdersTable();
+    };
+
+
+window.limparFiltrosColunasOS =
+    function() {
+
+        Object.keys(
+            filtrosColunasOS
+        ).forEach(
+            campo => {
+
+                filtrosColunasOS[
+                    campo
+                ] =
+                    '';
+            }
+        );
+
+
+        paginaAtualOS =
+            1;
+
+
+        renderOrdersTable();
+    };
+
 function renderOrdersTable() {
 
     console.log(
@@ -11630,12 +12663,14 @@ function renderOrdersTable() {
     }
 
 
-    osTableBody.innerHTML = '';
+    osTableBody.innerHTML =
+        '';
 
 
     if (!currentUser) {
 
         if (emptyMessage) {
+
             emptyMessage.classList.remove(
                 'hidden'
             );
@@ -11655,7 +12690,8 @@ function renderOrdersTable() {
         );
 
 
-    let filteredOrders = [];
+    let filteredOrders =
+        [];
 
 
     // ========================================
@@ -11677,10 +12713,12 @@ function renderOrdersTable() {
             filteredOrders =
                 userOrders.filter(
                     o =>
-                        o.status === 'pendente' &&
+                        o.status ===
+                            'pendente' &&
                         (
                             !o.motivo_rejeicao ||
-                            o.motivo_rejeicao === ''
+                            o.motivo_rejeicao ===
+                                ''
                         )
                 );
 
@@ -11692,7 +12730,8 @@ function renderOrdersTable() {
             filteredOrders =
                 userOrders.filter(
                     o =>
-                        o.status === 'andamento'
+                        o.status ===
+                        'andamento'
                 );
 
             break;
@@ -11703,7 +12742,8 @@ function renderOrdersTable() {
             filteredOrders =
                 userOrders.filter(
                     o =>
-                        o.status === 'concluida' &&
+                        o.status ===
+                            'concluida' &&
                         !o.conferido
                 );
 
@@ -11715,9 +12755,11 @@ function renderOrdersTable() {
             filteredOrders =
                 userOrders.filter(
                     o =>
-                        o.status === 'pendente' &&
+                        o.status ===
+                            'pendente' &&
                         o.motivo_rejeicao &&
-                        o.motivo_rejeicao !== ''
+                        o.motivo_rejeicao !==
+                            ''
                 );
 
             break;
@@ -11728,8 +12770,10 @@ function renderOrdersTable() {
             let base =
                 userOrders.filter(
                     o =>
-                        o.status === 'concluida' &&
-                        o.conferido === true
+                        o.status ===
+                            'concluida' &&
+                        o.conferido ===
+                            true
                 );
 
 
@@ -11758,6 +12802,7 @@ function renderOrdersTable() {
                             if (
                                 !o.completionDate
                             ) {
+
                                 return false;
                             }
 
@@ -11802,6 +12847,18 @@ function renderOrdersTable() {
             break;
 
 
+        case 'renovacao_anuncio':
+
+            filteredOrders =
+                userOrders.filter(
+                    o =>
+                        o.photoType ===
+                        'renovacao_anuncio'
+                );
+
+            break;
+
+
         default:
 
             filteredOrders =
@@ -11812,112 +12869,147 @@ function renderOrdersTable() {
 
 
     // ========================================
-// PESQUISA
-// PESQUISA DENTRO DO FILTRO ATIVO
-// ========================================
+    // PESQUISA
+    // ========================================
 
-const campoBusca =
-    document.getElementById(
-        'buscaOS'
-    );
+    const campoBusca =
+        document.getElementById(
+            'buscaOS'
+        );
 
-/*
- * Remove acentos e transforma tudo em minúsculo.
- *
- * Assim, "Foto Estúdio" e "foto estudio"
- * produzem o mesmo resultado.
- */
-const normalizarTextoBuscaOS =
-    valor =>
-        String(valor || '')
-            .normalize('NFD')
-            .replace(
-                /[\u0300-\u036f]/g,
+
+    const normalizarTextoBuscaOS =
+        valor =>
+
+            String(
+                valor ||
                 ''
             )
-            .trim()
-            .toLowerCase();
+                .normalize(
+                    'NFD'
+                )
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ''
+                )
+                .trim()
+                .toLowerCase();
 
-const termoBusca =
-    normalizarTextoBuscaOS(
-        campoBusca?.value
-    );
 
-if (termoBusca) {
-    /*
-     * filteredOrders já contém somente as OS pertencentes
-     * ao filtro ativo. Portanto, a pesquisa abaixo acontece
-     * dentro de Pendentes, Em Andamento, Não Conferidas,
-     * Revisão, Concluídas ou Todas, conforme o filtro aberto.
-     */
-    filteredOrders =
-        filteredOrders.filter(
-            order => {
-                const skusTexto =
-                    Array.isArray(
-                        order.skus
-                    )
-                        ? order.skus.join(
-                            ' '
+    const termoBusca =
+        normalizarTextoBuscaOS(
+            campoBusca?.value
+        );
+
+
+    if (termoBusca) {
+
+        filteredOrders =
+            filteredOrders.filter(
+                order => {
+
+                    const skusTexto =
+                        Array.isArray(
+                            order.skus
                         )
-                        : (
-                            order.skus ||
-                            ''
-                        );
+                            ? order.skus.join(
+                                ' '
+                            )
+                            : (
+                                order.skus ||
+                                ''
+                            );
 
-                /*
-                 * order.photoType normalmente guarda valores
-                 * como "estudio", "bike" e "edicao".
-                 *
-                 * PHOTO_TYPE_MAP converte para o nome exibido:
-                 * "Foto Estúdio", "Foto Bike", "Apenas edição" etc.
-                 */
-                const codigoServico =
-                    order.photoType ||
-                    '';
 
-                const nomeServico =
-                    PHOTO_TYPE_MAP[
-                        codigoServico
-                    ] ||
-                    codigoServico;
+                    const codigoServico =
+                        order.photoType ||
+                        '';
 
-                const campos =
-                    [
+
+                    const nomeServico =
+                        PHOTO_TYPE_MAP[
+                            codigoServico
+                        ] ||
+                        codigoServico;
+
+
+                    const campos = [
+
                         order.code,
+
                         order.id,
+
                         order.productName,
+
                         order.responsibleName,
+
                         order.createdBy,
+
                         order.status,
+
                         order.urgency,
+
                         order.osType,
 
-                        // Código salvo no banco: "estudio"
                         codigoServico,
 
-                        // Nome exibido: "Foto Estúdio"
                         nomeServico,
 
+                        order.localFoto,
+
+                        LOCAL_FOTO_MAP[
+                            order.localFoto
+                        ] ||
+                        order.localFoto,
+
+                        order.video,
+
+                        VIDEO_OS_MAP[
+                            order.video
+                        ] ||
+                        order.video,
+
                         order.observations,
+
                         skusTexto,
+
                         order.linkAnuncio,
+
                         order.linkNovoAnuncio,
+
                         order.motivo_rejeicao,
+
                         order.rejeitado_por
                     ];
 
-                return campos.some(
-                    valor =>
-                        normalizarTextoBuscaOS(
-                            valor
-                        ).includes(
-                            termoBusca
-                        )
-                );
-            }
+
+                    return campos.some(
+                        valor =>
+
+                            normalizarTextoBuscaOS(
+                                valor
+                            ).includes(
+                                termoBusca
+                            )
+                    );
+                }
+            );
+    }
+
+
+    // ========================================
+    // FILTROS EXCEL
+    // ========================================
+
+    preencherFiltrosColunasOS(
+        filteredOrders
+    );
+
+
+    filteredOrders =
+        aplicarFiltrosColunasOS(
+            filteredOrders
         );
-}
 
 
     // ========================================
@@ -11925,12 +13017,15 @@ if (termoBusca) {
     // ========================================
 
     filteredOrders.sort(
-        (a, b) => {
+        (
+            a,
+            b
+        ) => {
 
             const aIsNotChecked =
                 (
                     a.status ===
-                    'concluida' &&
+                        'concluida' &&
                     !a.conferido
                 );
 
@@ -11938,7 +13033,7 @@ if (termoBusca) {
             const bIsNotChecked =
                 (
                     b.status ===
-                    'concluida' &&
+                        'concluida' &&
                     !b.conferido
                 );
 
@@ -11947,6 +13042,7 @@ if (termoBusca) {
                 aIsNotChecked &&
                 !bIsNotChecked
             ) {
+
                 return -1;
             }
 
@@ -11955,6 +13051,7 @@ if (termoBusca) {
                 !aIsNotChecked &&
                 bIsNotChecked
             ) {
+
                 return 1;
             }
 
@@ -11962,7 +13059,7 @@ if (termoBusca) {
             const aIsRevision =
                 (
                     a.status ===
-                    'pendente' &&
+                        'pendente' &&
                     a.motivo_rejeicao
                 );
 
@@ -11970,7 +13067,7 @@ if (termoBusca) {
             const bIsRevision =
                 (
                     b.status ===
-                    'pendente' &&
+                        'pendente' &&
                     b.motivo_rejeicao
                 );
 
@@ -11979,6 +13076,7 @@ if (termoBusca) {
                 aIsRevision &&
                 !bIsRevision
             ) {
+
                 return -1;
             }
 
@@ -11987,6 +13085,7 @@ if (termoBusca) {
                 !aIsRevision &&
                 bIsRevision
             ) {
+
                 return 1;
             }
 
@@ -12038,16 +13137,19 @@ if (termoBusca) {
 
 
     if (
-        paginaAtualOS < 1
+        paginaAtualOS <
+        1
     ) {
 
-        paginaAtualOS = 1;
+        paginaAtualOS =
+            1;
     }
 
 
     const inicio =
         (
-            paginaAtualOS - 1
+            paginaAtualOS -
+            1
         ) *
         itensPorPaginaOS;
 
@@ -12080,12 +13182,16 @@ if (termoBusca) {
 
     if (infoEl) {
 
-        if (totalItens === 0) {
+        if (
+            totalItens ===
+            0
+        ) {
 
             infoEl.textContent =
                 termoBusca
                     ? 'Nenhuma OS encontrada na pesquisa'
                     : 'Nenhum registro encontrado';
+
 
         } else {
 
@@ -12124,8 +13230,10 @@ if (termoBusca) {
 
         btnAnterior.disabled =
             (
-                paginaAtualOS <= 1 ||
-                totalItens === 0
+                paginaAtualOS <=
+                    1 ||
+                totalItens ===
+                    0
             );
     }
 
@@ -12136,8 +13244,8 @@ if (termoBusca) {
             (
                 paginaAtualOS >=
                     totalPaginas ||
-
-                totalItens === 0
+                totalItens ===
+                    0
             );
     }
 
@@ -12147,13 +13255,14 @@ if (termoBusca) {
     // ========================================
 
     if (
-        paginaItens.length === 0
+        paginaItens.length ===
+        0
     ) {
 
         osTableBody.innerHTML = `
             <tr>
                 <td
-                    colspan="9"
+                    colspan="12"
                     class="text-center"
                     style="padding:40px;"
                 >
@@ -12179,7 +13288,9 @@ if (termoBusca) {
                             ? `
                                 <p style="color:#adb5bd;">
                                     Pesquisa:
-                                    <strong>${escapeHtml(termoBusca)}</strong>
+                                    <strong>${escapeHtml(
+                                        termoBusca
+                                    )}</strong>
                                 </p>
                             `
                             : ''
@@ -12187,6 +13298,7 @@ if (termoBusca) {
                 </td>
             </tr>
         `;
+
 
         return;
     }
@@ -12223,19 +13335,19 @@ if (termoBusca) {
             const isRejectedPending =
                 (
                     order.status ===
-                    'pendente' &&
-
+                        'pendente' &&
                     order.motivo_rejeicao &&
-
-                    order.motivo_rejeicao
-                        .trim() !== ''
+                    String(
+                        order.motivo_rejeicao
+                    ).trim() !==
+                        ''
                 );
 
 
             const isNotChecked =
                 (
                     order.status ===
-                    'concluida' &&
+                        'concluida' &&
                     !order.conferido
                 );
 
@@ -12257,7 +13369,6 @@ if (termoBusca) {
                     null;
 
 
-                // Recalcula usando 07h-16h
                 if (
                     order.createdAt &&
                     order.prazo_horas
@@ -12274,6 +13385,7 @@ if (termoBusca) {
                             )
                         );
 
+
                 } else if (
                     order.prazo_esperado
                 ) {
@@ -12288,10 +13400,11 @@ if (termoBusca) {
                 if (
                     prazoCalculado &&
                     prazoCalculado <
-                        agora
+                    agora
                 ) {
 
-                    atrasado = true;
+                    atrasado =
+                        true;
                 }
             }
 
@@ -12300,7 +13413,9 @@ if (termoBusca) {
             // COR DA LINHA
             // =================================
 
-            if (isRejectedPending) {
+            if (
+                isRejectedPending
+            ) {
 
                 row.style.backgroundColor =
                     '#fff3cd';
@@ -12309,7 +13424,9 @@ if (termoBusca) {
                     '4px solid #ffc107';
 
 
-            } else if (isNotChecked) {
+            } else if (
+                isNotChecked
+            ) {
 
                 row.style.backgroundColor =
                     '#fff5f5';
@@ -12319,7 +13436,8 @@ if (termoBusca) {
 
 
             } else if (
-                order.urgency === 'alta'
+                order.urgency ===
+                'alta'
             ) {
 
                 row.style.backgroundColor =
@@ -12331,17 +13449,22 @@ if (termoBusca) {
             // LINKS
             // =================================
 
-            let linksHtml = '';
+            let linksHtml =
+                '';
 
 
             if (
                 order.linkAnuncio &&
-                order.linkAnuncio.trim()
+                String(
+                    order.linkAnuncio
+                ).trim()
             ) {
 
                 linksHtml += `
                     <a
-                        href="${order.linkAnuncio}"
+                        href="${escapeHtml(
+                            order.linkAnuncio
+                        )}"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="link-anuncio"
@@ -12351,7 +13474,6 @@ if (termoBusca) {
                             class="fas fa-link"
                             style="color:#00ADEE;"
                         ></i>
-
                         Anúncio
                     </a>
                 `;
@@ -12360,12 +13482,16 @@ if (termoBusca) {
 
             if (
                 order.linkNovoAnuncio &&
-                order.linkNovoAnuncio.trim()
+                String(
+                    order.linkNovoAnuncio
+                ).trim()
             ) {
 
                 linksHtml += `
                     <a
-                        href="${order.linkNovoAnuncio}"
+                        href="${escapeHtml(
+                            order.linkNovoAnuncio
+                        )}"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="link-anuncio"
@@ -12375,14 +13501,15 @@ if (termoBusca) {
                             class="fas fa-link"
                             style="color:#28a745;"
                         ></i>
-
                         Novo
                     </a>
                 `;
             }
 
 
-            if (!linksHtml) {
+            if (
+                !linksHtml
+            ) {
 
                 linksHtml = `
                     <span
@@ -12401,7 +13528,8 @@ if (termoBusca) {
             // BADGES
             // =================================
 
-            let conferenciaBadge = '';
+            let conferenciaBadge =
+                '';
 
 
             if (
@@ -12409,7 +13537,9 @@ if (termoBusca) {
                 'concluida'
             ) {
 
-                if (order.conferido) {
+                if (
+                    order.conferido
+                ) {
 
                     conferenciaBadge = `
                         <span class="badge badge-success">
@@ -12417,6 +13547,7 @@ if (termoBusca) {
                             Conferido
                         </span>
                     `;
+
 
                 } else {
 
@@ -12430,10 +13561,13 @@ if (termoBusca) {
             }
 
 
-            let ajusteBadge = '';
+            let ajusteBadge =
+                '';
 
 
-            if (isRejectedPending) {
+            if (
+                isRejectedPending
+            ) {
 
                 ajusteBadge = `
                     <span
@@ -12464,14 +13598,14 @@ if (termoBusca) {
                     : '';
 
 
-            let anuncioBadge = '';
+            let anuncioBadge =
+                '';
 
 
             const isAnuncio =
                 (
                     order.photoType ===
                         'criar_anuncio' ||
-
                     order.photoType ===
                         'replicar_anuncio'
                 );
@@ -12508,7 +13642,8 @@ if (termoBusca) {
                     : '';
 
 
-            let urgencyBadge = '';
+            let urgencyBadge =
+                '';
 
 
             if (
@@ -12536,7 +13671,8 @@ if (termoBusca) {
             }
 
 
-            let statusBadge = '';
+            let statusBadge =
+                '';
 
 
             if (
@@ -12585,11 +13721,20 @@ if (termoBusca) {
                         .toLocaleString(
                             'pt-BR',
                             {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
+                                day:
+                                    '2-digit',
+
+                                month:
+                                    '2-digit',
+
+                                year:
+                                    'numeric',
+
+                                hour:
+                                    '2-digit',
+
+                                minute:
+                                    '2-digit'
                             }
                         )
                     : '-';
@@ -12599,7 +13744,8 @@ if (termoBusca) {
             // AÇÕES
             // =================================
 
-            let actionButtons = '';
+            let actionButtons =
+                '';
 
 
             if (
@@ -12621,7 +13767,8 @@ if (termoBusca) {
 
             if (
                 order.photos &&
-                order.photos.length > 0 &&
+                order.photos.length >
+                    0 &&
                 (
                     hasPermission ||
                     isAdmin
@@ -12642,43 +13789,52 @@ if (termoBusca) {
 
 
             if (
-    order.status === 'concluida' &&
-    !order.conferido &&
-    (
-        isAdmin ||
-        podeUsuarioConferirOS(order)
-    )
-) {
-    actionButtons += `
-        <button
-            class="btn btn-success btn-sm"
-            onclick="conferirOS('${order.id}')"
-            title="Conferir"
-        >
-            <i class="fas fa-check-double"></i>
-        </button>
-    `;
-}
+                order.status ===
+                    'concluida' &&
+                !order.conferido &&
+                (
+                    isAdmin ||
+                    podeUsuarioConferirOS(
+                        order
+                    )
+                )
+            ) {
 
-if (
-    order.status === 'concluida' &&
-    !order.conferido &&
-    (
-        isAdmin ||
-        podeUsuarioNaoAutorizarOS(order)
-    )
-) {
-    actionButtons += `
-        <button
-            class="btn btn-danger btn-sm"
-            onclick="abrirRejeitarModal('${order.id}')"
-            title="Não Autorizado"
-        >
-            <i class="fas fa-ban"></i>
-            Não Autorizado
-        </button>
-    `;
-}
+                actionButtons += `
+                    <button
+                        class="btn btn-success btn-sm"
+                        onclick="conferirOS('${order.id}')"
+                        title="Conferir"
+                    >
+                        <i class="fas fa-check-double"></i>
+                    </button>
+                `;
+            }
+
+
+            if (
+                order.status ===
+                    'concluida' &&
+                !order.conferido &&
+                (
+                    isAdmin ||
+                    podeUsuarioNaoAutorizarOS(
+                        order
+                    )
+                )
+            ) {
+
+                actionButtons += `
+                    <button
+                        class="btn btn-danger btn-sm"
+                        onclick="abrirRejeitarModal('${order.id}')"
+                        title="Não Autorizado"
+                    >
+                        <i class="fas fa-ban"></i>
+                        Não Autorizado
+                    </button>
+                `;
+            }
 
 
             if (
@@ -12710,7 +13866,6 @@ if (
                 if (
                     order.status ===
                         'pendente' &&
-
                     !order.motivo_rejeicao
                 ) {
 
@@ -12763,7 +13918,12 @@ if (
             actionButtons += `
                 <button
                     class="btn btn-primary btn-sm"
-                    onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})"
+                    onclick="openPrintModal(${JSON.stringify(
+                        order
+                    ).replace(
+                        /"/g,
+                        '&quot;'
+                    )})"
                     title="Imprimir OS"
                 >
                     <i class="fas fa-print"></i>
@@ -12843,10 +14003,12 @@ if (
                         )}
                     </div>
 
-                    <small style="
-                        color:#6c757d;
-                        font-size:10px;
-                    ">
+                    <small
+                        style="
+                            color:#6c757d;
+                            font-size:10px;
+                        "
+                    >
                         <i class="fas fa-user-plus"></i>
 
                         Criado por:
@@ -12860,6 +14022,47 @@ if (
 
 
                 <td>
+                    ${escapeHtml(
+                        PHOTO_TYPE_MAP[
+                            order.photoType
+                        ] ||
+                        order.photoType ||
+                        '-'
+                    )}
+                </td>
+
+
+                <td>
+                    ${escapeHtml(
+                        LOCAL_FOTO_MAP[
+                            order.localFoto
+                        ] ||
+                        order.localFoto ||
+                        'Sem foto'
+                    )}
+                </td>
+
+
+                <td>
+                    <span
+                        class="badge ${
+                            order.video ===
+                            'sim'
+                                ? 'badge-info'
+                                : 'badge-secondary'
+                        }"
+                    >
+                        ${
+                            order.video ===
+                            'sim'
+                                ? 'Sim'
+                                : 'Não'
+                        }
+                    </span>
+                </td>
+
+
+                <td>
                     ${urgencyBadge}
                 </td>
 
@@ -12869,7 +14072,6 @@ if (
                 </td>
 
 
-                <!-- TEMPO EXEC. -->
                 <td
                     style="
                         white-space:nowrap;
@@ -12887,31 +14089,43 @@ if (
                 </td>
 
 
-                <!-- CRIADO EM -->
-                <td style="white-space:nowrap;">
+                <td
+                    style="white-space:nowrap;"
+                >
                     ${formattedDate}
                 </td>
 
 
                 <td>
 
-                    <div style="
-                        display:flex;
-                        flex-wrap:wrap;
-                        gap:3px;
-                        align-items:center;
-                    ">
+                    <div
+                        style="
+                            display:flex;
+                            flex-wrap:nowrap;
+                            gap:3px;
+                            align-items:center;
+                        "
+                    >
                         ${linksHtml}
                     </div>
 
                 </td>
 
 
-                <td style="min-width:380px;">
+                <td
+                    style="
+                        min-width:380px;
+                        white-space:nowrap;
+                    "
+                >
 
                     <div
-                        class="d-flex gap-1 flex-wrap"
-                        style="gap:3px;"
+                        class="os-actions"
+                        style="
+                            display:flex;
+                            flex-wrap:nowrap;
+                            gap:3px;
+                        "
                     >
                         ${actionButtons}
                     </div>
@@ -12928,6 +14142,7 @@ if (
 
 
     updateCounters();
+
 
     atualizarRelogiosOSTabela();
 
@@ -21024,450 +22239,553 @@ function exportarRelatorioOSExcel() {
 // ===== MODAL DE EDIÇÃO =====
 let editingOSId = null;
 
-// ============================================================
-// ABRIR MODAL DE EDIÇÃO DA OS
-// ============================================================
+window.abrirModalEdicaoOS =
+    function(orderId) {
 
-window.abrirModalEdicaoOS = function(orderId) {
-
-    const order =
-        orders.find(
-            o => String(o.id) === String(orderId)
-        );
-
-
-    if (!order) {
-
-        showToast(
-            'Ordem não encontrada',
-            'error'
-        );
-
-        return;
-    }
+        const order =
+            orders.find(
+                o =>
+                    String(
+                        o.id
+                    ) ===
+                    String(
+                        orderId
+                    )
+            );
 
 
-    // ========================================================
-    // PERMISSÃO NORMAL PARA EDITAR A OS
-    // ========================================================
+        if (!order) {
 
-    if (
-        !checkOrderPermission(order) &&
-        currentUser.role !== 'Administrador'
-    ) {
+            showToast(
+                'Ordem não encontrada',
+                'error'
+            );
 
-        showToast(
-            'Sem permissão para editar',
-            'warning'
-        );
-
-        return;
-    }
+            return;
+        }
 
 
-    editingOSId =
-        orderId;
+        if (
+            !checkOrderPermission(
+                order
+            ) &&
+            currentUser.role !==
+                'Administrador'
+        ) {
+
+            showToast(
+                'Sem permissão para editar',
+                'warning'
+            );
+
+            return;
+        }
 
 
-    const modal =
+        editingOSId =
+            orderId;
+
+
+        const modal =
+            document.getElementById(
+                'editOSModal'
+            );
+
+
+        if (!modal) {
+
+            showToast(
+                'Modal de edição não encontrado',
+                'error'
+            );
+
+            return;
+        }
+
+
         document.getElementById(
-            'editOSModal'
-        );
+            'editOSId'
+        ).value =
+            orderId;
 
 
-    if (!modal) {
-
-        showToast(
-            'Modal de edição não encontrado',
-            'error'
-        );
-
-        return;
-    }
-
-
-    // ========================================================
-    // CAMPOS
-    // ========================================================
-
-    document.getElementById(
-        'editOSId'
-    ).value =
-        orderId;
-
-
-    document.getElementById(
-        'editProductName'
-    ).value =
-        order.productName || '';
-
-
-    const responsavelSelect =
         document.getElementById(
-            'editResponsibleName'
-        );
-
-
-    responsavelSelect.value =
-        order.responsibleName || '';
-
-
-    document.getElementById(
-        'editOriginalResponsibleName'
-    ).value =
-        order.responsibleName || '';
-
-
-    document.getElementById(
-        'editUrgency'
-    ).value =
-        order.urgency || 'normal';
-
-
-    document.getElementById(
-        'editOsType'
-    ).value =
-        order.osType || 'normal';
-
-
-    document.getElementById(
-        'editPhotoType'
-    ).value =
-        order.photoType || 'estudio';
-
-
-    document.getElementById(
-        'editLinkAnuncio'
-    ).value =
-        order.linkAnuncio || '';
-
-
-    document.getElementById(
-        'editSkus'
-    ).value =
-        Array.isArray(order.skus)
-            ? order.skus.join(', ')
-            : (order.skus || '');
-
-
-    document.getElementById(
-        'editObservations'
-    ).value =
-        order.observations || '';
-
-
-    document.getElementById(
-        'editValorAnuncio'
-    ).value =
-        order.valorAnuncio || '';
-
-
-    document.getElementById(
-        'editDescricaoAnuncio'
-    ).value =
-        order.descricaoAnuncio || '';
-
-
-    document.getElementById(
-        'editLinkNovoAnuncio'
-    ).value =
-        order.linkNovoAnuncio || '';
-
-
-    document.getElementById(
-        'editPrecisaFoto'
-    ).value =
-        order.precisaFoto || 'nao';
-
-
-    // ========================================================
-    // SOMENTE ADMIN PODE TROCAR RESPONSÁVEL
-    // ========================================================
-
-    const isAdmin =
-        currentUser &&
-        currentUser.role ===
-        'Administrador';
-
-
-    responsavelSelect.disabled =
-        !isAdmin;
-
-
-    if (!isAdmin) {
-
-        responsavelSelect.title =
-            'Somente administradores podem alterar o responsável';
-
-    } else {
-
-        responsavelSelect.title =
-            'Selecione outro usuário para transferir esta OS';
-    }
-
-
-    // ========================================================
-    // CAMPO DA TRANSFERÊNCIA
-    // ========================================================
-
-    const transferenciaGroup =
-        document.getElementById(
-            'editTransferenciaResponsavelGroup'
-        );
-
-
-    const instrucaoInput =
-        document.getElementById(
-            'editInstrucaoTransferencia'
-        );
-
-
-    if (instrucaoInput) {
-
-        instrucaoInput.value =
+            'editProductName'
+        ).value =
+            order.productName ||
             '';
-    }
 
 
-    if (transferenciaGroup) {
-
-        transferenciaGroup.classList.add(
-            'hidden'
-        );
-
-        transferenciaGroup.style.display =
-            'none';
-    }
+        const responsavelSelect =
+            document.getElementById(
+                'editResponsibleName'
+            );
 
 
-    // ========================================================
-    // ESCUTAR ALTERAÇÃO DO RESPONSÁVEL
-    // ========================================================
-
-    responsavelSelect.onchange =
-        function() {
-
-            if (!isAdmin) {
-                return;
-            }
+        responsavelSelect.value =
+            order.responsibleName ||
+            '';
 
 
-            const original =
-                String(
-                    document.getElementById(
-                        'editOriginalResponsibleName'
-                    ).value || ''
+        document.getElementById(
+            'editOriginalResponsibleName'
+        ).value =
+            order.responsibleName ||
+            '';
+
+
+        document.getElementById(
+            'editUrgency'
+        ).value =
+            order.urgency ||
+            'normal';
+
+
+        document.getElementById(
+            'editOsType'
+        ).value =
+            order.osType ||
+            'normal';
+
+
+        // ====================================================
+        // SERVIÇO
+        // ====================================================
+
+        const editPhotoTypeSelect =
+            document.getElementById(
+                'editPhotoType'
+            );
+
+
+        if (editPhotoTypeSelect) {
+
+            /*
+             * Se for uma OS antiga com Foto Estúdio / Bike / Ambos,
+             * não seleciona automaticamente um novo serviço.
+             * Assim o usuário escolhe conscientemente o serviço novo.
+             */
+            editPhotoTypeSelect.value =
+                SERVICOS_OS_ATIVOS.includes(
+                    order.photoType
                 )
-                    .trim()
-                    .toLowerCase();
+                    ? order.photoType
+                    : '';
+        }
 
 
-            const novo =
-                String(
-                    responsavelSelect.value || ''
+        // ====================================================
+        // LOCAL DA FOTO
+        // ====================================================
+
+        const editLocalFotoSelect =
+            document.getElementById(
+                'editLocalFoto'
+            );
+
+
+        if (editLocalFotoSelect) {
+
+            editLocalFotoSelect.value =
+                order.localFoto ||
+                'sem_foto';
+        }
+
+
+        // ====================================================
+        // VÍDEO
+        // ====================================================
+
+        const editTemVideoSelect =
+            document.getElementById(
+                'editTemVideo'
+            );
+
+
+        if (editTemVideoSelect) {
+
+            editTemVideoSelect.value =
+                order.video ||
+                'nao';
+        }
+
+
+        document.getElementById(
+            'editLinkAnuncio'
+        ).value =
+            order.linkAnuncio ||
+            '';
+
+
+        document.getElementById(
+            'editSkus'
+        ).value =
+            Array.isArray(
+                order.skus
+            )
+                ? order.skus.join(
+                    ', '
                 )
-                    .trim()
-                    .toLowerCase();
+                : (
+                    order.skus ||
+                    ''
+                );
 
 
-            const mudou =
-                !!novo &&
-                novo !== original;
+        document.getElementById(
+            'editObservations'
+        ).value =
+            order.observations ||
+            '';
+
+
+        document.getElementById(
+            'editValorAnuncio'
+        ).value =
+            order.valorAnuncio ||
+            '';
+
+
+        document.getElementById(
+            'editDescricaoAnuncio'
+        ).value =
+            order.descricaoAnuncio ||
+            '';
+
+
+        document.getElementById(
+            'editLinkNovoAnuncio'
+        ).value =
+            order.linkNovoAnuncio ||
+            '';
+
+
+        document.getElementById(
+            'editPrecisaFoto'
+        ).value =
+            order.precisaFoto ||
+            'nao';
+
+
+        // ========================================================
+        // SOMENTE ADMIN PODE TROCAR RESPONSÁVEL
+        // ========================================================
+
+        const isAdmin =
+            currentUser &&
+            currentUser.role ===
+            'Administrador';
+
+
+        responsavelSelect.disabled =
+            !isAdmin;
+
+
+        if (!isAdmin) {
+
+            responsavelSelect.title =
+                'Somente administradores podem alterar o responsável';
+
+
+        } else {
+
+            responsavelSelect.title =
+                'Selecione outro usuário para transferir esta OS';
+        }
+
+
+        // ========================================================
+        // CAMPO DA TRANSFERÊNCIA
+        // ========================================================
+
+        const transferenciaGroup =
+            document.getElementById(
+                'editTransferenciaResponsavelGroup'
+            );
+
+
+        const instrucaoInput =
+            document.getElementById(
+                'editInstrucaoTransferencia'
+            );
+
+
+        if (instrucaoInput) {
+
+            instrucaoInput.value =
+                '';
+        }
+
+
+        if (transferenciaGroup) {
+
+            transferenciaGroup
+                .classList
+                .add(
+                    'hidden'
+                );
+
+
+            transferenciaGroup.style.display =
+                'none';
+        }
+
+
+        // ========================================================
+        // ALTERAÇÃO DO RESPONSÁVEL
+        // ========================================================
+
+        responsavelSelect.onchange =
+            function() {
+
+                if (!isAdmin) {
+
+                    return;
+                }
+
+
+                const original =
+                    String(
+                        document.getElementById(
+                            'editOriginalResponsibleName'
+                        ).value ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
+
+
+                const novo =
+                    String(
+                        responsavelSelect.value ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
+
+
+                const mudou =
+                    !!novo &&
+                    novo !==
+                    original;
+
+
+                if (
+                    transferenciaGroup
+                ) {
+
+                    if (mudou) {
+
+                        transferenciaGroup
+                            .classList
+                            .remove(
+                                'hidden'
+                            );
+
+
+                        transferenciaGroup.style.display =
+                            'block';
+
+
+                        setTimeout(
+                            () => {
+
+                                instrucaoInput
+                                    ?.focus();
+
+                            },
+                            50
+                        );
+
+
+                    } else {
+
+                        transferenciaGroup
+                            .classList
+                            .add(
+                                'hidden'
+                            );
+
+
+                        transferenciaGroup.style.display =
+                            'none';
+
+
+                        if (
+                            instrucaoInput
+                        ) {
+
+                            instrucaoInput.value =
+                                '';
+                        }
+                    }
+                }
+            };
+
+
+        // ========================================================
+        // CAMPOS DO ANÚNCIO
+        // ========================================================
+
+        const photoType =
+            order.photoType;
+
+
+        const isAnuncio =
+            (
+                photoType ===
+                    'criar_anuncio' ||
+
+                photoType ===
+                    'replicar_anuncio' ||
+
+                photoType ===
+                    'edicao'
+            );
+
+
+        const editCamposAnuncio =
+            document.getElementById(
+                'editCamposAnuncio'
+            );
+
+
+        if (editCamposAnuncio) {
+
+            editCamposAnuncio
+                .classList
+                .toggle(
+                    'hidden',
+                    !isAnuncio
+                );
+        }
+
+
+        // ========================================================
+        // MOTIVO DE REJEIÇÃO
+        // ========================================================
+
+        const motivoGroup =
+            document.getElementById(
+                'editMotivoRejeicaoGroup'
+            );
+
+
+        const motivoInput =
+            document.getElementById(
+                'editMotivoRejeicao'
+            );
+
+
+        if (
+            motivoGroup &&
+            isAdmin &&
+            order.motivo_rejeicao
+        ) {
+
+            motivoGroup
+                .classList
+                .remove(
+                    'hidden'
+                );
 
 
             if (
-                transferenciaGroup
+                motivoInput
             ) {
 
-                if (mudou) {
-
-                    transferenciaGroup.classList.remove(
-                        'hidden'
-                    );
-
-                    transferenciaGroup.style.display =
-                        'block';
-
-
-                    setTimeout(
-                        () => {
-
-                            instrucaoInput?.focus();
-
-                        },
-                        50
-                    );
-
-                } else {
-
-                    transferenciaGroup.classList.add(
-                        'hidden'
-                    );
-
-                    transferenciaGroup.style.display =
-                        'none';
-
-
-                    if (instrucaoInput) {
-
-                        instrucaoInput.value =
-                            '';
-                    }
-                }
+                motivoInput.value =
+                    order.motivo_rejeicao ||
+                    '';
             }
-        };
 
 
-    // ========================================================
-    // CAMPOS DO ANÚNCIO
-    // ========================================================
+        } else if (
+            motivoGroup
+        ) {
 
-    const photoType =
-        order.photoType;
-
-
-    const isAnuncio =
-        (
-            photoType ===
-                'criar_anuncio' ||
-
-            photoType ===
-                'replicar_anuncio' ||
-
-            photoType ===
-                'edicao'
-        );
+            motivoGroup
+                .classList
+                .add(
+                    'hidden'
+                );
 
 
-    const editCamposAnuncio =
-        document.getElementById(
-            'editCamposAnuncio'
-        );
+            if (
+                motivoInput
+            ) {
+
+                motivoInput.value =
+                    '';
+            }
+        }
 
 
-    if (editCamposAnuncio) {
+        // ========================================================
+        // CONTADOR DO PRODUTO
+        // ========================================================
 
-        editCamposAnuncio.classList.toggle(
-            'hidden',
-            !isAnuncio
-        );
-    }
-
-
-    // ========================================================
-    // MOTIVO DE REJEIÇÃO
-    // ========================================================
-
-    const motivoGroup =
-        document.getElementById(
-            'editMotivoRejeicaoGroup'
-        );
+        const campoProduto =
+            document.getElementById(
+                'editProductName'
+            );
 
 
-    const motivoInput =
-        document.getElementById(
-            'editMotivoRejeicao'
-        );
+        const contador =
+            document.getElementById(
+                'editContadorProduto'
+            );
 
 
-    if (
-        motivoGroup &&
-        isAdmin &&
-        order.motivo_rejeicao
-    ) {
+        if (
+            campoProduto &&
+            contador
+        ) {
 
-        motivoGroup.classList.remove(
+            function atualizarContadorEdit() {
+
+                const len =
+                    campoProduto.value.length;
+
+
+                const max =
+                    200;
+
+
+                contador.textContent =
+                    `${len}/${max}`;
+
+
+                contador.style.color =
+                    len >= max
+                        ? '#dc3545'
+                        : (
+                            len >=
+                            180
+                                ? '#ffc107'
+                                : '#6c757d'
+                        );
+
+
+                contador.style.fontWeight =
+                    len >= 180
+                        ? 'bold'
+                        : 'normal';
+            }
+
+
+            campoProduto.oninput =
+                atualizarContadorEdit;
+
+
+            atualizarContadorEdit();
+        }
+
+
+        modal.classList.remove(
             'hidden'
         );
-
-
-        if (motivoInput) {
-
-            motivoInput.value =
-                order.motivo_rejeicao || '';
-        }
-
-    } else if (motivoGroup) {
-
-        motivoGroup.classList.add(
-            'hidden'
-        );
-
-
-        if (motivoInput) {
-
-            motivoInput.value =
-                '';
-        }
-    }
-
-
-    // ========================================================
-    // CONTADOR DO PRODUTO
-    // ========================================================
-
-    const campoProduto =
-        document.getElementById(
-            'editProductName'
-        );
-
-
-    const contador =
-        document.getElementById(
-            'editContadorProduto'
-        );
-
-
-    if (
-        campoProduto &&
-        contador
-    ) {
-
-        function atualizarContadorEdit() {
-
-            const len =
-                campoProduto.value.length;
-
-
-            const max =
-                200;
-
-
-            contador.textContent =
-                `${len}/${max}`;
-
-
-            contador.style.color =
-                len >= max
-                    ? '#dc3545'
-                    : (
-                        len >= 180
-                            ? '#ffc107'
-                            : '#6c757d'
-                    );
-            contador.style.fontWeight =
-                len >= 180
-                    ? 'bold'
-                    : 'normal';
-        }
-        campoProduto.oninput =
-            atualizarContadorEdit;
-        atualizarContadorEdit();
-    }
-    modal.classList.remove(
-        'hidden'
-    );
-};
-
-window.fecharModalEdicaoOS = function() {
-    document.getElementById('editOSModal').classList.add('hidden');
-    editingOSId = null;
-};
-
-// ============================================================
-// SALVAR EDIÇÃO DA OS
-// + TRANSFERÊNCIA DE RESPONSÁVEL
-// ============================================================
+    };
 
 window.salvarEdicaoOS =
     async function() {
@@ -21492,8 +22810,12 @@ window.salvarEdicaoOS =
         const order =
             orders.find(
                 o =>
-                    String(o.id) ===
-                    String(orderId)
+                    String(
+                        o.id
+                    ) ===
+                    String(
+                        orderId
+                    )
             );
 
 
@@ -21509,13 +22831,14 @@ window.salvarEdicaoOS =
 
 
         // ====================================================
-        // COLETAR CAMPOS NORMAIS
+        // COLETAR CAMPOS
         // ====================================================
 
         const productName =
             document.getElementById(
                 'editProductName'
-            ).value.trim();
+            ).value
+                .trim();
 
 
         const responsibleName =
@@ -21548,10 +22871,25 @@ window.salvarEdicaoOS =
             ).value;
 
 
+        const localFoto =
+            document.getElementById(
+                'editLocalFoto'
+            )?.value ||
+            'sem_foto';
+
+
+        const video =
+            document.getElementById(
+                'editTemVideo'
+            )?.value ||
+            'nao';
+
+
         const linkAnuncio =
             document.getElementById(
                 'editLinkAnuncio'
-            ).value.trim();
+            ).value
+                .trim();
 
 
         const skus =
@@ -21563,13 +22901,16 @@ window.salvarEdicaoOS =
                     s =>
                         s.trim()
                 )
-                .filter(Boolean);
+                .filter(
+                    Boolean
+                );
 
 
         const observations =
             document.getElementById(
                 'editObservations'
-            ).value.trim();
+            ).value
+                .trim();
 
 
         const valorAnuncio =
@@ -21577,19 +22918,22 @@ window.salvarEdicaoOS =
                 document.getElementById(
                     'editValorAnuncio'
                 ).value
-            ) || 0;
+            ) ||
+            0;
 
 
         const descricaoAnuncio =
             document.getElementById(
                 'editDescricaoAnuncio'
-            ).value.trim();
+            ).value
+                .trim();
 
 
         const linkNovoAnuncio =
             document.getElementById(
                 'editLinkNovoAnuncio'
-            ).value.trim();
+            ).value
+                .trim();
 
 
         const precisaFoto =
@@ -21606,7 +22950,8 @@ window.salvarEdicaoOS =
 
         const motivoRejeicao =
             motivoInput
-                ? motivoInput.value.trim()
+                ? motivoInput.value
+                    .trim()
                 : '';
 
 
@@ -21624,13 +22969,15 @@ window.salvarEdicaoOS =
 
         const responsavelMudou =
             String(
-                responsibleName || ''
+                responsibleName ||
+                ''
             )
                 .trim()
                 .toLowerCase() !==
 
             String(
-                originalResponsibleName || ''
+                originalResponsibleName ||
+                ''
             )
                 .trim()
                 .toLowerCase();
@@ -21660,7 +23007,27 @@ window.salvarEdicaoOS =
         }
 
 
-        // Somente admin troca responsável
+        if (
+            !SERVICOS_OS_ATIVOS.includes(
+                photoType
+            )
+        ) {
+
+            showToast(
+                '⚠️ Selecione um dos serviços disponíveis antes de salvar.',
+                'warning'
+            );
+
+
+            document.getElementById(
+                'editPhotoType'
+            )?.focus();
+
+
+            return;
+        }
+
+
         if (
             responsavelMudou &&
             !isAdmin
@@ -21675,7 +23042,6 @@ window.salvarEdicaoOS =
         }
 
 
-        // Se mudar responsável, instrução obrigatória
         if (
             responsavelMudou &&
             !instrucaoTransferencia
@@ -21715,7 +23081,9 @@ window.salvarEdicaoOS =
         // CONFIRMAÇÃO DA TRANSFERÊNCIA
         // ====================================================
 
-        if (responsavelMudou) {
+        if (
+            responsavelMudou
+        ) {
 
             const confirmar =
                 confirm(
@@ -21728,7 +23096,10 @@ window.salvarEdicaoOS =
                 );
 
 
-            if (!confirmar) {
+            if (
+                !confirmar
+            ) {
+
                 return;
             }
         }
@@ -21740,7 +23111,7 @@ window.salvarEdicaoOS =
 
 
         // ====================================================
-        // DADOS NORMAIS DA EDIÇÃO
+        // DADOS DA EDIÇÃO
         // ====================================================
 
         const updateData = {
@@ -21759,6 +23130,13 @@ window.salvarEdicaoOS =
 
             tipo_foto:
                 photoType,
+
+            local_foto:
+                localFoto,
+
+            tem_video:
+                video ===
+                'sim',
 
             link_anuncio:
                 linkAnuncio,
@@ -21787,7 +23165,7 @@ window.salvarEdicaoOS =
 
 
         // ====================================================
-        // ADMIN PODE ALTERAR O MOTIVO NORMALMENTE
+        // ADMIN ALTERA MOTIVO
         // ====================================================
 
         if (
@@ -21806,9 +23184,10 @@ window.salvarEdicaoOS =
         // TRANSFERÊNCIA
         // ====================================================
 
-        if (responsavelMudou) {
+        if (
+            responsavelMudou
+        ) {
 
-            // Guardar dados da transferência
             updateData.responsavel_anterior =
                 originalResponsibleName;
 
@@ -21833,21 +23212,9 @@ window.salvarEdicaoOS =
                 true;
 
 
-            // ================================================
-            // NOVO RESPONSÁVEL RECEBE COMO PENDENTE
-            // ================================================
-
             updateData.status =
                 'pendente';
 
-
-            // ================================================
-            // LIMPAR APENAS O ESTADO OPERACIONAL ATUAL
-            //
-            // O estado anterior será salvo no histórico.
-            // Fotos, edições, SKU, observações etc.
-            // NÃO são removidos.
-            // ================================================
 
             updateData.motivo_rejeicao =
                 null;
@@ -21877,12 +23244,10 @@ window.salvarEdicaoOS =
                 null;
 
 
-            // Novo responsável ainda não iniciou
             updateData.data_inicio =
                 null;
 
 
-            // Para aparecer como nova notificação
             updateData.user_notified =
                 false;
         }
@@ -21890,7 +23255,9 @@ window.salvarEdicaoOS =
 
         try {
 
-            if (!supabaseClient) {
+            if (
+                !supabaseClient
+            ) {
 
                 throw new Error(
                     'Supabase não conectado'
@@ -21898,10 +23265,9 @@ window.salvarEdicaoOS =
             }
 
 
-            // =================================================
-            // SALVAR ESTADO ANTERIOR NO HISTÓRICO
-            // ANTES DA TRANSFERÊNCIA
-            // =================================================
+            // ================================================
+            // HISTÓRICO
+            // ================================================
 
             if (
                 responsavelMudou &&
@@ -21932,22 +23298,34 @@ window.salvarEdicaoOS =
                         currentUser.name,
 
                     dataTransferencia:
-                        agoraISO
+                        agoraISO,
+
+                    // NOVOS CAMPOS
+                    photoType:
+                        photoType,
+
+                    localFoto:
+                        localFoto,
+
+                    video:
+                        video
                 };
 
 
                 await salvarHistoricoOS(
                     orderId,
-                    { ...order },
+                    {
+                        ...order
+                    },
                     dadosDepoisHistorico,
                     currentUser.name
                 );
             }
 
 
-            // =================================================
-            // ATUALIZAR SUPABASE
-            // =================================================
+            // ================================================
+            // SUPABASE
+            // ================================================
 
             const {
                 error
@@ -21965,32 +23343,44 @@ window.salvarEdicaoOS =
                     );
 
 
-            if (error) {
+            if (
+                error
+            ) {
+
                 throw error;
             }
 
 
-            // =================================================
+            // ================================================
             // ATUALIZAÇÃO LOCAL
-            // =================================================
+            // ================================================
 
             const idx =
                 orders.findIndex(
                     o =>
-                        String(o.id) ===
-                        String(orderId)
+                        String(
+                            o.id
+                        ) ===
+                        String(
+                            orderId
+                        )
                 );
 
 
             if (
-                idx !== -1
+                idx !==
+                -1
             ) {
 
                 const old =
-                    orders[idx];
+                    orders[
+                        idx
+                    ];
 
 
-                orders[idx] = {
+                orders[
+                    idx
+                ] = {
 
                     ...old,
 
@@ -22008,6 +23398,14 @@ window.salvarEdicaoOS =
 
                     photoType:
                         updateData.tipo_foto,
+
+                    localFoto:
+                        updateData.local_foto,
+
+                    video:
+                        updateData.tem_video
+                            ? 'sim'
+                            : 'nao',
 
                     linkAnuncio:
                         updateData.link_anuncio,
@@ -22049,75 +23447,107 @@ window.salvarEdicaoOS =
                     responsavelMudou
                 ) {
 
-                    orders[idx].status =
+                    orders[
+                        idx
+                    ].status =
                         'pendente';
 
 
-                    orders[idx].transferenciaPendente =
+                    orders[
+                        idx
+                    ].transferenciaPendente =
                         true;
 
 
-                    orders[idx].instrucaoTransferencia =
+                    orders[
+                        idx
+                    ].instrucaoTransferencia =
                         instrucaoTransferencia;
 
 
-                    orders[idx].responsavelAnterior =
+                    orders[
+                        idx
+                    ].responsavelAnterior =
                         originalResponsibleName;
 
 
-                    orders[idx].transferidoPor =
+                    orders[
+                        idx
+                    ].transferidoPor =
                         currentUser.name;
 
 
-                    orders[idx].dataTransferencia =
+                    orders[
+                        idx
+                    ].dataTransferencia =
                         agoraISO;
 
 
-                    orders[idx].statusAnteriorTransferencia =
+                    orders[
+                        idx
+                    ].statusAnteriorTransferencia =
                         order.status;
 
 
-                    orders[idx].motivo_rejeicao =
+                    orders[
+                        idx
+                    ].motivo_rejeicao =
                         null;
 
 
-                    orders[idx].rejeitado_por =
+                    orders[
+                        idx
+                    ].rejeitado_por =
                         null;
 
 
-                    orders[idx].data_rejeicao =
+                    orders[
+                        idx
+                    ].data_rejeicao =
                         null;
 
 
-                    orders[idx].conferido =
+                    orders[
+                        idx
+                    ].conferido =
                         false;
 
 
-                    orders[idx].conferidoPor =
+                    orders[
+                        idx
+                    ].conferidoPor =
                         null;
 
 
-                    orders[idx].dataConferencia =
+                    orders[
+                        idx
+                    ].dataConferencia =
                         null;
 
 
-                    orders[idx].completionDate =
+                    orders[
+                        idx
+                    ].completionDate =
                         null;
 
 
-                    orders[idx].startedAt =
+                    orders[
+                        idx
+                    ].startedAt =
                         null;
 
 
-                    orders[idx].user_notified =
+                    orders[
+                        idx
+                    ].user_notified =
                         false;
                 }
             }
 
 
-            // =================================================
-            // NOTIFICAR NOVO RESPONSÁVEL
-            // =================================================
+            // ================================================
+            // NOTIFICAÇÃO DO NOVO RESPONSÁVEL
+            // ================================================
 
             if (
                 responsavelMudou
@@ -22175,9 +23605,9 @@ Sistema Wheel Tech
             }
 
 
-            // =================================================
+            // ================================================
             // FINAL
-            // =================================================
+            // ================================================
 
             fecharModalEdicaoOS();
 
@@ -22199,6 +23629,7 @@ Sistema Wheel Tech
                     `✅ OS transferida para ${responsibleName} e enviada para Pendentes.`,
                     'success'
                 );
+
 
             } else {
 
