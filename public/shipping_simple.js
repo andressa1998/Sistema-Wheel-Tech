@@ -55,6 +55,1112 @@ const SHIPPING_COST_TABLE = [
     { priceMin: 200,    priceMax: 10000,   weightMin: 1.5,    weightMax: 2,   cost: 24.65 }
 ];
 
+// A tabela acima é a versão-base.
+// Ela será usada nas vendas anteriores à primeira atualização cadastrada.
+let tabelasFreteHistoricas = [];
+
+function normalizarDataVendaFrete(data) {
+    if (!data) {
+        return null;
+    }
+
+    const objeto = new Date(data);
+
+    if (isNaN(objeto.getTime())) {
+        return null;
+    }
+
+    return objeto;
+}
+
+function obterTabelaFreteVigente(dataVenda) {
+    const data = normalizarDataVendaFrete(dataVenda);
+
+    if (
+        !data ||
+        tabelasFreteHistoricas.length === 0
+    ) {
+        return SHIPPING_COST_TABLE;
+    }
+
+    const tabelasVigentes =
+        tabelasFreteHistoricas
+            .filter(item => {
+                const inicio = new Date(
+                    `${item.vigencia_inicio}T00:00:00`
+                );
+
+                return (
+                    !isNaN(inicio.getTime()) &&
+                    inicio <= data
+                );
+            })
+            .sort((a, b) =>
+                String(b.vigencia_inicio)
+                    .localeCompare(
+                        String(a.vigencia_inicio)
+                    )
+            );
+
+    if (
+        tabelasVigentes.length === 0 ||
+        !Array.isArray(
+            tabelasVigentes[0].tabela
+        )
+    ) {
+        return SHIPPING_COST_TABLE;
+    }
+
+    return tabelasVigentes[0].tabela;
+}
+
+async function carregarTabelasFreteHistoricas() {
+    if (!window.supabaseClient) {
+        return;
+    }
+
+    const {
+        data,
+        error
+    } = await window.supabaseClient
+        .from('tabelas_frete_ml')
+        .select('*')
+        .order(
+            'vigencia_inicio',
+            { ascending: false }
+        );
+
+    if (error) {
+        console.error(
+            'Erro ao carregar tabelas históricas de frete:',
+            error
+        );
+
+        const lista =
+            document.getElementById(
+                'historicoTabelasFrete'
+            );
+
+        if (lista) {
+            lista.innerHTML = `
+                <div class="alert alert-warning mb-0">
+                    A tabela tabelas_frete_ml ainda não
+                    foi criada no Supabase.
+                </div>
+            `;
+        }
+
+        return;
+    }
+
+    tabelasFreteHistoricas =
+        (data || [])
+            .map(item => {
+                let tabela = item.tabela;
+
+                if (typeof tabela === 'string') {
+                    try {
+                        tabela = JSON.parse(tabela);
+                    } catch (error) {
+                        tabela = [];
+                    }
+                }
+
+                return {
+                    ...item,
+                    tabela:
+                        Array.isArray(tabela)
+                            ? tabela
+                            : []
+                };
+            })
+            .filter(item =>
+                item.tabela.length > 0
+            );
+
+    renderizarHistoricoTabelasFrete();
+}
+
+function renderizarHistoricoTabelasFrete() {
+    const container =
+        document.getElementById(
+            'historicoTabelasFrete'
+        );
+
+    if (!container) {
+        return;
+    }
+
+    if (
+        tabelasFreteHistoricas.length === 0
+    ) {
+        container.innerHTML = `
+            <span class="text-muted">
+                Nenhuma atualização cadastrada.
+                A tabela original do sistema está vigente.
+            </span>
+        `;
+
+        return;
+    }
+
+    container.innerHTML =
+        tabelasFreteHistoricas
+            .map(item => {
+                const data = new Date(
+                    `${item.vigencia_inicio}T00:00:00`
+                ).toLocaleDateString('pt-BR');
+
+                const quantidade =
+                    Array.isArray(item.tabela)
+                        ? item.tabela.length
+                        : 0;
+
+                return `
+                    <div
+                        class="d-flex justify-content-between
+                               align-items-center border-top py-2"
+                    >
+                        <div>
+                            <strong>
+                                A partir de ${data}
+                            </strong>
+
+                            <br>
+
+                            <small class="text-muted">
+                                ${quantidade} faixas
+                                •
+                                ${
+                                    item.link_origem ||
+                                    'Link não informado'
+                                }
+                            </small>
+                        </div>
+
+                        <span class="badge badge-success">
+                            Salva
+                        </span>
+                    </div>
+                `;
+            })
+            .join('');
+}
+
+function numeroBrasileiroFrete(texto) {
+    const limpo =
+        String(texto || '')
+            .replace(/R\$/gi, '')
+            .replace(/\s/g, '')
+            .replace(
+                /\.(?=\d{3}(?:\D|$))/g,
+                ''
+            )
+            .replace(',', '.');
+
+    const numero = parseFloat(
+        limpo.replace(
+            /[^0-9.-]/g,
+            ''
+        )
+    );
+
+    return isNaN(numero)
+        ? null
+        : numero;
+}
+
+function extrairIntervaloPrecoFrete(texto) {
+    const original =
+        String(texto || '');
+
+    const numeros =
+        original.match(
+            /\d[\d.]*,?\d*/g
+        ) || [];
+
+    const valores =
+        numeros
+            .map(numeroBrasileiroFrete)
+            .filter(valor =>
+                valor !== null
+            );
+
+    if (!valores.length) {
+        return null;
+    }
+
+    if (
+        /(at[eé]|menos de)/i.test(original) &&
+        valores.length === 1
+    ) {
+        return {
+            min: 0,
+            max: valores[0]
+        };
+    }
+
+    if (
+        /(ou mais|acima|maior|a partir de)/i
+            .test(original) &&
+        valores.length === 1
+    ) {
+        return {
+            min: valores[0],
+            max: 1000000
+        };
+    }
+
+    if (valores.length >= 2) {
+        return {
+            min: valores[0],
+            max: valores[1]
+        };
+    }
+
+    return null;
+}
+
+function extrairIntervaloPesoFrete(texto) {
+    const original =
+        String(texto || '')
+            .toLowerCase();
+
+    const numeros =
+        original.match(
+            /\d[\d.]*,?\d*/g
+        ) || [];
+
+    let valores =
+        numeros
+            .map(numeroBrasileiroFrete)
+            .filter(valor =>
+                valor !== null
+            );
+
+    if (!valores.length) {
+        return null;
+    }
+
+    const usaGramas =
+        /\bg\b/i.test(original) &&
+        !/\bkg\b/i.test(original);
+
+    if (usaGramas) {
+        valores =
+            valores.map(valor =>
+                valor / 1000
+            );
+    }
+
+    if (
+        /(at[eé]|menos de)/i.test(original) &&
+        valores.length === 1
+    ) {
+        return {
+            min: 0,
+            max: valores[0]
+        };
+    }
+
+    if (
+        /(ou mais|acima|maior|a partir de)/i
+            .test(original) &&
+        valores.length === 1
+    ) {
+        return {
+            min: valores[0],
+            max: 1000
+        };
+    }
+
+    if (valores.length >= 2) {
+        return {
+            min: valores[0],
+            max: valores[1]
+        };
+    }
+
+    return null;
+}
+
+function decodificarHTMLTabelaFrete(conteudo) {
+    const area =
+        document.createElement('textarea');
+
+    area.innerHTML =
+        String(conteudo || '');
+
+    return area.value
+        .replace(/\\u003c/gi, '<')
+        .replace(/\\u003e/gi, '>')
+        .replace(/\\u0026/gi, '&')
+        .replace(/\\u0022/gi, '"')
+        .replace(/\\\//g, '/')
+        .replace(/\\"/g, '"');
+}
+
+function coletarConteudosPossiveisTabelaFrete(
+    html
+) {
+    const conteudos = [
+        String(html || '')
+    ];
+
+    const documento =
+        new DOMParser().parseFromString(
+            String(html || ''),
+            'text/html'
+        );
+
+    // Procura os dados dentro dos scripts da página.
+    documento
+        .querySelectorAll('script')
+        .forEach(script => {
+            const texto =
+                script.textContent || '';
+
+            if (texto) {
+                conteudos.push(texto);
+            }
+
+            // Algumas páginas guardam todo o conteúdo
+            // dentro de um objeto JSON.
+            try {
+                const json =
+                    JSON.parse(texto);
+
+                const percorrer = valor => {
+                    if (
+                        typeof valor ===
+                        'string'
+                    ) {
+                        if (
+                            /peso|R\$|table|custos? d[oe] envio/i
+                                .test(valor)
+                        ) {
+                            conteudos.push(
+                                valor
+                            );
+                        }
+
+                        return;
+                    }
+
+                    if (
+                        Array.isArray(valor)
+                    ) {
+                        valor.forEach(
+                            percorrer
+                        );
+
+                        return;
+                    }
+
+                    if (
+                        valor &&
+                        typeof valor ===
+                            'object'
+                    ) {
+                        Object
+                            .values(valor)
+                            .forEach(
+                                percorrer
+                            );
+                    }
+                };
+
+                percorrer(json);
+
+            } catch (error) {
+                // O script não era um JSON.
+            }
+        });
+
+    // Procura HTML escapado no código bruto.
+    const brutoDecodificado =
+        decodificarHTMLTabelaFrete(
+            html
+        );
+
+    conteudos.push(
+        brutoDecodificado
+    );
+
+    const blocosEscapados =
+        String(html || '').match(
+            /(?:<table|&lt;table|\\u003ctable)[\s\S]*?(?:<\\\/table>|<\/table>|&lt;\\?\/table&gt;|\\u003c\\?\/table\\u003e)/gi
+        ) || [];
+
+    blocosEscapados.forEach(
+        bloco => {
+            conteudos.push(
+                decodificarHTMLTabelaFrete(
+                    bloco
+                )
+            );
+        }
+    );
+
+    // Remove conteúdos repetidos.
+    return [
+        ...new Set(
+            conteudos
+                .map(
+                    decodificarHTMLTabelaFrete
+                )
+                .filter(Boolean)
+        )
+    ];
+}
+
+function decodificarHTMLTabelaFrete(conteudo) {
+    const area =
+        document.createElement('textarea');
+
+    area.innerHTML =
+        String(conteudo || '');
+
+    return area.value
+        .replace(/\\u003c/gi, '<')
+        .replace(/\\u003e/gi, '>')
+        .replace(/\\u0026/gi, '&')
+        .replace(/\\u0022/gi, '"')
+        .replace(/\\\//g, '/')
+        .replace(/\\"/g, '"');
+}
+
+function coletarConteudosPossiveisTabelaFrete(
+    html
+) {
+    const conteudos = [
+        String(html || '')
+    ];
+
+    const documento =
+        new DOMParser().parseFromString(
+            String(html || ''),
+            'text/html'
+        );
+
+    // Procura os dados dentro dos scripts da página.
+    documento
+        .querySelectorAll('script')
+        .forEach(script => {
+            const texto =
+                script.textContent || '';
+
+            if (texto) {
+                conteudos.push(texto);
+            }
+
+            // Algumas páginas guardam todo o conteúdo
+            // dentro de um objeto JSON.
+            try {
+                const json =
+                    JSON.parse(texto);
+
+                const percorrer = valor => {
+                    if (
+                        typeof valor ===
+                        'string'
+                    ) {
+                        if (
+                            /peso|R\$|table|custos? d[oe] envio/i
+                                .test(valor)
+                        ) {
+                            conteudos.push(
+                                valor
+                            );
+                        }
+
+                        return;
+                    }
+
+                    if (
+                        Array.isArray(valor)
+                    ) {
+                        valor.forEach(
+                            percorrer
+                        );
+
+                        return;
+                    }
+
+                    if (
+                        valor &&
+                        typeof valor ===
+                            'object'
+                    ) {
+                        Object
+                            .values(valor)
+                            .forEach(
+                                percorrer
+                            );
+                    }
+                };
+
+                percorrer(json);
+
+            } catch (error) {
+                // O script não era um JSON.
+            }
+        });
+
+    // Procura HTML escapado no código bruto.
+    const brutoDecodificado =
+        decodificarHTMLTabelaFrete(
+            html
+        );
+
+    conteudos.push(
+        brutoDecodificado
+    );
+
+    const blocosEscapados =
+        String(html || '').match(
+            /(?:<table|&lt;table|\\u003ctable)[\s\S]*?(?:<\\\/table>|<\/table>|&lt;\\?\/table&gt;|\\u003c\\?\/table\\u003e)/gi
+        ) || [];
+
+    blocosEscapados.forEach(
+        bloco => {
+            conteudos.push(
+                decodificarHTMLTabelaFrete(
+                    bloco
+                )
+            );
+        }
+    );
+
+    // Remove conteúdos repetidos.
+    return [
+        ...new Set(
+            conteudos
+                .map(
+                    decodificarHTMLTabelaFrete
+                )
+                .filter(Boolean)
+        )
+    ];
+}
+
+function extrairTabelaFreteDoHTML(html) {
+    let melhorResultado = [];
+
+    const conteudos =
+        coletarConteudosPossiveisTabelaFrete(
+            html
+        );
+
+    conteudos.forEach(conteudo => {
+        const documento =
+            new DOMParser().parseFromString(
+                conteudo,
+                'text/html'
+            );
+
+        const tabelas = [
+            ...documento.querySelectorAll(
+                'table'
+            )
+        ];
+
+        tabelas.forEach(tabela => {
+            const linhas = [
+                ...tabela.querySelectorAll(
+                    'tr'
+                )
+            ]
+                .map(linha =>
+                    [
+                        ...linha.querySelectorAll(
+                            'th, td'
+                        )
+                    ].map(celula =>
+                        celula.textContent
+                            .replace(
+                                /\s+/g,
+                                ' '
+                            )
+                            .trim()
+                    )
+                )
+                .filter(linha =>
+                    linha.length > 1
+                );
+
+            if (linhas.length < 2) {
+                return;
+            }
+
+            /*
+             * Procura a linha que contém:
+             *
+             * Peso
+             * R$ 0 a R$ 18,99
+             * R$ 19 a R$ 48,99
+             * R$ 49 a R$ 78,99
+             * etc.
+             */
+
+            let indiceCabecalho = -1;
+            let precos = [];
+
+            for (
+                let indice = 0;
+                indice < linhas.length;
+                indice++
+            ) {
+                const candidatos =
+                    linhas[indice]
+                        .slice(1)
+                        .map(
+                            extrairIntervaloPrecoFrete
+                        );
+
+                const quantidadeValida =
+                    candidatos.filter(
+                        Boolean
+                    ).length;
+
+                if (
+                    quantidadeValida >= 2
+                ) {
+                    indiceCabecalho =
+                        indice;
+
+                    precos =
+                        candidatos;
+
+                    break;
+                }
+            }
+
+            if (
+                indiceCabecalho < 0 ||
+                precos.filter(Boolean)
+                    .length < 2
+            ) {
+                return;
+            }
+
+            const resultado = [];
+
+            linhas
+                .slice(
+                    indiceCabecalho + 1
+                )
+                .forEach(linha => {
+                    const peso =
+                        extrairIntervaloPesoFrete(
+                            linha[0]
+                        );
+
+                    if (!peso) {
+                        return;
+                    }
+
+                    precos.forEach(
+                        (
+                            preco,
+                            indice
+                        ) => {
+                            if (!preco) {
+                                return;
+                            }
+
+                            const textoCusto =
+                                linha[
+                                    indice + 1
+                                ];
+
+                            const custo =
+                                numeroBrasileiroFrete(
+                                    textoCusto
+                                );
+
+                            if (
+                                custo === null ||
+                                custo < 0
+                            ) {
+                                return;
+                            }
+
+                            resultado.push({
+                                priceMin:
+                                    preco.min,
+
+                                priceMax:
+                                    preco.max,
+
+                                weightMin:
+                                    peso.min,
+
+                                weightMax:
+                                    peso.max,
+
+                                cost:
+                                    custo
+                            });
+                        }
+                    );
+                });
+
+            if (
+                resultado.length >
+                melhorResultado.length
+            ) {
+                melhorResultado =
+                    resultado;
+            }
+        });
+    });
+
+    if (
+        melhorResultado.length < 4
+    ) {
+        const conteudoDecodificado =
+            decodificarHTMLTabelaFrete(
+                html
+            );
+
+        const temReferenciaTabela =
+            /peso|R\$\s*0\s*a\s*R\$|custos? d[oe] envios?/i
+                .test(
+                    conteudoDecodificado
+                );
+
+        if (!temReferenciaTabela) {
+            throw new Error(
+                'O Mercado Livre não enviou os ' +
+                'dados da tabela para o sistema. ' +
+                'O link abre no navegador, mas ' +
+                'o conteúdo exige a sessão ' +
+                'autenticada da página.'
+            );
+        }
+
+        throw new Error(
+            'Os dados chegaram, mas nenhuma ' +
+            'grade completa de peso, preço e ' +
+            'custo foi encontrada.'
+        );
+    }
+
+    console.log(
+        `✅ Tabela identificada com ` +
+        `${melhorResultado.length} faixas.`
+    );
+
+    return melhorResultado;
+}
+
+async function buscarHTMLTabelaFrete(link) {
+    let url;
+
+    try {
+        url = new URL(link);
+    } catch (error) {
+        throw new Error(
+            'O link informado não é válido.'
+        );
+    }
+
+    const hostPermitido =
+        url.hostname ===
+            'mercadolivre.com.br' ||
+
+        url.hostname.endsWith(
+            '.mercadolivre.com.br'
+        ) ||
+
+        url.hostname ===
+            'mercadolibre.com' ||
+
+        url.hostname.endsWith(
+            '.mercadolibre.com'
+        );
+
+    if (
+        url.protocol !== 'https:' ||
+        !hostPermitido
+    ) {
+        throw new Error(
+            'Informe um link HTTPS oficial ' +
+            'do Mercado Livre.'
+        );
+    }
+
+    // Primeira tentativa: acesso direto.
+    try {
+        const respostaDireta =
+            await fetch(
+                url.href,
+                {
+                    credentials:
+                        'include'
+                }
+            );
+
+        if (respostaDireta.ok) {
+            return await respostaDireta.text();
+        }
+    } catch (error) {
+        console.warn(
+            'Acesso direto ao link bloqueado. ' +
+            'Tentando pelo proxy.'
+        );
+    }
+
+    // Segunda tentativa: proxy já usado pelo sistema.
+    let token =
+        window.mlTokenStatus
+            ?.access_token ||
+        null;
+
+    if (
+        !token &&
+        typeof window.getValidToken ===
+            'function'
+    ) {
+        const tokenData =
+            await window.getValidToken();
+
+        token =
+            tokenData?.access_token ||
+            null;
+    }
+
+    if (!token) {
+        token =
+            localStorage.getItem(
+                'ml_access_token'
+            );
+    }
+
+    if (!token) {
+        throw new Error(
+            'Token do Mercado Livre ' +
+            'não disponível.'
+        );
+    }
+
+    const proxy =
+        `${window.WORKER_URL}/api/ml/proxy` +
+        `?url=${encodeURIComponent(url.href)}` +
+        `&token=${encodeURIComponent(token)}`;
+
+    const resposta =
+        await fetch(proxy);
+
+    if (!resposta.ok) {
+        throw new Error(
+            'O Mercado Livre não liberou ' +
+            'a leitura do link. HTTP ' +
+            resposta.status
+        );
+    }
+
+    return await resposta.text();
+}
+
+function extrairTabelaFreteDoTextoCopiado(texto) {
+    const linhas = String(texto || '')
+        .replace(/\r/g, '')
+        .split('\n')
+        .map(linha => linha.trim())
+        .filter(Boolean);
+
+    let indiceCabecalho = -1;
+    let cabecalho = [];
+
+    for (let i = 0; i < linhas.length; i++) {
+        let colunas = linhas[i]
+            .split('\t')
+            .map(celula => celula.trim())
+            .filter(Boolean);
+
+        if (colunas.length < 3) {
+            colunas = linhas[i]
+                .split(/\s{2,}/)
+                .map(celula => celula.trim())
+                .filter(Boolean);
+        }
+
+        const faixasPreco = colunas
+            .slice(1)
+            .map(extrairIntervaloPrecoFrete);
+
+        if (
+            /peso/i.test(colunas[0] || '') &&
+            faixasPreco.filter(Boolean).length >= 2
+        ) {
+            indiceCabecalho = i;
+            cabecalho = colunas;
+            break;
+        }
+    }
+
+    if (indiceCabecalho < 0) {
+        throw new Error(
+            'Não encontrei a linha de cabeçalho. ' +
+            'Copie a tabela começando pela célula “Peso”.'
+        );
+    }
+
+    const precos = cabecalho
+        .slice(1)
+        .map(extrairIntervaloPrecoFrete);
+
+    const resultado = [];
+
+    for (
+        let i = indiceCabecalho + 1;
+        i < linhas.length;
+        i++
+    ) {
+        let colunas = linhas[i]
+            .split('\t')
+            .map(celula => celula.trim());
+
+        if (colunas.length < 3) {
+            colunas = linhas[i]
+                .split(/\s{2,}/)
+                .map(celula => celula.trim())
+                .filter(Boolean);
+        }
+
+        const peso = extrairIntervaloPesoFrete(
+            colunas[0]
+        );
+
+        if (!peso) {
+            continue;
+        }
+
+        precos.forEach((preco, indice) => {
+            if (!preco) {
+                return;
+            }
+
+            const custo = numeroBrasileiroFrete(
+                colunas[indice + 1]
+            );
+
+            if (
+                custo === null ||
+                custo < 0
+            ) {
+                return;
+            }
+
+            resultado.push({
+                priceMin: preco.min,
+                priceMax: preco.max,
+                weightMin: peso.min,
+                weightMax: peso.max,
+                cost: custo
+            });
+        });
+    }
+
+    if (resultado.length < 4) {
+        throw new Error(
+            'A tabela colada não contém faixas suficientes. ' +
+            'Selecione e copie todas as colunas e linhas ' +
+            'da tabela do Mercado Livre.'
+        );
+    }
+
+    console.log(
+        `✅ ${resultado.length} faixas importadas ` +
+        `da tabela copiada.`
+    );
+
+    return resultado;
+}
+
+async function salvarNovaTabelaFrete() {
+    const dataInput = document.getElementById('dataInicioNovaTabelaFrete');
+    const textoInput = document.getElementById('textoNovaTabelaFrete');
+    const botao = document.getElementById('btnImportarTabelaFrete');
+
+    const vigencia = dataInput?.value;
+    const textoTabela = textoInput?.value.trim();
+
+    if (!vigencia) {
+        showToast('Informe a data inicial da nova tabela.', 'warning');
+        return;
+    }
+
+    if (!textoTabela) {
+        showToast(
+            'Copie a tabela completa e cole no campo “Tabela copiada do Mercado Livre”.',
+            'warning'
+        );
+        return;
+    }
+
+    try {
+        if (botao) {
+            botao.disabled = true;
+            botao.innerHTML =
+                '<span class="spinner"></span> Processando tabela...';
+        }
+
+        const tabela = extrairTabelaFreteDoTextoCopiado(textoTabela);
+
+        const { error } = await window.supabaseClient
+            .from('tabelas_frete_ml')
+            .upsert(
+                {
+                    vigencia_inicio: vigencia,
+                    link_origem: 'Tabela colada manualmente',
+                    tabela,
+                    criado_por: getNomeUsuario(),
+                    atualizado_em: new Date().toISOString()
+                },
+                {
+                    onConflict: 'vigencia_inicio'
+                }
+            );
+
+        if (error) {
+            throw error;
+        }
+
+        await carregarTabelasFreteHistoricas();
+        await carregarFretesSalvos();
+
+        if (textoInput) {
+            textoInput.value = '';
+        }
+
+        const dataFormatada = new Date(
+            `${vigencia}T00:00:00`
+        ).toLocaleDateString('pt-BR');
+
+        showToast(
+            `Tabela salva com ${tabela.length} faixas. ` +
+            `Válida a partir de ${dataFormatada}.`,
+            'success'
+        );
+    } catch (error) {
+        console.error('Erro ao importar tabela de frete:', error);
+
+        showToast(
+            `Não foi possível importar: ${error.message}`,
+            'error'
+        );
+    } finally {
+        if (botao) {
+            botao.disabled = false;
+            botao.innerHTML =
+                '<i class="fas fa-save"></i> Processar e salvar tabela';
+        }
+    }
+}
+
 // ============================================
 // VARIÁVEIS GLOBAIS
 // ============================================
@@ -171,6 +1277,201 @@ function isFullByAnyField(item) {
     }
     
     return false;
+}
+
+function calcularFretePagoPeloVendedor(dadosEnvio) {
+    if (!dadosEnvio) return 0;
+
+    const opcao = dadosEnvio.shipping_option || {};
+
+    const tarifaTotal = parseFloat(
+        dadosEnvio.list_cost ?? opcao.list_cost
+    );
+
+    const pagoPeloComprador = parseFloat(
+        dadosEnvio.receiver_cost ?? opcao.receiver_cost ?? 0
+    );
+
+    // list_cost = tarifa total do envio
+    // receiver_cost = parte paga pelo comprador
+    // A empresa paga somente a diferença.
+    if (!isNaN(tarifaTotal) && tarifaTotal >= 0) {
+        const custoVendedor =
+            tarifaTotal -
+            (isNaN(pagoPeloComprador) ? 0 : pagoPeloComprador);
+
+        return Math.max(
+            0,
+            parseFloat(custoVendedor.toFixed(2))
+        );
+    }
+
+    // Em alguns retornos, "cost" já contém o custo líquido.
+    // Só é usado quando não existe list_cost.
+    const custoLiquido = parseFloat(
+        dadosEnvio.cost ?? opcao.cost
+    );
+
+    if (!isNaN(custoLiquido) && custoLiquido > 0) {
+        return parseFloat(custoLiquido.toFixed(2));
+    }
+
+    return 0;
+}
+
+function normalizarFretePagoPeloVendedor(item) {
+    const info = item?.informacoes_envio;
+
+    if (!info) {
+        return item;
+    }
+
+    const custoVendedor =
+        calcularFretePagoPeloVendedor(info);
+
+    if (custoVendedor <= 0) {
+        return item;
+    }
+
+    return {
+        ...item,
+        frete_cobrado: custoVendedor,
+        fonte_frete: 'custo líquido do vendedor'
+    };
+}
+
+function obterTipoEnvio(item = {}, informacoesEnvio = null) {
+    let info =
+        informacoesEnvio ??
+        item?.informacoes_envio ??
+        {};
+
+    if (typeof info === 'string') {
+        try {
+            info = JSON.parse(info);
+        } catch (e) {
+            info = {};
+        }
+    }
+
+    const campos = [
+        info?.logistic_type,
+        info?.tipo,
+        info?.mode,
+        info?.fulfillment,
+        item?.shipping?.logistic_type,
+        item?.shipping?.mode,
+        item?.shipping?.fulfillment,
+        item?.logistic_type,
+        item?.tipo_envio
+    ].map(valor =>
+        String(valor ?? '')
+            .trim()
+            .toLowerCase()
+    );
+
+    const tags = [
+        ...(Array.isArray(info?.tags)
+            ? info.tags
+            : []),
+
+        ...(Array.isArray(item?.tags)
+            ? item.tags
+            : []),
+
+        ...(Array.isArray(item?.shipping?.tags)
+            ? item.shipping.tags
+            : [])
+    ].map(tag =>
+        String(tag)
+            .trim()
+            .toLowerCase()
+    );
+
+    const valores = [
+        ...campos,
+        ...tags
+    ];
+
+    const isFull = valores.some(valor =>
+        valor.includes('full') ||
+        valor.includes('fulfillment')
+    );
+
+    if (isFull) {
+        return 'FULL';
+    }
+
+    const possuiEnvio = Boolean(
+        info?.id ||
+        item?.shipping?.id ||
+        valores.some(valor =>
+            valor &&
+            valor !== 'n/i'
+        )
+    );
+
+    return possuiEnvio ? 'ME' : 'N/I';
+}
+
+function renderizarBadgeTipoEnvio(item) {
+    const tipo = obterTipoEnvio(item);
+
+    if (tipo === 'FULL') {
+        return `
+            <span style="
+                display:inline-flex;
+                align-items:center;
+                gap:4px;
+                padding:3px 7px;
+                border-radius:4px;
+                background:#e83e5a;
+                color:#fff;
+                font-size:10px;
+                font-weight:700;
+                white-space:nowrap;
+            ">
+                <i class="fas fa-warehouse"></i>
+                FULL
+            </span>
+        `;
+    }
+
+    if (tipo === 'ME') {
+        return `
+            <span style="
+                display:inline-flex;
+                align-items:center;
+                gap:4px;
+                padding:3px 7px;
+                border-radius:4px;
+                background:#17a2b8;
+                color:#fff;
+                font-size:10px;
+                font-weight:700;
+                white-space:nowrap;
+            ">
+                <i class="fas fa-truck"></i>
+                ME
+            </span>
+        `;
+    }
+
+    return `
+        <span style="
+            display:inline-flex;
+            align-items:center;
+            padding:3px 7px;
+            border-radius:4px;
+            background:#6c757d;
+            color:#fff;
+            font-size:10px;
+            font-weight:700;
+            white-space:nowrap;
+        ">
+            N/I
+        </span>
+    `;
 }
 
 function calcularPesoVolumetrico(comprimento, largura, altura) {
@@ -340,12 +1641,15 @@ async function isShipmentFULL(shipmentId, token) {
 // EXTRAIR FRETE DA VENDA - VERSÃO COMPLETA
 // ============================================
 async function extrairFreteDaVenda(order, token) {
-    console.log(`🔍 Extraindo frete da venda ${order.id}...`);
-    
+    console.log(
+        `🔍 Extraindo frete da venda ${order.id}...`
+    );
+
     let resultado = {
         frete: 0,
         fonte: 'nenhuma',
         isFull: false,
+
         informacoesEnvio: {
             id: null,
             logistic_type: '',
@@ -359,222 +1663,239 @@ async function extrairFreteDaVenda(order, token) {
             tags: []
         }
     };
-    
-    // ===== 1. BUSCAR SHIPMENT =====
-    if (order.shipping && order.shipping.id && token) {
+
+    // ============================================
+    // 1. BUSCAR DADOS COMPLETOS DO SHIPMENT
+    // ============================================
+
+    if (
+        order.shipping &&
+        order.shipping.id &&
+        token
+    ) {
         try {
-            const shipUrl = `https://api.mercadolibre.com/shipments/${order.shipping.id}`;
-            const shipProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
+            const shipUrl =
+                `https://api.mercadolibre.com/shipments/${order.shipping.id}`;
+
+            const shipProxy =
+                `${window.WORKER_URL}/api/ml/proxy` +
+                `?url=${encodeURIComponent(shipUrl)}` +
+                `&token=${encodeURIComponent(token)}`;
+
             const shipResp = await fetch(shipProxy);
-            
+
             if (shipResp.ok) {
                 const shipData = await shipResp.json();
-                console.log(`📦 Shipment ${order.shipping.id}:`, {
-                    logistic_type: shipData.logistic_type,
-                    mode: shipData.mode,
-                    receiver_cost: shipData.receiver_cost,
-                    cost: shipData.cost,
-                    list_cost: shipData.list_cost,
-                    shipping_option: shipData.shipping_option ? {
-                        receiver_cost: shipData.shipping_option.receiver_cost,
-                        list_cost: shipData.shipping_option.list_cost,
-                        cost: shipData.shipping_option.cost
-                    } : null,
-                    sender_address: shipData.sender_address ? {
-                        cost: shipData.sender_address?.cost
-                    } : null
-                });
-                
-                // Preencher informações
+
+                console.log(
+                    `📦 Shipment ${order.shipping.id}:`,
+                    {
+                        logistic_type:
+                            shipData.logistic_type,
+
+                        mode:
+                            shipData.mode,
+
+                        receiver_cost:
+                            shipData.receiver_cost,
+
+                        cost:
+                            shipData.cost,
+
+                        list_cost:
+                            shipData.list_cost,
+
+                        shipping_option:
+                            shipData.shipping_option
+                                ? {
+                                    receiver_cost:
+                                        shipData.shipping_option.receiver_cost,
+
+                                    list_cost:
+                                        shipData.shipping_option.list_cost,
+
+                                    cost:
+                                        shipData.shipping_option.cost
+                                }
+                                : null
+                    }
+                );
+
                 resultado.informacoesEnvio = {
-                    id: shipData.id || order.shipping.id,
-                    logistic_type: shipData.logistic_type || '',
-                    mode: shipData.mode || '',
-                    fulfillment: shipData.fulfillment || '',
-                    tipo: shipData.logistic_type || '',
-                    receiver_cost: shipData.receiver_cost || null,
-                    cost: shipData.cost || null,
-                    list_cost: shipData.list_cost || null,
-                    status: shipData.status || '',
-                    tags: shipData.tags || []
+                    id:
+                        shipData.id ||
+                        order.shipping.id,
+
+                    logistic_type:
+                        shipData.logistic_type || '',
+
+                    mode:
+                        shipData.mode || '',
+
+                    fulfillment:
+                        shipData.fulfillment || '',
+
+                    tipo:
+                        shipData.logistic_type || '',
+
+                    receiver_cost:
+                        shipData.receiver_cost ?? null,
+
+                    cost:
+                        shipData.cost ?? null,
+
+                    list_cost:
+                        shipData.list_cost ?? null,
+
+                    shipping_option:
+                        shipData.shipping_option || null,
+
+                    status:
+                        shipData.status || '',
+
+                    tags:
+                        shipData.tags || []
                 };
-                
-                // ===== VERIFICAR SE É FULL =====
-                const logisticType = (shipData.logistic_type || '').toLowerCase();
-                const mode = (shipData.mode || '').toLowerCase();
-                const tags = (shipData.tags || []).map(t => t.toLowerCase());
-                
-                if (logisticType === 'fulfillment' || 
+
+                // ============================================
+                // VERIFICAR SE É ENVIO FULL
+                // ============================================
+
+                const logisticType =
+                    (
+                        shipData.logistic_type || ''
+                    ).toLowerCase();
+
+                const mode =
+                    (
+                        shipData.mode || ''
+                    ).toLowerCase();
+
+                const tags =
+                    (shipData.tags || []).map(tag =>
+                        String(tag).toLowerCase()
+                    );
+
+                if (
+                    logisticType === 'fulfillment' ||
                     logisticType.includes('fulfillment') ||
                     logisticType.includes('full') ||
                     mode === 'full' ||
                     mode.includes('full') ||
-                    tags.some(t => t.includes('full') || t.includes('fulfillment'))) {
+                    tags.some(tag =>
+                        tag.includes('full') ||
+                        tag.includes('fulfillment')
+                    )
+                ) {
                     resultado.isFull = true;
-                    console.log(`🔴 VENDA ${order.id} É FULL (logistic_type=${shipData.logistic_type})`);
+
+                    console.log(
+                        `🔴 VENDA ${order.id} É FULL ` +
+                        `(logistic_type=${shipData.logistic_type})`
+                    );
+
                     return resultado;
                 }
-                
-                // ===== EXTRAIR FRETE DO SHIPMENT (TODAS AS FONTES) =====
-                
-                // 1. receiver_cost (valor cobrado do cliente)
-                if (shipData.receiver_cost !== undefined && shipData.receiver_cost !== null) {
-                    const valor = parseFloat(shipData.receiver_cost);
-                    if (!isNaN(valor) && valor > 0) {
-                        resultado.frete = valor;
-                        resultado.fonte = 'shipment.receiver_cost';
-                        console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                        return resultado;
-                    }
+
+                // ============================================
+                // CALCULAR SOMENTE A PARTE PAGA PELA EMPRESA
+                // ============================================
+
+                const custoVendedor =
+                    calcularFretePagoPeloVendedor(
+                        shipData
+                    );
+
+                if (custoVendedor > 0) {
+                    resultado.frete =
+                        custoVendedor;
+
+                    resultado.fonte =
+                        'shipment.custo_liquido_vendedor';
+
+                    console.log(
+                        `💰 Custo do vendedor: ` +
+                        `R$ ${resultado.frete.toFixed(2)} ` +
+                        `(${resultado.fonte})`
+                    );
+
+                    return resultado;
                 }
-                
-                // 2. list_cost (custo para o vendedor)
-                if (shipData.list_cost !== undefined && shipData.list_cost !== null) {
-                    const valor = parseFloat(shipData.list_cost);
-                    if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                        resultado.frete = valor;
-                        resultado.fonte = 'shipment.list_cost';
-                        console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                        return resultado;
-                    }
-                }
-                
-                // 3. cost do shipment
-                if (shipData.cost !== undefined && shipData.cost !== null) {
-                    const valor = parseFloat(shipData.cost);
-                    if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                        resultado.frete = valor;
-                        resultado.fonte = 'shipment.cost';
-                        console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                        return resultado;
-                    }
-                }
-                
-                // 4. shipping_option dentro do shipment
-                if (shipData.shipping_option) {
-                    // receiver_cost
-                    if (shipData.shipping_option.receiver_cost !== undefined && shipData.shipping_option.receiver_cost !== null) {
-                        const valor = parseFloat(shipData.shipping_option.receiver_cost);
-                        if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                            resultado.frete = valor;
-                            resultado.fonte = 'shipment.shipping_option.receiver_cost';
-                            console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                            return resultado;
-                        }
-                    }
-                    // list_cost
-                    if (shipData.shipping_option.list_cost !== undefined && shipData.shipping_option.list_cost !== null) {
-                        const valor = parseFloat(shipData.shipping_option.list_cost);
-                        if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                            resultado.frete = valor;
-                            resultado.fonte = 'shipment.shipping_option.list_cost';
-                            console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                            return resultado;
-                        }
-                    }
-                    // cost
-                    if (shipData.shipping_option.cost !== undefined && shipData.shipping_option.cost !== null) {
-                        const valor = parseFloat(shipData.shipping_option.cost);
-                        if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                            resultado.frete = valor;
-                            resultado.fonte = 'shipment.shipping_option.cost';
-                            console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                            return resultado;
-                        }
-                    }
-                }
-                
-                // 5. sender_address (pode ter custo de frete)
-                if (shipData.sender_address && shipData.sender_address.cost !== undefined && shipData.sender_address.cost !== null) {
-                    const valor = parseFloat(shipData.sender_address.cost);
-                    if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                        resultado.frete = valor;
-                        resultado.fonte = 'sender_address.cost';
-                        console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                        return resultado;
-                    }
-                }
+            } else {
+                console.warn(
+                    `⚠️ Não foi possível consultar o shipment ` +
+                    `${order.shipping.id}: HTTP ${shipResp.status}`
+                );
             }
         } catch (e) {
-            console.warn(`Erro ao buscar shipment:`, e.message);
+            console.warn(
+                'Erro ao buscar shipment:',
+                e.message
+            );
         }
     }
-    
-    // ===== 2. FALLBACK: ORDER.SHIPPING =====
-    if (resultado.frete === 0 && order.shipping) {
-        // receiver_cost
-        if (order.shipping.receiver_cost !== undefined && order.shipping.receiver_cost !== null) {
-            const valor = parseFloat(order.shipping.receiver_cost);
-            if (!isNaN(valor) && valor > 0) {
-                resultado.frete = valor;
-                resultado.fonte = 'order.shipping.receiver_cost';
-                console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                return resultado;
-            }
-        }
-        // cost
-        if (order.shipping.cost !== undefined && order.shipping.cost !== null) {
-            const valor = parseFloat(order.shipping.cost);
-            if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                resultado.frete = valor;
-                resultado.fonte = 'order.shipping.cost';
-                console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                return resultado;
-            }
-        }
-        // shipping_option
-        if (order.shipping.shipping_option) {
-            if (order.shipping.shipping_option.receiver_cost !== undefined && order.shipping.shipping_option.receiver_cost !== null) {
-                const valor = parseFloat(order.shipping.shipping_option.receiver_cost);
-                if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                    resultado.frete = valor;
-                    resultado.fonte = 'shipping_option.receiver_cost';
-                    console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                    return resultado;
-                }
-            }
-            if (order.shipping.shipping_option.list_cost !== undefined && order.shipping.shipping_option.list_cost !== null) {
-                const valor = parseFloat(order.shipping.shipping_option.list_cost);
-                if (!isNaN(valor) && valor > 0 && resultado.frete === 0) {
-                    resultado.frete = valor;
-                    resultado.fonte = 'shipping_option.list_cost';
-                    console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
-                    return resultado;
-                }
-            }
-        }
-    }
-    
-    // ===== 3. DIFERENÇA (TOTAL - ITENS) =====
-    if (resultado.frete === 0 && order.total_amount && order.order_items) {
-        let itemTotal = 0;
-        for (const item of order.order_items) {
-            itemTotal += (item.unit_price || 0) * (item.quantity || 0);
-        }
-        const diff = (order.total_amount || 0) - itemTotal;
-        if (diff > 0.01) {
-            resultado.frete = diff;
-            resultado.fonte = 'diferença (total - itens)';
-            console.log(`💰 Frete: R$ ${resultado.frete.toFixed(2)} (${resultado.fonte})`);
+
+    // ============================================
+    // 2. FALLBACK COM OS DADOS DA PRÓPRIA VENDA
+    // Nunca utilizar receiver_cost isoladamente.
+    // ============================================
+
+    if (
+        resultado.frete === 0 &&
+        order.shipping
+    ) {
+        const custoVendedor =
+            calcularFretePagoPeloVendedor(
+                order.shipping
+            );
+
+        if (custoVendedor > 0) {
+            resultado.frete =
+                custoVendedor;
+
+            resultado.fonte =
+                'order.shipping.custo_liquido_vendedor';
+
+            console.log(
+                `💰 Custo do vendedor: ` +
+                `R$ ${resultado.frete.toFixed(2)} ` +
+                `(${resultado.fonte})`
+            );
+
             return resultado;
         }
     }
-    
-    console.log(`⚠️ Nenhum frete para venda ${order.id}`);
+
+    /*
+     * Não utilizar:
+     *
+     * - receiver_cost isoladamente;
+     * - total da venda menos o valor dos produtos;
+     *
+     * Esses valores podem representar o frete pago pelo
+     * comprador, e não o custo que saiu da empresa.
+     */
+
+    console.log(
+        `⚠️ Nenhum custo de frete do vendedor ` +
+        `encontrado para a venda ${order.id}`
+    );
+
     return resultado;
 }
 
-// ============================================
-// CARREGAR FRETES SALVOS (COM FILTRO FULL IGUAL AO SALES_DASHBOARD)
-// ============================================
 async function carregarFretesSalvos() {
     console.log('📂 Carregando fretes salvos do banco...');
+
     const tbody = document.getElementById('shippingSimpleBody');
     const contagem = document.getElementById('contagemFretes');
+
     if (!tbody) return;
 
     try {
-        if (!window.supabaseClient) throw new Error('Supabase não inicializado');
+        if (!window.supabaseClient) {
+            throw new Error('Supabase não inicializado');
+        }
 
         const { data, error } = await window.supabaseClient
             .from('fretes_ml')
@@ -583,123 +1904,210 @@ async function carregarFretesSalvos() {
 
         if (error) throw error;
 
-        // Buscar reclamações
         let reclamacoes = [];
+
         try {
-            const { data: reclData, error: reclError } = await window.supabaseClient
-                .from('reclamacoes_frete')
-                .select('venda_id, status, id, criado_por, data_reclamacao, numero_operacao, numero_transacao, protocolos, justificativa_rejeicao')
-                .order('criado_em', { ascending: false });
-            
+            const { data: reclData, error: reclError } =
+                await window.supabaseClient
+                    .from('reclamacoes_frete')
+                    .select(
+                        'venda_id, status, id, criado_por, data_reclamacao, numero_operacao, numero_transacao, protocolos, justificativa_rejeicao'
+                    )
+                    .order('criado_em', { ascending: false });
+
             if (!reclError && reclData) {
                 reclamacoes = reclData;
             }
         } catch (e) {
-            console.warn('⚠️ Erro ao buscar reclamações:', e.message);
+            console.warn(
+                '⚠️ Erro ao buscar reclamações:',
+                e.message
+            );
         }
 
         const reclamacoesMap = {};
-        if (reclamacoes && reclamacoes.length > 0) {
-            reclamacoes.forEach(r => {
-                if (!reclamacoesMap[r.venda_id]) {
-                    reclamacoesMap[r.venda_id] = [];
+
+        if (reclamacoes.length > 0) {
+            reclamacoes.forEach(reclamacao => {
+                if (!reclamacoesMap[reclamacao.venda_id]) {
+                    reclamacoesMap[reclamacao.venda_id] = [];
                 }
-                reclamacoesMap[r.venda_id].push(r);
+
+                reclamacoesMap[reclamacao.venda_id].push(
+                    reclamacao
+                );
             });
         }
 
-        // ===== FILTRO IGUAL AO SALES_DASHBOARD =====
-        let dados = (data || []).filter(item => {
-            // 1. Verifica se é FULL usando a mesma lógica do sales_dashboard
+        const dadosNormalizados = (data || []).map(item => {
+            const itemNormalizado =
+                normalizarFretePagoPeloVendedor(item);
+
+            return {
+                ...itemNormalizado,
+
+                // Corrige também registros antigos que estão como N/I,
+                // mas possuem o tipo dentro de informacoes_envio.
+                tipo_envio: obterTipoEnvio(itemNormalizado)
+            };
+        });
+
+        const dados = dadosNormalizados.filter(item => {
             if (isFullByAnyField(item)) {
-                console.log(`⏭️ Item ${item.id} é FULL (isFullByAnyField)`);
+                console.log(
+                    `⏭️ Item ${item.id} é FULL`
+                );
+
                 return false;
             }
-            
-            // 2. Verifica se tem frete cobrado
-            if (!item.frete_cobrado || item.frete_cobrado <= 0) {
+
+            if (
+                !item.frete_cobrado ||
+                item.frete_cobrado <= 0
+            ) {
                 return false;
             }
-            
-            // 3. Verifica se o frete é muito baixo (suspeito)
+
             if (item.frete_cobrado < 0.5) {
                 return false;
             }
-            
-            // 4. Calcular frete esperado
+
             const peso = item.peso_estimado || 0.3;
-            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
+
+            const freteEsperado = calcularFreteEsperado(
+                item.valor_produto,
+                peso,
+                item.data_venda
+            );
+
             if (freteEsperado === null) {
                 return false;
             }
-            
-            // 5. Verificar se é incorreto (diferença > 0.01)
-            const isIncorreto = Math.abs(item.frete_cobrado - freteEsperado) > 0.01;
-            
-            return isIncorreto;
+
+            return (
+                Math.abs(
+                    item.frete_cobrado - freteEsperado
+                ) > 0.01
+            );
         });
 
-        console.log(`📊 ${dados.length} fretes incorretos após filtro FULL`);
+        console.log(
+            `📊 ${dados.length} fretes incorretos após filtro FULL`
+        );
 
         fretesDadosCompletos = dados.map(item => {
             const peso = item.peso_estimado || 0.3;
-            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
-            const recls = reclamacoesMap[item.id] || [];
-            
+
+            const freteEsperado = calcularFreteEsperado(
+                item.valor_produto,
+                peso,
+                item.data_venda
+            );
+
+            const reclamacoesVenda =
+                reclamacoesMap[item.id] || [];
+
             return {
                 ...item,
                 freteEsperado,
                 isIncorreto: true,
-                reclamacoes: recls,
-                temReclamacaoAberta: recls.some(r => r.status === 'aberto' || r.status === 'em_andamento'),
-                temReclamacaoRejeitada: recls.some(r => r.status === 'rejeitado'),
-                temReclamacaoResolvida: recls.some(r => r.status === 'resolvido'),
-                ultimaReclamacao: recls.length > 0 ? recls[0] : null
+                reclamacoes: reclamacoesVenda,
+
+                temReclamacaoAberta:
+                    reclamacoesVenda.some(reclamacao =>
+                        reclamacao.status === 'aberto' ||
+                        reclamacao.status === 'em_andamento'
+                    ),
+
+                temReclamacaoRejeitada:
+                    reclamacoesVenda.some(reclamacao =>
+                        reclamacao.status === 'rejeitado'
+                    ),
+
+                temReclamacaoResolvida:
+                    reclamacoesVenda.some(reclamacao =>
+                        reclamacao.status === 'resolvido'
+                    ),
+
+                ultimaReclamacao:
+                    reclamacoesVenda.length > 0
+                        ? reclamacoesVenda[0]
+                        : null
             };
         });
 
         fretesFiltrados = [...fretesDadosCompletos];
 
-        // Aplicar filtro de status
         if (filtroStatusReclamacao !== 'todos') {
             fretesFiltrados = fretesFiltrados.filter(item => {
                 if (filtroStatusReclamacao === 'aberto') {
                     return item.temReclamacaoAberta;
-                } else if (filtroStatusReclamacao === 'rejeitado') {
+                }
+
+                if (filtroStatusReclamacao === 'rejeitado') {
                     return item.temReclamacaoRejeitada;
-                } else if (filtroStatusReclamacao === 'resolvido') {
+                }
+
+                if (filtroStatusReclamacao === 'resolvido') {
                     return item.temReclamacaoResolvida;
                 }
+
                 return true;
             });
         }
 
         if (fretesFiltrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="15" class="text-center py-5">Nenhum frete incorreto encontrado. 🎉</td></tr>';
-            if (contagem) contagem.textContent = '0 incorretos';
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="15" class="text-center py-5">
+                        Nenhum frete incorreto encontrado. 🎉
+                    </td>
+                </tr>
+            `;
+
+            if (contagem) {
+                contagem.textContent = '0 incorretos';
+            }
+
             atualizarInfoPagina();
             return;
         }
 
         if (contagem) {
-            contagem.textContent = `${fretesFiltrados.length} incorretos`;
+            contagem.textContent =
+                `${fretesFiltrados.length} incorretos`;
         }
 
-        const contagemReclamacoes = document.getElementById('contagemReclamacoes');
+        const contagemReclamacoes =
+            document.getElementById('contagemReclamacoes');
+
         if (contagemReclamacoes) {
-            const totalReclamacoes = dados.filter(item => item.reclamacoes && item.reclamacoes.length > 0).length;
-            contagemReclamacoes.textContent = `${totalReclamacoes} reclamações`;
+            const totalReclamacoes = dados.filter(item =>
+                item.reclamacoes &&
+                item.reclamacoes.length > 0
+            ).length;
+
+            contagemReclamacoes.textContent =
+                `${totalReclamacoes} reclamações`;
         }
 
         fretesPaginaAtual = 1;
         renderizarPaginaFretes();
 
     } catch (error) {
-        console.error('❌ Erro ao carregar fretes:', error);
-        const tbody = document.getElementById('shippingSimpleBody');
-        if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="15" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
-        }
+        console.error(
+            '❌ Erro ao carregar fretes:',
+            error
+        );
+
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="15"
+                    class="text-center text-danger">
+                    Erro: ${error.message}
+                </td>
+            </tr>
+        `;
     }
 }
 
@@ -884,7 +2292,7 @@ function renderizarPaginaFretes() {
                     </button>` : ''}
             </td>
             <td style="font-size:10px;">${dataVenda}</td>
-            <td><span class="badge badge-secondary" style="font-size:9px;">${item.tipo_envio || 'N/I'}</span></td>
+            <td style="text-align:center;">${renderizarBadgeTipoEnvio(item)}</td>
         `;
 
         tbody.appendChild(row);
@@ -946,93 +2354,277 @@ function validarMedida(valor, nome) {
     return true;
 }
 
-// ============================================
-// SALVAR MEDIDAS E RECALCULAR (ATUALIZADO)
-// ============================================
-async function salvarMedidasERecalcular(row, vendaId, sku) {
+async function salvarMedidasERecalcular(
+    row,
+    vendaId,
+    sku
+) {
     try {
-        const compInput = row.querySelector('.medida-input[data-medida="comprimento"]');
-        const largInput = row.querySelector('.medida-input[data-medida="largura"]');
-        const altInput = row.querySelector('.medida-input[data-medida="altura"]');
-        const pesoInput = row.querySelector('.peso-input');
-        
-        const comprimento = parseFloat(compInput?.value) || DEFAULT_DIMENSIONS.comprimento;
-        const largura = parseFloat(largInput?.value) || DEFAULT_DIMENSIONS.largura;
-        const altura = parseFloat(altInput?.value) || DEFAULT_DIMENSIONS.altura;
-        const peso = parseFloat(pesoInput?.value) || 0.3;
+        const compInput =
+            row.querySelector(
+                '.medida-input[data-medida="comprimento"]'
+            );
 
-        // Validar se as medidas são válidas
-        if (comprimento <= 0 || largura <= 0 || altura <= 0 || peso <= 0) {
-            showToast('Medidas e peso devem ser maiores que zero', 'warning');
+        const largInput =
+            row.querySelector(
+                '.medida-input[data-medida="largura"]'
+            );
+
+        const altInput =
+            row.querySelector(
+                '.medida-input[data-medida="altura"]'
+            );
+
+        const pesoInput =
+            row.querySelector(
+                '.peso-input'
+            );
+
+        const comprimento =
+            parseFloat(
+                compInput?.value
+            ) ||
+            DEFAULT_DIMENSIONS.comprimento;
+
+        const largura =
+            parseFloat(
+                largInput?.value
+            ) ||
+            DEFAULT_DIMENSIONS.largura;
+
+        const altura =
+            parseFloat(
+                altInput?.value
+            ) ||
+            DEFAULT_DIMENSIONS.altura;
+
+        const peso =
+            parseFloat(
+                pesoInput?.value
+            ) ||
+            0.3;
+
+        if (
+            comprimento <= 0 ||
+            largura <= 0 ||
+            altura <= 0 ||
+            peso <= 0
+        ) {
+            showToast(
+                'Medidas e peso devem ser ' +
+                'maiores que zero.',
+                'warning'
+            );
+
             return;
         }
 
-        // Salvar no banco vinculado ao SKU
-        await salvarMedidasSKU(sku, comprimento, largura, altura, peso);
+        await salvarMedidasSKU(
+            sku,
+            comprimento,
+            largura,
+            altura,
+            peso
+        );
 
-        // Calcular peso volumétrico
-        const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
-        
-        // Atualizar no banco de fretes
-        await window.supabaseClient
+        const pesoVol =
+            calcularPesoVolumetrico(
+                comprimento,
+                largura,
+                altura
+            );
+
+        const {
+            error
+        } = await window.supabaseClient
             .from('fretes_ml')
             .update({
-                comprimento_cm: comprimento,
-                largura_cm: largura,
-                altura_cm: altura,
-                peso_estimado: peso,
-                peso_volumetrico: pesoVol,
-                updated_at: new Date().toISOString()
+                comprimento_cm:
+                    comprimento,
+
+                largura_cm:
+                    largura,
+
+                altura_cm:
+                    altura,
+
+                peso_estimado:
+                    peso,
+
+                peso_volumetrico:
+                    pesoVol,
+
+                updated_at:
+                    new Date()
+                        .toISOString()
             })
-            .eq('id', vendaId);
+            .eq(
+                'id',
+                vendaId
+            );
 
-        // Atualizar a linha da tabela
-        const valorCell = row.querySelector('td:nth-child(5)');
-        const valorText = valorCell?.textContent.replace('R$ ', '').replace(',', '.') || '0';
-        const valorProduto = parseFloat(valorText) || 0;
-        
-        const freteEsperado = calcularFreteEsperado(valorProduto, peso);
-        const freteCobradoCell = row.querySelector('td:nth-child(7)');
-        const freteCobradoText = freteCobradoCell?.textContent.replace('R$ ', '').replace(',', '.') || '0';
-        const freteCobrado = parseFloat(freteCobradoText) || 0;
+        if (error) {
+            throw error;
+        }
 
-        const freteEsperadoCell = row.querySelector('.frete-esperado-cell');
-        const statusBadge = row.querySelector('.status-badge');
-        const volDisplay = row.querySelector('.peso-volumetrico-display');
+        const valorCell =
+            row.querySelector(
+                'td:nth-child(5)'
+            );
 
-        if (freteEsperado !== null) {
-            freteEsperadoCell.textContent = `R$ ${freteEsperado.toFixed(2)}`;
-            const diferenca = freteCobrado - freteEsperado;
-            const diffAbs = Math.abs(diferenca);
-            let statusClass, statusText;
-            if (diffAbs < 0.01) {
-                statusClass = 'success';
-                statusText = '✅ Correto';
-                // Se corrigiu, remove da lista de incorretos
-                await window.supabaseClient.from('fretes_ml').delete().eq('id', vendaId);
-                showToast(`✅ Frete corrigido! Registro removido.`, 'success');
-                await carregarFretesSalvos();
-                return;
-            } else if (diferenca > 0) {
-                statusClass = 'danger';
-                statusText = `❌ Acima (R$ ${diferenca.toFixed(2)})`;
-            } else {
-                statusClass = 'warning';
-                statusText = `⚠️ Abaixo (R$ ${Math.abs(diferenca).toFixed(2)})`;
+        const valorText =
+            valorCell
+                ?.textContent
+                .replace('R$ ', '')
+                .replace(/\./g, '')
+                .replace(',', '.') ||
+            '0';
+
+        const valorProduto =
+            parseFloat(valorText) || 0;
+
+        const vendaAtual =
+            fretesDadosCompletos.find(
+                item =>
+                    String(item.id) ===
+                    String(vendaId)
+            );
+
+        const freteEsperado =
+            calcularFreteEsperado(
+                valorProduto,
+                peso,
+                item.data_venda,
+                vendaAtual?.data_venda
+            );
+
+        const freteCobradoCell =
+            row.querySelector(
+                'td:nth-child(7)'
+            );
+
+        const freteCobradoText =
+            freteCobradoCell
+                ?.textContent
+                .replace('R$ ', '')
+                .replace(/\./g, '')
+                .replace(',', '.') ||
+            '0';
+
+        const freteCobrado =
+            parseFloat(
+                freteCobradoText
+            ) || 0;
+
+        const freteEsperadoCell =
+            row.querySelector(
+                '.frete-esperado-cell'
+            );
+
+        const statusBadge =
+            row.querySelector(
+                '.status-badge'
+            );
+
+        const volDisplay =
+            row.querySelector(
+                '.peso-volumetrico-display'
+            );
+
+        if (
+            freteEsperado !== null
+        ) {
+            if (freteEsperadoCell) {
+                freteEsperadoCell.textContent =
+                    `R$ ${freteEsperado.toFixed(2)}`;
             }
-            statusBadge.className = `badge badge-${statusClass} status-badge`;
-            statusBadge.textContent = statusText;
+
+            const diferenca =
+                freteCobrado -
+                freteEsperado;
+
+            const diffAbs =
+                Math.abs(diferenca);
+
+            let statusClass;
+            let statusText;
+
+            if (diffAbs < 0.01) {
+                statusClass =
+                    'success';
+
+                statusText =
+                    '✅ Correto';
+
+                await window.supabaseClient
+                    .from('fretes_ml')
+                    .delete()
+                    .eq(
+                        'id',
+                        vendaId
+                    );
+
+                showToast(
+                    '✅ Frete corrigido! ' +
+                    'Registro removido.',
+                    'success'
+                );
+
+                await carregarFretesSalvos();
+
+                return;
+
+            } else if (
+                diferenca > 0
+            ) {
+                statusClass =
+                    'danger';
+
+                statusText =
+                    `❌ Acima ` +
+                    `(R$ ${diferenca.toFixed(2)})`;
+
+            } else {
+                statusClass =
+                    'warning';
+
+                statusText =
+                    `⚠️ Abaixo ` +
+                    `(R$ ${Math.abs(diferenca).toFixed(2)})`;
+            }
+
+            if (statusBadge) {
+                statusBadge.className =
+                    `badge badge-${statusClass} ` +
+                    `status-badge`;
+
+                statusBadge.textContent =
+                    statusText;
+            }
         }
 
         if (volDisplay) {
-            volDisplay.textContent = pesoVol.toFixed(3);
+            volDisplay.textContent =
+                pesoVol.toFixed(3);
         }
 
-        showToast(`✅ Medidas salvas para ${sku}! (${comprimento}x${largura}x${altura}cm)`, 'success');
+        showToast(
+            `✅ Medidas salvas para ${sku}! ` +
+            `(${comprimento}x${largura}x${altura}cm)`,
+            'success'
+        );
 
     } catch (error) {
-        console.error('Erro ao salvar medidas:', error);
-        showToast('Erro ao salvar: ' + error.message, 'error');
+        console.error(
+            'Erro ao salvar medidas:',
+            error
+        );
+
+        showToast(
+            'Erro ao salvar: ' +
+            error.message,
+            'error'
+        );
     }
 }
 
@@ -1278,12 +2870,6 @@ function criarModalReclamacaoCompleta() {
                     <div class="form-group">
                         <label><i class="fas fa-exclamation-circle"></i> Número da Reclamação *</label>
                         <input type="text" id="reclamacaoNumeroReclamacao" class="form-control" placeholder="Ex: REC123456" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label><i class="fas fa-receipt"></i> Número da Operação *</label>
-                        <input type="text" id="reclamacaoNumeroOperacao" class="form-control" placeholder="Ex: OP789012" required>
-                        <small style="color: #6c757d;">Número da operação de reembolso no Mercado Livre</small>
                     </div>
 
                     <div class="form-group">
@@ -1660,11 +3246,6 @@ async function salvarReclamacaoCompleta() {
 
     if (!numeroReclamacao) {
         showToast('Número da reclamação é obrigatório', 'warning');
-        return;
-    }
-
-    if (!numeroOperacao) {
-        showToast('Número da operação é obrigatório', 'warning');
         return;
     }
 
@@ -2313,111 +3894,205 @@ async function buscarFretesML(limit = 200) {
     }
 }
 
-// ============================================
-// BUSCAR FRETES - VERSÃO DEFINITIVA
-// ============================================
 async function buscarFretes() {
-    console.log('🔍 INICIANDO SINCRONIZAÇÃO DE FRETES...');
-    const tbody = document.getElementById('shippingSimpleBody');
-    const contagem = document.getElementById('contagemFretes');
-    const btn = document.getElementById('btnBuscarFretes');
+    console.log(
+        '🔍 INICIANDO SINCRONIZAÇÃO DE FRETES...'
+    );
+
+    const tbody =
+        document.getElementById('shippingSimpleBody');
+
+    const btn =
+        document.getElementById('btnBuscarFretes');
 
     if (!tbody) return;
 
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
+        btn.innerHTML =
+            '<span class="spinner"></span> Sincronizando...';
     }
 
-    tbody.innerHTML = '<tr><td colspan="15" class="text-center"><div class="spinner"></div> Buscando vendas...</td></tr>';
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="15" class="text-center">
+                <div class="spinner"></div>
+                Buscando vendas...
+            </td>
+        </tr>
+    `;
 
     try {
-        // ===== OBTER TOKEN =====
         let token = null;
-        if (window.mlTokenStatus && window.mlTokenStatus.access_token) {
-            token = window.mlTokenStatus.access_token;
-        } else if (typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
+
+        if (
+            window.mlTokenStatus &&
+            window.mlTokenStatus.access_token
+        ) {
+            token =
+                window.mlTokenStatus.access_token;
+        } else if (
+            typeof window.getValidToken === 'function'
+        ) {
+            const tokenData =
+                await window.getValidToken();
+
             token = tokenData?.access_token;
         }
+
         if (!token) {
-            const savedToken = localStorage.getItem('ml_access_token');
-            if (savedToken) token = savedToken;
-        }
-        if (!token) {
-            throw new Error('Token ML não disponível');
+            const savedToken =
+                localStorage.getItem('ml_access_token');
+
+            if (savedToken) {
+                token = savedToken;
+            }
         }
 
-        // ===== BUSCAR VENDAS ÚLTIMOS 30 DIAS =====
+        if (!token) {
+            throw new Error(
+                'Token ML não disponível'
+            );
+        }
+
         const dataInicio = new Date();
-        dataInicio.setDate(dataInicio.getDate() - 30);
+        dataInicio.setDate(
+            dataInicio.getDate() - 30
+        );
+
         const dataFim = new Date();
 
         let idsSalvos = new Set();
+
         try {
-            const { data: salvos } = await window.supabaseClient
-                .from('fretes_ml')
-                .select('id')
-                .limit(10000);
-            if (salvos) {
-                idsSalvos = new Set(salvos.map(item => item.id));
+            const { data: salvos, error: erroSalvos } =
+                await window.supabaseClient
+                    .from('fretes_ml')
+                    .select(
+                        'id, tipo_envio, informacoes_envio'
+                    )
+                    .limit(10000);
+
+            if (erroSalvos) {
+                throw erroSalvos;
             }
-        } catch (e) {}
+
+            if (salvos) {
+                /*
+                 * Registros completos continuam sendo ignorados.
+                 * Registros que ainda estão como N/I serão
+                 * buscados novamente no Mercado Livre.
+                 */
+                idsSalvos = new Set(
+                    salvos
+                        .filter(item =>
+                            obterTipoEnvio(item) !== 'N/I'
+                        )
+                        .map(item => String(item.id))
+                );
+            }
+        } catch (e) {
+            console.warn(
+                'Erro ao consultar fretes salvos:',
+                e.message
+            );
+        }
 
         let todasVendas = [];
         let offset = 0;
         let total = null;
         let paginasBuscadas = 0;
+
         const MAX_PAGINAS = 20;
 
-        while ((total === null || offset < total) && paginasBuscadas < MAX_PAGINAS) {
+        while (
+            (total === null || offset < total) &&
+            paginasBuscadas < MAX_PAGINAS
+        ) {
             const params = new URLSearchParams({
                 seller: '415176739',
                 sort: 'date_desc',
                 'order.status': 'paid',
                 limit: 50,
                 offset: offset,
-                'order.date_created.from': dataInicio.toISOString(),
-                'order.date_created.to': dataFim.toISOString()
+                'order.date_created.from':
+                    dataInicio.toISOString(),
+                'order.date_created.to':
+                    dataFim.toISOString()
             });
-            
-            const url = `https://api.mercadolibre.com/orders/search?${params}`;
-            const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
-            
+
+            const url =
+                `https://api.mercadolibre.com/orders/search?${params}`;
+
+            const proxyUrl =
+                `${window.WORKER_URL}/api/ml/proxy` +
+                `?url=${encodeURIComponent(url)}` +
+                `&token=${encodeURIComponent(token)}`;
+
             const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
-            
+
+            if (!response.ok) {
+                throw new Error(
+                    `Erro na API: ${response.status}`
+                );
+            }
+
             const data = await response.json();
             const orders = data.results || [];
-            
+
             if (total === null) {
                 total = data.paging?.total || 0;
             }
-            
+
             paginasBuscadas++;
-            
+
             const novasVendas = orders.filter(order => {
-                const idVenda = order.id?.toString();
-                return idVenda && !idsSalvos.has(idVenda);
+                const idVenda =
+                    order.id?.toString();
+
+                return (
+                    idVenda &&
+                    !idsSalvos.has(idVenda)
+                );
             });
-            
-            todasVendas = todasVendas.concat(novasVendas);
+
+            todasVendas =
+                todasVendas.concat(novasVendas);
+
             offset += 50;
-            
-            if (novasVendas.length === 0 && offset > 50) break;
-            await new Promise(resolve => setTimeout(resolve, 200));
+
+            if (
+                novasVendas.length === 0 &&
+                offset > 50
+            ) {
+                break;
+            }
+
+            await new Promise(resolve =>
+                setTimeout(resolve, 200)
+            );
         }
 
-        console.log(`📦 ${todasVendas.length} novas vendas encontradas`);
+        console.log(
+            `📦 ${todasVendas.length} vendas para processar`
+        );
 
         if (todasVendas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="15" class="text-center">✅ Nenhuma venda nova.</td></tr>';
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="15"
+                        class="text-center">
+                        ✅ Nenhuma venda nova.
+                    </td>
+                </tr>
+            `;
+
             await carregarFretesSalvos();
             return;
         }
 
-        // ===== PROCESSAR VENDAS =====
         const registrosParaInserir = [];
+
         let totalFull = 0;
         let totalSemFrete = 0;
         let totalIncorretos = 0;
@@ -2426,131 +4101,301 @@ async function buscarFretes() {
 
         for (const order of todasVendas) {
             processados++;
+
             if (processados % 20 === 0) {
-                tbody.innerHTML = `<tr><td colspan="15" class="text-center"><div class="spinner"></div> Processando ${processados}/${todasVendas.length}...</td></tr>`;
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="15"
+                            class="text-center">
+                            <div class="spinner"></div>
+                            Processando
+                            ${processados}/${todasVendas.length}...
+                        </td>
+                    </tr>
+                `;
             }
 
             try {
-                const idVenda = order.id?.toString();
+                const idVenda =
+                    order.id?.toString();
+
                 if (!idVenda) continue;
 
-                // ===== EXTRAIR INFORMAÇÕES =====
-                const resultado = await extrairFreteDaVenda(order, token);
-                
-                // ===== SE FOR FULL, IGNORA =====
+                /*
+                 * extrairFreteDaVenda consulta o endpoint
+                 * /shipments/{id}. É nesse retorno que vem
+                 * o logistic_type correto.
+                 */
+                const resultado =
+                    await extrairFreteDaVenda(
+                        order,
+                        token
+                    );
+
                 if (resultado.isFull) {
                     totalFull++;
-                    console.log(`⏭️ ${idVenda} é FULL - IGNORADO`);
+
+                    console.log(
+                        `⏭️ ${idVenda} é FULL - IGNORADO`
+                    );
+
                     continue;
                 }
 
-                // ===== SE NÃO TEM FRETE, IGNORA =====
-                if (resultado.frete === 0 || resultado.frete < 0.5) {
+                if (
+                    resultado.frete === 0 ||
+                    resultado.frete < 0.5
+                ) {
                     totalSemFrete++;
                     continue;
                 }
 
-                // ===== BUSCAR DADOS DO ITEM =====
-                const itemId = order.order_items?.[0]?.item?.id;
+                const itemId =
+                    order.order_items?.[0]?.item?.id;
+
                 let titulo = 'Sem título';
                 let sku = 'N/A';
                 let mlbId = 'N/A';
                 let valorTotal = 0;
                 let quantidade = 1;
 
-                if (order.order_items && order.order_items.length > 0) {
-                    valorTotal = order.order_items.reduce((sum, item) => {
-                        return sum + (item.unit_price || 0) * (item.quantity || 0);
-                    }, 0);
-                    quantidade = order.order_items[0]?.quantity || 1;
+                if (
+                    order.order_items &&
+                    order.order_items.length > 0
+                ) {
+                    valorTotal =
+                        order.order_items.reduce(
+                            (soma, item) => {
+                                return soma +
+                                    (item.unit_price || 0) *
+                                    (item.quantity || 0);
+                            },
+                            0
+                        );
+
+                    quantidade =
+                        order.order_items[0]?.quantity || 1;
                 }
 
                 if (itemId) {
                     try {
-                        const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
-                        const itemProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
-                        const itemResp = await fetch(itemProxy);
+                        const itemUrl =
+                            `https://api.mercadolibre.com/items/${itemId}`;
+
+                        const itemProxy =
+                            `${window.WORKER_URL}/api/ml/proxy` +
+                            `?url=${encodeURIComponent(itemUrl)}` +
+                            `&token=${encodeURIComponent(token)}`;
+
+                        const itemResp =
+                            await fetch(itemProxy);
+
                         if (itemResp.ok) {
-                            const itemData = await itemResp.json();
-                            titulo = itemData.title || titulo;
-                            sku = itemData.seller_sku || 
-                                  itemData.seller_custom_field || 
-                                  'N/A';
+                            const itemData =
+                                await itemResp.json();
+
+                            titulo =
+                                itemData.title || titulo;
+
+                            sku =
+                                itemData.seller_sku ||
+                                itemData.seller_custom_field ||
+                                itemData.attributes?.find(
+                                    atributo =>
+                                        atributo.id ===
+                                        'SELLER_SKU'
+                                )?.value_name ||
+                                'N/A';
+
                             mlbId = itemId;
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.warn(
+                            `Erro ao buscar item ${itemId}:`,
+                            e.message
+                        );
+                    }
                 }
 
-                // ===== CALCULAR FRETE ESPERADO =====
                 let peso = 0.3;
-                let medidas = await buscarMedidasPorSKU(sku);
+
+                const medidas =
+                    await buscarMedidasPorSKU(sku);
+
                 if (medidas) {
-                    peso = medidas.peso_kg || 0.3;
+                    peso =
+                        medidas.peso_kg || 0.3;
                 }
 
-                const freteEsperado = calcularFreteEsperado(valorTotal, peso);
-                const isIncorreto = freteEsperado !== null && Math.abs(resultado.frete - freteEsperado) > 0.01;
+                const freteEsperado =
+                    calcularFreteEsperado(
+                        valorTotal,
+                        peso,
+                        order.date_created
+                    );
+
+                const isIncorreto =
+                    freteEsperado !== null &&
+                    Math.abs(
+                        resultado.frete -
+                        freteEsperado
+                    ) > 0.01;
 
                 if (isIncorreto) {
                     totalIncorretos++;
+
+                    /*
+                     * Agora o tipo é obtido primeiro do
+                     * logistic_type retornado pelo shipment.
+                     */
+                    const tipoEnvio =
+                        obterTipoEnvio(
+                            order,
+                            resultado.informacoesEnvio
+                        );
+
                     registrosParaInserir.push({
                         id: idVenda,
                         titulo: titulo || 'Sem título',
                         mlb: mlbId || 'N/A',
                         sku: sku || 'N/A',
-                        valor_produto: parseFloat(valorTotal) || 0,
-                        quantidade: parseInt(quantidade) || 1,
-                        frete_cobrado: parseFloat(resultado.frete) || 0,
-                        frete_esperado: freteEsperado !== null ? parseFloat(freteEsperado) : null,
-                        frete_por_unidade: parseFloat(resultado.frete / (quantidade || 1)) || 0,
-                        data_venda: order.date_created || new Date().toISOString(),
-                        tipo_envio: order.shipping?.mode || 'N/I',
-                        peso_estimado: parseFloat(peso) || 0.3,
+
+                        valor_produto:
+                            parseFloat(valorTotal) || 0,
+
+                        quantidade:
+                            parseInt(quantidade) || 1,
+
+                        frete_cobrado:
+                            parseFloat(resultado.frete) || 0,
+
+                        frete_esperado:
+                            freteEsperado !== null
+                                ? parseFloat(freteEsperado)
+                                : null,
+
+                        frete_por_unidade:
+                            parseFloat(
+                                resultado.frete /
+                                (quantidade || 1)
+                            ) || 0,
+
+                        data_venda:
+                            order.date_created ||
+                            new Date().toISOString(),
+
+                        tipo_envio: tipoEnvio,
+
+                        peso_estimado:
+                            parseFloat(peso) || 0.3,
+
                         comprimento_cm: 22,
                         largura_cm: 16,
                         altura_cm: 1,
                         peso_volumetrico: 0.058,
-                        informacoes_envio: resultado.informacoesEnvio,
+
+                        informacoes_envio:
+                            resultado.informacoesEnvio,
+
                         tags: order.tags || [],
-                        updated_at: new Date().toISOString()
+
+                        updated_at:
+                            new Date().toISOString()
                     });
                 } else {
                     totalCorretos++;
                 }
 
             } catch (e) {
-                console.warn(`Erro:`, e.message);
+                console.warn(
+                    `Erro ao processar venda:`,
+                    e.message
+                );
             }
         }
 
-        console.log(`📊 RESULTADO: ${totalIncorretos} incorretos, ${totalCorretos} corretos, ${totalFull} FULL, ${totalSemFrete} sem frete`);
+        console.log(
+            `📊 RESULTADO: ` +
+            `${totalIncorretos} incorretos, ` +
+            `${totalCorretos} corretos, ` +
+            `${totalFull} FULL, ` +
+            `${totalSemFrete} sem frete`
+        );
 
         if (registrosParaInserir.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="15" class="text-center">Nenhum frete incorreto (${totalFull} FULL ignorados)</td></tr>`;
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="15"
+                        class="text-center">
+                        Nenhum frete incorreto
+                        (${totalFull} FULL ignorados)
+                    </td>
+                </tr>
+            `;
+
             await carregarFretesSalvos();
             return;
         }
 
-        // ===== SALVAR =====
-        for (let i = 0; i < registrosParaInserir.length; i += 100) {
-            const chunk = registrosParaInserir.slice(i, i + 100);
-            await window.supabaseClient
-                .from('fretes_ml')
-                .upsert(chunk, { onConflict: 'id' });
-            console.log(`✅ ${Math.min(i + 100, registrosParaInserir.length)}/${registrosParaInserir.length} salvos`);
+        for (
+            let i = 0;
+            i < registrosParaInserir.length;
+            i += 100
+        ) {
+            const chunk =
+                registrosParaInserir.slice(i, i + 100);
+
+            const { error: erroSalvar } =
+                await window.supabaseClient
+                    .from('fretes_ml')
+                    .upsert(
+                        chunk,
+                        { onConflict: 'id' }
+                    );
+
+            if (erroSalvar) {
+                throw erroSalvar;
+            }
+
+            console.log(
+                `✅ ${Math.min(
+                    i + 100,
+                    registrosParaInserir.length
+                )}/${registrosParaInserir.length} salvos`
+            );
         }
 
         await carregarFretesSalvos();
-        showToast(`✅ ${registrosParaInserir.length} fretes incorretos salvos (${totalFull} FULL ignorados)`, 'success');
+
+        showToast(
+            `✅ ${registrosParaInserir.length} ` +
+            `fretes incorretos salvos ` +
+            `(${totalFull} FULL ignorados)`,
+            'success'
+        );
 
     } catch (error) {
         console.error('❌ Erro:', error);
-        tbody.innerHTML = `<tr><td colspan="15" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
-        showToast('Erro: ' + error.message, 'error');
+
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="15"
+                    class="text-center text-danger">
+                    Erro: ${error.message}
+                </td>
+            </tr>
+        `;
+
+        showToast(
+            'Erro: ' + error.message,
+            'error'
+        );
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Buscar Fretes';
+
+            btn.innerHTML =
+                '<i class="fas fa-sync-alt"></i> Buscar Fretes';
         }
     }
 }
@@ -2803,7 +4648,7 @@ async function gerarRelatorioCompleto() {
             if (isFullByAnyField(item)) return false;
             if (!item.frete_cobrado || item.frete_cobrado <= 0) return false;
             const peso = item.peso_estimado || 0.3;
-            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
+            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso, item.data_venda);
             if (freteEsperado === null) return false;
             return Math.abs(item.frete_cobrado - freteEsperado) > 0.01;
         });
@@ -3060,7 +4905,7 @@ function exportarRelatorioCompletoExcel() {
             }
             
             const peso = item.peso_estimado || 0.3;
-            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
+            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso, item.data_venda);
             const diferenca = (item.frete_cobrado || 0) - (freteEsperado || 0);
             
             let status = 'Não calculado';
@@ -3286,25 +5131,67 @@ function imprimirRelatorioCompleto() {
     
     printWindow.document.close();
 }
-// ============================================
-// CALCULAR FRETE ESPERADO
-// ============================================
-function calcularFreteEsperado(valorProduto, peso) {
-    const pesoArredondado = Math.round(peso * 100) / 100;
-    const valor = parseFloat(valorProduto);
-    
-    if (isNaN(valor) || isNaN(pesoArredondado) || pesoArredondado <= 0) {
+function calcularFreteEsperado(
+    valorProduto,
+    peso,
+    dataVenda = null
+) {
+    const pesoArredondado =
+        Math.round(
+            parseFloat(peso) * 100
+        ) / 100;
+
+    const valor =
+        parseFloat(valorProduto);
+
+    if (
+        isNaN(valor) ||
+        isNaN(pesoArredondado) ||
+        pesoArredondado <= 0
+    ) {
         return null;
     }
 
-    for (const faixa of SHIPPING_COST_TABLE) {
-        if (pesoArredondado >= faixa.weightMin && pesoArredondado <= faixa.weightMax) {
-            if (valor >= faixa.priceMin && valor <= faixa.priceMax) {
-                return faixa.cost;
-            }
+    const tabelaVigente =
+        obterTabelaFreteVigente(
+            dataVenda
+        );
+
+    for (
+        const faixa of tabelaVigente
+    ) {
+        const pesoCompativel =
+            pesoArredondado >=
+                parseFloat(
+                    faixa.weightMin
+                ) &&
+
+            pesoArredondado <=
+                parseFloat(
+                    faixa.weightMax
+                );
+
+        const valorCompativel =
+            valor >=
+                parseFloat(
+                    faixa.priceMin
+                ) &&
+
+            valor <=
+                parseFloat(
+                    faixa.priceMax
+                );
+
+        if (
+            pesoCompativel &&
+            valorCompativel
+        ) {
+            return parseFloat(
+                faixa.cost
+            );
         }
     }
-    
+
     return null;
 }
 
@@ -3335,69 +5222,149 @@ async function carregarUsuariosFiltro() {
     }
 }
 
-// ============================================
-// INICIALIZAÇÃO - SEM DUPLICAÇÃO DE EVENTOS
-// ============================================
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Inicializando sistema de reclamações de frete...');
-    
-    // ===== CONFIGURAR BOTÃO DE BUSCAR =====
-    const btnBuscar = document.getElementById('btnBuscarFretes');
-    if (btnBuscar) {
-        // Remover todos os listeners antigos
-        const newBtn = btnBuscar.cloneNode(true);
-        btnBuscar.parentNode.replaceChild(newBtn, btnBuscar);
-        newBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            buscarFretes();
-        });
+document.addEventListener(
+    'DOMContentLoaded',
+    function() {
+        console.log(
+            '🚀 Inicializando sistema ' +
+            'de reclamações de frete...'
+        );
+
+        const btnBuscar =
+            document.getElementById(
+                'btnBuscarFretes'
+            );
+
+        if (btnBuscar) {
+            const novoBtnBuscar =
+                btnBuscar.cloneNode(true);
+
+            btnBuscar.parentNode
+                .replaceChild(
+                    novoBtnBuscar,
+                    btnBuscar
+                );
+
+            novoBtnBuscar
+                .addEventListener(
+                    'click',
+                    function(evento) {
+                        evento.preventDefault();
+
+                        buscarFretes();
+                    }
+                );
+        }
+
+        const btnAnterior =
+            document.getElementById(
+                'btnFretesAnterior'
+            );
+
+        if (btnAnterior) {
+            btnAnterior.removeAttribute(
+                'onclick'
+            );
+
+            const novoAnterior =
+                btnAnterior.cloneNode(true);
+
+            btnAnterior.parentNode
+                .replaceChild(
+                    novoAnterior,
+                    btnAnterior
+                );
+
+            novoAnterior
+                .addEventListener(
+                    'click',
+                    function(evento) {
+                        evento.preventDefault();
+
+                        paginaFretesAnterior();
+                    }
+                );
+        }
+
+        const btnProxima =
+            document.getElementById(
+                'btnFretesProxima'
+            );
+
+        if (btnProxima) {
+            btnProxima.removeAttribute(
+                'onclick'
+            );
+
+            const novaProxima =
+                btnProxima.cloneNode(true);
+
+            btnProxima.parentNode
+                .replaceChild(
+                    novaProxima,
+                    btnProxima
+                );
+
+            novaProxima
+                .addEventListener(
+                    'click',
+                    function(evento) {
+                        evento.preventDefault();
+
+                        paginaFretesProxima();
+                    }
+                );
+        }
+
+        document
+            .querySelectorAll(
+                '.btn-filtro-reclamacao'
+            )
+            .forEach(btn => {
+                const novoBtn =
+                    btn.cloneNode(true);
+
+                btn.parentNode
+                    .replaceChild(
+                        novoBtn,
+                        btn
+                    );
+
+                novoBtn
+                    .addEventListener(
+                        'click',
+                        function() {
+                            const status =
+                                this.dataset.status;
+
+                            if (status) {
+                                filtrarReclamacoes(
+                                    status
+                                );
+                            }
+                        }
+                    );
+            });
+
+        if (
+            document.getElementById(
+                'shippingSimpleBody'
+            )
+        ) {
+            setTimeout(
+                async function() {
+                    await carregarTabelasFreteHistoricas();
+                    await carregarFretesSalvos();
+                },
+                200
+            );
+        }
+
+        console.log(
+            '✅ Sistema de frete inicializado'
+        );
     }
-    
-    // ===== CONFIGURAR BOTÃO ANTERIOR =====
-    const btnAnterior = document.getElementById('btnFretesAnterior');
-    if (btnAnterior) {
-        // Remover todos os listeners antigos e o onclick inline
-        btnAnterior.removeAttribute('onclick');
-        const newAnterior = btnAnterior.cloneNode(true);
-        btnAnterior.parentNode.replaceChild(newAnterior, btnAnterior);
-        newAnterior.addEventListener('click', function(e) {
-            e.preventDefault();
-            paginaFretesAnterior();
-        });
-    }
-    
-    // ===== CONFIGURAR BOTÃO PRÓXIMO =====
-    const btnProxima = document.getElementById('btnFretesProxima');
-    if (btnProxima) {
-        // Remover todos os listeners antigos e o onclick inline
-        btnProxima.removeAttribute('onclick');
-        const newProxima = btnProxima.cloneNode(true);
-        btnProxima.parentNode.replaceChild(newProxima, btnProxima);
-        newProxima.addEventListener('click', function(e) {
-            e.preventDefault();
-            paginaFretesProxima();
-        });
-    }
-    
-    // ===== CONFIGURAR BOTÕES DE FILTRO =====
-    document.querySelectorAll('.btn-filtro-reclamacao').forEach(btn => {
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener('click', function() {
-            const status = this.dataset.status;
-            if (status) {
-                filtrarReclamacoes(status);
-            }
-        });
-    });
-    
-    // Carregar dados salvos
-    if (document.getElementById('shippingSimpleBody')) {
-        setTimeout(carregarFretesSalvos, 200);
-    }
-    
-    console.log('✅ shipping_simple.js v4.7 carregado');
-});
+);
 
 // ============================================
 // EXPORTAÇÕES GLOBAIS - TODAS AS FUNÇÕES EXPORTADAS
@@ -3431,5 +5398,7 @@ window.editarReclamacao = editarReclamacao;
 window.carregarUsuariosFiltro = carregarUsuariosFiltro;
 window.isFullByAnyField = isFullByAnyField;
 window.isShipmentFULL = isShipmentFULL;
+window.importarTabelaFreteDoLink = importarTabelaFreteDoLink;
+window.carregarTabelasFreteHistoricas = carregarTabelasFreteHistoricas;
 
 console.log('✅ shipping_simple.js v4.6 - Todas as funções exportadas');

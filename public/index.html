@@ -4874,6 +4874,33 @@ body > * {
             </div>
         </div>
 
+        <!-- Histórico de tabelas de custo por data de vigência -->
+        <div class="card mb-4" style="border-left: 4px solid #28a745;">
+            <div class="card-body">
+                <h3 style="margin-top:0;"><i class="fas fa-calendar-alt"></i> Atualizar tabela de frete</h3>
+                <p class="text-muted" style="font-size:13px;">
+                    Copie a tabela completa do Mercado Livre, cole abaixo e informe a primeira data de vigência. As tabelas anteriores continuarão sendo usadas nas vendas antigas.
+                </p>
+                <div class="d-flex gap-2 flex-wrap align-items-end">
+                    <div class="form-group mb-0" style="min-width:180px;">
+                        <label for="dataInicioNovaTabelaFrete"><strong>Válida a partir de</strong></label>
+                        <input id="dataInicioNovaTabelaFrete" type="date" class="form-control">
+                    </div>
+                    <button id="btnImportarTabelaFrete" class="btn btn-success" onclick="salvarNovaTabelaFrete()">
+                        <i class="fas fa-save"></i> Processar e salvar tabela
+                    </button>
+                </div>
+                <div class="form-group mt-3 mb-0">
+                    <label for="textoNovaTabelaFrete"><strong>Tabela copiada do Mercado Livre</strong></label>
+                    <textarea id="textoNovaTabelaFrete" class="form-control" rows="7" placeholder="Cole aqui a tabela completa, começando pela linha Peso..."></textarea>
+                    <small class="text-muted">Na página do Mercado Livre, selecione desde “Peso” até a última célula da tabela, copie e cole neste campo.</small>
+                </div>
+                <div id="historicoTabelasFrete" class="mt-3">
+                    <span class="text-muted">Carregando histórico...</span>
+                </div>
+            </div>
+        </div>
+
         <!-- ===== NOVO: BOTÕES DE FILTRO ===== -->
         <div class="card mb-4 filtro-reclamacoes-container" style="border-left: 4px solid #00ADEE;">
             <div class="card-body">
@@ -4922,7 +4949,7 @@ body > * {
                             <th style="min-width:120px;">MLB</th>
                             <th style="min-width:80px; text-align:right;">Valor</th>
                             <th style="min-width:50px; text-align:center;">Qtd</th>
-                            <th style="min-width:110px; text-align:right;">Frete Cobrado</th>
+                            <th style="min-width:110px; text-align:right;">Frete Cobrado da Empresa</th>
                             <th style="min-width:110px; text-align:right;">Frete Esperado</th>
                             <th style="min-width:150px;">Status</th>
                             <th style="min-width:70px;">Peso (kg)</th>

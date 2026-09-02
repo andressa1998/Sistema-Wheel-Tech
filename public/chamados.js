@@ -189,6 +189,153 @@
 
     }
 
+    function pertenceGrupoPrivadoChamados(
+    usuario =
+        usernameChamados()
+) {
+
+    const usuariosPrivados = [
+        'ronald',
+        'leticia',
+        'andressamiotto'
+    ];
+
+
+    return usuariosPrivados.includes(
+        normalizarUsuarioChamados(
+            usuario
+        )
+    );
+
+}
+
+
+function podeVisualizarChamado(
+    chamado
+) {
+
+    if (
+        !chamado
+    ) {
+
+        return false;
+
+    }
+
+
+    const criador =
+        normalizarUsuarioChamados(
+            chamado
+                .criado_por_username
+        );
+
+
+    /*
+     * Somente os chamados criados por Ronald ou Andressa
+     * são privados.
+     *
+     * Os chamados da Letícia passam a ser públicos.
+     */
+
+    const criadoresPrivados = [
+        'ronald',
+        'andressamiotto'
+    ];
+
+
+    const chamadoEhPrivado =
+        criadoresPrivados.includes(
+            criador
+        );
+
+
+    /*
+     * Chamados da Letícia e de todos os outros usuários
+     * são públicos.
+     */
+
+    if (
+        !chamadoEhPrivado
+    ) {
+
+        return true;
+
+    }
+
+
+    /*
+     * Chamados de Ronald e Andressa somente aparecem
+     * para Ronald, Letícia e Andressa.
+     */
+
+    return pertenceGrupoPrivadoChamados();
+
+}
+
+
+function atualizarCabecalhoVisibilidadeChamados() {
+
+    const tituloLista =
+        document.getElementById(
+            'chTituloLista'
+        );
+
+
+    const subtituloLista =
+        document.getElementById(
+            'chSubtituloLista'
+        );
+
+
+    if (
+        pertenceGrupoPrivadoChamados()
+    ) {
+
+        if (
+            tituloLista
+        ) {
+
+            tituloLista.textContent =
+                'Todos os chamados';
+
+        }
+
+
+        if (
+            subtituloLista
+        ) {
+
+            subtituloLista.textContent =
+                'Chamados públicos e chamados internos de Ronald e Andressa.';
+
+        }
+
+
+        return;
+
+    }
+
+
+    if (
+        tituloLista
+    ) {
+
+        tituloLista.textContent =
+            'Chamados da equipe';
+
+    }
+
+
+    if (
+        subtituloLista
+    ) {
+
+        subtituloLista.textContent =
+            'Acompanhe os chamados públicos abertos pela equipe.';
+
+    }
+
+}
 
     function ehAdminChamados() {
 
@@ -3286,178 +3433,532 @@
 
 
     // ========================================================
-    // SALVAR NOVO CHAMADO
-    // ========================================================
+// SALVAR NOVO CHAMADO
+// ========================================================
 
-    window.salvarNovoChamado =
-        async function() {
+window.salvarNovoChamado =
+    async function() {
 
-            if (
-                salvandoChamado
-            ) {
+        if (
+            salvandoChamado
+        ) {
 
-                return;
+            return;
 
-            }
-
-
-            const sb =
-                sbChamados();
+        }
 
 
-            const u =
-                usuarioChamados();
+        const sb =
+            sbChamados();
 
 
-            if (
-                !sb ||
-                !u
-            ) {
-
-                toastChamados(
-                    '❌ Supabase ou usuário não disponível.',
-                    'error'
-                );
-
-                return;
-
-            }
+        const u =
+            usuarioChamados();
 
 
-            const tipo =
-                document
-                    .getElementById(
-                        'chNovoTipo'
-                    )
-                    ?.value ||
-                '';
+        if (
+            !sb ||
+            !u
+        ) {
+
+            toastChamados(
+                '❌ Supabase ou usuário não disponível.',
+                'error'
+            );
+
+            return;
+
+        }
 
 
-            const modulo =
-                document
-                    .getElementById(
-                        'chNovoModulo'
-                    )
-                    ?.value ||
-                '';
+        const tipo =
+            document
+                .getElementById(
+                    'chNovoTipo'
+                )
+                ?.value ||
+            '';
 
 
-            const titulo =
-                document
-                    .getElementById(
-                        'chNovoTitulo'
-                    )
-                    ?.value
-                    .trim() ||
-                '';
+        const modulo =
+            document
+                .getElementById(
+                    'chNovoModulo'
+                )
+                ?.value ||
+            '';
 
 
-            const erroTexto =
-                document
-                    .getElementById(
-                        'chNovoErro'
-                    )
-                    ?.value
-                    .trim() ||
-                '';
+        const titulo =
+            document
+                .getElementById(
+                    'chNovoTitulo'
+                )
+                ?.value
+                .trim() ||
+            '';
 
 
-            const prioridade =
-                document
-                    .getElementById(
-                        'chNovoPrioridade'
-                    )
-                    ?.value ||
-                'normal';
+        const erroTexto =
+            document
+                .getElementById(
+                    'chNovoErro'
+                )
+                ?.value
+                .trim() ||
+            '';
 
 
-            const descricao =
-                document
-                    .getElementById(
-                        'chNovoDescricao'
-                    )
-                    ?.value
-                    .trim() ||
-                '';
+        const prioridade =
+            document
+                .getElementById(
+                    'chNovoPrioridade'
+                )
+                ?.value ||
+            'normal';
 
 
-            if (!tipo) {
-
-                toastChamados(
-                    '⚠️ Selecione o tipo.',
-                    'warning'
-                );
-
-                return;
-
-            }
+        const descricao =
+            document
+                .getElementById(
+                    'chNovoDescricao'
+                )
+                ?.value
+                .trim() ||
+            '';
 
 
-            if (!modulo) {
+        if (
+            !tipo
+        ) {
 
-                toastChamados(
-                    '⚠️ Selecione a aba/módulo.',
-                    'warning'
-                );
+            toastChamados(
+                '⚠️ Selecione o tipo.',
+                'warning'
+            );
 
-                return;
+            return;
 
-            }
-
-
-            if (!titulo) {
-
-                toastChamados(
-                    '⚠️ Informe o título.',
-                    'warning'
-                );
-
-                return;
-
-            }
+        }
 
 
-            if (
-                tipo === 'erro' &&
-                !erroTexto
-            ) {
+        if (
+            !modulo
+        ) {
 
-                toastChamados(
-                    '⚠️ Informe qual erro está acontecendo.',
-                    'warning'
-                );
+            toastChamados(
+                '⚠️ Selecione a aba/módulo.',
+                'warning'
+            );
 
-                return;
+            return;
 
-            }
-
-
-            if (!descricao) {
-
-                toastChamados(
-                    '⚠️ Informe a descrição.',
-                    'warning'
-                );
-
-                return;
-
-            }
+        }
 
 
-            salvandoChamado =
+        if (
+            !titulo
+        ) {
+
+            toastChamados(
+                '⚠️ Informe o título.',
+                'warning'
+            );
+
+            return;
+
+        }
+
+
+        if (
+            tipo ===
+                'erro' &&
+            !erroTexto
+        ) {
+
+            toastChamados(
+                '⚠️ Informe qual erro está acontecendo.',
+                'warning'
+            );
+
+            return;
+
+        }
+
+
+        if (
+            !descricao
+        ) {
+
+            toastChamados(
+                '⚠️ Informe a descrição.',
+                'warning'
+            );
+
+            return;
+
+        }
+
+
+        salvandoChamado =
+            true;
+
+
+        const btn =
+            document.getElementById(
+                'chSalvarNovo'
+            );
+
+
+        if (
+            btn
+        ) {
+
+            btn.disabled =
                 true;
 
 
-            const btn =
-                document.getElementById(
-                    'chSalvarNovo'
+            btn.innerHTML =
+                `
+                    <i
+                        class="
+                            fas
+                            fa-spinner
+                            fa-spin
+                        "
+                    ></i>
+
+                    Enviando...
+                `;
+
+        }
+
+
+        try {
+
+            const agora =
+                new Date()
+                    .toISOString();
+
+
+            const {
+                data: chamado,
+                error
+            } =
+                await sb
+
+                    .from(
+                        CFG_CHAMADOS
+                            .tabelaChamados
+                    )
+
+                    .insert({
+
+                        tipo:
+                            tipo,
+
+                        modulo:
+                            modulo,
+
+                        titulo:
+                            titulo,
+
+                        erro:
+                            tipo ===
+                                'erro'
+                                ? erroTexto
+                                : null,
+
+                        descricao:
+                            descricao,
+
+                        prioridade:
+                            prioridade,
+
+                        status:
+                            'aberto',
+
+                        criado_por_username:
+                            usernameChamados(),
+
+                        criado_por_nome:
+                            u.name ||
+                            u.username ||
+                            usernameChamados(),
+
+                        print_url:
+                            null,
+
+                        responsavel:
+                            null,
+
+                        criado_em:
+                            agora,
+
+                        atualizado_em:
+                            agora,
+
+                        concluido_em:
+                            null
+
+                    })
+
+                    .select(
+                        '*'
+                    )
+
+                    .single();
+
+
+            if (
+                error
+            ) {
+
+                throw error;
+
+            }
+
+
+            // ============================================
+            // ENVIA PRINT
+            // ============================================
+
+            if (
+                printNovoChamado
+            ) {
+
+                try {
+
+                    const url =
+                        await uploadImagemChamados(
+                            printNovoChamado,
+                            chamado.id,
+                            'abertura'
+                        );
+
+
+                    const {
+                        error:
+                            erroAtualizar
+                    } =
+                        await sb
+
+                            .from(
+                                CFG_CHAMADOS
+                                    .tabelaChamados
+                            )
+
+                            .update({
+
+                                print_url:
+                                    url,
+
+                                atualizado_em:
+                                    new Date()
+                                        .toISOString()
+
+                            })
+
+                            .eq(
+                                'id',
+                                chamado.id
+                            );
+
+
+                    if (
+                        erroAtualizar
+                    ) {
+
+                        throw erroAtualizar;
+
+                    }
+
+
+                    chamado.print_url =
+                        url;
+
+
+                } catch (
+                    e
+                ) {
+
+                    console.warn(
+                        '⚠️ Chamado criado, mas o print falhou:',
+                        e
+                    );
+
+
+                    toastChamados(
+                        `⚠️ Chamado criado, mas o print não foi enviado: ${e.message}`,
+                        'warning'
+                    );
+
+                }
+
+            }
+
+
+            // ============================================
+            // NOTIFICA OS ADMINISTRADORES
+            // ============================================
+
+            try {
+
+                let notificacaoCriada =
+                    false;
+
+
+                if (
+                    typeof window
+                        .notificarNovoChamadoCriado ===
+                    'function'
+                ) {
+
+                    notificacaoCriada =
+                        await window
+                            .notificarNovoChamadoCriado(
+                                chamado
+                            );
+
+                } else if (
+                    typeof window
+                        .notificarAdminsChamado ===
+                    'function'
+                ) {
+
+                    notificacaoCriada =
+                        await window
+                            .notificarAdminsChamado({
+
+                                chamadoId:
+                                    chamado.id,
+
+                                tipo:
+                                    'novo_chamado',
+
+                                titulo:
+                                    `🎫 Novo chamado #${numeroChamado(chamado.id)}`,
+
+                                mensagem:
+                                    `${titulo} — Aba: ${modulo}`
+
+                            });
+
+                } else {
+
+                    console.warn(
+                        '⚠️ As funções de notificação de chamados não estão disponíveis.'
+                    );
+
+                }
+
+
+                if (
+                    !notificacaoCriada
+                ) {
+
+                    console.warn(
+                        '⚠️ O chamado foi criado, mas a notificação não foi confirmada.'
+                    );
+
+                }
+
+
+                if (
+                    typeof window
+                        .atualizarSinoChamadosAgora ===
+                    'function'
+                ) {
+
+                    await window
+                        .atualizarSinoChamadosAgora();
+
+                } else if (
+                    typeof window
+                        .carregarNotificacoesChamados ===
+                    'function'
+                ) {
+
+                    await window
+                        .carregarNotificacoesChamados();
+
+                }
+
+
+            } catch (
+                erroNotificacao
+            ) {
+
+                /*
+                 * Uma falha no sino não pode desfazer
+                 * um chamado que já foi salvo.
+                 */
+
+                console.warn(
+                    '⚠️ Chamado criado, mas não foi possível gerar a notificação:',
+                    erroNotificacao
+                );
+
+            }
+
+
+            toastChamados(
+                `✅ Chamado #${numeroChamado(chamado.id)} aberto!`,
+                'success'
+            );
+
+
+            window
+                .fecharNovoChamado();
+
+
+            await window
+                .carregarChamados(
+                    false
                 );
 
 
-            if (btn) {
+            await atualizarContadorMenuChamados();
+
+
+            await window
+                .abrirDetalhesChamado(
+                    chamado.id
+                );
+
+
+        } catch (
+            e
+        ) {
+
+            console.error(
+                '❌ Erro ao abrir chamado:',
+                e
+            );
+
+
+            toastChamados(
+                '❌ Erro ao abrir chamado: ' +
+                (
+                    e.message ||
+                    'erro desconhecido'
+                ),
+                'error'
+            );
+
+
+        } finally {
+
+            salvandoChamado =
+                false;
+
+
+            if (
+                btn
+            ) {
 
                 btn.disabled =
-                    true;
+                    false;
 
 
                 btn.innerHTML =
@@ -3465,252 +3966,18 @@
                         <i
                             class="
                                 fas
-                                fa-spinner
-                                fa-spin
+                                fa-paper-plane
                             "
                         ></i>
 
-                        Enviando...
+                        Abrir chamado
                     `;
 
             }
 
+        }
 
-            try {
-
-                const agora =
-                    new Date()
-                        .toISOString();
-
-
-                const {
-                    data: chamado,
-                    error
-                } =
-                    await sb
-
-                        .from(
-                            CFG_CHAMADOS
-                                .tabelaChamados
-                        )
-
-                        .insert({
-
-                            tipo:
-                                tipo,
-
-                            modulo:
-                                modulo,
-
-                            titulo:
-                                titulo,
-
-                            erro:
-                                tipo === 'erro'
-                                    ? erroTexto
-                                    : null,
-
-                            descricao:
-                                descricao,
-
-                            prioridade:
-                                prioridade,
-
-                            status:
-                                'aberto',
-
-                            criado_por_username:
-                                usernameChamados(),
-
-                            criado_por_nome:
-                                u.name ||
-                                u.username ||
-                                usernameChamados(),
-
-                            print_url:
-                                null,
-
-                            responsavel:
-                                null,
-
-                            criado_em:
-                                agora,
-
-                            atualizado_em:
-                                agora,
-
-                            concluido_em:
-                                null
-
-                        })
-
-                        .select('*')
-
-                        .single();
-
-
-                if (error) {
-
-                    throw error;
-
-                }
-
-
-                // ============================================
-                // ENVIA PRINT
-                // ============================================
-
-                if (
-                    printNovoChamado
-                ) {
-
-                    try {
-
-                        const url =
-                            await uploadImagemChamados(
-                                printNovoChamado,
-                                chamado.id,
-                                'abertura'
-                            );
-
-
-                        const {
-                            error:
-                                erroAtualizar
-                        } =
-                            await sb
-
-                                .from(
-                                    CFG_CHAMADOS
-                                        .tabelaChamados
-                                )
-
-                                .update({
-
-                                    print_url:
-                                        url,
-
-                                    atualizado_em:
-                                        new Date()
-                                            .toISOString()
-
-                                })
-
-                                .eq(
-                                    'id',
-                                    chamado.id
-                                );
-
-
-                        if (
-                            erroAtualizar
-                        ) {
-
-                            throw (
-                                erroAtualizar
-                            );
-
-                        }
-
-
-                        chamado.print_url =
-                            url;
-
-
-                    } catch (
-                        e
-                    ) {
-
-                        console.warn(
-                            '⚠️ Chamado criado, mas o print falhou:',
-                            e
-                        );
-
-
-                        toastChamados(
-                            `⚠️ Chamado criado, mas o print não foi enviado: ${e.message}`,
-                            'warning'
-                        );
-
-                    }
-
-                }
-
-
-                toastChamados(
-                    `✅ Chamado #${numeroChamado(chamado.id)} aberto!`,
-                    'success'
-                );
-
-
-                window
-                    .fecharNovoChamado();
-
-
-                await window
-                    .carregarChamados(
-                        false
-                    );
-
-
-                await atualizarContadorMenuChamados();
-
-
-                await window
-                    .abrirDetalhesChamado(
-                        chamado.id
-                    );
-
-
-            } catch (
-                e
-            ) {
-
-                console.error(
-                    '❌ Erro ao abrir chamado:',
-                    e
-                );
-
-
-                toastChamados(
-                    '❌ Erro ao abrir chamado: ' +
-                    (
-                        e.message ||
-                        'erro desconhecido'
-                    ),
-                    'error'
-                );
-
-
-            } finally {
-
-                salvandoChamado =
-                    false;
-
-
-                if (btn) {
-
-                    btn.disabled =
-                        false;
-
-
-                    btn.innerHTML =
-                        `
-                            <i
-                                class="
-                                    fas
-                                    fa-paper-plane
-                                "
-                            ></i>
-
-                            Abrir chamado
-                        `;
-
-                }
-
-            }
-
-        };
+    };
 
 
     // ========================================================
@@ -3948,37 +4215,163 @@
         };
 
 
-    // ========================================================
-    // CARREGAR CHAMADOS
-    // ========================================================
-
     window.carregarChamados =
-        async function(
-            mostrarToast =
-                false
+    async function(
+        mostrarToast =
+            false
+    ) {
+
+        const sb =
+            sbChamados();
+
+
+        if (
+            !sb ||
+            !usuarioChamados()
         ) {
 
-            const sb =
-                sbChamados();
+            return;
+
+        }
+
+
+        atualizarCabecalhoVisibilidadeChamados();
+
+
+        const lista =
+            document.getElementById(
+                'chLista'
+            );
+
+
+        if (
+            lista
+        ) {
+
+            lista.innerHTML = `
+
+                <div
+                    class="ch-vazio"
+                >
+
+                    <i
+                        class="
+                            fas
+                            fa-spinner
+                            fa-spin
+                        "
+                    ></i>
+
+                    Carregando chamados...
+
+                </div>
+
+            `;
+
+        }
+
+
+        try {
+
+            /*
+             * Busca todos os chamados disponíveis no banco.
+             * A privacidade é aplicada depois no JavaScript.
+             */
+
+            const {
+                data,
+                error
+            } =
+                await sb
+
+                    .from(
+                        CFG_CHAMADOS
+                            .tabelaChamados
+                    )
+
+                    .select('*')
+
+                    .order(
+                        'atualizado_em',
+                        {
+                            ascending:
+                                false,
+
+                            nullsFirst:
+                                false
+                        }
+                    )
+
+                    .order(
+                        'criado_em',
+                        {
+                            ascending:
+                                false
+                        }
+                    );
 
 
             if (
-                !sb ||
-                !usuarioChamados()
+                error
             ) {
 
-                return;
+                throw error;
 
             }
 
 
-            const lista =
-                document.getElementById(
-                    'chLista'
+            chamadosCache =
+                (
+                    data ||
+                    []
+                )
+                    .filter(
+                        chamado =>
+                            podeVisualizarChamado(
+                                chamado
+                            )
+                    );
+
+
+            renderResumoChamados();
+
+
+            window
+                .renderizarChamados();
+
+
+            atualizarContadorMenuLocal();
+
+
+            if (
+                mostrarToast
+            ) {
+
+                toastChamados(
+                    '✅ Chamados atualizados.',
+                    'success'
                 );
 
+            }
 
-            if (lista) {
+
+        } catch (
+            e
+        ) {
+
+            console.error(
+                '❌ Erro ao carregar chamados:',
+                e
+            );
+
+
+            chamadosCache =
+                [];
+
+
+            if (
+                lista
+            ) {
 
                 lista.innerHTML = `
 
@@ -3989,12 +4382,20 @@
                         <i
                             class="
                                 fas
-                                fa-spinner
-                                fa-spin
+                                fa-exclamation-triangle
                             "
                         ></i>
 
-                        Carregando chamados...
+                        Erro ao carregar chamados.
+
+                        <br>
+
+                        <small>
+                            ${escChamados(
+                                e.message ||
+                                'Erro desconhecido'
+                            )}
+                        </small>
 
                     </div>
 
@@ -4003,144 +4404,18 @@
             }
 
 
-            try {
+            toastChamados(
+                '❌ Erro ao carregar chamados: ' +
+                (
+                    e.message ||
+                    'erro desconhecido'
+                ),
+                'error'
+            );
 
-                let query =
-                    sb
+        }
 
-                        .from(
-                            CFG_CHAMADOS
-                                .tabelaChamados
-                        )
-
-                        .select('*')
-
-                        .order(
-                            'atualizado_em',
-                            {
-                                ascending:
-                                    false,
-
-                                nullsFirst:
-                                    false
-                            }
-                        )
-
-                        .order(
-                            'criado_em',
-                            {
-                                ascending:
-                                    false
-                            }
-                        );
-
-
-                // Usuário comum vê apenas os próprios chamados
-                if (
-                    !ehAdminChamados()
-                ) {
-
-                    query =
-                        query.eq(
-                            'criado_por_username',
-                            usernameChamados()
-                        );
-
-                }
-
-
-                const {
-                    data,
-                    error
-                } =
-                    await query;
-
-
-                if (error) {
-
-                    throw error;
-
-                }
-
-
-                chamadosCache =
-                    data ||
-                    [];
-
-
-                renderResumoChamados();
-
-
-                window
-                    .renderizarChamados();
-
-
-                atualizarContadorMenuLocal();
-
-
-                if (
-                    mostrarToast
-                ) {
-
-                    toastChamados(
-                        '✅ Chamados atualizados.',
-                        'success'
-                    );
-
-                }
-
-
-            } catch (
-                e
-            ) {
-
-                console.error(
-                    '❌ Erro ao carregar chamados:',
-                    e
-                );
-
-
-                if (lista) {
-
-                    lista.innerHTML = `
-
-                        <div
-                            class="ch-vazio"
-                        >
-
-                            <i
-                                class="
-                                    fas
-                                    fa-exclamation-triangle
-                                "
-                            ></i>
-
-                            Erro ao carregar chamados.
-
-                            <br>
-
-                            <small>
-                                ${escChamados(
-                                    e.message
-                                )}
-                            </small>
-
-                        </div>
-
-                    `;
-
-                }
-
-
-                toastChamados(
-                    '❌ Erro ao carregar chamados: ' +
-                    e.message,
-                    'error'
-                );
-
-            }
-
-        };
+    };
 
 
     // ========================================================
@@ -4248,476 +4523,511 @@
 
 
     // ========================================================
-    // RENDERIZAR LISTA
-    // ========================================================
+// RENDERIZAR LISTA
+// ========================================================
 
-    window.renderizarChamados =
-        function() {
+window.renderizarChamados =
+    function() {
 
-            const lista =
-                document.getElementById(
-                    'chLista'
+        const lista =
+            document.getElementById(
+                'chLista'
+            );
+
+
+        if (
+            !lista
+        ) {
+
+            return;
+
+        }
+
+
+        const busca =
+            normalizarUsuarioChamados(
+                document
+                    .getElementById(
+                        'chBusca'
+                    )
+                    ?.value ||
+                ''
+            );
+
+
+        const status =
+            document
+                .getElementById(
+                    'chFiltroStatus'
+                )
+                ?.value ||
+            '';
+
+
+        const tipo =
+            document
+                .getElementById(
+                    'chFiltroTipo'
+                )
+                ?.value ||
+            '';
+
+
+        const prio =
+            document
+                .getElementById(
+                    'chFiltroPrio'
+                )
+                ?.value ||
+            '';
+
+
+        let dados = [
+            ...chamadosCache
+        ];
+
+
+        if (
+            status
+        ) {
+
+            dados =
+                dados.filter(
+                    chamado =>
+                        chamado.status ===
+                        status
                 );
 
-
-            if (!lista) {
-                return;
-            }
+        }
 
 
-            const busca =
-                normalizarUsuarioChamados(
+        if (
+            tipo
+        ) {
 
-                    document
-                        .getElementById(
-                            'chBusca'
+            dados =
+                dados.filter(
+                    chamado =>
+                        chamado.tipo ===
+                        tipo
+                );
+
+        }
+
+
+        if (
+            prio
+        ) {
+
+            dados =
+                dados.filter(
+                    chamado =>
+                        (
+                            chamado.prioridade ||
+                            'normal'
+                        ) ===
+                        prio
+                );
+
+        }
+
+
+        if (
+            busca
+        ) {
+
+            dados =
+                dados.filter(
+                    chamado => {
+
+                        const texto =
+                            [
+
+                                numeroChamado(
+                                    chamado.id
+                                ),
+
+                                chamado.titulo,
+
+                                chamado.modulo,
+
+                                chamado.descricao,
+
+                                chamado.erro,
+
+                                chamado.criado_por_nome,
+
+                                chamado.criado_por_username,
+
+                                chamado.responsavel
+
+                            ]
+                                .join(
+                                    ' '
+                                );
+
+
+                        return normalizarUsuarioChamados(
+                            texto
                         )
-                        ?.value ||
-                    ''
-
-                );
-
-
-            const status =
-                document
-                    .getElementById(
-                        'chFiltroStatus'
-                    )
-                    ?.value ||
-                '';
-
-
-            const tipo =
-                document
-                    .getElementById(
-                        'chFiltroTipo'
-                    )
-                    ?.value ||
-                '';
-
-
-            const prio =
-                document
-                    .getElementById(
-                        'chFiltroPrio'
-                    )
-                    ?.value ||
-                '';
-
-
-            let dados =
-                [
-                    ...chamadosCache
-                ];
-
-
-            if (status) {
-
-                dados =
-                    dados.filter(
-                        c =>
-                            c.status ===
-                            status
-                    );
-
-            }
-
-
-            if (tipo) {
-
-                dados =
-                    dados.filter(
-                        c =>
-                            c.tipo ===
-                            tipo
-                    );
-
-            }
-
-
-            if (prio) {
-
-                dados =
-                    dados.filter(
-                        c =>
-                            (
-                                c.prioridade ||
-                                'normal'
-                            ) === prio
-                    );
-
-            }
-
-
-            if (busca) {
-
-                dados =
-                    dados.filter(
-                        c => {
-
-                            const texto =
-                                [
-
-                                    numeroChamado(
-                                        c.id
-                                    ),
-
-                                    c.titulo,
-
-                                    c.modulo,
-
-                                    c.descricao,
-
-                                    c.erro,
-
-                                    c.criado_por_nome,
-
-                                    c.criado_por_username,
-
-                                    c.responsavel
-
-                                ]
-                                    .join(
-                                        ' '
-                                    );
-
-
-                            return (
-                                normalizarUsuarioChamados(
-                                    texto
-                                )
-                                    .includes(
-                                        busca
-                                    )
+                            .includes(
+                                busca
                             );
 
-                        }
-                    );
+                    }
+                );
 
-            }
-
-
-            if (
-                !dados.length
-            ) {
-
-                lista.innerHTML = `
-
-                    <div
-                        class="ch-vazio"
-                    >
-
-                        <i
-                            class="
-                                fas
-                                fa-inbox
-                            "
-                        ></i>
-
-                        Nenhum chamado encontrado.
-
-                    </div>
-
-                `;
+        }
 
 
-                return;
-
-            }
-
-
-            const admin =
-                ehAdminChamados();
-
+        if (
+            !dados.length
+        ) {
 
             lista.innerHTML = `
 
                 <div
-                    class="ch-tabela-wrap"
+                    class="ch-vazio"
                 >
 
-                    <table
-                        class="ch-tabela"
-                    >
-
-                        <thead>
-
-                            <tr>
-
-                                <th>
-                                    Chamado
-                                </th>
-
-                                ${
-                                    admin
-
-                                        ? `
-                                            <th>
-                                                Usuário
-                                            </th>
-                                        `
-
-                                        : ''
-                                }
-
-                                <th>
-                                    Tipo
-                                </th>
-
-                                <th>
-                                    Prioridade
-                                </th>
-
-                                <th>
-                                    Aba / Módulo
-                                </th>
-
-                                <th>
-                                    Assunto
-                                </th>
-
-                                <th>
-                                    Status
-                                </th>
-
-                                <th>
-                                    Atualizado
-                                </th>
-
-                                <th>
-                                </th>
-
-                            </tr>
-
-                        </thead>
-
-
-                        <tbody>
-
-                            ${
-                                dados
-                                    .map(
-                                        c => {
-
-                                            const t =
-                                                cfgTipo(
-                                                    c.tipo
-                                                );
-
-
-                                            const s =
-                                                cfgStatus(
-                                                    c.status
-                                                );
-
-
-                                            const p =
-                                                cfgPrioridade(
-                                                    c.prioridade ||
-                                                    'normal'
-                                                );
-
-
-                                            return `
-
-                                                <tr
-                                                    onclick="
-                                                        abrirDetalhesChamado(
-                                                            ${Number(c.id)}
-                                                        )
-                                                    "
-                                                >
-
-                                                    <td>
-
-                                                        <strong>
-                                                            #${numeroChamado(c.id)}
-                                                        </strong>
-
-                                                    </td>
-
-
-                                                    ${
-                                                        admin
-
-                                                            ? `
-
-                                                                <td>
-
-                                                                    <strong>
-                                                                        ${escChamados(
-                                                                            c.criado_por_nome ||
-                                                                            '-'
-                                                                        )}
-                                                                    </strong>
-
-                                                                    <br>
-
-                                                                    <small
-                                                                        class="text-muted"
-                                                                    >
-                                                                        ${escChamados(
-                                                                            c.criado_por_username ||
-                                                                            ''
-                                                                        )}
-                                                                    </small>
-
-                                                                </td>
-
-                                                            `
-
-                                                            : ''
-                                                    }
-
-
-                                                    <td>
-
-                                                        <span
-                                                            class="
-                                                                ch-badge
-                                                                ${t.classe}
-                                                            "
-                                                        >
-                                                            ${t.icone}
-                                                            ${escChamados(t.texto)}
-                                                        </span>
-
-                                                    </td>
-
-
-                                                    <td>
-
-                                                        <span
-                                                            class="
-                                                                ch-badge
-                                                                ${p.classe}
-                                                            "
-                                                        >
-                                                            ${p.icone}
-                                                            ${escChamados(p.texto)}
-                                                        </span>
-
-                                                    </td>
-
-
-                                                    <td>
-                                                        ${escChamados(
-                                                            c.modulo ||
-                                                            '-'
-                                                        )}
-                                                    </td>
-
-
-                                                    <td
-                                                        style="
-                                                            min-width:250px;
-                                                        "
-                                                    >
-
-                                                        <strong>
-                                                            ${escChamados(
-                                                                c.titulo ||
-                                                                '-'
-                                                            )}
-                                                        </strong>
-
-
-                                                        ${
-                                                            c.print_url
-
-                                                                ? `
-
-                                                                    <br>
-
-                                                                    <small
-                                                                        class="text-muted"
-                                                                    >
-
-                                                                        <i
-                                                                            class="
-                                                                                fas
-                                                                                fa-paperclip
-                                                                            "
-                                                                        ></i>
-
-                                                                        possui print
-
-                                                                    </small>
-
-                                                                `
-
-                                                                : ''
-                                                        }
-
-                                                    </td>
-
-
-                                                    <td>
-
-                                                        <span
-                                                            class="
-                                                                ch-badge
-                                                                ${s.classe}
-                                                            "
-                                                        >
-                                                            ${s.icone}
-                                                            ${escChamados(s.texto)}
-                                                        </span>
-
-                                                    </td>
-
-
-                                                    <td>
-
-                                                        ${escChamados(
-                                                            formatarDataChamados(
-                                                                c.atualizado_em ||
-                                                                c.criado_em
-                                                            )
-                                                        )}
-
-                                                    </td>
-
-
-                                                    <td>
-
-                                                        <button
-                                                            class="
-                                                                btn
-                                                                btn-sm
-                                                                btn-primary
-                                                            "
-                                                            onclick="
-                                                                event.stopPropagation();
-
-                                                                abrirDetalhesChamado(
-                                                                    ${Number(c.id)}
-                                                                )
-                                                            "
-                                                        >
-                                                            Abrir
-                                                        </button>
-
-                                                    </td>
-
-                                                </tr>
-
-                                            `;
-
-                                        }
-                                    )
-                                    .join('')
-                            }
-
-                        </tbody>
-
-                    </table>
+                    <i
+                        class="
+                            fas
+                            fa-inbox
+                        "
+                    ></i>
+
+                    Nenhum chamado encontrado.
 
                 </div>
 
             `;
 
-        };
+
+            return;
+
+        }
+
+
+        lista.innerHTML = `
+
+            <div
+                class="ch-tabela-wrap"
+            >
+
+                <table
+                    class="ch-tabela"
+                >
+
+                    <thead>
+
+                        <tr>
+
+                            <th>
+                                Chamado
+                            </th>
+
+                            <th>
+                                Aberto por
+                            </th>
+
+                            <th>
+                                Tipo
+                            </th>
+
+                            <th>
+                                Prioridade
+                            </th>
+
+                            <th>
+                                Aba / Módulo
+                            </th>
+
+                            <th>
+                                Assunto
+                            </th>
+
+                            <th>
+                                Status
+                            </th>
+
+                            <th>
+                                Atualizado
+                            </th>
+
+                            <th>
+                            </th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        ${
+
+                            dados
+                                .map(
+                                    chamado => {
+
+                                        const configuracaoTipo =
+                                            cfgTipo(
+                                                chamado.tipo
+                                            );
+
+
+                                        const configuracaoStatus =
+                                            cfgStatus(
+                                                chamado.status
+                                            );
+
+
+                                        const configuracaoPrioridade =
+                                            cfgPrioridade(
+                                                chamado.prioridade ||
+                                                'normal'
+                                            );
+
+
+                                        const nomeCriador =
+                                            chamado
+                                                .criado_por_nome ||
+                                            chamado
+                                                .criado_por_username ||
+                                            'Usuário não identificado';
+
+
+                                        const usernameCriador =
+                                            chamado
+                                                .criado_por_username ||
+                                            '';
+
+
+                                        return `
+
+                                            <tr
+                                                onclick="
+                                                    abrirDetalhesChamado(
+                                                        ${Number(chamado.id)}
+                                                    )
+                                                "
+                                            >
+
+                                                <td>
+
+                                                    <strong>
+                                                        #${numeroChamado(chamado.id)}
+                                                    </strong>
+
+                                                </td>
+
+
+                                                <td>
+
+                                                    <strong>
+                                                        ${escChamados(
+                                                            nomeCriador
+                                                        )}
+                                                    </strong>
+
+
+                                                    ${
+
+                                                        usernameCriador
+
+                                                            ? `
+
+                                                                <br>
+
+                                                                <small
+                                                                    class="text-muted"
+                                                                >
+                                                                    ${escChamados(
+                                                                        usernameCriador
+                                                                    )}
+                                                                </small>
+
+                                                            `
+
+                                                            : ''
+
+                                                    }
+
+                                                </td>
+
+
+                                                <td>
+
+                                                    <span
+                                                        class="
+                                                            ch-badge
+                                                            ${configuracaoTipo.classe}
+                                                        "
+                                                    >
+
+                                                        ${configuracaoTipo.icone}
+
+                                                        ${escChamados(
+                                                            configuracaoTipo.texto
+                                                        )}
+
+                                                    </span>
+
+                                                </td>
+
+
+                                                <td>
+
+                                                    <span
+                                                        class="
+                                                            ch-badge
+                                                            ${configuracaoPrioridade.classe}
+                                                        "
+                                                    >
+
+                                                        ${configuracaoPrioridade.icone}
+
+                                                        ${escChamados(
+                                                            configuracaoPrioridade.texto
+                                                        )}
+
+                                                    </span>
+
+                                                </td>
+
+
+                                                <td>
+
+                                                    ${escChamados(
+                                                        chamado.modulo ||
+                                                        '-'
+                                                    )}
+
+                                                </td>
+
+
+                                                <td
+                                                    style="
+                                                        min-width:250px;
+                                                    "
+                                                >
+
+                                                    <strong>
+
+                                                        ${escChamados(
+                                                            chamado.titulo ||
+                                                            '-'
+                                                        )}
+
+                                                    </strong>
+
+
+                                                    ${
+
+                                                        chamado.print_url
+
+                                                            ? `
+
+                                                                <br>
+
+                                                                <small
+                                                                    class="text-muted"
+                                                                >
+
+                                                                    <i
+                                                                        class="
+                                                                            fas
+                                                                            fa-paperclip
+                                                                        "
+                                                                    ></i>
+
+                                                                    possui print
+
+                                                                </small>
+
+                                                            `
+
+                                                            : ''
+
+                                                    }
+
+                                                </td>
+
+
+                                                <td>
+
+                                                    <span
+                                                        class="
+                                                            ch-badge
+                                                            ${configuracaoStatus.classe}
+                                                        "
+                                                    >
+
+                                                        ${configuracaoStatus.icone}
+
+                                                        ${escChamados(
+                                                            configuracaoStatus.texto
+                                                        )}
+
+                                                    </span>
+
+                                                </td>
+
+
+                                                <td>
+
+                                                    ${escChamados(
+                                                        formatarDataChamados(
+                                                            chamado.atualizado_em ||
+                                                            chamado.criado_em
+                                                        )
+                                                    )}
+
+                                                </td>
+
+
+                                                <td>
+
+                                                    <button
+                                                        class="
+                                                            btn
+                                                            btn-sm
+                                                            btn-primary
+                                                        "
+                                                        onclick="
+                                                            event.stopPropagation();
+
+                                                            abrirDetalhesChamado(
+                                                                ${Number(chamado.id)}
+                                                            )
+                                                        "
+                                                    >
+                                                        Abrir
+                                                    </button>
+
+                                                </td>
+
+                                            </tr>
+
+                                        `;
+
+                                    }
+                                )
+
+                                .join('')
+
+                        }
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        `;
+
+    };
 
 
     // ========================================================
@@ -4939,130 +5249,127 @@
         };
 
 
-    // ========================================================
-    // CARREGAR DETALHES DO CHAMADO
-    // ========================================================
-
     async function carregarDetalhesChamados(
-        id
+    id
+) {
+
+    const sb =
+        sbChamados();
+
+
+    if (
+        !sb
     ) {
 
-        const sb =
-            sbChamados();
-
-
-        if (!sb) {
-
-            throw new Error(
-                'Supabase não conectado.'
-            );
-
-        }
-
-
-        let query =
-            sb
-
-                .from(
-                    CFG_CHAMADOS
-                        .tabelaChamados
-                )
-
-                .select('*')
-
-                .eq(
-                    'id',
-                    id
-                );
-
-
-        if (
-            !ehAdminChamados()
-        ) {
-
-            query =
-                query.eq(
-                    'criado_por_username',
-                    usernameChamados()
-                );
-
-        }
-
-
-        const {
-            data: chamado,
-            error
-        } =
-            await query
-                .single();
-
-
-        if (error) {
-
-            throw error;
-
-        }
-
-
-        if (!chamado) {
-
-            throw new Error(
-                'Chamado não encontrado ou sem permissão.'
-            );
-
-        }
-
-
-        const {
-            data: msgs,
-            error: erroMsgs
-        } =
-            await sb
-
-                .from(
-                    CFG_CHAMADOS
-                        .tabelaMensagens
-                )
-
-                .select('*')
-
-                .eq(
-                    'chamado_id',
-                    id
-                )
-
-                .order(
-                    'criado_em',
-                    {
-                        ascending:
-                            true
-                    }
-                );
-
-
-        if (
-            erroMsgs
-        ) {
-
-            throw (
-                erroMsgs
-            );
-
-        }
-
-
-        chamadoAberto =
-            chamado;
-
-
-        mensagensCache =
-            msgs ||
-            [];
-
-
-        renderDetalhesChamados();
+        throw new Error(
+            'Supabase não conectado.'
+        );
 
     }
+
+
+    const {
+        data: chamado,
+        error
+    } =
+        await sb
+
+            .from(
+                CFG_CHAMADOS
+                    .tabelaChamados
+            )
+
+            .select('*')
+
+            .eq(
+                'id',
+                id
+            )
+
+            .single();
+
+
+    if (
+        error
+    ) {
+
+        throw error;
+
+    }
+
+
+    if (
+        !chamado
+    ) {
+
+        throw new Error(
+            'Chamado não encontrado.'
+        );
+
+    }
+
+
+    if (
+        !podeVisualizarChamado(
+            chamado
+        )
+    ) {
+
+        throw new Error(
+            'Você não tem permissão para visualizar este chamado.'
+        );
+
+    }
+
+
+    const {
+        data: msgs,
+        error: erroMsgs
+    } =
+        await sb
+
+            .from(
+                CFG_CHAMADOS
+                    .tabelaMensagens
+            )
+
+            .select('*')
+
+            .eq(
+                'chamado_id',
+                id
+            )
+
+            .order(
+                'criado_em',
+                {
+                    ascending:
+                        true
+                }
+            );
+
+
+    if (
+        erroMsgs
+    ) {
+
+        throw erroMsgs;
+
+    }
+
+
+    chamadoAberto =
+        chamado;
+
+
+    mensagensCache =
+        msgs ||
+        [];
+
+
+    renderDetalhesChamados();
+
+}
 
 
     // ========================================================
@@ -6525,12 +6832,16 @@ Alterado por: ${
 
 
     window.enviarMensagemChamados =
-    async function(id) {
+    async function(
+        id
+    ) {
 
         if (
             salvandoMensagem
         ) {
+
             return;
+
         }
 
 
@@ -6553,6 +6864,7 @@ Alterado por: ${
             );
 
             return;
+
         }
 
 
@@ -6577,6 +6889,7 @@ Alterado por: ${
             );
 
             return;
+
         }
 
 
@@ -6590,7 +6903,9 @@ Alterado por: ${
             );
 
 
-        if (btn) {
+        if (
+            btn
+        ) {
 
             btn.disabled =
                 true;
@@ -6609,12 +6924,14 @@ Alterado por: ${
                 Enviando...
 
             `;
+
         }
 
 
-        // ====================================================
-        // SE O PRINT FALHAR, A MENSAGEM CONTINUA SENDO ENVIADA
-        // ====================================================
+        /*
+         * Caso o envio do print falhe, a mensagem de texto
+         * continua sendo enviada normalmente.
+         */
 
         let erroUploadAnexo =
             null;
@@ -6623,12 +6940,7 @@ Alterado por: ${
         try {
 
             // =================================================
-            // BUSCA DADOS ATUAIS DO CHAMADO
-            //
-            // Além de validar permissão, usamos os dados para:
-            // - saber quem abriu
-            // - saber status atual
-            // - gerar notificação
+            // BUSCA OS DADOS ATUAIS DO CHAMADO
             // =================================================
 
             let queryChamado =
@@ -6640,7 +6952,13 @@ Alterado por: ${
                     )
 
                     .select(
-                        'id, titulo, status, criado_por_username, criado_por_nome'
+                        `
+                            id,
+                            titulo,
+                            status,
+                            criado_por_username,
+                            criado_por_nome
+                        `
                     )
 
                     .eq(
@@ -6649,9 +6967,10 @@ Alterado por: ${
                     );
 
 
-            // =================================================
-            // USUÁRIO COMUM SÓ PODE RESPONDER CHAMADO PRÓPRIO
-            // =================================================
+            /*
+             * Usuários comuns somente podem responder
+             * os próprios chamados.
+             */
 
             if (
                 !ehAdminChamados()
@@ -6662,6 +6981,7 @@ Alterado por: ${
                         'criado_por_username',
                         usernameChamados()
                     );
+
             }
 
 
@@ -6695,7 +7015,47 @@ Alterado por: ${
                         'Chamado não encontrado.'
                     )
                 );
+
             }
+
+
+            // =================================================
+            // VERIFICA SE QUEM RESPONDEU FOI O CRIADOR
+            // =================================================
+
+            const usuarioQueAbriu =
+                normalizarUsuarioChamados(
+                    dadosChamado
+                        .criado_por_username
+                );
+
+
+            const usuarioQueRespondeu =
+                usernameChamados();
+
+
+            const mensagemFoiEnviadaPeloCriador =
+                Boolean(
+                    usuarioQueAbriu &&
+                    usuarioQueRespondeu &&
+                    usuarioQueAbriu ===
+                        usuarioQueRespondeu
+                );
+
+
+            /*
+             * O chamado somente será reaberto quando:
+             *
+             * 1. Estiver concluído;
+             * 2. A mensagem for enviada pela pessoa que abriu.
+             *
+             * Isso também funciona quando o criador é administrador.
+             */
+
+            const deveReabrirChamado =
+                dadosChamado.status ===
+                    'concluido' &&
+                mensagemFoiEnviadaPeloCriador;
 
 
             // =================================================
@@ -6733,15 +7093,8 @@ Alterado por: ${
                     erroUploadAnexo =
                         erroUpload;
 
-
-                    // =========================================
-                    // IMPORTANTE
-                    //
-                    // Não damos throw aqui.
-                    // A resposta de texto será enviada mesmo
-                    // que o print tenha falhado.
-                    // =========================================
                 }
+
             }
 
 
@@ -6795,11 +7148,12 @@ Alterado por: ${
             ) {
 
                 throw erroMensagem;
+
             }
 
 
             // =================================================
-            // ATUALIZA DATA DO CHAMADO
+            // ATUALIZA O CHAMADO
             // =================================================
 
             const atualizacao = {
@@ -6810,16 +7164,13 @@ Alterado por: ${
             };
 
 
-            // =================================================
-            // SE USUÁRIO RESPONDER CHAMADO CONCLUÍDO
-            //
-            // Reabre como "Aguardando"
-            // =================================================
+            /*
+             * Se o criador respondeu um chamado concluído,
+             * muda automaticamente para Aguardando.
+             */
 
             if (
-                !ehAdminChamados() &&
-                dadosChamado.status ===
-                    'concluido'
+                deveReabrirChamado
             ) {
 
                 atualizacao.status =
@@ -6828,6 +7179,7 @@ Alterado por: ${
 
                 atualizacao.concluido_em =
                     null;
+
             }
 
 
@@ -6856,63 +7208,74 @@ Alterado por: ${
             ) {
 
                 throw erroUpdate;
+
             }
-
-            /*
- * Se a resposta do usuário reabriu um chamado
- * concluído, notifica a mudança de status.
- */
-if (
-    dadosChamado.status ===
-        'concluido' &&
-    atualizacao.status ===
-        'aguardando'
-) {
-    try {
-        await notificarMudancaStatusChamado({
-            chamadoId:
-                id,
-
-            tituloChamado:
-                dadosChamado.titulo,
-
-            criadorUsername:
-                dadosChamado
-                    .criado_por_username,
-
-            statusAnterior:
-                'concluido',
-
-            novoStatus:
-                'aguardando'
-        });
-
-    } catch (
-        erroNotificacaoStatus
-    ) {
-        console.warn(
-            '⚠️ Chamado reaberto, mas a notificação do status falhou:',
-            erroNotificacaoStatus
-        );
-    }
-}
 
 
             // =================================================
-            // NOTIFICAÇÕES
+            // NOTIFICA A MUDANÇA DE STATUS
+            // =================================================
+
+            if (
+                deveReabrirChamado &&
+                atualizacao.status ===
+                    'aguardando'
+            ) {
+
+                try {
+
+                    await notificarMudancaStatusChamado({
+
+                        chamadoId:
+                            id,
+
+                        tituloChamado:
+                            dadosChamado
+                                .titulo,
+
+                        criadorUsername:
+                            dadosChamado
+                                .criado_por_username,
+
+                        statusAnterior:
+                            'concluido',
+
+                        novoStatus:
+                            'aguardando'
+
+                    });
+
+
+                } catch (
+                    erroNotificacaoStatus
+                ) {
+
+                    /*
+                     * A falha da notificação não desfaz
+                     * a mensagem nem a mudança de status.
+                     */
+
+                    console.warn(
+                        '⚠️ Chamado reaberto, mas a notificação do status falhou:',
+                        erroNotificacaoStatus
+                    );
+
+                }
+
+            }
+
+
+            // =================================================
+            // NOTIFICA A NOVA MENSAGEM
             // =================================================
 
             try {
 
                 const criadorChamado =
-                    (
+                    normalizarUsuarioChamados(
                         dadosChamado
-                            .criado_por_username ||
-                        ''
-                    )
-                        .toString()
-                        .trim()
-                        .toLowerCase();
+                            .criado_por_username
+                    );
 
 
                 const previewMensagem =
@@ -6930,11 +7293,10 @@ if (
                             : 'Nova atualização no chamado.';
 
 
-                // =============================================
-                // ADMIN RESPONDEU
-                //
-                // -> NOTIFICA QUEM ABRIU O CHAMADO
-                // =============================================
+                /*
+                 * Quando um administrador responde um chamado
+                 * de outra pessoa, notifica quem abriu.
+                 */
 
                 if (
                     ehAdminChamados()
@@ -6968,16 +7330,16 @@ if (
                                     previewMensagem
 
                             });
+
                     }
 
 
-                // =============================================
-                // FUNCIONÁRIO RESPONDEU
-                //
-                // -> NOTIFICA OS ADMINISTRADORES
-                // =============================================
-
                 } else {
+
+                    /*
+                     * Quando o usuário que abriu responde,
+                     * notifica os administradores.
+                     */
 
                     if (
                         typeof window
@@ -6992,20 +7354,36 @@ if (
                                     id,
 
                                 tipo:
-                                    'resposta_usuario',
+                                    deveReabrirChamado
+                                        ? 'chamado_reaberto'
+                                        : 'resposta_usuario',
 
                                 titulo:
-                                    `${
-                                        u.name ||
-                                        u.username ||
-                                        'Usuário'
-                                    } respondeu o chamado #${numeroChamado(id)}`,
+                                    deveReabrirChamado
+
+                                        ? `${
+                                            u.name ||
+                                            u.username ||
+                                            'Usuário'
+                                        } reabriu o chamado #${numeroChamado(id)}`
+
+                                        : `${
+                                            u.name ||
+                                            u.username ||
+                                            'Usuário'
+                                        } respondeu o chamado #${numeroChamado(id)}`,
 
                                 mensagem:
-                                    previewMensagem
+                                    deveReabrirChamado
+
+                                        ? `O chamado voltou automaticamente para Aguardando. ${previewMensagem}`
+
+                                        : previewMensagem
 
                             });
+
                     }
+
                 }
 
 
@@ -7013,20 +7391,21 @@ if (
                 erroNotificacao
             ) {
 
-                // =============================================
-                // UMA FALHA NA NOTIFICAÇÃO NÃO PODE
-                // CANCELAR UMA RESPOSTA QUE JÁ FOI ENVIADA
-                // =============================================
+                /*
+                 * Uma falha na notificação não pode cancelar
+                 * uma resposta que já foi enviada.
+                 */
 
                 console.warn(
                     '⚠️ Mensagem enviada, mas não foi possível gerar a notificação:',
                     erroNotificacao
                 );
+
             }
 
 
             // =================================================
-            // LIMPA ANEXO
+            // LIMPA O ANEXO E O CAMPO DE TEXTO
             // =================================================
 
             printNovaMensagem =
@@ -7045,11 +7424,28 @@ if (
 
                 arquivoInput.value =
                     '';
+
+            }
+
+
+            const campoResposta =
+                document.getElementById(
+                    'chResposta'
+                );
+
+
+            if (
+                campoResposta
+            ) {
+
+                campoResposta.value =
+                    '';
+
             }
 
 
             // =================================================
-            // RECARREGA O CHAMADO
+            // RECARREGA OS DETALHES
             // =================================================
 
             await carregarDetalhesChamados(
@@ -7058,7 +7454,7 @@ if (
 
 
             // =================================================
-            // RECARREGA LISTAGEM DE CHAMADOS
+            // RECARREGA A LISTAGEM
             // =================================================
 
             await window
@@ -7068,29 +7464,27 @@ if (
 
 
             // =================================================
-            // CONTADOR DO CARD "CHAMADOS"
+            // ATUALIZA O CONTADOR DO MENU
             // =================================================
 
             await atualizarContadorMenuChamados();
 
 
             // =================================================
-            // ATUALIZA O SINO DO PRÓPRIO USUÁRIO
-            //
-            // Não é obrigatório, mas mantém o contador
-            // sincronizado imediatamente.
+            // ATUALIZA O SININHO IMEDIATAMENTE
             // =================================================
 
             if (
                 typeof window
-                    .carregarNotificacoesChamados ===
-                'function'
+                    .atualizarSinoChamadosAgora ===
+                    'function'
             ) {
 
                 try {
 
                     await window
-                        .carregarNotificacoesChamados();
+                        .atualizarSinoChamadosAgora();
+
 
                 } catch (
                     erroAtualizarSino
@@ -7100,7 +7494,33 @@ if (
                         '⚠️ Não foi possível atualizar o sino:',
                         erroAtualizarSino
                     );
+
                 }
+
+
+            } else if (
+                typeof window
+                    .carregarNotificacoesChamados ===
+                    'function'
+            ) {
+
+                try {
+
+                    await window
+                        .carregarNotificacoesChamados();
+
+
+                } catch (
+                    erroAtualizarSino
+                ) {
+
+                    console.warn(
+                        '⚠️ Não foi possível atualizar o sino:',
+                        erroAtualizarSino
+                    );
+
+                }
+
             }
 
 
@@ -7122,12 +7542,23 @@ if (
                 );
 
 
+            } else if (
+                deveReabrirChamado
+            ) {
+
+                toastChamados(
+                    '✅ Resposta enviada. O chamado voltou para Aguardando.',
+                    'success'
+                );
+
+
             } else {
 
                 toastChamados(
                     '✅ Resposta enviada.',
                     'success'
                 );
+
             }
 
 
@@ -7177,10 +7608,12 @@ if (
                     Enviar resposta
 
                 `;
-            }
-        }
-    };
 
+            }
+
+        }
+
+    };
 
     // ========================================================
     // CONTADOR DO MENU - CACHE
@@ -7221,118 +7654,99 @@ if (
     }
 
 
-    // ========================================================
-    // CONTADOR DO MENU - BANCO
-    // ========================================================
-
     async function atualizarContadorMenuChamados() {
 
-        const sb =
-            sbChamados();
+    const sb =
+        sbChamados();
 
 
-        const el =
-            document.getElementById(
-                'chMenuQtd'
-            );
+    const el =
+        document.getElementById(
+            'chMenuQtd'
+        );
 
 
-        if (
-            !sb ||
-            !el ||
-            !usuarioChamados()
-        ) {
+    if (
+        !sb ||
+        !el ||
+        !usuarioChamados()
+    ) {
 
-            return;
+        return;
 
-        }
-
-
-        try {
-
-            let query =
-                sb
-
-                    .from(
-                        CFG_CHAMADOS
-                            .tabelaChamados
-                    )
-
-                    .select(
-                        'id',
-                        {
-                            count:
-                                'exact',
-
-                            head:
-                                true
-                        }
-                    )
-
-                    .neq(
-                        'status',
-                        'concluido'
-                    );
+    }
 
 
-            if (
-                !ehAdminChamados()
-            ) {
+    try {
 
-                query =
-                    query.eq(
-                        'criado_por_username',
-                        usernameChamados()
-                    );
+        const {
+            data,
+            error
+        } =
+            await sb
 
-            }
+                .from(
+                    CFG_CHAMADOS
+                        .tabelaChamados
+                )
 
+                .select(
+                    'id, status, criado_por_username'
+                )
 
-            const {
-                count,
-                error
-            } =
-                await query;
-
-
-            if (error) {
-
-                throw error;
-
-            }
-
-
-            const qtd =
-                Number(
-                    count ||
-                    0
+                .neq(
+                    'status',
+                    'concluido'
                 );
 
 
-            el.textContent =
-                qtd > 99
-                    ? '99+'
-                    : qtd;
-
-
-            el.classList.toggle(
-                'vazio',
-                qtd === 0
-            );
-
-
-        } catch (
-            e
+        if (
+            error
         ) {
 
-            console.warn(
-                '⚠️ Não foi possível atualizar contador de chamados:',
-                e
-            );
+            throw error;
 
         }
 
+
+        const qtd =
+            (
+                data ||
+                []
+            )
+                .filter(
+                    chamado =>
+                        podeVisualizarChamado(
+                            chamado
+                        )
+                )
+                .length;
+
+
+        el.textContent =
+            qtd > 99
+                ? '99+'
+                : qtd;
+
+
+        el.classList.toggle(
+            'vazio',
+            qtd === 0
+        );
+
+
+    } catch (
+        e
+    ) {
+
+        console.warn(
+            '⚠️ Não foi possível atualizar contador de chamados:',
+            e
+        );
+
     }
+
+}
 
 
     // ========================================================

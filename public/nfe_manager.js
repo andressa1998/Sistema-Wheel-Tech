@@ -32628,78 +32628,379 @@ function montarBotaoDetalhesVendaNFE(
     `;
 }
 
+function montarAvisoConcorrenteCacheNFE(
+    venda
+) {
+
+    if (
+        !venda
+    ) {
+
+        return '';
+    }
+
+
+    const nickname =
+        String(
+            venda
+                ?.buyer
+                ?.nickname ||
+
+            venda
+                ?.cliente ||
+
+            venda
+                ?.buyer_nickname ||
+
+            ''
+        )
+            .trim();
+
+
+    if (
+        !nickname
+    ) {
+
+        return '';
+    }
+
+
+    if (
+        !(
+            window._cacheConcorrentesNFE
+            instanceof Map
+        )
+    ) {
+
+        return '';
+    }
+
+
+    const chaveNickname =
+        `nickname:${nickname.toUpperCase()}`;
+
+
+    let dados =
+        window
+            ._cacheConcorrentesNFE
+            .get(
+                chaveNickname
+            ) ||
+        null;
+
+
+    // =====================================================
+    // FALLBACK
+    //
+    // Algumas versões antigas do código salvaram o cache
+    // pelo buyer_id em vez do nickname.
+    // =====================================================
+
+    if (
+        !dados
+    ) {
+
+        const buyerId =
+            venda
+                ?.buyer
+                ?.id ||
+
+            venda
+                ?.buyer_id ||
+
+            venda
+                ?._buyer_id_concorrente ||
+
+            null;
+
+
+        if (
+            buyerId
+        ) {
+
+            dados =
+                window
+                    ._cacheConcorrentesNFE
+                    .get(
+                        String(
+                            buyerId
+                        )
+                    ) ||
+                null;
+        }
+    }
+
+
+    if (
+        dados
+            ?.tem_anuncios !==
+        true
+    ) {
+
+        return '';
+    }
+
+
+    const total =
+        Number(
+            dados
+                ?.total_anuncios ||
+            0
+        );
+
+
+    const url =
+        dados
+            ?.url_anuncios ||
+        null;
+
+
+    const titulo =
+        total >
+            0
+
+            ? `${total} anúncio(s) ativo(s) encontrado(s). Clique para verificar.`
+
+            : 'Cliente possui anúncios ativos no Mercado Livre.';
+
+
+    if (
+        url
+    ) {
+
+        return `
+            <a
+                href="${escaparHTMLNFE(
+                    url
+                )}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="aviso-concorrente-nfe"
+                title="${escaparHTMLNFE(
+                    titulo
+                )}"
+                onclick="
+                    event.stopPropagation();
+                "
+                style="
+                    display:block;
+                    width:max-content;
+                    max-width:180px;
+                    margin-top:5px;
+                    padding:4px 7px;
+                    border-radius:5px;
+                    background:#fff3cd;
+                    border:1px solid #ffc107;
+                    color:#856404;
+                    font-size:9px;
+                    line-height:13px;
+                    font-weight:800;
+                    white-space:normal;
+                    text-decoration:none;
+                "
+            >
+                <i class="fas fa-exclamation-triangle"></i>
+                possível concorrente - verificar
+            </a>
+        `;
+    }
+
+
+    return `
+        <div
+            class="aviso-concorrente-nfe"
+            title="${escaparHTMLNFE(
+                titulo
+            )}"
+            style="
+                display:block;
+                width:max-content;
+                max-width:180px;
+                margin-top:5px;
+                padding:4px 7px;
+                border-radius:5px;
+                background:#fff3cd;
+                border:1px solid #ffc107;
+                color:#856404;
+                font-size:9px;
+                line-height:13px;
+                font-weight:800;
+                white-space:normal;
+            "
+        >
+            <i class="fas fa-exclamation-triangle"></i>
+            possível concorrente - verificar
+        </div>
+    `;
+}
+
+function atualizarCabecalhoVisibilidadeChamados() {
+
+    const tituloLista =
+        document.getElementById(
+            'chTituloLista'
+        );
+
+
+    const subtituloLista =
+        document.getElementById(
+            'chSubtituloLista'
+        );
+
+
+    if (
+        pertenceGrupoPrivadoChamados()
+    ) {
+
+        if (
+            tituloLista
+        ) {
+
+            tituloLista.textContent =
+                'Todos os chamados';
+
+        }
+
+
+        if (
+            subtituloLista
+        ) {
+
+            subtituloLista.textContent =
+                'Chamados públicos e chamados internos de Ronald e Andressa.';
+
+        }
+
+
+        return;
+
+    }
+
+
+    if (
+        tituloLista
+    ) {
+
+        tituloLista.textContent =
+            'Chamados da equipe';
+
+    }
+
+
+    if (
+        subtituloLista
+    ) {
+
+        subtituloLista.textContent =
+            'Acompanhe os chamados públicos abertos pela equipe.';
+
+    }
+
+}
+
 function renderizarVendasNFETabela(vendas) {
+
     garantirEstiloAlertaExposicaoFullNFE();
+
 
     const tbody =
         document.getElementById(
             'vendasPendentesBody'
         );
 
-    if (!tbody) {
+
+    if (
+        !tbody
+    ) {
+
         return;
     }
 
     // =====================================================
     // ALERTAS FULL JÁ CONHECIDOS - SOMENTE CACHE LOCAL
     //
-    // IMPORTANTE:
-    // esta função NÃO consulta Mercado Livre e NÃO agenda
-    // verificação FULL. Ela apenas reaplica o estado salvo.
+    // NÃO consulta Mercado Livre aqui.
     // =====================================================
+
     if (
         !window._estadosFullNFE ||
         window._estadosFullNFE.size === 0
     ) {
-        if (typeof hidratarEstadosFullLocalNFE === 'function') {
+
+        if (
+            typeof hidratarEstadosFullLocalNFE ===
+            'function'
+        ) {
+
             hidratarEstadosFullLocalNFE();
         }
     }
+
 
     if (
         typeof hidratarRegrasFixasTipoAnuncioLocalNFE ===
         'function'
     ) {
+
         hidratarRegrasFixasTipoAnuncioLocalNFE();
     }
+
 
     if (
         typeof reconciliarEstadosFullComRegrasFixasNFE ===
         'function'
     ) {
+
         reconciliarEstadosFullComRegrasFixasNFE();
     }
 
+
     garantirControlesVendasNFE();
+
 
     // =====================================================
     // GUARDAR LISTA ORIGINAL + AGRUPAR PACKS
     // =====================================================
+
     window._vendasTabelaNFEBase =
-        Array.isArray(vendas)
+        Array.isArray(
+            vendas
+        )
             ? vendas
             : [];
+
 
     vendas =
         agruparVendasEmPacksNFE(
             window._vendasTabelaNFEBase
         );
 
-    // Mantém lista completa para emissão/baixa/comentários.
+
+    // Mantém lista completa para:
+    // - emissão
+    // - baixa
+    // - comentários
+    // - detalhes
+    // - concorrentes
+
     vendasPendentes =
         vendas;
+
 
     // =====================================================
     // FILTRO MODALIDADE
     // =====================================================
+
     const filtroModalidade =
         window._filtroModalidadeNFE ||
         'todas';
+
 
     if (
         filtroModalidade ===
         'full'
     ) {
+
         vendas =
             vendas.filter(
                 venda =>
@@ -32709,10 +33010,12 @@ function renderizarVendasNFETabela(vendas) {
                     'full'
             );
 
+
     } else if (
         filtroModalidade ===
         'me'
     ) {
+
         vendas =
             vendas.filter(
                 venda =>
@@ -32723,30 +33026,38 @@ function renderizarVendasNFETabela(vendas) {
             );
     }
 
+
     // =====================================================
     // SEM RESULTADOS
     // =====================================================
+
     if (
         vendas.length ===
         0
     ) {
+
         let texto =
             'Nenhuma venda encontrada para esta data.';
+
 
         if (
             filtroModalidade ===
             'full'
         ) {
+
             texto =
                 'Nenhuma venda FULL encontrada.';
+
 
         } else if (
             filtroModalidade ===
             'me'
         ) {
+
             texto =
                 'Nenhuma venda Mercado Envios encontrada.';
         }
+
 
         tbody.innerHTML = `
             <tr>
@@ -32759,34 +33070,54 @@ function renderizarVendasNFETabela(vendas) {
             </tr>
         `;
 
-        aplicarPreferenciasColunasNFE();
-
         if (
             typeof aplicarEstadosFullTabelaNFE ===
             'function'
         ) {
+
             aplicarEstadosFullTabelaNFE();
         }
+
 
         return;
     }
 
+
     // =====================================================
     // MODALIDADE
     // =====================================================
+
     const badgeEnvio =
         venda => {
 
             const tipo =
-                `${venda._logistic_type || ''} ${venda._shipping_mode || ''} ${venda.tipo_envio || ''}`
+                `${
+                    venda._logistic_type ||
+                    ''
+                } ${
+                    venda._shipping_mode ||
+                    ''
+                } ${
+                    venda.tipo_envio ||
+                    ''
+                }`
                     .toUpperCase();
 
+
+            // =================================================
             // FULL
+            // =================================================
+
             if (
                 venda._is_full ||
-                tipo.includes('FULL') ||
-                tipo.includes('FULFILLMENT')
+                tipo.includes(
+                    'FULL'
+                ) ||
+                tipo.includes(
+                    'FULFILLMENT'
+                )
             ) {
+
                 return `
                     <span
                         style="
@@ -32804,12 +33135,23 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
+            // =================================================
             // FLEX
+            // =================================================
+
             if (
-                tipo.includes('FLEX') ||
-                tipo.includes('SELF_SERVICE') ||
-                tipo.includes('DROP_OFF')
+                tipo.includes(
+                    'FLEX'
+                ) ||
+                tipo.includes(
+                    'SELF_SERVICE'
+                ) ||
+                tipo.includes(
+                    'DROP_OFF'
+                )
             ) {
+
                 return `
                     <span
                         style="
@@ -32827,12 +33169,23 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
+            // =================================================
             // MERCADO ENVIOS
+            // =================================================
+
             if (
-                tipo.includes('CROSS_DOCKING') ||
-                tipo.includes('MERCADO') ||
-                tipo.includes('ME2')
+                tipo.includes(
+                    'CROSS_DOCKING'
+                ) ||
+                tipo.includes(
+                    'MERCADO'
+                ) ||
+                tipo.includes(
+                    'ME2'
+                )
             ) {
+
                 return `
                     <span
                         style="
@@ -32849,6 +33202,7 @@ function renderizarVendasNFETabela(vendas) {
                     </span>
                 `;
             }
+
 
             return `
                 <span
@@ -32868,9 +33222,11 @@ function renderizarVendasNFETabela(vendas) {
             `;
         };
 
+
     // =====================================================
     // PAGAMENTO
     // =====================================================
+
     const htmlPagamento =
         venda => {
 
@@ -32887,13 +33243,16 @@ function renderizarVendasNFETabela(vendas) {
                             : []
                     );
 
+
             // =================================================
             // MÚLTIPLOS PAGAMENTOS
             // =================================================
+
             if (
                 pagamentosDetalhes.length >
                 0
             ) {
+
                 const totalPagamentos =
                     pagamentosDetalhes.reduce(
                         (
@@ -32908,6 +33267,7 @@ function renderizarVendasNFETabela(vendas) {
                         0
                     );
 
+
                 const htmlMetodos =
                     pagamentosDetalhes
                         .map(
@@ -32918,6 +33278,7 @@ function renderizarVendasNFETabela(vendas) {
                                         .metodo_pagamento_nome ||
                                     'Não informado';
 
+
                                 const tipo =
                                     String(
                                         pagamento
@@ -32925,6 +33286,7 @@ function renderizarVendasNFETabela(vendas) {
                                         ''
                                     )
                                         .toLowerCase();
+
 
                                 const metodoId =
                                     String(
@@ -32934,60 +33296,73 @@ function renderizarVendasNFETabela(vendas) {
                                     )
                                         .toLowerCase();
 
+
                                 const valor =
                                     Number(
                                         pagamento.valor ||
                                         0
                                     );
 
+
                                 const parcelamento =
                                     pagamento
                                         .parcelamento_nome ||
                                     '';
 
+
                                 let icone =
                                     'fa-wallet';
+
 
                                 let fundo =
                                     '#6c757d';
 
+
                                 let corTexto =
                                     'white';
+
 
                                 if (
                                     metodoId ===
                                     'pix'
                                 ) {
+
                                     icone =
                                         'fa-qrcode';
 
                                     fundo =
                                         '#28a745';
 
+
                                 } else if (
                                     tipo ===
                                     'credit_card'
                                 ) {
+
                                     icone =
                                         'fa-credit-card';
 
                                     fundo =
                                         '#007bff';
 
+
                                 } else if (
                                     tipo ===
                                     'debit_card'
                                 ) {
+
                                     icone =
                                         'fa-credit-card';
 
                                     fundo =
                                         '#17a2b8';
 
+
                                 } else if (
                                     tipo ===
                                     'account_money'
                                 ) {
+
                                     icone =
                                         'fa-wallet';
 
@@ -32997,16 +33372,19 @@ function renderizarVendasNFETabela(vendas) {
                                     corTexto =
                                         '#212529';
 
+
                                 } else if (
                                     tipo ===
                                     'ticket'
                                 ) {
+
                                     icone =
                                         'fa-barcode';
 
                                     fundo =
                                         '#6f42c1';
                                 }
+
 
                                 return `
                                     <div
@@ -33064,7 +33442,10 @@ function renderizarVendasNFETabela(vendas) {
                                 `;
                             }
                         )
-                        .join('');
+                        .join(
+                            ''
+                        );
+
 
                 const htmlTotal =
                     pagamentosDetalhes.length >
@@ -33096,6 +33477,7 @@ function renderizarVendasNFETabela(vendas) {
                         `
                         : '';
 
+
                 return `
                     <div>
                         ${htmlMetodos}
@@ -33104,13 +33486,16 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
             // =================================================
             // PAGAMENTO ÚNICO
             // =================================================
+
             const metodoPagamento =
                 venda._metodo_pagamento_nome ||
                 venda.metodo_pagamento_nome ||
                 'N/I';
+
 
             const metodoPagamentoId =
                 String(
@@ -33120,6 +33505,7 @@ function renderizarVendasNFETabela(vendas) {
                 )
                     .toLowerCase();
 
+
             const tipoPagamento =
                 String(
                     venda._tipo_pagamento ||
@@ -33128,10 +33514,12 @@ function renderizarVendasNFETabela(vendas) {
                 )
                     .toLowerCase();
 
+
             const parcelasBruto =
                 venda._parcelas ??
                 venda.parcelas ??
                 null;
+
 
             const parcelas =
                 parcelasBruto !==
@@ -33145,10 +33533,12 @@ function renderizarVendasNFETabela(vendas) {
                     )
                     : null;
 
+
             const valorParcelaBruto =
                 venda._valor_parcela ??
                 venda.valor_parcela ??
                 null;
+
 
             const valorParcela =
                 valorParcelaBruto !==
@@ -33162,10 +33552,12 @@ function renderizarVendasNFETabela(vendas) {
                     )
                     : null;
 
+
             let parcelamentoNome =
                 venda._parcelamento_nome ||
                 venda.parcelamento_nome ||
                 null;
+
 
             if (
                 tipoPagamento ===
@@ -33175,12 +33567,15 @@ function renderizarVendasNFETabela(vendas) {
                 parcelas >
                     0
             ) {
+
                 if (
                     parcelas ===
                     1
                 ) {
+
                     parcelamentoNome =
                         '1x (À vista)';
+
 
                 } else if (
                     valorParcela !==
@@ -33189,6 +33584,7 @@ function renderizarVendasNFETabela(vendas) {
                         valorParcela
                     )
                 ) {
+
                     parcelamentoNome =
                         `${parcelas}x de R$ ${valorParcela.toLocaleString(
                             'pt-BR',
@@ -33201,13 +33597,19 @@ function renderizarVendasNFETabela(vendas) {
                             }
                         )}`;
 
+
                 } else {
+
                     parcelamentoNome =
                         `${parcelas}x`;
                 }
             }
 
+
+            // =================================================
             // PIX
+            // =================================================
+
             if (
                 metodoPagamentoId ===
                     'pix' ||
@@ -33219,6 +33621,7 @@ function renderizarVendasNFETabela(vendas) {
                         'pix'
                     )
             ) {
+
                 return `
                     <span
                         style="
@@ -33237,7 +33640,11 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
+            // =================================================
             // CRÉDITO
+            // =================================================
+
             if (
                 tipoPagamento ===
                     'credit_card' ||
@@ -33249,6 +33656,7 @@ function renderizarVendasNFETabela(vendas) {
                         'crédito'
                     )
             ) {
+
                 return `
                     <div>
                         <span
@@ -33292,7 +33700,11 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
+            // =================================================
             // DÉBITO
+            // =================================================
+
             if (
                 tipoPagamento ===
                     'debit_card' ||
@@ -33304,6 +33716,7 @@ function renderizarVendasNFETabela(vendas) {
                         'débito'
                     )
             ) {
+
                 return `
                     <span
                         style="
@@ -33325,11 +33738,16 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
+            // =================================================
             // SALDO MERCADO PAGO
+            // =================================================
+
             if (
                 tipoPagamento ===
                 'account_money'
             ) {
+
                 return `
                     <span
                         style="
@@ -33351,11 +33769,16 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
+            // =================================================
             // BOLETO
+            // =================================================
+
             if (
                 tipoPagamento ===
                 'ticket'
             ) {
+
                 return `
                     <span
                         style="
@@ -33377,7 +33800,11 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
+            // =================================================
             // NÃO INFORMADO
+            // =================================================
+
             if (
                 !metodoPagamento ||
                 metodoPagamento ===
@@ -33385,6 +33812,7 @@ function renderizarVendasNFETabela(vendas) {
                 metodoPagamento ===
                     'Não informado'
             ) {
+
                 return `
                     <span
                         style="
@@ -33396,6 +33824,7 @@ function renderizarVendasNFETabela(vendas) {
                     </span>
                 `;
             }
+
 
             return `
                 <span
@@ -33416,9 +33845,11 @@ function renderizarVendasNFETabela(vendas) {
             `;
         };
 
+
     // =====================================================
     // ESTOQUE INTERNO
     // =====================================================
+
     const htmlEstoque =
         venda => {
 
@@ -33428,21 +33859,26 @@ function renderizarVendasNFETabela(vendas) {
                     venda.id
                 );
 
+
             const vendaCancelada =
                 vendaEstaCanceladaNFE(
                     venda
                 );
 
+
             const baixadoPor =
                 venda._estoque_baixado_por_nome ||
                 null;
 
+
             // =================================================
-            // VENDA CANCELADA TEM PRIORIDADE
+            // VENDA CANCELADA
             // =================================================
+
             if (
                 vendaCancelada
             ) {
+
                 const restaurado =
                     Boolean(
                         venda
@@ -33455,14 +33891,16 @@ function renderizarVendasNFETabela(vendas) {
                         ._estoque_status ===
                         'restaurado_cancelamento_sync_pendente';
 
-                // RESTAURADO
+
                 if (
                     restaurado
                 ) {
+
                     const syncPendente =
                         venda
                             ._estoque_status ===
                         'restaurado_cancelamento_sync_pendente';
+
 
                     return `
                         <div>
@@ -33536,10 +33974,11 @@ function renderizarVendasNFETabela(vendas) {
                     `;
                 }
 
-                // FULL CANCELADA
+
                 if (
                     venda._is_full
                 ) {
+
                     return `
                         <div>
                             <span
@@ -33570,10 +34009,11 @@ function renderizarVendasNFETabela(vendas) {
                     `;
                 }
 
-                // CANCELADA APÓS BAIXA
+
                 if (
                     venda._estoque_baixado
                 ) {
+
                     return `
                         <div>
                             <span
@@ -33603,7 +34043,7 @@ function renderizarVendasNFETabela(vendas) {
                     `;
                 }
 
-                // CANCELADA SEM BAIXA
+
                 return `
                     <div>
                         <span
@@ -33634,12 +34074,15 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
             // =================================================
             // FULL NORMAL
             // =================================================
+
             if (
                 venda._is_full
             ) {
+
                 return `
                     <span
                         style="
@@ -33655,12 +34098,15 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
             // =================================================
             // BAIXADO
             // =================================================
+
             if (
                 venda._estoque_baixado
             ) {
+
                 return `
                     <div>
                         <span
@@ -33706,17 +34152,21 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
             const status =
                 venda._estoque_status ||
                 'nao_verificado';
 
+
             // =================================================
             // DISPONÍVEL
             // =================================================
+
             if (
                 status ===
                 'disponivel'
             ) {
+
                 return `
                     <div>
                         <div
@@ -33747,13 +34197,16 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
             // =================================================
             // SYNC PENDENTE
             // =================================================
+
             if (
                 status ===
                 'baixado_sync_pendente'
             ) {
+
                 return `
                     <div>
                         <span
@@ -33783,13 +34236,16 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
             // =================================================
             // SEM CADASTRO
             // =================================================
+
             if (
                 status ===
                 'sem_cadastro'
             ) {
+
                 return `
                     <span
                         style="
@@ -33804,13 +34260,16 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
             // =================================================
             // PROCESSANDO
             // =================================================
+
             if (
                 status ===
                 'processando'
             ) {
+
                 return `
                     <span
                         style="
@@ -33824,6 +34283,7 @@ function renderizarVendasNFETabela(vendas) {
                 `;
             }
 
+
             return `
                 <span
                     style="
@@ -33836,9 +34296,11 @@ function renderizarVendasNFETabela(vendas) {
             `;
         };
 
+
     // =====================================================
     // LINHAS
     // =====================================================
+
     tbody.innerHTML =
         vendas
             .map(
@@ -33850,53 +34312,67 @@ function renderizarVendasNFETabela(vendas) {
                             venda.id
                         );
 
+
                     // =================================================
                     // COMENTÁRIOS
                     // =================================================
+
                     const comentariosHtml =
                         montarCelulaComentariosVendaNFE(
                             vendaId
                         );
+
 
                     const isFull =
                         Boolean(
                             venda._is_full
                         );
 
+
                     const temNfe =
                         Boolean(
                             venda._tem_nfe
                         );
+
 
                     const vendaCancelada =
                         vendaEstaCanceladaNFE(
                             venda
                         );
 
+
                     const emitidoPor =
                         venda._nfe_emitida_por_nome ||
                         null;
+
 
                     const canceladaEm =
                         venda._venda_cancelada_em ||
                         null;
 
+
                     // =================================================
                     // CANCELAMENTO
                     // =================================================
+
                     let canceladaHtml =
                         '';
+
 
                     if (
                         vendaCancelada
                     ) {
+
                         let dataCancelamento =
                             '';
+
 
                         if (
                             canceladaEm
                         ) {
+
                             try {
+
                                 dataCancelamento =
                                     new Date(
                                         canceladaEm
@@ -33921,10 +34397,12 @@ function renderizarVendasNFETabela(vendas) {
                                             }
                                         );
 
+
                             } catch (
                                 error
                             ) {}
                         }
+
 
                         canceladaHtml = `
                             <div
@@ -33969,17 +34447,21 @@ function renderizarVendasNFETabela(vendas) {
                         `;
                     }
 
+
                     // =================================================
                     // DATA VENDA
                     // =================================================
+
                     const dataHoraVenda =
                         formatarDataHoraVendaNFE(
                             venda
                         );
 
+
                     // =================================================
                     // ENVIO
                     // =================================================
+
                     const dataEnvio =
                         isFull
                             ? obterDataVendaNFE(
@@ -33987,19 +34469,24 @@ function renderizarVendasNFETabela(vendas) {
                             )
                             : venda._data_envio;
 
+
                     const tituloData =
                         isFull
                             ? 'Venda FULL'
                             : 'Despachar';
 
+
                     let hora =
                         '';
+
 
                     if (
                         !isFull &&
                         venda._prazo_envio
                     ) {
+
                         try {
+
                             hora =
                                 new Date(
                                     venda._prazo_envio
@@ -34015,14 +34502,17 @@ function renderizarVendasNFETabela(vendas) {
                                         }
                                     );
 
+
                         } catch (
                             error
                         ) {}
                     }
 
+
                     // =================================================
                     // CLIENTE
                     // =================================================
+
                     const cliente =
                         venda.cliente ||
                         venda.buyer?.nickname ||
@@ -34030,11 +34520,19 @@ function renderizarVendasNFETabela(vendas) {
                             .trim() ||
                         'N/I';
 
+                        const avisoConcorrenteHtml =
+                        montarAvisoConcorrenteCacheNFE(
+                            venda
+                        );
+
+
                     // =================================================
                     // SKU
                     // =================================================
+
                     let skus =
                         [];
+
 
                     if (
                         venda.eh_kit &&
@@ -34042,6 +34540,7 @@ function renderizarVendasNFETabela(vendas) {
                             venda.skus_kit
                         )
                     ) {
+
                         skus =
                             venda.skus_kit
                                 .map(
@@ -34052,11 +34551,13 @@ function renderizarVendasNFETabela(vendas) {
                                     Boolean
                                 );
 
+
                     } else if (
                         Array.isArray(
                             venda.order_items
                         )
                     ) {
+
                         skus =
                             venda.order_items
                                 .map(
@@ -34068,113 +34569,159 @@ function renderizarVendasNFETabela(vendas) {
                                     Boolean
                                 );
 
+
                     } else if (
                         venda.sku
                     ) {
+
                         skus = [
                             venda.sku
                         ];
                     }
 
+
                     if (
                         skus.length ===
                         0
                     ) {
+
                         skus = [
                             'SEM_SKU'
                         ];
                     }
 
+
                     const skuHtml =
                         skus
                             .map(
-                                sku =>
-                                    `
-                                        <div>
-                                            <code>
-                                                ${escaparHTMLNFE(
-                                                    sku
-                                                )}
-                                            </code>
-                                        </div>
-                                    `
+                                sku => `
+                                    <div>
+                                        <code>
+                                            ${escaparHTMLNFE(
+                                                sku
+                                            )}
+                                        </code>
+                                    </div>
+                                `
                             )
-                            .join('');
+                            .join(
+                                ''
+                            );
+
 
                     // =================================================
                     // ANÚNCIO
                     // =================================================
+
                     const anuncioHtml =
                         montarLinksModificarAnunciosNFE(
                             venda
                         );
 
+
                     // =================================================
                     // FOTO
                     // =================================================
+
                     const fotoHtml =
                         montarFotoProdutoNFE(
                             venda
                         );
 
+
                     // =================================================
                     // ESTOQUE DO ANÚNCIO
                     // =================================================
+
                     const estoqueAnuncioHtml =
                         montarEstoqueAnuncioPosVendaHtmlNFE(
                             venda
                         );
 
-                        const alertasVenda =
-                            obterAlertasExposicaoVendaNFE(
-                                venda
-                            );
 
-                        const temAlertaFullZero =
-                            alertasVenda.some(
-                                alerta =>
-                                    alerta.tipo_alerta ===
-                                    'full_zero'
-                            );
+                    // =================================================
+                    // ALERTAS
+                    // =================================================
 
-                        const temAlertaQuantidade =
-                            alertasVenda.some(
-                                alerta =>
-                                    alerta.tipo_alerta ===
-                                    'quantidade'
-                            );
+                    const alertasVenda =
+                        obterAlertasExposicaoVendaNFE(
+                            venda
+                        );
 
-                        const temAlertaExposicao =
-                            alertasVenda.some(
-                                alerta =>
-                                    alerta.tipo_alerta ===
-                                    'exposicao'
-                            );
 
-                        const precisaMudarParaClassico =
-                            alertasVenda.length > 0;
+                    const temAlertaFullZero =
+                        alertasVenda.some(
+                            alerta =>
+                                alerta.tipo ===
+                                'full_zero'
+                        );
 
-                        let classeAlertaExposicao = '';
 
-                        if (temAlertaFullZero) {
-                            classeAlertaExposicao =
-                                'alerta-full-zero-nfe';
-                        } else if (temAlertaQuantidade) {
-                            classeAlertaExposicao =
-                                'alerta-quantidade-anuncio-nfe';
-                        } else if (temAlertaExposicao) {
-                            classeAlertaExposicao =
-                                'alerta-exposicao-full-nfe';
-                        }
+                    const temAlertaQuantidade =
+                        alertasVenda.some(
+                            alerta =>
+                                alerta.tipo ===
+                                'quantidade_anuncio'
+                        );
 
-                            const avisoExposicaoHtml =
-                                    montarAvisosExposicaoVendaNFE(
-                                        venda
-                                    );
+
+                    const temAlertaExposicao =
+                        alertasVenda.some(
+                            alerta =>
+                                alerta.tipo ===
+                                'exposicao'
+                        );
+
+
+                    const possuiAlertaEstoqueExposicao =
+                        alertasVenda.length >
+                        0;
+
+
+                    let classeAlertaExposicao =
+                        '';
+
+
+                    if (
+                        temAlertaFullZero
+                    ) {
+
+                        classeAlertaExposicao =
+                            'alerta-full-zero-nfe';
+
+
+                    } else if (
+                        temAlertaQuantidade
+                    ) {
+
+                        classeAlertaExposicao =
+                            'alerta-quantidade-anuncio-nfe';
+
+
+                    } else if (
+                        temAlertaExposicao
+                    ) {
+
+                        classeAlertaExposicao =
+                            'alerta-exposicao-full-nfe';
+                    }
+
+
+                    const avisoExposicaoHtml =
+                        montarAvisosExposicaoVendaNFE(
+                            venda
+                        );
+
+
+                    const mensagemAlertaLinha =
+                        alertasVenda?.[0]?.mensagem ||
+                        '';
+
 
                     // =================================================
                     // VALOR
                     // =================================================
+
                     const valor =
                         Number(
                             venda._valor_produto ??
@@ -34183,24 +34730,31 @@ function renderizarVendasNFETabela(vendas) {
                             0
                         );
 
+
                     // =================================================
                     // NF-E + AÇÕES
                     // =================================================
+
                     let statusNFE;
                     let acoes;
+
 
                     // =================================================
                     // VENDA CANCELADA
                     // =================================================
+
                     if (
                         vendaCancelada
                     ) {
+
                         // =============================================
                         // FULL CANCELADA
                         // =============================================
+
                         if (
                             isFull
                         ) {
+
                             statusNFE = `
                                 <div>
                                     <span
@@ -34232,6 +34786,7 @@ function renderizarVendasNFETabela(vendas) {
                                 </div>
                             `;
 
+
                             acoes = `
                                 <button
                                     type="button"
@@ -34248,12 +34803,15 @@ function renderizarVendasNFETabela(vendas) {
                                 </button>
                             `;
 
+
                         // =============================================
-                        // CANCELADA COM NF-E JÁ EMITIDA
+                        // CANCELADA COM NF-E
                         // =============================================
+
                         } else if (
                             temNfe
                         ) {
+
                             statusNFE = `
                                 <div>
                                     <span
@@ -34311,6 +34869,7 @@ function renderizarVendasNFETabela(vendas) {
                                 </div>
                             `;
 
+
                             acoes = `
                                 <button
                                     type="button"
@@ -34335,10 +34894,13 @@ function renderizarVendasNFETabela(vendas) {
                                 </button>
                             `;
 
+
                         // =============================================
                         // CANCELADA SEM NF-E
                         // =============================================
+
                         } else {
+
                             statusNFE = `
                                 <span
                                     style="
@@ -34354,6 +34916,7 @@ function renderizarVendasNFETabela(vendas) {
                                     Venda cancelada
                                 </span>
                             `;
+
 
                             acoes = `
                                 <button
@@ -34372,12 +34935,15 @@ function renderizarVendasNFETabela(vendas) {
                             `;
                         }
 
+
                     // =================================================
                     // FULL NORMAL
                     // =================================================
+
                     } else if (
                         isFull
                     ) {
+
                         statusNFE = `
                             <span
                                 style="
@@ -34394,6 +34960,7 @@ function renderizarVendasNFETabela(vendas) {
                             </span>
                         `;
 
+
                         acoes = `
                             <span
                                 style="
@@ -34405,12 +34972,15 @@ function renderizarVendasNFETabela(vendas) {
                             </span>
                         `;
 
+
                     // =================================================
                     // NF-E EMITIDA
                     // =================================================
+
                     } else if (
                         temNfe
                     ) {
+
                         statusNFE = `
                             <div>
                                 <span
@@ -34450,6 +35020,7 @@ function renderizarVendasNFETabela(vendas) {
                             </div>
                         `;
 
+
                         acoes = `
                             <button
                                 type="button"
@@ -34474,10 +35045,13 @@ function renderizarVendasNFETabela(vendas) {
                             </button>
                         `;
 
+
                     // =================================================
                     // PENDENTE
                     // =================================================
+
                     } else {
+
                         statusNFE = `
                             <span
                                 style="
@@ -34493,6 +35067,7 @@ function renderizarVendasNFETabela(vendas) {
                             </span>
                         `;
 
+
                         acoes = `
                             <button
                                 type="button"
@@ -34507,61 +35082,63 @@ function renderizarVendasNFETabela(vendas) {
                         `;
                     }
 
+
                     // =================================================
-// BOTÃO DE DETALHES
-//
-// SEMPRE APARECE EM TODAS AS VENDAS:
-// - normal
-// - FULL
-// - emitida
-// - cancelada
-// =================================================
+                    // BOTÃO DE DETALHES
+                    // =================================================
 
-const botaoDetalhes =
-    montarBotaoDetalhesVendaNFE(
-        vendaId
-    );
+                    const botaoDetalhes =
+                        montarBotaoDetalhesVendaNFE(
+                            vendaId
+                        );
 
 
-acoes = `
-    <div
-        style="
-            display:flex;
-            align-items:center;
-            gap:4px;
-            flex-wrap:wrap;
-        "
-    >
-        ${botaoDetalhes}
+                    acoes = `
+                        <div
+                            style="
+                                display:flex;
+                                align-items:center;
+                                gap:4px;
+                                flex-wrap:wrap;
+                            "
+                        >
+                            ${botaoDetalhes}
 
-        <div>
-            ${acoes}
-        </div>
-    </div>
-`;
+                            <div>
+                                ${acoes}
+                            </div>
+                        </div>
+                    `;
+
 
                     // =================================================
                     // LINHA
-                    //
-                    // A ORDEM DESTAS TDs PRECISA SER A MESMA DE:
-                    //
-                    // COLUNAS_VENDAS_NFE
                     // =================================================
+
                     return `
                         <tr
                             class="${classeAlertaExposicao}"
+
                             data-venda-id-nfe="${escaparHTMLNFE(
                                 vendaId
                             )}"
+
                             ${
-                                precisaMudarParaClassico
+                                possuiAlertaEstoqueExposicao &&
+                                mensagemAlertaLinha
+
                                     ? `
-                                        title="Atenção: o estoque FULL ficou em 1 unidade e a exposição está Premium. Altere para Clássico."
+                                        title="${escaparHTMLNFE(
+                                            mensagemAlertaLinha
+                                        )}"
                                     `
+
                                     : ''
                             }
                         >
+
                             <!-- VENDA -->
+
                             <td>
                                 <strong>
                                     ${escaparHTMLNFE(
@@ -34603,7 +35180,9 @@ acoes = `
                                 </div>
                             </td>
 
+
                             <!-- ENVIO -->
+
                             <td>
                                 <strong>
                                     ${formatarDataNFE(
@@ -34629,14 +35208,21 @@ acoes = `
                                 </div>
                             </td>
 
+
                             <!-- CLIENTE -->
-                            <td>
-                                ${escaparHTMLNFE(
-                                    cliente
-                                )}
-                            </td>
+                                <td>
+                                    <div>
+                                        ${escaparHTMLNFE(
+                                            cliente
+                                        )}
+                                    </div>
+
+                                    ${avisoConcorrenteHtml}
+                                </td>
+
 
                             <!-- ANÚNCIO -->
+
                             <td
                                 style="
                                     min-width:115px;
@@ -34646,7 +35232,9 @@ acoes = `
                                 ${anuncioHtml}
                             </td>
 
+
                             <!-- FOTO -->
+
                             <td
                                 style="
                                     width:75px;
@@ -34658,12 +35246,16 @@ acoes = `
                                 ${fotoHtml}
                             </td>
 
+
                             <!-- SKU -->
+
                             <td>
                                 ${skuHtml}
                             </td>
 
+
                             <!-- VALOR -->
+
                             <td>
                                 <strong>
                                     R$ ${valor.toFixed(
@@ -34672,33 +35264,43 @@ acoes = `
                                 </strong>
                             </td>
 
+
                             <!-- PAGAMENTO -->
+
                             <td>
                                 ${htmlPagamento(
                                     venda
                                 )}
                             </td>
 
+
                             <!-- MODALIDADE -->
+
                             <td>
                                 ${badgeEnvio(
                                     venda
                                 )}
                             </td>
 
+
                             <!-- NF-E -->
+
                             <td>
                                 ${statusNFE}
                             </td>
 
+
                             <!-- ESTOQUE -->
+
                             <td>
                                 ${htmlEstoque(
                                     venda
                                 )}
                             </td>
 
+
                             <!-- ESTOQUE ANÚNCIO -->
+
                             <td
                                 style="
                                     min-width:110px;
@@ -34709,7 +35311,9 @@ acoes = `
                                 ${avisoExposicaoHtml}
                             </td>
 
+
                             <!-- COMENTÁRIOS -->
+
                             <td
                                 style="
                                     min-width:170px;
@@ -34720,7 +35324,9 @@ acoes = `
                                 ${comentariosHtml}
                             </td>
 
+
                             <!-- AÇÕES -->
+
                             <td
                                 style="
                                     white-space:nowrap;
@@ -34728,53 +35334,65 @@ acoes = `
                             >
                                 ${acoes}
                             </td>
+
                         </tr>
                     `;
                 }
             )
-            .join('');
-
-    // =====================================================
-    // COLUNAS PERSONALIZADAS
-    // =====================================================
-    aplicarPreferenciasColunasNFE();
-
-    setTimeout(
-    () => {
-
-        verificarPossiveisConcorrentesTabelaNFE()
-            .catch(
-                error => {
-
-                    console.warn(
-                        '⚠️ Verificação de possíveis concorrentes:',
-                        error
-                    );
-                }
+            .join(
+                ''
             );
 
+    aplicarPreferenciasColunasNFE();
+
+
+setTimeout(
+    () => {
+
+        if (
+            typeof verificarPossiveisConcorrentesTabelaNFE !==
+            'function'
+        ) {
+
+            return;
+        }
+
+
+verificarPossiveisConcorrentesTabelaNFE()
+    .catch(
+        error => {
+
+            console.warn(
+                '⚠️ Verificação de concorrentes:',
+                error
+            );
+        }
+    );
+
     },
-    50
+    100
 );
+
 
     // =====================================================
     // ALERTAS FULL IMEDIATOS
     //
-    // NÃO CONSULTA MERCADO LIVRE.
-    // NÃO CONSULTA SUPABASE.
-    //
-    // Simplesmente aplica o estado que já está salvo.
+    // NÃO CONSULTA ML.
     // =====================================================
+
     if (
         typeof aplicarEstadosFullTabelaNFE ===
         'function'
     ) {
+
         aplicarEstadosFullTabelaNFE();
     }
+
 
     // =====================================================
     // FOTOS - SEGUNDO PLANO
     // =====================================================
+
     carregarFotosProdutosTabelaNFE()
         .catch(
             error => {
@@ -34786,9 +35404,11 @@ acoes = `
             }
         );
 
+
     // =====================================================
     // COMENTÁRIOS - SEGUNDO PLANO
     // =====================================================
+
     carregarResumosComentariosVendasNFE(
         vendas
     )
@@ -34802,9 +35422,11 @@ acoes = `
             }
         );
 
+
     // =====================================================
     // EVENTOS - EMITIR
     // =====================================================
+
     document
         .querySelectorAll(
             '#vendasPendentesBody .btn-emitir-nfe'
@@ -34817,6 +35439,7 @@ acoes = `
                     window.handleEmitirNFEClick
                 );
 
+
                 btn.addEventListener(
                     'click',
                     window.handleEmitirNFEClick
@@ -34824,9 +35447,11 @@ acoes = `
             }
         );
 
+
     // =====================================================
     // EVENTOS - VER NF-E
     // =====================================================
+
     document
         .querySelectorAll(
             '#vendasPendentesBody .btn-ver-nfe'
@@ -34839,6 +35464,7 @@ acoes = `
                     window.handleVerNFEClick
                 );
 
+
                 btn.addEventListener(
                     'click',
                     window.handleVerNFEClick
@@ -34846,9 +35472,11 @@ acoes = `
             }
         );
 
+
     // =====================================================
     // EVENTOS - CANCELAR NF-E
     // =====================================================
+
     document
         .querySelectorAll(
             '#vendasPendentesBody .btn-cancelar-nfe'
@@ -34861,27 +35489,13 @@ acoes = `
                     window.handleCancelarNFEClick
                 );
 
+
                 btn.addEventListener(
                     'click',
                     window.handleCancelarNFEClick
                 );
             }
         );
-}
-
-// =========================================================
-// 👁️ DETALHES COMPLETOS DA VENDA - NF-E
-// =========================================================
-
-if (
-    !(
-        window._cacheDetalhesVendaNFE
-        instanceof Map
-    )
-) {
-
-    window._cacheDetalhesVendaNFE =
-        new Map();
 }
 
 
@@ -35869,6 +36483,394 @@ function carregarCacheConcorrentesLocalNFE() {
     }
 }
 
+function localizarTbodyVendasNFEUniversal() {
+
+    const raizesVisitadas =
+        new Set();
+
+
+    // =====================================================
+    // PROCURAR DENTRO DE DOCUMENT / SHADOW ROOT
+    // =====================================================
+
+    const procurarNaRaiz =
+        raiz => {
+
+            if (
+                !raiz ||
+                raizesVisitadas.has(
+                    raiz
+                )
+            ) {
+
+                return null;
+            }
+
+
+            raizesVisitadas.add(
+                raiz
+            );
+
+
+            // =============================================
+            // 1. ID OFICIAL
+            // =============================================
+
+            try {
+
+                const direto =
+                    raiz.querySelector?.(
+                        '#vendasPendentesBody'
+                    );
+
+
+                if (
+                    direto
+                ) {
+
+                    return direto;
+                }
+
+            } catch (
+                error
+            ) {}
+
+
+            // =============================================
+            // 2. FALLBACK:
+            // TBODY QUE CONTÉM AS VENDAS NF-E
+            // =============================================
+
+            try {
+
+                const tbodys =
+                    Array.from(
+                        raiz.querySelectorAll?.(
+                            'tbody'
+                        ) ||
+                        []
+                    );
+
+
+                const encontrado =
+                    tbodys.find(
+                        tbody => {
+
+                            // ---------------------------------
+                            // Linha identificada pelo render
+                            // ---------------------------------
+
+                            if (
+                                tbody.querySelector(
+                                    'tr[data-venda-id-nfe]'
+                                )
+                            ) {
+
+                                return true;
+                            }
+
+
+                            // ---------------------------------
+                            // FALLBACK pelos cabeçalhos
+                            // ---------------------------------
+
+                            const tabela =
+                                tbody.closest(
+                                    'table'
+                                );
+
+
+                            if (
+                                !tabela
+                            ) {
+
+                                return false;
+                            }
+
+
+                            const textoHeader =
+                                String(
+                                    tabela
+                                        .querySelector(
+                                            'thead'
+                                        )
+                                        ?.textContent ||
+                                    ''
+                                )
+                                    .toLowerCase();
+
+
+                            return (
+                                textoHeader.includes(
+                                    'venda'
+                                ) &&
+                                textoHeader.includes(
+                                    'cliente'
+                                ) &&
+                                textoHeader.includes(
+                                    'anúncio'
+                                )
+                            );
+                        }
+                    );
+
+
+                if (
+                    encontrado
+                ) {
+
+                    return encontrado;
+                }
+
+            } catch (
+                error
+            ) {}
+
+
+            // =============================================
+            // 3. SHADOW ROOTS
+            // =============================================
+
+            try {
+
+                const elementos =
+                    Array.from(
+                        raiz.querySelectorAll?.(
+                            '*'
+                        ) ||
+                        []
+                    );
+
+
+                for (
+                    const elemento
+                    of elementos
+                ) {
+
+                    if (
+                        !elemento.shadowRoot
+                    ) {
+
+                        continue;
+                    }
+
+
+                    const encontrado =
+                        procurarNaRaiz(
+                            elemento.shadowRoot
+                        );
+
+
+                    if (
+                        encontrado
+                    ) {
+
+                        return encontrado;
+                    }
+                }
+
+            } catch (
+                error
+            ) {}
+
+
+            return null;
+        };
+
+
+    // =====================================================
+    // PROCURAR EM UMA WINDOW
+    // =====================================================
+
+    const procurarNaWindow =
+        win => {
+
+            if (
+                !win
+            ) {
+
+                return null;
+            }
+
+
+            let doc =
+                null;
+
+
+            try {
+
+                doc =
+                    win.document;
+
+            } catch (
+                error
+            ) {
+
+                // iframe cross-origin
+                return null;
+            }
+
+
+            const encontrado =
+                procurarNaRaiz(
+                    doc
+                );
+
+
+            if (
+                encontrado
+            ) {
+
+                return encontrado;
+            }
+
+
+            // =============================================
+            // IFRAME FILHOS
+            // =============================================
+
+            let frames =
+                [];
+
+
+            try {
+
+                frames =
+                    Array.from(
+                        doc.querySelectorAll(
+                            'iframe'
+                        )
+                    );
+
+            } catch (
+                error
+            ) {
+
+                frames =
+                    [];
+            }
+
+
+            for (
+                const iframe
+                of frames
+            ) {
+
+                try {
+
+                    const winFilha =
+                        iframe.contentWindow;
+
+
+                    const encontradoFrame =
+                        procurarNaWindow(
+                            winFilha
+                        );
+
+
+                    if (
+                        encontradoFrame
+                    ) {
+
+                        return encontradoFrame;
+                    }
+
+                } catch (
+                    error
+                ) {
+
+                    // cross-origin
+                }
+            }
+
+
+            return null;
+        };
+
+
+    // =====================================================
+    // 1. WINDOW ATUAL
+    // =====================================================
+
+    let encontrado =
+        procurarNaWindow(
+            window
+        );
+
+
+    if (
+        encontrado
+    ) {
+
+        return encontrado;
+    }
+
+
+    // =====================================================
+    // 2. TOP
+    // =====================================================
+
+    try {
+
+        if (
+            window.top &&
+            window.top !==
+                window
+        ) {
+
+            encontrado =
+                procurarNaWindow(
+                    window.top
+                );
+
+
+            if (
+                encontrado
+            ) {
+
+                return encontrado;
+            }
+        }
+
+    } catch (
+        error
+    ) {}
+
+
+    // =====================================================
+    // 3. PARENT
+    // =====================================================
+
+    try {
+
+        if (
+            window.parent &&
+            window.parent !==
+                window
+        ) {
+
+            encontrado =
+                procurarNaWindow(
+                    window.parent
+                );
+
+
+            if (
+                encontrado
+            ) {
+
+                return encontrado;
+            }
+        }
+
+    } catch (
+        error
+    ) {}
+
+
+    return null;
+}
+
 
 // =========================================================
 // SALVAR CACHE LOCAL
@@ -36147,8 +37149,76 @@ async function obterBuyerIdVendaConcorrenteNFE(
 
 async function consultarPossivelConcorrenteNFE(
     venda,
-    token
+    token = null,
+    opcoes = {}
 ) {
+
+    if (
+        !venda
+    ) {
+
+        return null;
+    }
+
+
+    const forcar =
+        opcoes?.forcar ===
+        true;
+
+
+    window._cacheConcorrentesNFE =
+        window._cacheConcorrentesNFE instanceof Map
+            ? window._cacheConcorrentesNFE
+            : new Map();
+
+
+    // =====================================================
+    // TOKEN
+    // =====================================================
+
+    token =
+        token ||
+        await obterTokenMLNFE();
+
+
+    if (
+        !token
+    ) {
+
+        throw new Error(
+            'Token Mercado Livre não disponível.'
+        );
+    }
+
+
+    // =====================================================
+    // NICKNAME MOSTRADO NA TABELA
+    // =====================================================
+
+    const nicknameTabela =
+        String(
+
+            venda
+                ?.buyer
+                ?.nickname ||
+
+            venda
+                ?.cliente ||
+
+            venda
+                ?.buyer_nickname ||
+
+            ''
+        )
+            .trim();
+
+
+    // =====================================================
+    // BUYER ID REAL
+    //
+    // Se não estiver salvo na venda,
+    // consulta /orders/{id}.
+    // =====================================================
 
     const buyerId =
         await obterBuyerIdVendaConcorrenteNFE(
@@ -36161,10 +37231,16 @@ async function consultarPossivelConcorrenteNFE(
         !buyerId
     ) {
 
-        console.debug(
-            'ℹ️ Venda sem buyer_id para verificar concorrente:',
-            venda?.id_venda_ml ||
-            venda?.id
+        console.warn(
+            '⚠️ [CONCORRENTE] Buyer ID não localizado:',
+            {
+                venda:
+                    venda?.id_venda_ml ||
+                    venda?.id,
+
+                cliente:
+                    nicknameTabela
+            }
         );
 
 
@@ -36178,68 +37254,89 @@ async function consultarPossivelConcorrenteNFE(
         );
 
 
+    const chaveNickname =
+        nicknameTabela
+
+            ? `nickname:${nicknameTabela.toUpperCase()}`
+
+            : null;
+
+
     // =====================================================
     // CACHE
     // =====================================================
 
-    const cache =
-        window
-            ._cacheConcorrentesNFE
-            .get(
-                chaveBuyer
-            );
-
-
     if (
-        cache
+        !forcar
     ) {
 
-        const idade =
-            Date.now() -
-            Number(
-                cache.consultado_em ||
-                0
-            );
+        let cache =
+            window
+                ._cacheConcorrentesNFE
+                .get(
+                    chaveBuyer
+                ) ||
+            null;
 
-
-        // =============================================
-        // POSITIVO:
-        // 6 HORAS
-        // =============================================
 
         if (
-            cache.tem_anuncios ===
-                true &&
-            idade <
-                TTL_CACHE_CONCORRENTES_NFE
+            !cache &&
+            chaveNickname
         ) {
 
-            return cache;
+            cache =
+                window
+                    ._cacheConcorrentesNFE
+                    .get(
+                        chaveNickname
+                    ) ||
+                null;
         }
 
 
-        // =============================================
-        // NEGATIVO:
-        // SOMENTE 5 MINUTOS
-        //
-        // Evita esconder um concorrente por horas
-        // devido a uma consulta que falhou.
-        // =============================================
-
         if (
-            cache.tem_anuncios !==
-                true &&
-            idade <
-                5 * 60 * 1000
+            cache
         ) {
 
-            return cache;
+            const idade =
+                Date.now() -
+                Number(
+                    cache.consultado_em ||
+                    0
+                );
+
+
+            const ttl =
+                cache.tem_anuncios ===
+                    true
+
+                    ? TTL_CACHE_CONCORRENTES_NFE
+
+                    : 5 * 60 * 1000;
+
+
+            if (
+                idade <
+                ttl
+            ) {
+
+                return {
+
+                    ...cache,
+
+                    _cache_hit:
+                        true
+                };
+            }
         }
     }
 
 
     // =====================================================
-    // CONSULTA NOVA
+    // CONSULTAR PERFIL DO COMPRADOR
+    //
+    // buscarPerfilCompradorNFE já verifica se esse
+    // mesmo usuário possui anúncios como vendedor.
     // =====================================================
 
     const perfil =
@@ -36253,8 +37350,41 @@ async function consultarPossivelConcorrenteNFE(
         !perfil
     ) {
 
+        console.warn(
+            `⚠️ [CONCORRENTE] Perfil ${chaveBuyer} não retornado.`
+        );
+
+
         return null;
     }
+
+
+    const nickname =
+        String(
+            perfil.nickname ||
+            nicknameTabela ||
+            ''
+        )
+            .trim();
+
+
+    const temAnuncios =
+        perfil.tem_anuncios ===
+        true;
+
+
+    const totalAnuncios =
+        Number.isFinite(
+            Number(
+                perfil.total_anuncios
+            )
+        )
+
+            ? Number(
+                perfil.total_anuncios
+            )
+
+            : 0;
 
 
     const resultado = {
@@ -36263,28 +37393,19 @@ async function consultarPossivelConcorrenteNFE(
             chaveBuyer,
 
 
-        nickname:
-            perfil.nickname ||
-            '',
+        seller_id:
+            chaveBuyer,
+
+
+        nickname,
 
 
         tem_anuncios:
-            perfil.tem_anuncios ===
-            true,
+            temAnuncios,
 
 
         total_anuncios:
-            Number.isFinite(
-                Number(
-                    perfil.total_anuncios
-                )
-            )
-
-                ? Number(
-                    perfil.total_anuncios
-                )
-
-                : null,
+            totalAnuncios,
 
 
         origem_deteccao:
@@ -36293,15 +37414,28 @@ async function consultarPossivelConcorrenteNFE(
 
 
         url_anuncios:
+
             perfil.url_anuncios ||
-            perfil.permalink ||
-            null,
+
+            (
+                temAnuncios
+
+                    ? `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
+                        chaveBuyer
+                    )}`
+
+                    : null
+            ),
 
 
         consultado_em:
             Date.now()
     };
 
+
+    // =====================================================
+    // SALVAR POR BUYER ID
+    // =====================================================
 
     window
         ._cacheConcorrentesNFE
@@ -36311,181 +37445,94 @@ async function consultarPossivelConcorrenteNFE(
         );
 
 
+    // =====================================================
+    // SALVAR TAMBÉM PELO NICKNAME
+    //
+    // montarAvisoConcorrenteCacheNFE() procura por
+    // nickname:BIKEROSPORT
+    // =====================================================
+
+    if (
+        nickname
+    ) {
+
+        window
+            ._cacheConcorrentesNFE
+            .set(
+                `nickname:${nickname.toUpperCase()}`,
+                resultado
+            );
+    }
+
+
+    if (
+        nicknameTabela
+    ) {
+
+        window
+            ._cacheConcorrentesNFE
+            .set(
+                `nickname:${nicknameTabela.toUpperCase()}`,
+                resultado
+            );
+    }
+
+
     salvarCacheConcorrentesLocalNFE();
 
 
-    return resultado;
+    console.log(
+        '🕵️ [CONCORRENTE RESULTADO]',
+        {
+            venda:
+                venda?.id_venda_ml ||
+                venda?.id,
+
+            buyer_id:
+                chaveBuyer,
+
+            nickname,
+
+            tem_anuncios:
+                temAnuncios,
+
+            total_anuncios:
+                totalAnuncios,
+
+            origem:
+                resultado.origem_deteccao
+        }
+    );
+
+
+    return {
+
+        ...resultado,
+
+        _cache_hit:
+            false
+    };
 }
 
 
-// =========================================================
-// APLICAR AVISO NA COLUNA CLIENTE
-// =========================================================
-
-function aplicarAvisoPossivelConcorrenteLinhaNFE(
-    vendaId,
-    dados
+async function verificarPossiveisConcorrentesTabelaNFE(
+    vendasRecebidas = null,
+    opcoes = {}
 ) {
 
-    vendaId =
-        normalizarOrderIdML(
-            vendaId
-        );
+    const forcar =
+        opcoes?.forcar ===
+        true;
 
 
-    if (
-        !vendaId
-    ) {
-
-        return;
-    }
-
-
-    const linha =
-        document.querySelector(
-            `#vendasPendentesBody tr[data-venda-id-nfe="${CSS.escape(
-                String(
-                    vendaId
-                )
-            )}"]`
-        );
-
-
-    if (
-        !linha
-    ) {
-
-        return;
-    }
-
-
-    const tdCliente =
-        linha.querySelector(
-            ':scope > td[data-coluna-nfe="cliente"]'
-        );
-
-
-    if (
-        !tdCliente
-    ) {
-
-        return;
-    }
+    const reRender =
+        opcoes?.reRender !==
+        false;
 
 
     // =====================================================
-    // REMOVER AVISO ANTIGO
+    // EVITAR DUAS VARREDURAS SIMULTÂNEAS
     // =====================================================
-
-    tdCliente
-        .querySelector(
-            '.aviso-concorrente-nfe'
-        )
-        ?.remove();
-
-
-    if (
-        dados
-            ?.tem_anuncios !==
-        true
-    ) {
-
-        tdCliente.dataset
-            .possivelConcorrente =
-            'nao';
-
-
-        return;
-    }
-
-
-    tdCliente.dataset
-        .possivelConcorrente =
-        'sim';
-
-
-    const aviso =
-        document.createElement(
-            dados.url_anuncios
-                ? 'a'
-                : 'div'
-        );
-
-
-    aviso.className =
-        'aviso-concorrente-nfe';
-
-
-    aviso.innerHTML = `
-        <i class="fas fa-exclamation-triangle"></i>
-        possível concorrente - verificar
-    `;
-
-
-    aviso.title =
-
-        dados.total_anuncios !==
-            null
-
-            ? `${dados.total_anuncios} anúncio(s) ativo(s) encontrado(s). Clique para verificar.`
-
-            : 'Cliente possui anúncios ativos no Mercado Livre.';
-
-
-    aviso.style.cssText = `
-        display:inline-block;
-        margin-top:5px;
-        padding:3px 6px;
-        border-radius:5px;
-        background:#fff3cd;
-        border:1px solid #ffc107;
-        color:#856404;
-        font-size:9px;
-        line-height:13px;
-        font-weight:800;
-        white-space:normal;
-        text-decoration:none;
-        cursor:${dados.url_anuncios ? 'pointer' : 'default'};
-    `;
-
-
-    if (
-        dados.url_anuncios
-    ) {
-
-        aviso.href =
-            dados.url_anuncios;
-
-
-        aviso.target =
-            '_blank';
-
-
-        aviso.rel =
-            'noopener noreferrer';
-
-
-        aviso.addEventListener(
-            'click',
-            event => {
-
-                event.stopPropagation();
-            }
-        );
-    }
-
-
-    tdCliente.appendChild(
-        aviso
-    );
-}
-
-
-// =========================================================
-// VERIFICAR CLIENTES DAS LINHAS DA TELA
-// =========================================================
-
-async function verificarPossiveisConcorrentesTabelaNFE() {
 
     if (
         window
@@ -36493,25 +37540,178 @@ async function verificarPossiveisConcorrentesTabelaNFE() {
         true
     ) {
 
+        console.log(
+            'ℹ️ [CONCORRENTE] Verificação já em andamento.'
+        );
+
+
         return;
     }
 
 
-    const linhas =
+    // =====================================================
+    // LOCALIZAR AS VENDAS
+    //
+    // PRIORIDADE:
+    //
+    // 1. vendas recebidas diretamente do render
+    // 2. window._vendasTabelaNFEBase
+    // 3. vendasPendentes
+    //
+    // IMPORTANTE:
+    // uma lista vazia NÃO bloqueia os fallbacks.
+    // =====================================================
+
+    let vendas =
+        [];
+
+
+    if (
+        Array.isArray(
+            vendasRecebidas
+        ) &&
+        vendasRecebidas.length >
+            0
+    ) {
+
+        vendas =
+            vendasRecebidas;
+
+
+    } else if (
+        Array.isArray(
+            window._vendasTabelaNFEBase
+        ) &&
+        window._vendasTabelaNFEBase.length >
+            0
+    ) {
+
+        vendas =
+            window._vendasTabelaNFEBase;
+
+
+    } else if (
+        Array.isArray(
+            vendasPendentes
+        ) &&
+        vendasPendentes.length >
+            0
+    ) {
+
+        vendas =
+            vendasPendentes;
+    }
+
+
+    // =====================================================
+    // NENHUMA VENDA
+    // =====================================================
+
+    if (
+        vendas.length ===
+        0
+    ) {
+
+        console.warn(
+            'ℹ️ [CONCORRENTE] Nenhuma venda para verificar.',
+            {
+                recebidas:
+                    Array.isArray(
+                        vendasRecebidas
+                    )
+                        ? vendasRecebidas.length
+                        : 'não-array',
+
+                base:
+                    Array.isArray(
+                        window._vendasTabelaNFEBase
+                    )
+                        ? window._vendasTabelaNFEBase.length
+                        : 'não-array',
+
+                pendentes:
+                    Array.isArray(
+                        vendasPendentes
+                    )
+                        ? vendasPendentes.length
+                        : 'não-array'
+            }
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // REMOVER DUPLICADOS DA MESMA VENDA
+    // =====================================================
+
+    const mapaVendas =
+        new Map();
+
+
+    vendas.forEach(
+        venda => {
+
+            const vendaId =
+                normalizarOrderIdML(
+
+                    venda
+                        ?.id_venda_ml ||
+
+                    venda
+                        ?.id
+                );
+
+
+            if (
+                !vendaId
+            ) {
+
+                return;
+            }
+
+
+            if (
+                !mapaVendas.has(
+                    vendaId
+                )
+            ) {
+
+                mapaVendas.set(
+                    vendaId,
+                    venda
+                );
+            }
+        }
+    );
+
+
+    vendas =
         Array.from(
-            document.querySelectorAll(
-                '#vendasPendentesBody tr[data-venda-id-nfe]'
-            )
+            mapaVendas.values()
         );
 
 
     if (
-        linhas.length ===
+        vendas.length ===
         0
     ) {
 
+        console.warn(
+            '⚠️ [CONCORRENTE] As vendas não possuem IDs válidos.'
+        );
+
+
         return;
     }
+
+
+    console.log(
+        '🕵️ [CONCORRENTE] Vendas para verificar:',
+        vendas.length
+    );
 
 
     window
@@ -36519,7 +37719,15 @@ async function verificarPossiveisConcorrentesTabelaNFE() {
         true;
 
 
+    let encontrouResultadoNovo =
+        false;
+
+
     try {
+
+        // =================================================
+        // TOKEN
+        // =================================================
 
         const token =
             await obterTokenMLNFE();
@@ -36529,44 +37737,21 @@ async function verificarPossiveisConcorrentesTabelaNFE() {
             !token
         ) {
 
+            console.warn(
+                '⚠️ [CONCORRENTE] Token ML não disponível.'
+            );
+
+
             return;
         }
 
 
         // =================================================
-        // PROCESSAR EM LOTES PEQUENOS
-        //
-        // Para não disparar dezenas de chamadas simultâneas.
+        // EVITAR REPETIR BUYERS NESTA MESMA EXECUÇÃO
         // =================================================
 
-        const vendas =
-            linhas
-                .map(
-                    linha => {
-
-                        const vendaId =
-                            normalizarOrderIdML(
-                                linha.dataset
-                                    .vendaIdNfe
-                            );
-
-
-                        return {
-
-                            vendaId,
-
-                            venda:
-                                localizarVendaConcorrenteNFE(
-                                    vendaId
-                                )
-                        };
-                    }
-                )
-                .filter(
-                    item =>
-                        item.vendaId &&
-                        item.venda
-                );
+        const resultadosPorBuyer =
+            new Map();
 
 
         const TAMANHO_LOTE =
@@ -36590,20 +37775,109 @@ async function verificarPossiveisConcorrentesTabelaNFE() {
             await Promise.all(
 
                 lote.map(
-                    async item => {
+                    async venda => {
 
                         try {
 
-                            const resultado =
-                                await consultarPossivelConcorrenteNFE(
-                                    item.venda,
+                            // =================================
+                            // DESCOBRIR BUYER
+                            // =================================
+
+                            const buyerId =
+                                await obterBuyerIdVendaConcorrenteNFE(
+                                    venda,
                                     token
                                 );
 
 
-                            aplicarAvisoPossivelConcorrenteLinhaNFE(
-                                item.vendaId,
-                                resultado
+                            if (
+                                !buyerId
+                            ) {
+
+                                return;
+                            }
+
+
+                            const chaveBuyer =
+                                String(
+                                    buyerId
+                                );
+
+
+                            let resultado =
+                                resultadosPorBuyer
+                                    .get(
+                                        chaveBuyer
+                                    ) ||
+                                null;
+
+
+                            if (
+                                !resultado
+                            ) {
+
+                                resultado =
+                                    await consultarPossivelConcorrenteNFE(
+
+                                        venda,
+
+                                        token,
+
+                                        {
+                                            forcar
+                                        }
+                                    );
+
+
+                                resultadosPorBuyer
+                                    .set(
+                                        chaveBuyer,
+                                        resultado
+                                    );
+                            }
+
+
+                            if (
+                                !resultado
+                            ) {
+
+                                return;
+                            }
+
+
+                            if (
+                                resultado._cache_hit !==
+                                true
+                            ) {
+
+                                encontrouResultadoNovo =
+                                    true;
+                            }
+
+
+                            console.log(
+                                '🕵️ [CONCORRENTE]',
+                                {
+                                    venda:
+                                        venda.id_venda_ml ||
+                                        venda.id,
+
+                                    cliente:
+                                        resultado.nickname,
+
+                                    buyer:
+                                        resultado.buyer_id,
+
+                                    tem_anuncios:
+                                        resultado.tem_anuncios,
+
+                                    total:
+                                        resultado.total_anuncios,
+
+                                    cache:
+                                        resultado._cache_hit ===
+                                        true
+                                }
                             );
 
 
@@ -36611,9 +37885,15 @@ async function verificarPossiveisConcorrentesTabelaNFE() {
                             error
                         ) {
 
-                            console.debug(
-                                `ℹ️ Concorrente ${item.vendaId}:`,
-                                error
+                            console.warn(
+                                '⚠️ [CONCORRENTE] Erro:',
+                                {
+                                    venda:
+                                        venda?.id_venda_ml ||
+                                        venda?.id,
+
+                                    error
+                                }
                             );
                         }
                     }
@@ -36621,9 +37901,13 @@ async function verificarPossiveisConcorrentesTabelaNFE() {
             );
 
 
+            // =============================================
+            // PAUSA ENTRE LOTES
+            // =============================================
+
             if (
                 i +
-                TAMANHO_LOTE <
+                    TAMANHO_LOTE <
                 vendas.length
             ) {
 
@@ -36631,7 +37915,7 @@ async function verificarPossiveisConcorrentesTabelaNFE() {
                     resolve =>
                         setTimeout(
                             resolve,
-                            250
+                            200
                         )
                 );
             }
@@ -36643,6 +37927,44 @@ async function verificarPossiveisConcorrentesTabelaNFE() {
         window
             ._consultaConcorrentesNFEEmAndamento =
             false;
+    }
+
+
+    // =====================================================
+    // RE-RENDERIZAR SOMENTE SE HOUVE CONSULTA NOVA
+    //
+    // O aviso NÃO é mais injetado manualmente no DOM.
+    //
+    // montarAvisoConcorrenteCacheNFE()
+    // já coloca o aviso durante o próprio render.
+    // =====================================================
+
+    if (
+        encontrouResultadoNovo &&
+        reRender
+    ) {
+
+        const vendasParaRender =
+
+            Array.isArray(
+                window._vendasTabelaNFEBase
+            ) &&
+            window._vendasTabelaNFEBase.length >
+                0
+
+                ? window._vendasTabelaNFEBase
+
+                : vendas;
+
+
+        console.log(
+            '🔄 [CONCORRENTE] Atualizando tabela com os resultados.'
+        );
+
+
+        renderizarVendasNFETabela(
+            vendasParaRender
+        );
     }
 }
 
