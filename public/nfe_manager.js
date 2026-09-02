@@ -30570,6 +30570,63 @@ function obterAlertasExposicaoVendaNFE(
         [];
 
 
+    if (
+        snapshots.length ===
+        0
+    ) {
+
+        return alertas;
+    }
+
+
+    const vendaFull =
+        detectarVendaFullNFE(
+            venda
+        );
+
+
+    // =====================================================
+    // EVITAR PROCESSAR DUAS VEZES O MESMO MLB
+    //
+    // Uma venda pode trazer mais de um snapshot da mesma
+    // publicação.
+    // =====================================================
+
+    const mlbsProcessados =
+        new Set();
+
+
+    // =====================================================
+    // CONVERSOR SEGURO
+    // =====================================================
+
+    const converterNumero =
+        valor => {
+
+            if (
+                valor === null ||
+                valor === undefined ||
+                valor === ''
+            ) {
+
+                return null;
+            }
+
+
+            const numero =
+                Number(
+                    valor
+                );
+
+
+            return Number.isFinite(
+                numero
+            )
+                ? numero
+                : null;
+        };
+
+
     snapshots.forEach(
         (
             snapshot,
@@ -30584,20 +30641,89 @@ function obterAlertasExposicaoVendaNFE(
 
 
             if (
-                !mlb
+                !mlb ||
+                mlbsProcessados.has(
+                    mlb
+                )
             ) {
 
                 return;
             }
 
 
+            mlbsProcessados.add(
+                mlb
+            );
+
+
+            // =================================================
+            // ESTADO CONSOLIDADO DO MONITOR
+            //
+            // Esse estado vem da consulta de TODAS AS
+            // VARIAÇÕES / USER PRODUCTS do MLB.
+            // =================================================
+
+            let estadoMonitor =
+                null;
+
+
+            try {
+
+                const chaveEstado =
+                    montarChaveAlertaEstoqueVendaNFE(
+                        venda,
+                        mlb
+                    );
+
+
+                estadoMonitor =
+                    window._estadosFullNFE instanceof
+                        Map
+
+                        ? (
+                            window
+                                ._estadosFullNFE
+                                .get(
+                                    chaveEstado
+                                ) ||
+                            null
+                        )
+
+                        : null;
+
+            } catch (
+                error
+            ) {
+
+                estadoMonitor =
+                    null;
+            }
+
+
+            const resumoMonitor =
+                estadoMonitor
+                    ?.resumo_automatico ||
+                {};
+
+
             // =================================================
             // EXPOSIÇÃO ATUAL
+            //
+            // Prioridade para a consulta consolidada.
             // =================================================
 
             const listingTypeAtual =
                 String(
-                    snapshot?.listing_type_id ||
+
+                    estadoMonitor
+                        ?.listing_type_atual ||
+
+                    resumoMonitor
+                        ?.exposicao_atual ||
+
+                    snapshot
+                        ?.listing_type_id ||
+
                     ''
                 )
                     .trim()
@@ -30605,180 +30731,228 @@ function obterAlertasExposicaoVendaNFE(
 
 
             const exposicaoAtualNome =
-                snapshot?.listing_type_nome ||
+
                 nomeListingTypeFullNFE(
                     listingTypeAtual
                 ) ||
+
+                snapshot
+                    ?.listing_type_nome ||
+
                 'Não identificada';
 
 
             // =================================================
-            // ESTOQUE DO ANÚNCIO
+            // ESTOQUE DA VARIAÇÃO VENDIDA
             //
-            // IMPORTANTE:
-            // esta é a quantidade geral que o anúncio informa.
+            // Mantemos apenas para exibição/fallback.
+            // NÃO decide mais FULL ZERADO.
             // =================================================
 
-            const estoqueAnuncioBruto =
+            const estoqueVariacaoAnuncio =
+                converterNumero(
 
-                snapshot
-                    ?.quantidade_anuncio_restante ??
+                    snapshot
+                        ?.quantidade_anuncio_restante ??
 
-                snapshot
-                    ?.quantidade_restante ??
+                    snapshot
+                        ?.quantidade_restante ??
 
-                snapshot
-                    ?.estoque_deposito ??
-
-                null;
-
-
-            const estoqueAnuncio =
-
-                estoqueAnuncioBruto !==
-                    null &&
-
-                estoqueAnuncioBruto !==
-                    undefined &&
-
-                Number.isFinite(
-                    Number(
-                        estoqueAnuncioBruto
-                    )
-                )
-
-                    ? Math.max(
-                        0,
-                        Number(
-                            estoqueAnuncioBruto
-                        )
-                    )
-
-                    : null;
-
-
-            // =================================================
-            // ESTOQUE FULL
-            // =================================================
-
-            const estoqueFullBruto =
-
-                snapshot
-                    ?.quantidade_full_restante ??
-
-                snapshot
-                    ?.estoque_full ??
-
-                null;
-
-
-            const estoqueFull =
-
-                estoqueFullBruto !==
-                    null &&
-
-                estoqueFullBruto !==
-                    undefined &&
-
-                Number.isFinite(
-                    Number(
-                        estoqueFullBruto
-                    )
-                )
-
-                    ? Math.max(
-                        0,
-                        Number(
-                            estoqueFullBruto
-                        )
-                    )
-
-                    : null;
-
-
-            // =================================================
-            // SINAIS FULL
-            // =================================================
-
-            const sinaisFull =
-
-                snapshot?.sinais_full &&
-                typeof snapshot.sinais_full ===
-                    'object'
-
-                    ? snapshot.sinais_full
-
-                    : {};
-
-
-            const statusAnuncio =
-                String(
-                    snapshot?.status_anuncio ||
-                    ''
-                )
-                    .trim()
-                    .toLowerCase();
-
-
-            const anuncioAtivo =
-
-                snapshot?.anuncio_ativo !==
-                    false &&
-
-                ![
-                    'closed',
-                    'paused',
-                    'inactive',
-                    'under_review'
-                ].includes(
-                    statusAnuncio
+                    snapshot
+                        ?.estoque_deposito
                 );
 
 
-            const possuiLocalizacaoFull =
+            const estoqueVariacaoFull =
+                converterNumero(
 
-                snapshot
-                    ?.possui_localizacao_full ===
+                    snapshot
+                        ?.quantidade_full_restante ??
+
+                    snapshot
+                        ?.estoque_full
+                );
+
+
+            // =================================================
+            // ESTOQUE TOTAL DO MLB
+            //
+            // ESTES SÃO OS VALORES IMPORTANTES.
+            // =================================================
+
+            let estoqueTotalAnuncio =
+                converterNumero(
+
+                    resumoMonitor
+                        ?.estoque_anuncio_total_ml ??
+
+                    snapshot
+                        ?.estoque_total_anuncio ??
+
+                    snapshot
+                        ?.quantidade_total_anuncio
+                );
+
+
+            const estoqueTotalFull =
+                converterNumero(
+
+                    resumoMonitor
+                        ?.estoque_full_atual ??
+
+                    estadoMonitor
+                        ?.full_total ??
+
+                    snapshot
+                        ?.estoque_full_total_anuncio
+                );
+
+
+            const estoqueTotalLocal =
+                converterNumero(
+
+                    resumoMonitor
+                        ?.estoque_local_ml_atual ??
+
+                    snapshot
+                        ?.estoque_local_total_anuncio
+                );
+
+
+            // =================================================
+            // QUANTIDADE BASE DA EXPOSIÇÃO
+            //
+            // REGRA:
+            //
+            // - usa o anúncio inteiro;
+            // - não usa uma variação isolada para decidir;
+            //
+            // 1 unidade  = CLÁSSICO
+            // 2 ou mais  = PREMIUM
+            // =================================================
+
+            let quantidadeBaseExposicao =
+                converterNumero(
+
+                    resumoMonitor
+                        ?.quantidade_base_exposicao ??
+
+                    snapshot
+                        ?.quantidade_base_exposicao
+                );
+
+
+            if (
+                quantidadeBaseExposicao ===
+                    null &&
+                estoqueTotalAnuncio !==
+                    null
+            ) {
+
+                quantidadeBaseExposicao =
+                    estoqueTotalAnuncio;
+            }
+
+
+            if (
+                quantidadeBaseExposicao ===
+                    null &&
+                (
+                    estoqueTotalFull !==
+                        null ||
+                    estoqueTotalLocal !==
+                        null
+                )
+            ) {
+
+                quantidadeBaseExposicao =
+                    Math.max(
+
+                        0,
+
+                        Number(
+                            estoqueTotalFull ||
+                            0
+                        ) +
+                        Number(
+                            estoqueTotalLocal ||
+                            0
+                        )
+                    );
+            }
+
+
+            // =================================================
+            // FALLBACK
+            //
+            // Venda fora do FULL pode usar o estoque da
+            // própria publicação/variação.
+            //
+            // Venda FULL com variações NÃO pode usar a
+            // variação isolada como total da publicação.
+            // =================================================
+
+            if (
+                quantidadeBaseExposicao ===
+                    null &&
+                vendaFull !==
+                    true
+            ) {
+
+                quantidadeBaseExposicao =
+                    estoqueVariacaoAnuncio;
+            }
+
+
+            // =================================================
+            // QUANDO TEMOS QUANTIDADE CONSOLIDADA,
+            // ELA TAMBÉM É O ESTOQUE DO ANÚNCIO MOSTRADO
+            // PELO ALERTA.
+            // =================================================
+
+            if (
+                estoqueTotalAnuncio ===
+                    null &&
+                quantidadeBaseExposicao !==
+                    null
+            ) {
+
+                estoqueTotalAnuncio =
+                    quantidadeBaseExposicao;
+            }
+
+
+            // =================================================
+            // FULL ZERADO DO ANÚNCIO INTEIRO
+            //
+            // JAMAIS:
+            //
+            // estoqueVariacaoFull === 0
+            //
+            // AGORA PRECISA DE CONFIRMAÇÃO DE QUE TODAS
+            // AS VARIAÇÕES FULL ESTÃO ZERADAS.
+            // =================================================
+
+            const todosFullZerados =
+
+                resumoMonitor
+                    ?.todas_variacoes_full_zeradas ===
                     true ||
 
-                sinaisFull
-                    ?.location_full ===
+                snapshot
+                    ?.todos_full_zerados ===
                     true;
 
 
-            const possuiLogisticaFullAtual =
+            const aindaEstaNoFull =
 
-                snapshot
-                    ?.possui_logistica_full ===
+                resumoMonitor
+                    ?.ainda_esta_no_full ===
                     true ||
 
-                sinaisFull
-                    ?.logistic_type_full ===
-                    true ||
-
-                String(
-                    sinaisFull
-                        ?.shipping_logistic_type ||
-                    ''
-                )
-                    .trim()
-                    .toLowerCase() ===
-                    'fulfillment';
-
-
-            const anuncioOferecendoFull =
-                Boolean(
-
-                    anuncioAtivo &&
-
-                    snapshot
-                        ?.oferecendo_full ===
-                        true &&
-
-                    possuiLogisticaFullAtual &&
-
-                    possuiLocalizacaoFull
-                );
+                estadoMonitor
+                    ?.status ===
+                    'full_zero_aguardando_ajuste';
 
 
             // =================================================
@@ -30802,77 +30976,22 @@ function obterAlertasExposicaoVendaNFE(
 
 
             // =================================================
-            // QUANTIDADE REAL PARA DECIDIR A EXPOSIÇÃO
+            // PRIORIDADE 1 — FULL ZERADO
             //
-            // REGRA:
-            //
-            // usa o ANÚNCIO INTEIRO.
-            //
-            // Exemplo:
-            //
-            // anúncio = 2
-            // FULL    = 1
-            //
-            // resultado = 2
-            // PREMIUM
-            //
-            // O FULL com 1 NÃO pode obrigar Clássico.
-            // =================================================
-
-            const quantidadesDisponiveis =
-                [];
-
-
-            if (
-                estoqueAnuncio !==
-                null
-            ) {
-
-                quantidadesDisponiveis.push(
-                    estoqueAnuncio
-                );
-            }
-
-
-            if (
-                anuncioOferecendoFull &&
-                estoqueFull !==
-                    null
-            ) {
-
-                quantidadesDisponiveis.push(
-                    estoqueFull
-                );
-            }
-
-
-            const quantidadeBaseExposicao =
-
-                quantidadesDisponiveis.length >
-                    0
-
-                    ? Math.max(
-                        ...quantidadesDisponiveis
-                    )
-
-                    : null;
-
-
-            // =================================================
-            // PRIORIDADE 1
-            // FULL ZERADO
+            // SÓ SE O MLB INTEIRO ZEROU.
             // =================================================
 
             if (
-                anuncioOferecendoFull &&
-                estoqueFull ===
-                    0
+                todosFullZerados ===
+                    true &&
+                aindaEstaNoFull ===
+                    true
             ) {
 
                 alertas.push({
 
                     chave:
-                        `${mlb}|${snapshot?.variation_id ?? ''}|full_zero`,
+                        `${mlb}|FULL_TOTAL|full_zero`,
 
                     tipo:
                         'full_zero',
@@ -30889,18 +31008,20 @@ function obterAlertasExposicaoVendaNFE(
                         indice,
 
                     variation_id:
-                        snapshot?.variation_id ??
+                        snapshot
+                            ?.variation_id ??
                         null,
 
                     sku:
-                        snapshot?.sku ||
+                        snapshot
+                            ?.sku ||
                         null,
 
                     titulo:
                         'FULL ZERADO',
 
                     mensagem:
-                        'O estoque FULL está zerado, mas o anúncio continua oferecendo FULL. Remova a oferta FULL ou regularize o estoque.',
+                        'Todas as variações do anúncio ficaram sem estoque FULL. Remova a oferta FULL ou regularize o estoque.',
 
                     listing_type_atual:
                         listingTypeAtual,
@@ -30909,22 +31030,22 @@ function obterAlertasExposicaoVendaNFE(
                         exposicaoAtualNome,
 
                     estoque_anuncio:
-                        estoqueAnuncio,
+                        estoqueTotalAnuncio,
 
                     estoque_full:
-                        estoqueFull,
+                        Number(
+                            estoqueTotalFull ||
+                            0
+                        ),
 
-                    estoque_total_referencia:
-                        quantidadeBaseExposicao,
+                    estoque_full_variacao_vendida:
+                        estoqueVariacaoFull,
 
-                    oferecendo_full:
-                        anuncioOferecendoFull,
+                    estoque_local_total:
+                        estoqueTotalLocal,
 
-                    possui_localizacao_full:
-                        possuiLocalizacaoFull,
-
-                    possui_logistica_full:
-                        possuiLogisticaFullAtual,
+                    todos_full_zerados:
+                        true,
 
                     regra_fixa:
                         regraFixa ||
@@ -30937,19 +31058,16 @@ function obterAlertasExposicaoVendaNFE(
 
 
             // =================================================
-            // PRIORIDADE 2
+            // PRIORIDADE 2 — QUANTIDADE DO ANÚNCIO
             //
-            // QUANTIDADE DO ANÚNCIO ERRADA
+            // SOMENTE SE O ANÚNCIO INTEIRO FICOU COM 1.
             //
-            // Só faz sentido se o ANÚNCIO INTEIRO
-            // realmente tiver apenas 1 disponível.
+            // Exemplo:
             //
-            // Se:
-            // anúncio = 2
-            // full = 1
+            // variação vendida = 1
+            // anúncio inteiro = 8
             //
-            // quantidadeBase = 2
-            // NÃO entra aqui.
+            // NÃO entra.
             // =================================================
 
             if (
@@ -30973,7 +31091,7 @@ function obterAlertasExposicaoVendaNFE(
                 alertas.push({
 
                     chave:
-                        `${mlb}|${snapshot?.variation_id ?? ''}|quantidade_anuncio`,
+                        `${mlb}|TOTAL|quantidade_anuncio`,
 
                     tipo:
                         'quantidade_anuncio',
@@ -30990,18 +31108,24 @@ function obterAlertasExposicaoVendaNFE(
                         indice,
 
                     variation_id:
-                        snapshot?.variation_id ??
+                        snapshot
+                            ?.variation_id ??
                         null,
 
                     sku:
-                        snapshot?.sku ||
+                        snapshot
+                            ?.sku ||
                         null,
 
                     titulo:
                         'CORRIGIR QUANTIDADE',
 
                     mensagem:
-                        `A exposição Premium está correta, mas o anúncio possui somente 1 unidade. O estoque interno permite anunciar ${capacidadeInterna.capacidade_anuncio} unidades.`,
+                        `A publicação inteira possui apenas 1 unidade disponível. O estoque interno permite anunciar ${Number(
+                            capacidadeInterna
+                                .capacidade_anuncio ||
+                            0
+                        )} unidades.`,
 
                     listing_type_atual:
                         listingTypeAtual,
@@ -31016,13 +31140,10 @@ function obterAlertasExposicaoVendaNFE(
                         'Premium',
 
                     estoque_anuncio:
-                        estoqueAnuncio,
+                        quantidadeBaseExposicao,
 
                     estoque_full:
-                        estoqueFull,
-
-                    estoque_total_referencia:
-                        quantidadeBaseExposicao,
+                        estoqueTotalFull,
 
                     capacidade_anuncio:
                         capacidadeInterna
@@ -31054,7 +31175,7 @@ function obterAlertasExposicaoVendaNFE(
 
 
             // =================================================
-            // REGRA FIXA TEM PRIORIDADE ABSOLUTA
+            // REGRA FIXA TEM PRIORIDADE
             // =================================================
 
             if (
@@ -31090,47 +31211,36 @@ function obterAlertasExposicaoVendaNFE(
             ) {
 
                 // =============================================
-                // REGRA CORRETA
+                // REGRA DEFINIDA:
                 //
-                // 1 unidade = CLÁSSICO
-                // 2+        = PREMIUM
+                // 1       = CLÁSSICO
+                // 2 OU +  = PREMIUM
                 // =============================================
 
-                if (
+                listingTypeEsperado =
+                    obterListingTypeEsperadoFullNFE(
+                        quantidadeBaseExposicao
+                    );
+
+
+                exposicaoEsperadaNome =
+                    nomeListingTypeFullNFE(
+                        listingTypeEsperado
+                    );
+
+
+                origemRegra =
                     quantidadeBaseExposicao ===
-                    1
-                ) {
+                        1
 
-                    listingTypeEsperado =
-                        'gold_special';
+                        ? 'estoque_total_igual_um'
 
-
-                    exposicaoEsperadaNome =
-                        'Clássico';
-
-
-                    origemRegra =
-                        'estoque_total_igual_um';
-
-
-                } else {
-
-                    listingTypeEsperado =
-                        'gold_pro';
-
-
-                    exposicaoEsperadaNome =
-                        'Premium';
-
-
-                    origemRegra =
-                        'estoque_total_dois_ou_mais';
-                }
+                        : 'estoque_total_dois_ou_mais';
             }
 
 
             // =================================================
-            // GERAR ALERTA SOMENTE SE REALMENTE ESTIVER ERRADO
+            // ALERTA DE EXPOSIÇÃO
             // =================================================
 
             if (
@@ -31143,7 +31253,7 @@ function obterAlertasExposicaoVendaNFE(
                 alertas.push({
 
                     chave:
-                        `${mlb}|${snapshot?.variation_id ?? ''}|exposicao`,
+                        `${mlb}|TOTAL|exposicao`,
 
                     tipo:
                         'exposicao',
@@ -31160,11 +31270,13 @@ function obterAlertasExposicaoVendaNFE(
                         indice,
 
                     variation_id:
-                        snapshot?.variation_id ??
+                        snapshot
+                            ?.variation_id ??
                         null,
 
                     sku:
-                        snapshot?.sku ||
+                        snapshot
+                            ?.sku ||
                         null,
 
                     titulo:
@@ -31180,11 +31292,15 @@ function obterAlertasExposicaoVendaNFE(
 
                         regraFixa
 
-                            ? `Este MLB possui regra fixa e deve permanecer como ${exposicaoEsperadaNome}.`
+                            ? (
+                                `Este MLB possui regra fixa e deve permanecer como ${exposicaoEsperadaNome}.`
+                            )
 
                             : (
-                                `A exposição atual não corresponde ao estoque total disponível do anúncio. ` +
-                                `Estoque considerado: ${quantidadeBaseExposicao} un.`
+                                `A exposição não corresponde ao estoque total da publicação. ` +
+                                `Estoque total considerado: ${Number(
+                                    quantidadeBaseExposicao
+                                )} un.`
                             ),
 
                     listing_type_atual:
@@ -31203,13 +31319,13 @@ function obterAlertasExposicaoVendaNFE(
                         origemRegra,
 
                     estoque_anuncio:
-                        estoqueAnuncio,
+                        quantidadeBaseExposicao,
 
                     estoque_full:
-                        estoqueFull,
+                        estoqueTotalFull,
 
-                    estoque_total_referencia:
-                        quantidadeBaseExposicao,
+                    estoque_local_total:
+                        estoqueTotalLocal,
 
                     capacidade_anuncio:
                         capacidadeInterna

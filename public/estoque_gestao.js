@@ -7068,6 +7068,355 @@ function filtrarTabelaSKUsMassa(
 }
 
 // =========================================================
+// USUÁRIOS QUE PODEM ALTERAR SOMENTE AS LISTAS
+// CLÁSSICO / PREMIUM
+// =========================================================
+
+const usuariosSomenteListasTipoAnuncioML = [
+    'mirella',
+    'thalyta'
+];
+
+
+// =========================================================
+// PODE EDITAR REGRAS DE ESTOQUE COMPLETAS?
+// =========================================================
+
+function podeEditarRegrasEstoqueCompletas() {
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase()
+            ?.trim() || '';
+
+
+    return (
+        usuariosRegraEstoque.includes(
+            username
+        )
+        ||
+        usuariosAdmin.includes(
+            username
+        )
+    );
+}
+
+
+// =========================================================
+// PODE EDITAR LISTAS CLÁSSICO / PREMIUM?
+// =========================================================
+
+function podeEditarListasFixasTipoAnuncioML() {
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase()
+            ?.trim() || '';
+
+
+    return (
+        podeEditarRegrasEstoqueCompletas()
+        ||
+        usuariosSomenteListasTipoAnuncioML.includes(
+            username
+        )
+    );
+}
+
+
+// =========================================================
+// APLICAR PERMISSÕES VISUAIS NO MODAL
+// =========================================================
+
+function aplicarPermissoesModalRegrasEstoque() {
+
+    const modal =
+        document.getElementById(
+            'modalRegrasEstoque'
+        );
+
+
+    if (!modal) {
+        return;
+    }
+
+
+    const podeRegras =
+        podeEditarRegrasEstoqueCompletas();
+
+
+    const podeListas =
+        podeEditarListasFixasTipoAnuncioML();
+
+
+    // =====================================================
+    // LISTAS CLÁSSICO / PREMIUM
+    // =====================================================
+
+    const campoClassico =
+        document.getElementById(
+            'mlbsFixosClassico'
+        );
+
+
+    const campoPremium =
+        document.getElementById(
+            'mlbsFixosPremium'
+        );
+
+
+    if (campoClassico) {
+
+        campoClassico.disabled =
+            !podeListas;
+
+    }
+
+
+    if (campoPremium) {
+
+        campoPremium.disabled =
+            !podeListas;
+
+    }
+
+
+    // =====================================================
+    // REGRAS DE ESTOQUE
+    // =====================================================
+
+    const containerRegras =
+        document.getElementById(
+            'regrasEstoqueContainer'
+        );
+
+
+    if (containerRegras) {
+
+        const controles =
+            containerRegras.querySelectorAll(
+                'input, select, textarea, button'
+            );
+
+
+        controles.forEach(
+            controle => {
+
+                controle.disabled =
+                    !podeRegras;
+
+            }
+        );
+
+
+        containerRegras.style.opacity =
+            podeRegras
+                ? '1'
+                : '0.55';
+
+
+        containerRegras.style.filter =
+            podeRegras
+                ? ''
+                : 'grayscale(25%)';
+
+    }
+
+
+    // =====================================================
+    // AVISO DE BLOQUEIO
+    // =====================================================
+
+    let aviso =
+        document.getElementById(
+            'avisoRegrasEstoqueSomenteLeitura'
+        );
+
+
+    if (
+        !podeRegras &&
+        containerRegras
+    ) {
+
+        if (!aviso) {
+
+            aviso =
+                document.createElement(
+                    'div'
+                );
+
+
+            aviso.id =
+                'avisoRegrasEstoqueSomenteLeitura';
+
+
+            aviso.style.cssText = `
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-left: 4px solid #6c757d;
+                border-radius: 6px;
+                padding: 10px 13px;
+                margin-bottom: 12px;
+                color: #495057;
+                font-size: 12px;
+            `;
+
+
+            containerRegras.parentNode
+                .insertBefore(
+                    aviso,
+                    containerRegras
+                );
+
+        }
+
+
+        aviso.innerHTML = `
+
+            <i class="fas fa-lock"></i>
+
+            <strong>
+                Regras de estoque bloqueadas.
+            </strong>
+
+            Você possui permissão apenas para alterar
+            as listas
+
+            <strong>Sempre CLÁSSICO</strong>
+
+            e
+
+            <strong>Sempre PREMIUM</strong>.
+
+        `;
+
+
+        aviso.style.display =
+            'block';
+
+    }
+
+    else if (aviso) {
+
+        aviso.style.display =
+            'none';
+
+    }
+
+
+    // =====================================================
+    // BOTÃO SALVAR
+    // =====================================================
+
+    const botaoSalvar =
+        modal.querySelector(
+            'button[onclick*="salvarRegrasEstoqueModal"]'
+        );
+
+
+    if (botaoSalvar) {
+
+        if (
+            !podeRegras &&
+            podeListas
+        ) {
+
+            botaoSalvar.innerHTML = `
+
+                <i class="fas fa-save"></i>
+
+                Salvar Listas
+
+            `;
+
+
+            botaoSalvar.className =
+                'btn btn-primary';
+
+        }
+
+        else {
+
+            botaoSalvar.innerHTML = `
+
+                <i class="fas fa-save"></i>
+
+                Salvar Regras
+
+            `;
+
+
+            botaoSalvar.className =
+                'btn btn-success';
+
+        }
+
+    }
+
+
+    // =====================================================
+    // PROTEÇÃO CONTRA RE-RENDER
+    //
+    // preencherModalRegras() reconstrói o conteúdo.
+    // O observer garante que Mirella/Thalyta continuem
+    // bloqueadas mesmo depois de uma atualização do modal.
+    // =====================================================
+
+    if (
+        containerRegras &&
+        !containerRegras
+            .dataset
+            .observerPermissaoRegras
+    ) {
+
+        containerRegras
+            .dataset
+            .observerPermissaoRegras =
+            'true';
+
+
+        const observer =
+            new MutationObserver(
+                () => {
+
+                    if (
+                        !podeEditarRegrasEstoqueCompletas()
+                    ) {
+
+                        containerRegras
+                            .querySelectorAll(
+                                'input, select, textarea, button'
+                            )
+                            .forEach(
+                                controle => {
+
+                                    controle.disabled =
+                                        true;
+
+                                }
+                            );
+
+                    }
+
+                }
+            );
+
+
+        observer.observe(
+            containerRegras,
+            {
+                childList:
+                    true,
+
+                subtree:
+                    true
+            }
+        );
+
+    }
+}
+
+// =========================================================
 // ABRIR MODAL DE AJUSTE EM MASSA
 // =========================================================
 
@@ -22888,24 +23237,25 @@ function exportarEstoqueExcel() {
 
 async function abrirModalRegrasEstoque() {
 
-    const username =
-        currentUser?.username
-            ?.toLowerCase() || '';
+    const podeRegras =
+        podeEditarRegrasEstoqueCompletas();
 
 
-    const isAuthorized =
-        usuariosRegraEstoque.includes(
-            username
-        ) ||
-        usuariosAdmin.includes(
-            username
-        );
+    const podeListas =
+        podeEditarListasFixasTipoAnuncioML();
 
 
-    if (!isAuthorized) {
+    // =====================================================
+    // SEM NENHUMA PERMISSÃO
+    // =====================================================
+
+    if (
+        !podeRegras &&
+        !podeListas
+    ) {
 
         showToast(
-            '⚠️ Apenas administradores podem modificar as regras de estoque.',
+            '⚠️ Você não possui permissão para acessar as regras.',
             'warning'
         );
 
@@ -22934,13 +23284,23 @@ async function abrirModalRegrasEstoque() {
     }
 
 
-    // Regras normais
+    // =====================================================
+    // PREENCHER REGRAS NORMAIS
+    // =====================================================
+
     preencherModalRegras();
 
 
-    // Regras Clássico/Premium
+    // =====================================================
+    // PREENCHER LISTAS CLÁSSICO / PREMIUM
+    // =====================================================
+
     preencherCamposRegrasFixasTipoAnuncioML();
 
+
+    // =====================================================
+    // EXIBIR
+    // =====================================================
 
     modal.classList.remove(
         'hidden'
@@ -22949,9 +23309,58 @@ async function abrirModalRegrasEstoque() {
 
     modal.style.display =
         'flex';
+
+
+    // =====================================================
+    // APLICAR PERMISSÕES
+    // =====================================================
+
+    aplicarPermissoesModalRegrasEstoque();
+
+
+    // Garantia extra caso alguma função posterior
+    // reconstrua o conteúdo.
+    setTimeout(
+        aplicarPermissoesModalRegrasEstoque,
+        100
+    );
+
+
+    setTimeout(
+        aplicarPermissoesModalRegrasEstoque,
+        350
+    );
 }
 
 async function salvarRegrasFixasTipoAnuncioMLDoModal() {
+
+    // =====================================================
+    // PERMISSÃO
+    // =====================================================
+
+    if (
+        !podeEditarListasFixasTipoAnuncioML()
+    ) {
+
+        showToast(
+            '🔒 Você não possui permissão para alterar as listas Clássico/Premium.',
+            'warning'
+        );
+
+
+        return {
+            success:
+                false,
+
+            error:
+                'sem_permissao'
+        };
+    }
+
+
+    // =====================================================
+    // CAMPOS
+    // =====================================================
 
     const campoClassico =
         document.getElementById(
@@ -22965,15 +23374,21 @@ async function salvarRegrasFixasTipoAnuncioMLDoModal() {
         );
 
 
+    // =====================================================
+    // CONVERTER
+    // =====================================================
+
     const listaClassico =
         converterTextoParaListaMLB(
-            campoClassico?.value || ''
+            campoClassico?.value ||
+            ''
         );
 
 
     const listaPremium =
         converterTextoParaListaMLB(
-            campoPremium?.value || ''
+            campoPremium?.value ||
+            ''
         );
 
 
@@ -22991,7 +23406,8 @@ async function salvarRegrasFixasTipoAnuncioMLDoModal() {
 
 
     if (
-        conflitos.length > 0
+        conflitos.length >
+        0
     ) {
 
         showToast(
@@ -23001,12 +23417,19 @@ async function salvarRegrasFixasTipoAnuncioMLDoModal() {
 
 
         return {
-            success: false,
-            error: 'conflito'
+            success:
+                false,
+
+            error:
+                'conflito'
         };
 
     }
 
+
+    // =====================================================
+    // SALVAR
+    // =====================================================
 
     const resultado =
         await salvarRegrasFixasTipoAnuncioML({
@@ -23020,7 +23443,9 @@ async function salvarRegrasFixasTipoAnuncioMLDoModal() {
         });
 
 
-    if (!resultado.success) {
+    if (
+        !resultado.success
+    ) {
 
         showToast(
             `❌ Erro ao salvar regras fixas: ${resultado.error}`,
@@ -23033,11 +23458,16 @@ async function salvarRegrasFixasTipoAnuncioMLDoModal() {
     }
 
 
+    // =====================================================
+    // ATUALIZAR RESUMO
+    // =====================================================
+
     atualizarResumoRegrasFixasTipoAnuncioML();
 
 
     return {
-        success: true
+        success:
+            true
     };
 }
 
@@ -23588,158 +24018,627 @@ function preencherModalRegras() {
     container.innerHTML = html;
 }
 
-function adicionarCondicaoRegra(categoria) {
-    if (!regrasEstoqueAtuais[categoria]) {
-        regrasEstoqueAtuais[categoria] = { condicoes: [] };
-    }
-    
-    const condicoes = regrasEstoqueAtuais[categoria].condicoes;
-    const padraoIndex = condicoes.findIndex(c => c.operador === 'padrao');
-    
-    const novaCondicao = { operador: 'maior_que', valor: 100, estoque_maximo: 10 };
-    
-    if (padraoIndex !== -1) {
-        condicoes.splice(padraoIndex, 0, novaCondicao);
-    } else {
-        condicoes.push(novaCondicao);
-    }
-    
-    preencherModalRegras();
-}
+function adicionarCondicaoRegra(
+    categoria
+) {
 
-function removerCondicaoRegra(categoria, index) {
-    if (!regrasEstoqueAtuais[categoria]) return;
-    
-    const condicoes = regrasEstoqueAtuais[categoria].condicoes;
-    if (condicoes[index] && condicoes[index].operador === 'padrao') {
-        showToast('Não é possível remover a condição padrão (senão).', 'warning');
+    if (
+        !podeEditarRegrasEstoqueCompletas()
+    ) {
+
+        showToast(
+            '🔒 Você possui acesso apenas às listas Clássico/Premium.',
+            'warning'
+        );
+
         return;
     }
-    
-    if (condicoes.length <= 1) {
-        showToast('Mantenha pelo menos a condição padrão.', 'warning');
-        return;
+
+
+    if (
+        !regrasEstoqueAtuais[
+            categoria
+        ]
+    ) {
+
+        regrasEstoqueAtuais[
+            categoria
+        ] = {
+
+            condicoes:
+                []
+
+        };
+
     }
-    
-    condicoes.splice(index, 1);
+
+
+    const condicoes =
+        regrasEstoqueAtuais[
+            categoria
+        ].condicoes;
+
+
+    const padraoIndex =
+        condicoes.findIndex(
+            condicao =>
+                condicao.operador ===
+                'padrao'
+        );
+
+
+    const novaCondicao = {
+
+        operador:
+            'maior_que',
+
+        valor:
+            100,
+
+        estoque_maximo:
+            10
+
+    };
+
+
+    if (
+        padraoIndex !==
+        -1
+    ) {
+
+        condicoes.splice(
+            padraoIndex,
+            0,
+            novaCondicao
+        );
+
+    }
+
+    else {
+
+        condicoes.push(
+            novaCondicao
+        );
+
+    }
+
+
     preencherModalRegras();
+
+
+    aplicarPermissoesModalRegrasEstoque();
 }
 
-function atualizarCondicaoRegra(categoria, index, campo, valor) {
-    if (!regrasEstoqueAtuais[categoria]) return;
-    
-    const condicoes = regrasEstoqueAtuais[categoria].condicoes;
-    if (!condicoes[index]) return;
-    
-    condicoes[index][campo] = valor;
-    
-    if (campo === 'operador' && valor === 'padrao') {
-        delete condicoes[index].valor;
+function removerCondicaoRegra(
+    categoria,
+    index
+) {
+
+    if (
+        !podeEditarRegrasEstoqueCompletas()
+    ) {
+
+        showToast(
+            '🔒 Você possui acesso apenas às listas Clássico/Premium.',
+            'warning'
+        );
+
+        return;
     }
-    
-    clearTimeout(window._saveTimeout);
-    window._saveTimeout = setTimeout(() => {
-        salvarRegrasEstoque(regrasEstoqueAtuais);
-    }, 1000);
+
+
+    if (
+        !regrasEstoqueAtuais[
+            categoria
+        ]
+    ) {
+
+        return;
+    }
+
+
+    const condicoes =
+        regrasEstoqueAtuais[
+            categoria
+        ].condicoes;
+
+
+    if (
+        condicoes[
+            index
+        ]
+        &&
+        condicoes[
+            index
+        ].operador ===
+            'padrao'
+    ) {
+
+        showToast(
+            'Não é possível remover a condição padrão (senão).',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        condicoes.length <=
+        1
+    ) {
+
+        showToast(
+            'Mantenha pelo menos a condição padrão.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    condicoes.splice(
+        index,
+        1
+    );
+
+
+    preencherModalRegras();
+
+
+    aplicarPermissoesModalRegrasEstoque();
+}
+
+function atualizarCondicaoRegra(
+    categoria,
+    index,
+    campo,
+    valor
+) {
+
+    // =====================================================
+    // PROTEÇÃO
+    // =====================================================
+
+    if (
+        !podeEditarRegrasEstoqueCompletas()
+    ) {
+
+        showToast(
+            '🔒 Você possui acesso apenas às listas Clássico/Premium.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !regrasEstoqueAtuais[
+            categoria
+        ]
+    ) {
+
+        return;
+    }
+
+
+    const condicoes =
+        regrasEstoqueAtuais[
+            categoria
+        ].condicoes;
+
+
+    if (
+        !condicoes[
+            index
+        ]
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // ALTERAR
+    // =====================================================
+
+    condicoes[
+        index
+    ][
+        campo
+    ] =
+        valor;
+
+
+    if (
+        campo ===
+            'operador'
+        &&
+        valor ===
+            'padrao'
+    ) {
+
+        delete condicoes[
+            index
+        ].valor;
+
+    }
+
+
+    // =====================================================
+    // AUTO-SAVE ATUAL
+    // =====================================================
+
+    clearTimeout(
+        window._saveTimeout
+    );
+
+
+    window._saveTimeout =
+        setTimeout(
+            () => {
+
+                // Esta função só chega aqui para usuário
+                // autorizado às regras completas.
+                salvarRegrasEstoque(
+                    regrasEstoqueAtuais
+                );
+
+            },
+            1000
+        );
 }
 
 async function salvarRegrasEstoqueModal() {
-    console.log('🔄 [salvarRegrasEstoqueModal] Iniciando salvamento...');
-    
-    // Obter todas as categorias (padrão + customizadas)
-    const todasCategorias = {
-        ...camposPorCategoria,
-        ...categoriasCustomizadas
-    };
-    
-    const categoriasLista = Object.keys(todasCategorias).filter(c => c !== 'outros');
-    categoriasLista.push('outros');
-    
-    // 🔥 IMPORTANTE: Garantir que todas as categorias tenham pelo menos a condição padrão
-    let valido = true;
-    let categoriasSemRegra = [];
-    
-    for (const cat of categoriasLista) {
-        // Se a categoria não existe nas regras, criar com padrão
-        if (!regrasEstoqueAtuais[cat]) {
-            regrasEstoqueAtuais[cat] = {
-                condicoes: [
-                    { operador: 'padrao', estoque_maximo: 30 }
-                ]
-            };
-            console.log(`✅ Regra padrão criada para: ${cat}`);
-            continue;
-        }
-        
-        const regras = regrasEstoqueAtuais[cat];
-        
-        // Garantir que condicoes existe
-        if (!regras.condicoes || regras.condicoes.length === 0) {
-            regras.condicoes = [{ operador: 'padrao', estoque_maximo: 30 }];
-            console.log(`✅ Condição padrão adicionada para: ${cat}`);
-            continue;
-        }
-        
-        // 🔥 CORREÇÃO: Garantir que todas as condições tenham os campos necessários
-        for (let i = 0; i < regras.condicoes.length; i++) {
-            const cond = regras.condicoes[i];
-            
-            // Garantir que operador existe
-            if (!cond.operador) {
-                cond.operador = 'padrao';
-            }
-            
-            // Se não for padrão, garantir que valor existe
-            if (cond.operador !== 'padrao' && (cond.valor === undefined || cond.valor === null)) {
-                cond.valor = 0;
-                console.log(`⚠️ Valor definido como 0 para condição ${i} de ${cat}`);
-            }
-            
-            // Garantir que estoque_maximo existe
-            if (cond.estoque_maximo === undefined || cond.estoque_maximo === null) {
-                cond.estoque_maximo = 30;
-                console.log(`⚠️ Estoque máximo definido como 30 para condição ${i} de ${cat}`);
-            }
-        }
-        
-        // Verificar se tem condição padrão
-        const temPadrao = regras.condicoes.some(c => c.operador === 'padrao');
-        if (!temPadrao) {
-            // Adicionar condição padrão no final
-            regras.condicoes.push({ operador: 'padrao', estoque_maximo: 30 });
-            console.log(`✅ Condição padrão adicionada para: ${cat}`);
-        }
+
+    console.log(
+        '🔄 [salvarRegrasEstoqueModal] Iniciando salvamento...'
+    );
+
+
+    const podeRegras =
+        podeEditarRegrasEstoqueCompletas();
+
+
+    const podeListas =
+        podeEditarListasFixasTipoAnuncioML();
+
+
+    // =====================================================
+    // SEM PERMISSÃO
+    // =====================================================
+
+    if (
+        !podeRegras &&
+        !podeListas
+    ) {
+
+        showToast(
+            '🔒 Você não possui permissão para salvar estas configurações.',
+            'warning'
+        );
+
+        return;
     }
-    
-    console.log('📊 Regras a serem salvas:', JSON.stringify(regrasEstoqueAtuais, null, 2));
-
-    // =========================================================
-// SALVAR REGRAS FIXAS CLÁSSICO / PREMIUM
-// =========================================================
-
-const resultadoRegrasFixas =
-    await salvarRegrasFixasTipoAnuncioMLDoModal();
 
 
-if (
-    !resultadoRegrasFixas.success
-) {
+    // =====================================================
+    // MIRELLA / THALYTA
+    //
+    // SALVAM SOMENTE CLÁSSICO / PREMIUM
+    // =====================================================
 
-    // Não fecha o modal se houver conflito
-    return;
+    if (
+        !podeRegras &&
+        podeListas
+    ) {
 
-}
-    
-    // Salvar
-    await salvarRegrasEstoque(regrasEstoqueAtuais);
-    
-    // Fechar modal
+        const resultadoListas =
+            await salvarRegrasFixasTipoAnuncioMLDoModal();
+
+
+        if (
+            !resultadoListas.success
+        ) {
+
+            return;
+        }
+
+
+        showToast(
+            '✅ Listas Clássico/Premium atualizadas com sucesso!',
+            'success'
+        );
+
+
+        fecharModalRegrasEstoque();
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // DAQUI PARA BAIXO:
+    // SOMENTE USUÁRIOS COM ACESSO COMPLETO ÀS REGRAS
+    // =====================================================
+
+
+    // Obter todas as categorias
+    const todasCategorias = {
+
+        ...camposPorCategoria,
+
+        ...categoriasCustomizadas
+
+    };
+
+
+    const categoriasLista =
+        Object.keys(
+            todasCategorias
+        )
+            .filter(
+                categoria =>
+                    categoria !==
+                    'outros'
+            );
+
+
+    categoriasLista.push(
+        'outros'
+    );
+
+
+    // =====================================================
+    // GARANTIR QUE TODAS AS CATEGORIAS POSSUAM REGRA
+    // =====================================================
+
+    for (
+        const cat
+        of categoriasLista
+    ) {
+
+        if (
+            !regrasEstoqueAtuais[
+                cat
+            ]
+        ) {
+
+            regrasEstoqueAtuais[
+                cat
+            ] = {
+
+                condicoes: [
+
+                    {
+                        operador:
+                            'padrao',
+
+                        estoque_maximo:
+                            30
+                    }
+
+                ]
+
+            };
+
+
+            console.log(
+                `✅ Regra padrão criada para: ${cat}`
+            );
+
+
+            continue;
+        }
+
+
+        const regras =
+            regrasEstoqueAtuais[
+                cat
+            ];
+
+
+        // =================================================
+        // GARANTIR ARRAY
+        // =================================================
+
+        if (
+            !Array.isArray(
+                regras.condicoes
+            )
+            ||
+            regras.condicoes.length ===
+                0
+        ) {
+
+            regras.condicoes = [
+
+                {
+                    operador:
+                        'padrao',
+
+                    estoque_maximo:
+                        30
+                }
+
+            ];
+
+
+            console.log(
+                `✅ Condição padrão adicionada para: ${cat}`
+            );
+
+
+            continue;
+        }
+
+
+        // =================================================
+        // NORMALIZAR CONDIÇÕES
+        // =================================================
+
+        for (
+            let i = 0;
+            i < regras.condicoes.length;
+            i++
+        ) {
+
+            const cond =
+                regras.condicoes[
+                    i
+                ];
+
+
+            if (
+                !cond.operador
+            ) {
+
+                cond.operador =
+                    'padrao';
+
+            }
+
+
+            if (
+                cond.operador !==
+                    'padrao'
+                &&
+                (
+                    cond.valor ===
+                        undefined
+                    ||
+                    cond.valor ===
+                        null
+                )
+            ) {
+
+                cond.valor =
+                    0;
+
+
+                console.log(
+                    `⚠️ Valor definido como 0 para condição ${i} de ${cat}`
+                );
+
+            }
+
+
+            if (
+                cond.estoque_maximo ===
+                    undefined
+                ||
+                cond.estoque_maximo ===
+                    null
+            ) {
+
+                cond.estoque_maximo =
+                    30;
+
+
+                console.log(
+                    `⚠️ Estoque máximo definido como 30 para condição ${i} de ${cat}`
+                );
+
+            }
+
+        }
+
+
+        // =================================================
+        // GARANTIR CONDIÇÃO PADRÃO
+        // =================================================
+
+        const temPadrao =
+            regras.condicoes.some(
+                cond =>
+                    cond.operador ===
+                    'padrao'
+            );
+
+
+        if (
+            !temPadrao
+        ) {
+
+            regras.condicoes.push({
+
+                operador:
+                    'padrao',
+
+                estoque_maximo:
+                    30
+
+            });
+
+
+            console.log(
+                `✅ Condição padrão adicionada para: ${cat}`
+            );
+
+        }
+
+    }
+
+
+    console.log(
+        '📊 Regras a serem salvas:',
+        JSON.stringify(
+            regrasEstoqueAtuais,
+            null,
+            2
+        )
+    );
+
+
+    // =====================================================
+    // SALVAR LISTAS CLÁSSICO / PREMIUM
+    // =====================================================
+
+    const resultadoRegrasFixas =
+        await salvarRegrasFixasTipoAnuncioMLDoModal();
+
+
+    if (
+        !resultadoRegrasFixas.success
+    ) {
+
+        // Não fechar se houver conflito
+        return;
+
+    }
+
+
+    // =====================================================
+    // SALVAR REGRAS DE ESTOQUE
+    // =====================================================
+
+    await salvarRegrasEstoque(
+        regrasEstoqueAtuais
+    );
+
+
+    // =====================================================
+    // FECHAR
+    // =====================================================
+
     fecharModalRegrasEstoque();
-    
-    // Recarregar tabela para aplicar as regras
-    renderizarTabelaProdutos(produtosFiltradosAtuais);
-    
-    showToast('✅ Regras de estoque salvas com sucesso!', 'success');
+
+
+    // =====================================================
+    // ATUALIZAR TABELA
+    // =====================================================
+
+    renderizarTabelaProdutos(
+        produtosFiltradosAtuais
+    );
+
+
+    showToast(
+        '✅ Regras de estoque e Mercado Livre salvas com sucesso!',
+        'success'
+    );
 }
 
 function fecharModalRegrasEstoque() {
