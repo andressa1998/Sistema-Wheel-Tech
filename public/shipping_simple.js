@@ -1280,317 +1280,234 @@ function isFullByAnyField(item) {
     return false;
 }
 
-function calcularFretePagoPeloVendedor(dadosEnvio) {
-    if (!dadosEnvio) {
-        return 0;
+function calcularFretePagoPeloVendedor(
+    dadosCustos,
+    sellerId = '415176739'
+) {
+    if (!dadosCustos) {
+        return null;
     }
 
-    let info = dadosEnvio;
+    let custos = dadosCustos;
 
-    /*
-     * Pode vir do Supabase como JSON string.
-     */
-    if (typeof info === 'string') {
+    if (typeof custos === 'string') {
         try {
-            info = JSON.parse(info);
-        } catch (e) {
-            console.warn(
-                '⚠️ Não foi possível interpretar informacoes_envio:',
-                info
-            );
-
-            return 0;
-        }
-    }
-
-    const opcao =
-        info?.shipping_option &&
-        typeof info.shipping_option === 'object'
-            ? info.shipping_option
-            : {};
-
-    /*
-     * Converte corretamente:
-     *
-     * 22.94
-     * "22.94"
-     * "22,94"
-     * "R$ 22,94"
-     */
-    const converterNumeroFrete = valor => {
-        if (
-            valor === null ||
-            valor === undefined ||
-            valor === ''
-        ) {
+            custos = JSON.parse(custos);
+        } catch (error) {
             return null;
         }
+    }
 
-        if (typeof valor === 'number') {
-            return Number.isFinite(valor)
-                ? valor
-                : null;
-        }
+    /*
+     * Quando vier de informacoes_envio,
+     * o retorno oficial de /costs fica aqui.
+     */
+    if (
+        custos.custos_envio &&
+        typeof custos.custos_envio === 'object'
+    ) {
+        custos =
+            custos.custos_envio;
+    }
 
-        let texto = String(valor)
-            .replace(/R\$/gi, '')
-            .replace(/\s/g, '')
-            .trim();
+    const senders =
+        Array.isArray(custos.senders)
+            ? custos.senders
+            : [];
 
-        /*
-         * Se tiver ponto e vírgula:
-         * 1.234,56
-         */
+    /*
+     * Procura especificamente o vendedor
+     * desta conta.
+     */
+    let sender =
+        senders.find(item =>
+            String(
+                item?.user_id ?? ''
+            ) ===
+            String(
+                sellerId ?? ''
+            )
+        );
+
+    /*
+     * Normalmente existe apenas um vendedor
+     * no shipment.
+     */
+    if (
+        !sender &&
+        senders.length === 1
+    ) {
+        sender =
+            senders[0];
+    }
+
+    if (
+        sender &&
+        sender.cost !== null &&
+        sender.cost !== undefined
+    ) {
+        const custo =
+            Number(sender.cost);
+
         if (
-            texto.includes('.') &&
-            texto.includes(',')
+            Number.isFinite(custo) &&
+            custo >= 0
         ) {
-            if (
-                texto.lastIndexOf(',') >
-                texto.lastIndexOf('.')
-            ) {
-                texto =
-                    texto
-                        .replace(/\./g, '')
-                        .replace(',', '.');
-            } else {
-                texto =
-                    texto.replace(/,/g, '');
-            }
-
-        } else if (
-            texto.includes(',')
-        ) {
-            /*
-             * 22,94
-             */
-            texto =
-                texto.replace(',', '.');
+            return Number(
+                custo.toFixed(2)
+            );
         }
+    }
 
-        const numero =
-            parseFloat(
-                texto.replace(
-                    /[^0-9.-]/g,
-                    ''
-                )
+    /*
+     * Único fallback permitido:
+     * order_cost explicitamente informado
+     * pelo novo JSON como custo do vendedor.
+     */
+    if (
+        custos.order_cost !== null &&
+        custos.order_cost !== undefined
+    ) {
+        const orderCost =
+            Number(
+                custos.order_cost
             );
 
-        return Number.isFinite(numero)
-            ? numero
-            : null;
-    };
+        if (
+            Number.isFinite(orderCost) &&
+            orderCost >= 0
+        ) {
+            return Number(
+                orderCost.toFixed(2)
+            );
+        }
+    }
 
     /*
-     * =====================================================
-     * PARTE PAGA PELO COMPRADOR
-     * =====================================================
-     *
      * IMPORTANTE:
      *
-     * Não usamos:
+     * NÃO usar:
      *
-     * info.receiver_cost ?? opcao.receiver_cost
+     * cost
+     * list_cost
+     * receiver_cost
+     * shipping_option.cost
      *
-     * porque o primeiro pode vir como 0
-     * enquanto o segundo contém 15,99.
+     * porque eles não representam
+     * necessariamente a parcela final
+     * paga pelo vendedor.
      */
 
-    const valoresComprador = [
-        converterNumeroFrete(
-            info.receiver_cost
-        ),
-
-        converterNumeroFrete(
-            opcao.receiver_cost
-        )
-    ].filter(
-        valor =>
-            valor !== null &&
-            valor > 0
-    );
-
-    const pagoPeloComprador =
-        valoresComprador.length
-            ? Math.max(
-                ...valoresComprador
-            )
-            : 0;
-
-    /*
-     * =====================================================
-     * VALORES DE TARIFA QUE O ML ENVIOU
-     * =====================================================
-     *
-     * Pode acontecer de:
-     *
-     * list_cost = 22,94
-     * cost = 6,95
-     *
-     * OU:
-     *
-     * cost = 22,94
-     * receiver_cost = 15,99
-     *
-     * Então analisamos todos.
-     */
-
-    const valoresTarifa = [
-        converterNumeroFrete(
-            info.list_cost
-        ),
-
-        converterNumeroFrete(
-            opcao.list_cost
-        ),
-
-        converterNumeroFrete(
-            info.cost
-        ),
-
-        converterNumeroFrete(
-            opcao.cost
-        )
-    ].filter(
-        valor =>
-            valor !== null &&
-            valor > 0
-    );
-
-    if (
-        valoresTarifa.length === 0
-    ) {
-        console.warn(
-            '⚠️ Nenhum custo de frete encontrado:',
-            info
-        );
-
-        return 0;
-    }
-
-    /*
-     * Se temos:
-     *
-     * 22,94
-     * 6,95
-     *
-     * pegamos 22,94 como tarifa cheia.
-     */
-    const maiorTarifa =
-        Math.max(
-            ...valoresTarifa
-        );
-
-    let custoEmpresa;
-
-    /*
-     * =====================================================
-     * REGRA PRINCIPAL
-     * =====================================================
-     */
-
-    if (
-        pagoPeloComprador > 0 &&
-        maiorTarifa >
-            pagoPeloComprador
-    ) {
-        /*
-         * Exemplo real:
-         *
-         * 22,94 - 15,99 = 6,95
-         */
-        custoEmpresa =
-            maiorTarifa -
-            pagoPeloComprador;
-
-    } else {
-        /*
-         * Se o maior valor for menor que
-         * o que o comprador pagou:
-         *
-         * cost = 6,95
-         * receiver_cost = 15,99
-         *
-         * então cost já é o líquido
-         * da empresa.
-         */
-        custoEmpresa =
-            maiorTarifa;
-    }
-
-    custoEmpresa =
-        Math.max(
-            0,
-            custoEmpresa
-        );
-
-    custoEmpresa =
-        Number(
-            custoEmpresa.toFixed(2)
-        );
-
-    console.log(
-        '💰 ===== FRETE DA EMPRESA =====',
-        {
-            receiver_cost:
-                info.receiver_cost,
-
-            shipping_option_receiver_cost:
-                opcao.receiver_cost,
-
-            list_cost:
-                info.list_cost,
-
-            shipping_option_list_cost:
-                opcao.list_cost,
-
-            cost:
-                info.cost,
-
-            shipping_option_cost:
-                opcao.cost,
-
-            pagoPeloComprador:
-                pagoPeloComprador,
-
-            maiorTarifa:
-                maiorTarifa,
-
-            custoEmpresa:
-                custoEmpresa,
-
-            calculo:
-                pagoPeloComprador > 0 &&
-                maiorTarifa >
-                    pagoPeloComprador
-
-                    ? `${maiorTarifa} - ${pagoPeloComprador} = ${custoEmpresa}`
-
-                    : `${custoEmpresa} já é o custo líquido`
-        }
-    );
-
-    return custoEmpresa;
+    return null;
 }
 
-function normalizarFretePagoPeloVendedor(item) {
-    const info = item?.informacoes_envio;
+function normalizarFretePagoPeloVendedor(
+    item
+) {
+    if (!item) {
+        return item;
+    }
+
+    let info =
+        item.informacoes_envio;
 
     if (!info) {
         return item;
     }
 
-    const custoVendedor =
-        calcularFretePagoPeloVendedor(info);
+    if (
+        typeof info === 'string'
+    ) {
+        try {
+            info =
+                JSON.parse(info);
+        } catch (error) {
+            return item;
+        }
+    }
 
-    if (custoVendedor <= 0) {
+    /*
+     * Somente recalculamos quando temos
+     * uma fonte financeira DEFINITIVA.
+     *
+     * Registros antigos que só possuem
+     * cost/list_cost/receiver_cost
+     * NÃO serão mais recalculados.
+     */
+
+    let custoVendedor =
+        null;
+
+    if (
+        info.custos_envio &&
+        typeof info.custos_envio ===
+            'object'
+    ) {
+        custoVendedor =
+            calcularFretePagoPeloVendedor(
+                info.custos_envio,
+                '415176739'
+            );
+
+    } else if (
+        info.custo_vendedor !== null &&
+        info.custo_vendedor !== undefined
+    ) {
+        const custo =
+            Number(
+                info.custo_vendedor
+            );
+
+        if (
+            Number.isFinite(custo) &&
+            custo >= 0
+        ) {
+            custoVendedor =
+                Number(
+                    custo.toFixed(2)
+                );
+        }
+
+    } else if (
+        info.order_cost !== null &&
+        info.order_cost !== undefined
+    ) {
+        const custo =
+            Number(
+                info.order_cost
+            );
+
+        if (
+            Number.isFinite(custo) &&
+            custo >= 0
+        ) {
+            custoVendedor =
+                Number(
+                    custo.toFixed(2)
+                );
+        }
+    }
+
+    /*
+     * Registro antigo:
+     * mantém o que está no banco até
+     * ser reprocessado pelo botão
+     * Buscar Fretes.
+     */
+    if (
+        custoVendedor === null
+    ) {
         return item;
     }
 
     return {
         ...item,
-        frete_cobrado: custoVendedor,
-        fonte_frete: 'custo líquido do vendedor'
+
+        frete_cobrado:
+            custoVendedor,
+
+        fonte_frete:
+            'shipment.costs.senders.cost'
     };
 }
 
@@ -1891,248 +1808,596 @@ async function isShipmentFULL(shipmentId, token) {
     }
 }
 
-// ============================================
-// EXTRAIR FRETE DA VENDA - VERSÃO COMPLETA
-// ============================================
-async function extrairFreteDaVenda(order, token) {
+async function buscarCustosReaisShipmentFrete(
+    shipmentId,
+    token
+) {
+    if (
+        !shipmentId ||
+        !token
+    ) {
+        return null;
+    }
+
+    const url =
+        `https://api.mercadolibre.com/shipments/` +
+        `${shipmentId}/costs`;
+
+    const proxy =
+        `${window.WORKER_URL}/api/ml/proxy` +
+        `?url=${encodeURIComponent(url)}` +
+        `&token=${encodeURIComponent(token)}`;
+
+    let response;
+
+    try {
+        /*
+         * O ML recomenda o novo formato
+         * para os recursos de shipment.
+         */
+        response =
+            await fetch(
+                proxy,
+                {
+                    cache:
+                        'no-store',
+
+                    headers: {
+                        'x-format-new':
+                            'true',
+
+                        'X-Costs-New':
+                            'true'
+                    }
+                }
+            );
+
+    } catch (error) {
+        /*
+         * Caso o Worker não aceite
+         * esses headers, tenta novamente
+         * normalmente.
+         */
+        response =
+            await fetch(
+                proxy,
+                {
+                    cache:
+                        'no-store'
+                }
+            );
+    }
+
+    if (
+        !response.ok
+    ) {
+        console.warn(
+            `⚠️ /shipments/${shipmentId}/costs ` +
+            `retornou HTTP ${response.status}`
+        );
+
+        return null;
+    }
+
+    const custos =
+        await response.json();
+
     console.log(
-        `🔍 Extraindo frete da venda ${order.id}...`
+        `💵 CUSTOS OFICIAIS SHIPMENT ${shipmentId}:`,
+        {
+            gross_amount:
+                custos?.gross_amount,
+
+            comprador:
+                custos?.receiver?.cost,
+
+            vendedores:
+                Array.isArray(
+                    custos?.senders
+                )
+                    ? custos.senders.map(
+                        sender => ({
+                            user_id:
+                                sender?.user_id,
+
+                            cost:
+                                sender?.cost
+                        })
+                    )
+                    : []
+        }
     );
 
-    let resultado = {
-        frete: 0,
-        fonte: 'nenhuma',
-        isFull: false,
+    return custos;
+}
+async function extrairFreteDaVenda(
+    order,
+    token
+) {
+    console.log(
+        `🔍 Extraindo frete da venda ${order?.id}...`
+    );
+
+    const shipmentId =
+        order?.shipping?.id ||
+        null;
+
+    const sellerId =
+        order?.seller?.id ||
+        '415176739';
+
+    const resultado = {
+        frete:
+            0,
+
+        fonte:
+            'nenhuma',
+
+        isFull:
+            false,
 
         informacoesEnvio: {
-            id: null,
-            logistic_type: '',
-            mode: '',
-            fulfillment: '',
-            tipo: '',
-            receiver_cost: null,
-            cost: null,
-            list_cost: null,
-            status: '',
-            tags: []
+            id:
+                shipmentId,
+
+            logistic_type:
+                '',
+
+            mode:
+                '',
+
+            fulfillment:
+                '',
+
+            tipo:
+                '',
+
+            status:
+                '',
+
+            tags:
+                [],
+
+            order_cost:
+                null,
+
+            receiver_cost:
+                null,
+
+            cost:
+                null,
+
+            list_cost:
+                null,
+
+            shipping_option:
+                null,
+
+            /*
+             * Novos campos.
+             */
+            custos_envio:
+                null,
+
+            custo_comprador:
+                null,
+
+            custo_vendedor:
+                null,
+
+            custo_bruto:
+                null
         }
     };
 
-    // ============================================
-    // 1. BUSCAR DADOS COMPLETOS DO SHIPMENT
-    // ============================================
-
     if (
-        order.shipping &&
-        order.shipping.id &&
-        token
+        !shipmentId ||
+        !token
     ) {
-        try {
-            const shipUrl =
-                `https://api.mercadolibre.com/shipments/${order.shipping.id}`;
+        console.warn(
+            `⚠️ Venda ${order?.id}: ` +
+            `shipment ou token não disponível.`
+        );
 
-            const shipProxy =
-                `${window.WORKER_URL}/api/ml/proxy` +
-                `?url=${encodeURIComponent(shipUrl)}` +
-                `&token=${encodeURIComponent(token)}`;
-
-            const shipResp = await fetch(shipProxy);
-
-            if (shipResp.ok) {
-                const shipData = await shipResp.json();
-
-                console.log(
-                    `📦 Shipment ${order.shipping.id}:`,
-                    {
-                        logistic_type:
-                            shipData.logistic_type,
-
-                        mode:
-                            shipData.mode,
-
-                        receiver_cost:
-                            shipData.receiver_cost,
-
-                        cost:
-                            shipData.cost,
-
-                        list_cost:
-                            shipData.list_cost,
-
-                        shipping_option:
-                            shipData.shipping_option
-                                ? {
-                                    receiver_cost:
-                                        shipData.shipping_option.receiver_cost,
-
-                                    list_cost:
-                                        shipData.shipping_option.list_cost,
-
-                                    cost:
-                                        shipData.shipping_option.cost
-                                }
-                                : null
-                    }
-                );
-
-                resultado.informacoesEnvio = {
-                    id:
-                        shipData.id ||
-                        order.shipping.id,
-
-                    logistic_type:
-                        shipData.logistic_type || '',
-
-                    mode:
-                        shipData.mode || '',
-
-                    fulfillment:
-                        shipData.fulfillment || '',
-
-                    tipo:
-                        shipData.logistic_type || '',
-
-                    receiver_cost:
-                        shipData.receiver_cost ?? null,
-
-                    cost:
-                        shipData.cost ?? null,
-
-                    list_cost:
-                        shipData.list_cost ?? null,
-
-                    shipping_option:
-                        shipData.shipping_option || null,
-
-                    status:
-                        shipData.status || '',
-
-                    tags:
-                        shipData.tags || []
-                };
-
-                // ============================================
-                // VERIFICAR SE É ENVIO FULL
-                // ============================================
-
-                const logisticType =
-                    (
-                        shipData.logistic_type || ''
-                    ).toLowerCase();
-
-                const mode =
-                    (
-                        shipData.mode || ''
-                    ).toLowerCase();
-
-                const tags =
-                    (shipData.tags || []).map(tag =>
-                        String(tag).toLowerCase()
-                    );
-
-                if (
-                    logisticType === 'fulfillment' ||
-                    logisticType.includes('fulfillment') ||
-                    logisticType.includes('full') ||
-                    mode === 'full' ||
-                    mode.includes('full') ||
-                    tags.some(tag =>
-                        tag.includes('full') ||
-                        tag.includes('fulfillment')
-                    )
-                ) {
-                    resultado.isFull = true;
-
-                    console.log(
-                        `🔴 VENDA ${order.id} É FULL ` +
-                        `(logistic_type=${shipData.logistic_type})`
-                    );
-
-                    return resultado;
-                }
-
-                // ============================================
-                // CALCULAR SOMENTE A PARTE PAGA PELA EMPRESA
-                // ============================================
-
-                const custoVendedor =
-                    calcularFretePagoPeloVendedor(
-                        shipData
-                    );
-
-                if (custoVendedor > 0) {
-                    resultado.frete =
-                        custoVendedor;
-
-                    resultado.fonte =
-                        'shipment.custo_liquido_vendedor';
-
-                    console.log(
-                        `💰 Custo do vendedor: ` +
-                        `R$ ${resultado.frete.toFixed(2)} ` +
-                        `(${resultado.fonte})`
-                    );
-
-                    return resultado;
-                }
-            } else {
-                console.warn(
-                    `⚠️ Não foi possível consultar o shipment ` +
-                    `${order.shipping.id}: HTTP ${shipResp.status}`
-                );
-            }
-        } catch (e) {
-            console.warn(
-                'Erro ao buscar shipment:',
-                e.message
-            );
-        }
+        return resultado;
     }
 
-    // ============================================
-    // 2. FALLBACK COM OS DADOS DA PRÓPRIA VENDA
-    // Nunca utilizar receiver_cost isoladamente.
-    // ============================================
+    let shipData =
+        null;
 
-    if (
-        resultado.frete === 0 &&
-        order.shipping
-    ) {
-        const custoVendedor =
-            calcularFretePagoPeloVendedor(
-                order.shipping
+    /*
+     * ============================================
+     * 1. CONSULTAR SHIPMENT
+     *
+     * Aqui queremos:
+     *
+     * logistic_type
+     * mode
+     * tags
+     * status
+     *
+     * NÃO usamos cost/list_cost para
+     * descobrir quanto a empresa pagou.
+     * ============================================
+     */
+
+    try {
+        const shipUrl =
+            `https://api.mercadolibre.com/shipments/` +
+            `${shipmentId}`;
+
+        const shipProxy =
+            `${window.WORKER_URL}/api/ml/proxy` +
+            `?url=${encodeURIComponent(shipUrl)}` +
+            `&token=${encodeURIComponent(token)}`;
+
+        const shipResp =
+            await fetch(
+                shipProxy,
+                {
+                    cache:
+                        'no-store'
+                }
             );
 
-        if (custoVendedor > 0) {
+        if (
+            shipResp.ok
+        ) {
+            shipData =
+                await shipResp.json();
+
+            resultado.informacoesEnvio = {
+                ...resultado
+                    .informacoesEnvio,
+
+                id:
+                    shipData?.id ||
+                    shipmentId,
+
+                logistic_type:
+                    shipData
+                        ?.logistic_type ||
+                    '',
+
+                mode:
+                    shipData?.mode ||
+                    '',
+
+                fulfillment:
+                    shipData
+                        ?.fulfillment ||
+                    '',
+
+                tipo:
+                    shipData
+                        ?.logistic_type ||
+                    '',
+
+                status:
+                    shipData
+                        ?.status ||
+                    '',
+
+                tags:
+                    Array.isArray(
+                        shipData?.tags
+                    )
+                        ? shipData.tags
+                        : [],
+
+                /*
+                 * Guardamos apenas para
+                 * diagnóstico.
+                 */
+                order_cost:
+                    shipData
+                        ?.order_cost ??
+                    null,
+
+                receiver_cost:
+                    shipData
+                        ?.receiver_cost ??
+                    null,
+
+                cost:
+                    shipData?.cost ??
+                    null,
+
+                list_cost:
+                    shipData
+                        ?.list_cost ??
+                    null,
+
+                shipping_option:
+                    shipData
+                        ?.shipping_option ||
+                    null
+            };
+
+            /*
+             * ========================================
+             * FULL
+             * ========================================
+             */
+
+            const logisticType =
+                String(
+                    shipData
+                        ?.logistic_type ||
+                    ''
+                ).toLowerCase();
+
+            const mode =
+                String(
+                    shipData?.mode ||
+                    ''
+                ).toLowerCase();
+
+            const tags =
+                (
+                    shipData?.tags ||
+                    []
+                ).map(
+                    tag =>
+                        String(tag)
+                            .toLowerCase()
+                );
+
+            if (
+                logisticType ===
+                    'fulfillment' ||
+
+                logisticType.includes(
+                    'fulfillment'
+                ) ||
+
+                logisticType.includes(
+                    'full'
+                ) ||
+
+                mode ===
+                    'full' ||
+
+                mode.includes(
+                    'full'
+                ) ||
+
+                tags.some(
+                    tag =>
+                        tag.includes(
+                            'full'
+                        ) ||
+                        tag.includes(
+                            'fulfillment'
+                        )
+                )
+            ) {
+                resultado.isFull =
+                    true;
+
+                console.log(
+                    `🔴 VENDA ${order.id} É FULL`
+                );
+
+                return resultado;
+            }
+
+        } else {
+            console.warn(
+                `⚠️ Shipment ${shipmentId}: ` +
+                `HTTP ${shipResp.status}`
+            );
+        }
+
+    } catch (error) {
+        console.warn(
+            `⚠️ Erro ao consultar ` +
+            `shipment ${shipmentId}:`,
+            error.message
+        );
+    }
+
+    /*
+     * ============================================
+     * 2. CONSULTAR O CUSTO FINANCEIRO REAL
+     *
+     * ESSA É A CORREÇÃO PRINCIPAL.
+     *
+     * /shipments/{id}/costs
+     *
+     * receiver.cost
+     *     = comprador
+     *
+     * senders[].cost
+     *     = VENDEDOR / EMPRESA
+     * ============================================
+     */
+
+    try {
+        const custos =
+            await buscarCustosReaisShipmentFrete(
+                shipmentId,
+                token
+            );
+
+        if (custos) {
+            const custoVendedor =
+                calcularFretePagoPeloVendedor(
+                    custos,
+                    sellerId
+                );
+
+            const custoComprador =
+                custos?.receiver
+                    ?.cost !==
+                    undefined &&
+                custos?.receiver
+                    ?.cost !== null
+
+                    ? Number(
+                        custos.receiver
+                            .cost
+                    )
+
+                    : null;
+
+            const custoBruto =
+                custos?.gross_amount !==
+                    undefined &&
+                custos?.gross_amount !==
+                    null
+
+                    ? Number(
+                        custos
+                            .gross_amount
+                    )
+
+                    : null;
+
+            resultado.informacoesEnvio = {
+                ...resultado
+                    .informacoesEnvio,
+
+                custos_envio:
+                    custos,
+
+                custo_comprador:
+                    Number.isFinite(
+                        custoComprador
+                    )
+                        ? custoComprador
+                        : null,
+
+                custo_vendedor:
+                    custoVendedor,
+
+                custo_bruto:
+                    Number.isFinite(
+                        custoBruto
+                    )
+                        ? custoBruto
+                        : null
+            };
+
+            /*
+             * Inclusive custo ZERO é válido:
+             * significa que o vendedor não
+             * pagou aquele envio.
+             */
+            if (
+                custoVendedor !==
+                null
+            ) {
+                resultado.frete =
+                    custoVendedor;
+
+                resultado.fonte =
+                    'shipment.costs.senders.cost';
+
+                console.log(
+                    `✅ VENDA ${order.id}`
+                );
+
+                console.log(
+                    `   Comprador: R$ ${
+                        Number(
+                            custoComprador ||
+                            0
+                        ).toFixed(2)
+                    }`
+                );
+
+                console.log(
+                    `   Empresa: R$ ${
+                        Number(
+                            custoVendedor
+                        ).toFixed(2)
+                    }`
+                );
+
+                console.log(
+                    `   Bruto: R$ ${
+                        Number(
+                            custoBruto ||
+                            0
+                        ).toFixed(2)
+                    }`
+                );
+
+                return resultado;
+            }
+        }
+
+    } catch (error) {
+        console.warn(
+            `⚠️ Erro ao consultar ` +
+            `custos do shipment ${shipmentId}:`,
+            error.message
+        );
+    }
+
+    /*
+     * ============================================
+     * 3. FALLBACK
+     *
+     * Só podemos usar order_cost porque
+     * ele é explicitamente um custo
+     * atribuído ao vendedor.
+     *
+     * NÃO VOLTAMOS MAIS PARA:
+     *
+     * cost
+     * list_cost
+     * receiver_cost
+     * shipping_option.cost
+     * ============================================
+     */
+
+    if (
+        shipData?.order_cost !==
+            null &&
+        shipData?.order_cost !==
+            undefined
+    ) {
+        const orderCost =
+            Number(
+                shipData.order_cost
+            );
+
+        if (
+            Number.isFinite(
+                orderCost
+            ) &&
+            orderCost >= 0
+        ) {
             resultado.frete =
-                custoVendedor;
+                Number(
+                    orderCost
+                        .toFixed(2)
+                );
 
             resultado.fonte =
-                'order.shipping.custo_liquido_vendedor';
+                'shipment.order_cost';
+
+            resultado
+                .informacoesEnvio
+                .custo_vendedor =
+                    resultado.frete;
 
             console.log(
-                `💰 Custo do vendedor: ` +
-                `R$ ${resultado.frete.toFixed(2)} ` +
-                `(${resultado.fonte})`
+                `✅ Venda ${order.id}: ` +
+                `order_cost = ` +
+                `R$ ${resultado.frete.toFixed(2)}`
             );
 
             return resultado;
         }
     }
 
-    /*
-     * Não utilizar:
-     *
-     * - receiver_cost isoladamente;
-     * - total da venda menos o valor dos produtos;
-     *
-     * Esses valores podem representar o frete pago pelo
-     * comprador, e não o custo que saiu da empresa.
-     */
-
-    console.log(
-        `⚠️ Nenhum custo de frete do vendedor ` +
-        `encontrado para a venda ${order.id}`
+    console.warn(
+        `⚠️ Venda ${order.id}: ` +
+        `não foi possível determinar ` +
+        `o custo real do vendedor.`
     );
 
     return resultado;
@@ -5167,16 +5432,6 @@ async function corrigirFreteSalvoPelaOrder(
         );
 
     try {
-        /*
-         * IMPORTANTE:
-         *
-         * extrairFreteDaVenda() consulta novamente:
-         *
-         * /shipments/{shipment_id}
-         *
-         * Portanto não dependemos mais do valor
-         * antigo salvo no Supabase.
-         */
         const resultado =
             await extrairFreteDaVenda(
                 order,
@@ -5191,20 +5446,15 @@ async function corrigirFreteSalvoPelaOrder(
 
         const novoFrete =
             Number(
-                resultado.frete || 0
+                resultado.frete
             );
 
         if (
             !Number.isFinite(
                 novoFrete
             ) ||
-            novoFrete <= 0
+            novoFrete < 0
         ) {
-            console.warn(
-                `⚠️ Venda ${idVenda}: ` +
-                `não foi possível obter custo da empresa.`
-            );
-
             return false;
         }
 
@@ -5222,17 +5472,16 @@ async function corrigirFreteSalvoPelaOrder(
                 parseInt(
                     registroSalvo
                         .quantidade ||
-                    order.order_items?.[0]
+
+                    order.order_items
+                        ?.[0]
                         ?.quantity ||
+
                     1
                 ) ||
                 1
             );
 
-        /*
-         * Usa o valor que já está salvo.
-         * Não altera o valor do produto.
-         */
         let valorProduto =
             Number(
                 registroSalvo
@@ -5252,20 +5501,28 @@ async function corrigirFreteSalvoPelaOrder(
                         (
                             total,
                             item
-                        ) =>
-                            total +
-                            (
-                                Number(
-                                    item.unit_price
-                                ) ||
-                                0
-                            ) *
-                            (
-                                Number(
-                                    item.quantity
-                                ) ||
-                                0
-                            ),
+                        ) => {
+
+                            return (
+                                total +
+
+                                (
+                                    Number(
+                                        item
+                                            .unit_price
+                                    ) ||
+                                    0
+                                ) *
+
+                                (
+                                    Number(
+                                        item
+                                            .quantity
+                                    ) ||
+                                    0
+                                )
+                            );
+                        },
                         0
                     );
         }
@@ -5281,7 +5538,9 @@ async function corrigirFreteSalvoPelaOrder(
         const dataVenda =
             registroSalvo
                 .data_venda ||
+
             order.date_created ||
+
             new Date()
                 .toISOString();
 
@@ -5299,14 +5558,11 @@ async function corrigirFreteSalvoPelaOrder(
                     .informacoesEnvio
             );
 
-        /*
-         * Atualiza SOMENTE informações
-         * relacionadas ao frete.
-         */
-        const dadosAtualizacao = {
+        const atualizacao = {
             frete_cobrado:
                 Number(
-                    novoFrete.toFixed(2)
+                    novoFrete
+                        .toFixed(2)
                 ),
 
             frete_por_unidade:
@@ -5320,23 +5576,23 @@ async function corrigirFreteSalvoPelaOrder(
             frete_esperado:
                 freteEsperado !==
                     null
+
                     ? Number(
                         freteEsperado
                             .toFixed(2)
                     )
+
                     : null,
 
             tipo_envio:
                 tipoEnvio,
 
             /*
-             * MUITO IMPORTANTE:
+             * Aqui salvamos o retorno
+             * de /shipments/{id}/costs.
              *
-             * salva novamente os dados COMPLETOS
-             * do shipment, inclusive receiver_cost,
-             * cost, list_cost e shipping_option.
-             *
-             * Assim o erro não volta depois de F5.
+             * Isso impede que no próximo
+             * F5 volte para R$ 22,94.
              */
             informacoes_envio:
                 resultado
@@ -5350,13 +5606,17 @@ async function corrigirFreteSalvoPelaOrder(
         const {
             error
         } =
-            await window.supabaseClient
+            await window
+                .supabaseClient
+
                 .from(
                     'fretes_ml'
                 )
+
                 .update(
-                    dadosAtualizacao
+                    atualizacao
                 )
+
                 .eq(
                     'id',
                     idVenda
@@ -5366,39 +5626,24 @@ async function corrigirFreteSalvoPelaOrder(
             throw error;
         }
 
-        /*
-         * Atualiza também o objeto
-         * que está em memória.
-         */
         Object.assign(
             registroSalvo,
-            dadosAtualizacao
+            atualizacao
         );
 
-        if (
-            Math.abs(
-                freteAnterior -
-                novoFrete
-            ) > 0.001
-        ) {
-            console.log(
-                `✅ FRETE CORRIGIDO ${idVenda}: ` +
-                `R$ ${freteAnterior.toFixed(2)} → ` +
-                `R$ ${novoFrete.toFixed(2)}`
-            );
-        } else {
-            console.log(
-                `✅ Frete ${idVenda} conferido: ` +
-                `R$ ${novoFrete.toFixed(2)}`
-            );
-        }
+        console.log(
+            `✅ FRETE CORRIGIDO ${idVenda}: ` +
+            `R$ ${freteAnterior.toFixed(2)} → ` +
+            `R$ ${novoFrete.toFixed(2)}`
+        );
 
         return true;
 
     } catch (error) {
         console.warn(
-            `⚠️ Erro ao corrigir frete da venda ${idVenda}:`,
-            error
+            `⚠️ Erro ao corrigir ` +
+            `frete da venda ${idVenda}:`,
+            error.message
         );
 
         return false;
@@ -5439,16 +5684,16 @@ async function buscarFretes() {
                 class="text-center"
             >
                 <div class="spinner"></div>
-                Buscando e conferindo vendas...
+                Conferindo custos reais de frete...
             </td>
         </tr>
     `;
 
     try {
         /*
-         * ============================================
+         * ========================================
          * TOKEN
-         * ============================================
+         * ========================================
          */
 
         let token =
@@ -5492,12 +5737,9 @@ async function buscarFretes() {
         }
 
         /*
-         * ============================================
-         * 90 DIAS
-         * ============================================
-         *
-         * Sua tela informa "últimos 90 dias".
-         * Antes essa função buscava somente 30.
+         * ========================================
+         * PERÍODO
+         * ========================================
          */
 
         const dataInicio =
@@ -5505,16 +5747,16 @@ async function buscarFretes() {
 
         dataInicio.setDate(
             dataInicio.getDate() -
-            90
+            30
         );
 
         const dataFim =
             new Date();
 
         /*
-         * ============================================
-         * REGISTROS JÁ SALVOS
-         * ============================================
+         * ========================================
+         * FRETES JÁ SALVOS
+         * ========================================
          */
 
         let idsSalvos =
@@ -5527,10 +5769,13 @@ async function buscarFretes() {
             data: salvos,
             error: erroSalvos
         } =
-            await window.supabaseClient
+            await window
+                .supabaseClient
+
                 .from(
                     'fretes_ml'
                 )
+
                 .select(`
                     id,
                     sku,
@@ -5544,13 +5789,12 @@ async function buscarFretes() {
                     peso_estimado,
                     data_venda
                 `)
+
                 .limit(
                     10000
                 );
 
-        if (
-            erroSalvos
-        ) {
+        if (erroSalvos) {
             throw erroSalvos;
         }
 
@@ -5571,14 +5815,6 @@ async function buscarFretes() {
                     )
                 );
 
-            /*
-             * TODOS os IDs salvos.
-             *
-             * Eles NÃO serão inseridos novamente.
-             *
-             * Serão reprocessados pela função
-             * corrigirFreteSalvoPelaOrder().
-             */
             idsSalvos =
                 new Set(
                     salvos.map(
@@ -5591,13 +5827,13 @@ async function buscarFretes() {
         }
 
         console.log(
-            `📂 ${idsSalvos.size} vendas já salvas serão conferidas`
+            `📂 ${idsSalvos.size} fretes já salvos`
         );
 
         /*
-         * ============================================
-         * BUSCAR ORDERS DO MERCADO LIVRE
-         * ============================================
+         * ========================================
+         * BUSCAR ORDERS
+         * ========================================
          */
 
         let todasVendasNovas =
@@ -5612,17 +5848,10 @@ async function buscarFretes() {
         let paginasBuscadas =
             0;
 
-        /*
-         * 40 páginas × 50 =
-         * até 2.000 vendas.
-         */
         const MAX_PAGINAS =
-            40;
+            20;
 
-        let registrosReprocessados =
-            0;
-
-        let skusCorrigidos =
+        let existentesCorrigidos =
             0;
 
         while (
@@ -5667,13 +5896,13 @@ async function buscarFretes() {
                 `?url=${encodeURIComponent(url)}` +
                 `&token=${encodeURIComponent(token)}`;
 
-            console.log(
-                `📡 Buscando vendas offset ${offset}...`
-            );
-
             const response =
                 await fetch(
-                    proxyUrl
+                    proxyUrl,
+                    {
+                        cache:
+                            'no-store'
+                    }
                 );
 
             if (
@@ -5698,130 +5927,188 @@ async function buscarFretes() {
                     data.paging
                         ?.total ||
                     0;
-
-                console.log(
-                    `📦 ${total} pedidos encontrados`
-                );
             }
 
             paginasBuscadas++;
 
             /*
-             * ============================================
-             * PRIMEIRO: CORRIGIR VENDAS JÁ SALVAS
-             * ============================================
+             * ====================================
+             * PRIMEIRO CORRIGIR FRETES EXISTENTES
+             * ====================================
              */
 
-            const ordersExistentes =
+            const existentes =
                 orders.filter(
                     order => {
-                        const id =
+
+                        const idVenda =
                             order.id
                                 ?.toString();
 
                         return (
-                            id &&
+                            idVenda &&
                             registrosSalvosMap
-                                .has(id)
+                                .has(
+                                    idVenda
+                                )
                         );
                     }
                 );
 
             /*
-             * Processa em pequenos lotes para não
-             * bombardear a API do ML.
+             * Lotes pequenos para não
+             * sobrecarregar a API.
              */
             const TAMANHO_LOTE =
                 5;
 
             for (
                 let i = 0;
-                i <
-                    ordersExistentes.length;
+                i < existentes.length;
                 i += TAMANHO_LOTE
             ) {
                 const lote =
-                    ordersExistentes
-                        .slice(
-                            i,
-                            i +
-                            TAMANHO_LOTE
-                        );
+                    existentes.slice(
+                        i,
+                        i +
+                        TAMANHO_LOTE
+                    );
 
                 await Promise.all(
                     lote.map(
                         async order => {
+
                             const idVenda =
                                 String(
                                     order.id
                                 );
 
-                            const registroSalvo =
+                            const registro =
                                 registrosSalvosMap
                                     .get(
                                         idVenda
                                     );
 
                             if (
-                                !registroSalvo
+                                !registro
                             ) {
                                 return;
                             }
 
                             /*
-                             * CORRIGE SKU
+                             * Se já temos o retorno
+                             * definitivo de /costs
+                             * e o banco já possui
+                             * exatamente esse valor,
+                             * não precisamos consultar
+                             * novamente.
                              */
-                            try {
-                                if (
-                                    typeof
-                                    corrigirSkuFreteSalvoPelaOrder ===
-                                    'function'
-                                ) {
-                                    const corrigiuSku =
-                                        await corrigirSkuFreteSalvoPelaOrder(
-                                            order,
-                                            registroSalvo,
-                                            token
+                            let info =
+                                registro
+                                    .informacoes_envio;
+
+                            if (
+                                typeof info ===
+                                'string'
+                            ) {
+                                try {
+                                    info =
+                                        JSON.parse(
+                                            info
                                         );
-
-                                    if (
-                                        corrigiuSku
-                                    ) {
-                                        skusCorrigidos++;
-                                    }
+                                } catch (
+                                    error
+                                ) {
+                                    info =
+                                        null;
                                 }
+                            }
 
-                            } catch (e) {
-                                console.warn(
-                                    `SKU ${idVenda}:`,
-                                    e.message
+                            const custoSalvoDefinitivo =
+                                calcularFretePagoPeloVendedor(
+                                    info,
+                                    order
+                                        ?.seller
+                                        ?.id ||
+                                    '415176739'
                                 );
+
+                            const freteBanco =
+                                Number(
+                                    registro
+                                        .frete_cobrado
+                                );
+
+                            const jaCorreto =
+                                custoSalvoDefinitivo !==
+                                    null &&
+
+                                Number.isFinite(
+                                    freteBanco
+                                ) &&
+
+                                Math.abs(
+                                    custoSalvoDefinitivo -
+                                    freteBanco
+                                ) <
+                                    0.001;
+
+                            if (
+                                !jaCorreto
+                            ) {
+                                const corrigiu =
+                                    await corrigirFreteSalvoPelaOrder(
+                                        order,
+                                        registro,
+                                        token
+                                    );
+
+                                if (
+                                    corrigiu
+                                ) {
+                                    existentesCorrigidos++;
+                                }
                             }
 
                             /*
-                             * CORRIGE FRETE
-                             *
-                             * ESSA É A PARTE NOVA.
+                             * Mantém a correção
+                             * anterior de SKU.
                              */
-                            const atualizado =
-                                await corrigirFreteSalvoPelaOrder(
-                                    order,
-                                    registroSalvo,
-                                    token
-                                );
+                            try {
+                                const skuVenda =
+                                    extrairSkuDiretoDaVenda(
+                                        order
+                                    );
 
-                            if (
-                                atualizado
+                                const skuAtual =
+                                    normalizarSkuFrete(
+                                        registro.sku
+                                    );
+
+                                if (
+                                    skuVenda &&
+                                    skuVenda !==
+                                        skuAtual
+                                ) {
+                                    await corrigirSkuFreteSalvoPelaOrder(
+                                        order,
+                                        registro,
+                                        token
+                                    );
+                                }
+
+                            } catch (
+                                error
                             ) {
-                                registrosReprocessados++;
+                                console.warn(
+                                    `SKU ${idVenda}:`,
+                                    error.message
+                                );
                             }
                         }
                     )
                 );
 
-                /*
-                 * Pequena pausa entre os lotes.
-                 */
                 await new Promise(
                     resolve =>
                         setTimeout(
@@ -5832,14 +6119,15 @@ async function buscarFretes() {
             }
 
             /*
-             * ============================================
-             * SEPARAR APENAS VENDAS REALMENTE NOVAS
-             * ============================================
+             * ====================================
+             * VENDAS NOVAS
+             * ====================================
              */
 
             const novasVendas =
                 orders.filter(
                     order => {
+
                         const idVenda =
                             order.id
                                 ?.toString();
@@ -5862,15 +6150,10 @@ async function buscarFretes() {
                 50;
 
             /*
-             * IMPORTANTE:
-             *
-             * NÃO existe mais:
-             *
-             * if (novasVendas.length === 0) break
-             *
-             * porque precisamos continuar nas
-             * páginas seguintes para corrigir
-             * também as vendas antigas.
+             * NÃO interromper quando não houver
+             * venda nova, porque precisamos
+             * continuar procurando registros
+             * antigos para corrigir o frete.
              */
 
             await new Promise(
@@ -5883,21 +6166,19 @@ async function buscarFretes() {
         }
 
         console.log(
-            `✅ ${registrosReprocessados} registros existentes reprocessados`
+            `✅ ${existentesCorrigidos} ` +
+            `fretes existentes corrigidos`
         );
 
         console.log(
-            `✅ ${skusCorrigidos} SKUs corrigidos`
-        );
-
-        console.log(
-            `🆕 ${todasVendasNovas.length} vendas novas`
+            `🆕 ${todasVendasNovas.length} ` +
+            `vendas novas`
         );
 
         /*
-         * ============================================
+         * ========================================
          * PROCESSAR VENDAS NOVAS
-         * ============================================
+         * ========================================
          */
 
         const registrosParaInserir =
@@ -5937,7 +6218,7 @@ async function buscarFretes() {
                         >
                             <div class="spinner"></div>
 
-                            Processando novas vendas
+                            Processando
                             ${processados}/
                             ${todasVendasNovas.length}...
                         </td>
@@ -5956,9 +6237,6 @@ async function buscarFretes() {
                     continue;
                 }
 
-                /*
-                 * Consulta o SHIPMENT completo.
-                 */
                 const resultado =
                     await extrairFreteDaVenda(
                         order,
@@ -5969,15 +6247,20 @@ async function buscarFretes() {
                     resultado.isFull
                 ) {
                     totalFull++;
+
                     continue;
                 }
 
+                /*
+                 * custo zero =
+                 * vendedor não pagou.
+                 */
                 if (
-                    !resultado.frete ||
                     resultado.frete <
-                        0.5
+                    0.5
                 ) {
                     totalSemFrete++;
+
                     continue;
                 }
 
@@ -6001,32 +6284,38 @@ async function buscarFretes() {
                                 (
                                     soma,
                                     item
-                                ) =>
-                                    soma +
-                                    (
-                                        Number(
-                                            item.unit_price
-                                        ) ||
-                                        0
-                                    ) *
-                                    (
-                                        Number(
-                                            item.quantity
-                                        ) ||
-                                        0
-                                    ),
+                                ) => {
+
+                                    return (
+                                        soma +
+
+                                        (
+                                            Number(
+                                                item
+                                                    .unit_price
+                                            ) ||
+                                            0
+                                        ) *
+
+                                        (
+                                            Number(
+                                                item
+                                                    .quantity
+                                            ) ||
+                                            0
+                                        )
+                                    );
+                                },
                                 0
                             );
 
                     quantidade =
-                        order.order_items[0]
+                        order.order_items
+                            ?.[0]
                             ?.quantity ||
                         1;
                 }
 
-                /*
-                 * SKU correto da venda/variação.
-                 */
                 const dadosProduto =
                     await obterDadosProdutoVendaFrete(
                         order,
@@ -6057,8 +6346,7 @@ async function buscarFretes() {
                     medidas
                 ) {
                     peso =
-                        medidas
-                            .peso_kg ||
+                        medidas.peso_kg ||
                         0.3;
                 }
 
@@ -6072,6 +6360,7 @@ async function buscarFretes() {
                 const isIncorreto =
                     freteEsperado !==
                         null &&
+
                     Math.abs(
                         resultado.frete -
                         freteEsperado
@@ -6090,100 +6379,105 @@ async function buscarFretes() {
                                 .informacoesEnvio
                         );
 
-                    registrosParaInserir
-                        .push({
-                            id:
-                                idVenda,
+                    registrosParaInserir.push({
+                        id:
+                            idVenda,
 
-                            titulo:
-                                titulo ||
-                                'Sem título',
+                        titulo:
+                            titulo ||
+                            'Sem título',
 
-                            mlb:
-                                mlbId ||
-                                'N/A',
+                        mlb:
+                            mlbId ||
+                            'N/A',
 
-                            sku:
-                                sku ||
-                                'N/A',
+                        sku:
+                            sku ||
+                            'N/A',
 
-                            valor_produto:
-                                Number(
-                                    valorTotal
-                                ) ||
-                                0,
+                        valor_produto:
+                            Number(
+                                valorTotal
+                            ) ||
+                            0,
 
-                            quantidade:
-                                parseInt(
-                                    quantidade
-                                ) ||
-                                1,
+                        quantidade:
+                            parseInt(
+                                quantidade
+                            ) ||
+                            1,
 
-                            /*
-                             * AQUI JÁ VEM SOMENTE
-                             * O CUSTO DA EMPRESA.
-                             */
-                            frete_cobrado:
-                                Number(
-                                    resultado
-                                        .frete
-                                ) ||
-                                0,
-
-                            frete_esperado:
-                                freteEsperado !==
-                                    null
-                                    ? Number(
-                                        freteEsperado
-                                    )
-                                    : null,
-
-                            frete_por_unidade:
-                                Number(
-                                    (
-                                        resultado.frete /
-                                        quantidade
-                                    ).toFixed(2)
-                                ),
-
-                            data_venda:
-                                order.date_created ||
-                                new Date()
-                                    .toISOString(),
-
-                            tipo_envio:
-                                tipoEnvio,
-
-                            peso_estimado:
-                                Number(
-                                    peso
-                                ) ||
-                                0.3,
-
-                            comprimento_cm:
-                                22,
-
-                            largura_cm:
-                                16,
-
-                            altura_cm:
-                                1,
-
-                            peso_volumetrico:
-                                0.058,
-
-                            informacoes_envio:
+                        /*
+                         * Agora vem diretamente
+                         * de senders[].cost.
+                         */
+                        frete_cobrado:
+                            Number(
                                 resultado
-                                    .informacoesEnvio,
+                                    .frete
+                            ) ||
+                            0,
 
-                            tags:
-                                order.tags ||
-                                [],
+                        frete_esperado:
+                            freteEsperado !==
+                                null
 
-                            updated_at:
-                                new Date()
-                                    .toISOString()
-                        });
+                                ? Number(
+                                    freteEsperado
+                                )
+
+                                : null,
+
+                        frete_por_unidade:
+                            Number(
+                                (
+                                    resultado
+                                        .frete /
+                                    quantidade
+                                ).toFixed(2)
+                            ),
+
+                        data_venda:
+                            order.date_created ||
+                            new Date()
+                                .toISOString(),
+
+                        tipo_envio:
+                            tipoEnvio,
+
+                        peso_estimado:
+                            Number(
+                                peso
+                            ) ||
+                            0.3,
+
+                        comprimento_cm:
+                            22,
+
+                        largura_cm:
+                            16,
+
+                        altura_cm:
+                            1,
+
+                        peso_volumetrico:
+                            0.058,
+
+                        /*
+                         * Inclui custos_envio.
+                         */
+                        informacoes_envio:
+                            resultado
+                                .informacoesEnvio,
+
+                        tags:
+                            order.tags ||
+                            [],
+
+                        updated_at:
+                            new Date()
+                                .toISOString()
+                    });
 
                 } else {
                     totalCorretos++;
@@ -6192,15 +6486,15 @@ async function buscarFretes() {
             } catch (error) {
                 console.warn(
                     `⚠️ Venda ${order.id}:`,
-                    error
+                    error.message
                 );
             }
         }
 
         /*
-         * ============================================
+         * ========================================
          * SALVAR NOVAS
-         * ============================================
+         * ========================================
          */
 
         if (
@@ -6219,17 +6513,21 @@ async function buscarFretes() {
                     registrosParaInserir
                         .slice(
                             i,
-                            i + 100
+                            i +
+                            100
                         );
 
                 const {
                     error:
                         erroSalvar
                 } =
-                    await window.supabaseClient
+                    await window
+                        .supabaseClient
+
                         .from(
                             'fretes_ml'
                         )
+
                         .upsert(
                             chunk,
                             {
@@ -6247,25 +6545,25 @@ async function buscarFretes() {
         }
 
         /*
-         * ============================================
-         * RECARREGAR TABELA
-         * ============================================
+         * ========================================
+         * RECARREGAR
+         * ========================================
          */
 
         await carregarFretesSalvos();
 
         showToast(
             `✅ Fretes atualizados. ` +
-            `${registrosReprocessados} existentes conferidos e ` +
+            `${existentesCorrigidos} existentes corrigidos e ` +
             `${registrosParaInserir.length} novos salvos.`,
             'success'
         );
 
         console.log(
-            '📊 SINCRONIZAÇÃO FINAL:',
+            '📊 RESULTADO FINAL:',
             {
-                existentesReprocessados:
-                    registrosReprocessados,
+                existentesCorrigidos:
+                    existentesCorrigidos,
 
                 novosIncorretos:
                     totalIncorretos,
@@ -6276,7 +6574,7 @@ async function buscarFretes() {
                 full:
                     totalFull,
 
-                semFrete:
+                semCustoVendedor:
                     totalSemFrete
             }
         );
@@ -6305,9 +6603,7 @@ async function buscarFretes() {
         );
 
     } finally {
-        if (
-            btn
-        ) {
+        if (btn) {
             btn.disabled =
                 false;
 
