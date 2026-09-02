@@ -5421,6 +5421,890 @@ async function testarEnvioXMLFixo(req, res) {
     }
 }
 
+// =========================================================
+// VERIFICAÇÃO PÚBLICA DE ANÚNCIOS DE UM CLIENTE ML
+//
+// IMPORTANTE:
+//
+// NÃO usa token.
+// NÃO usa /users/{id}/items/search.
+// NÃO usa /sites/MLB/search.
+//
+// Consulta a página pública que qualquer pessoa consegue
+// abrir no navegador.
+// =========================================================
+
+async function baixarPaginaPublicaMercadoLivreNFE(
+    url
+) {
+
+    const axios =
+        require('axios');
+
+
+    const response =
+        await axios.get(
+            url,
+            {
+                timeout:
+                    15000,
+
+                maxRedirects:
+                    5,
+
+                responseType:
+                    'text',
+
+                validateStatus:
+                    () => true,
+
+                headers: {
+
+                    'User-Agent':
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+                        'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+                        'Chrome/152.0.0.0 Safari/537.36',
+
+                    'Accept':
+                        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+
+                    'Accept-Language':
+                        'pt-BR,pt;q=0.9,en;q=0.7',
+
+                    'Cache-Control':
+                        'no-cache',
+
+                    'Pragma':
+                        'no-cache'
+                }
+            }
+        );
+
+
+    let html =
+        '';
+
+
+    if (
+        typeof response.data ===
+        'string'
+    ) {
+
+        html =
+            response.data;
+
+    } else if (
+        response.data
+    ) {
+
+        html =
+            JSON.stringify(
+                response.data
+            );
+    }
+
+
+    const urlFinal =
+
+        response
+            ?.request
+            ?.res
+            ?.responseUrl ||
+
+        response
+            ?.config
+            ?.url ||
+
+        url;
+
+
+    return {
+
+        status:
+            Number(
+                response.status ||
+                0
+            ),
+
+        url_original:
+            url,
+
+        url_final:
+            urlFinal,
+
+        html
+    };
+}
+
+
+// =========================================================
+// ANALISAR HTML PÚBLICO DO VENDEDOR
+// =========================================================
+
+function analisarPaginaPublicaVendedorNFE(
+    pagina
+) {
+
+    const status =
+        Number(
+            pagina
+                ?.status ||
+            0
+        );
+
+
+    const html =
+        String(
+            pagina
+                ?.html ||
+            ''
+        );
+
+
+    const htmlLower =
+        html
+            .toLowerCase();
+
+
+    // =====================================================
+    // BLOQUEIOS / PÁGINA NÃO CONFIÁVEL
+    // =====================================================
+
+    const bloqueada =
+
+        status ===
+        403 ||
+
+        status ===
+        429 ||
+
+        status ===
+        503 ||
+
+        htmlLower.includes(
+            'access denied'
+        ) ||
+
+        htmlLower.includes(
+            'verify you are human'
+        ) ||
+
+        htmlLower.includes(
+            'verifique que você é humano'
+        );
+
+
+    if (
+        bloqueada
+    ) {
+
+        return {
+
+            verificado:
+                false,
+
+            tem_anuncios:
+                false,
+
+            indeterminado:
+                true,
+
+            motivo:
+                `pagina_bloqueada_http_${status}`,
+
+            quantidade_detectada:
+                0,
+
+            mlbs:
+                []
+        };
+    }
+
+
+    if (
+        status <
+            200 ||
+        status >=
+            400
+    ) {
+
+        return {
+
+            verificado:
+                false,
+
+            tem_anuncios:
+                false,
+
+            indeterminado:
+                true,
+
+            motivo:
+                `http_${status}`,
+
+            quantidade_detectada:
+                0,
+
+            mlbs:
+                []
+        };
+    }
+
+
+    // =====================================================
+    // TEXTO VISÍVEL
+    // =====================================================
+
+    const texto =
+        html
+            .replace(
+                /<script[\s\S]*?<\/script>/gi,
+                ' '
+            )
+            .replace(
+                /<style[\s\S]*?<\/style>/gi,
+                ' '
+            )
+            .replace(
+                /<[^>]+>/g,
+                ' '
+            )
+            .replace(
+                /&nbsp;/gi,
+                ' '
+            )
+            .replace(
+                /&amp;/gi,
+                '&'
+            )
+            .replace(
+                /\s+/g,
+                ' '
+            )
+            .trim()
+            .toLowerCase();
+
+
+    // =====================================================
+    // NÃO TEM RESULTADOS
+    //
+    // É exatamente o caso mostrado na sua imagem:
+    //
+    // "Não encontramos resultados para a sua busca"
+    // =====================================================
+
+    const semResultados =
+
+        texto.includes(
+            'não encontramos resultados para a sua busca'
+        ) ||
+
+        texto.includes(
+            'nao encontramos resultados para a sua busca'
+        ) ||
+
+        texto.includes(
+            'não encontramos resultados'
+        ) ||
+
+        texto.includes(
+            'nao encontramos resultados'
+        ) ||
+
+        texto.includes(
+            '0 resultados'
+        ) ||
+
+        texto.includes(
+            '0 resultado'
+        );
+
+
+    if (
+        semResultados
+    ) {
+
+        return {
+
+            verificado:
+                true,
+
+            tem_anuncios:
+                false,
+
+            indeterminado:
+                false,
+
+            motivo:
+                'pagina_sem_resultados',
+
+            quantidade_detectada:
+                0,
+
+            mlbs:
+                []
+        };
+    }
+
+
+    // =====================================================
+    // PROCURAR IDs DE ANÚNCIOS
+    //
+    // Formatos encontrados normalmente:
+    //
+    // MLB1234567890
+    // MLB-1234567890
+    // =====================================================
+
+    const matchesMLB =
+        html.match(
+            /\bMLB-?\d{7,}\b/gi
+        ) ||
+        [];
+
+
+    const mlbs =
+        [
+            ...new Set(
+
+                matchesMLB
+                    .map(
+                        valor =>
+                            String(
+                                valor
+                            )
+                                .toUpperCase()
+                                .replace(
+                                    '-',
+                                    ''
+                                )
+                    )
+            )
+        ];
+
+
+    // =====================================================
+    // MARCADORES DOS CARDS DE PRODUTOS
+    // =====================================================
+
+    const possuiCardProduto =
+
+        htmlLower.includes(
+            'ui-search-layout__item'
+        ) ||
+
+        htmlLower.includes(
+            'ui-search-result'
+        ) ||
+
+        htmlLower.includes(
+            'poly-card'
+        ) ||
+
+        htmlLower.includes(
+            'product-card'
+        );
+
+
+    // =====================================================
+    // TENTAR IDENTIFICAR "X RESULTADOS"
+    // =====================================================
+
+    let quantidadeResultados =
+        null;
+
+
+    const matchResultados =
+        texto.match(
+            /(\d[\d.]*)\s+resultados?\b/i
+        );
+
+
+    if (
+        matchResultados
+    ) {
+
+        const numero =
+            Number(
+                String(
+                    matchResultados[1]
+                )
+                    .replace(
+                        /\./g,
+                        ''
+                    )
+            );
+
+
+        if (
+            Number.isFinite(
+                numero
+            )
+        ) {
+
+            quantidadeResultados =
+                numero;
+        }
+    }
+
+
+    // =====================================================
+    // CONFIRMAÇÃO
+    //
+    // Só consideramos concorrente quando há evidência REAL
+    // de produto na página pública.
+    // =====================================================
+
+    const temAnuncios =
+
+        (
+            Number.isFinite(
+                quantidadeResultados
+            ) &&
+            quantidadeResultados >
+                0
+        ) ||
+
+        (
+            mlbs.length >
+                0 &&
+            possuiCardProduto
+        );
+
+
+    if (
+        temAnuncios
+    ) {
+
+        return {
+
+            verificado:
+                true,
+
+            tem_anuncios:
+                true,
+
+            indeterminado:
+                false,
+
+            motivo:
+                'anuncios_publicos_encontrados',
+
+            quantidade_detectada:
+
+                Number.isFinite(
+                    quantidadeResultados
+                )
+
+                    ? quantidadeResultados
+
+                    : mlbs.length,
+
+            mlbs
+        };
+    }
+
+
+    // =====================================================
+    // PÁGINA ABRIU NORMALMENTE MAS NÃO ENCONTROU PRODUTO
+    //
+    // NÃO marcamos concorrente.
+    // =====================================================
+
+    return {
+
+        verificado:
+            true,
+
+        tem_anuncios:
+            false,
+
+        indeterminado:
+            false,
+
+        motivo:
+            'nenhum_anuncio_publico_detectado',
+
+        quantidade_detectada:
+            0,
+
+        mlbs:
+            []
+    };
+}
+
+
+// =========================================================
+// CONTROLLER
+// GET /nfe/verificar-vendedor-ml
+// =========================================================
+
+async function verificarVendedorML(
+    req,
+    res
+) {
+
+    try {
+
+        // =====================================================
+        // BUYER / SELLER ID
+        // =====================================================
+
+        const buyerId =
+            String(
+                req.query
+                    ?.buyer_id ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                )
+                .trim();
+
+
+        if (
+            !buyerId
+        ) {
+
+            return res
+                .status(
+                    400
+                )
+                .json({
+
+                    success:
+                        false,
+
+                    error:
+                        'buyer_id obrigatório.'
+                });
+        }
+
+
+        // =====================================================
+        // NICKNAME
+        // =====================================================
+
+        const nickname =
+            String(
+                req.query
+                    ?.nickname ||
+                ''
+            )
+                .trim()
+                .substring(
+                    0,
+                    100
+                );
+
+
+        // =====================================================
+        // URLs QUE VAMOS TESTAR
+        // =====================================================
+
+        const urls =
+            [];
+
+
+        // Página de perfil primeiro.
+
+        if (
+            nickname
+        ) {
+
+            urls.push({
+
+                origem:
+                    'perfil_nickname',
+
+                url:
+                    `https://www.mercadolivre.com.br/perfil/${encodeURIComponent(
+                        nickname
+                    )}`
+            });
+        }
+
+
+        // Página direta pelo ID do vendedor.
+
+        urls.push({
+
+            origem:
+                'cust_id',
+
+            url:
+                `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
+                    buyerId
+                )}`
+        });
+
+
+        const tentativas =
+            [];
+
+
+        let houveVerificacaoConfiavel =
+            false;
+
+
+        // =====================================================
+        // TESTAR AS DUAS FORMAS
+        // =====================================================
+
+        for (
+            const item
+            of urls
+        ) {
+
+            try {
+
+                const pagina =
+                    await baixarPaginaPublicaMercadoLivreNFE(
+                        item.url
+                    );
+
+
+                const analise =
+                    analisarPaginaPublicaVendedorNFE(
+                        pagina
+                    );
+
+
+                tentativas.push({
+
+                    origem:
+                        item.origem,
+
+                    url:
+                        item.url,
+
+                    url_final:
+                        pagina.url_final,
+
+                    status:
+                        pagina.status,
+
+                    verificado:
+                        analise.verificado,
+
+                    tem_anuncios:
+                        analise.tem_anuncios,
+
+                    indeterminado:
+                        analise.indeterminado,
+
+                    motivo:
+                        analise.motivo,
+
+                    quantidade_detectada:
+                        analise.quantidade_detectada,
+
+                    mlbs:
+                        analise.mlbs
+                            .slice(
+                                0,
+                                10
+                            )
+                });
+
+
+                console.log(
+                    '🕵️ [CONCORRENTE PÚBLICO]',
+                    {
+                        buyerId,
+                        nickname,
+                        origem:
+                            item.origem,
+                        status:
+                            pagina.status,
+                        resultado:
+                            analise
+                    }
+                );
+
+
+                if (
+                    analise.verificado ===
+                    true
+                ) {
+
+                    houveVerificacaoConfiavel =
+                        true;
+                }
+
+
+                // =============================================
+                // ACHOU ANÚNCIO DE VERDADE
+                // =============================================
+
+                if (
+                    analise.tem_anuncios ===
+                    true
+                ) {
+
+                    return res.json({
+
+                        success:
+                            true,
+
+                        buyer_id:
+                            buyerId,
+
+                        nickname,
+
+                        verificado:
+                            true,
+
+                        indeterminado:
+                            false,
+
+                        tem_anuncios:
+                            true,
+
+                        quantidade_detectada:
+                            analise.quantidade_detectada,
+
+                        mlbs:
+                            analise.mlbs,
+
+                        origem:
+                            item.origem,
+
+                        motivo:
+                            analise.motivo,
+
+                        url_anuncios:
+                            pagina.url_final ||
+                            item.url,
+
+                        tentativas
+                    });
+                }
+
+
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    '⚠️ [CONCORRENTE PÚBLICO] Erro:',
+                    {
+                        buyerId,
+                        nickname,
+                        url:
+                            item.url,
+                        erro:
+                            error.message
+                    }
+                );
+
+
+                tentativas.push({
+
+                    origem:
+                        item.origem,
+
+                    url:
+                        item.url,
+
+                    status:
+                        null,
+
+                    verificado:
+                        false,
+
+                    tem_anuncios:
+                        false,
+
+                    indeterminado:
+                        true,
+
+                    motivo:
+                        'erro_consulta',
+
+                    erro:
+                        error.message
+                });
+            }
+        }
+
+
+        // =====================================================
+        // NENHUM ANÚNCIO ENCONTRADO
+        // =====================================================
+
+        return res.json({
+
+            success:
+                true,
+
+            buyer_id:
+                buyerId,
+
+            nickname,
+
+            verificado:
+                houveVerificacaoConfiavel,
+
+            indeterminado:
+                !houveVerificacaoConfiavel,
+
+            tem_anuncios:
+                false,
+
+            quantidade_detectada:
+                0,
+
+            mlbs:
+                [],
+
+            origem:
+                null,
+
+            motivo:
+
+                houveVerificacaoConfiavel
+
+                    ? 'nenhum_anuncio_publico_encontrado'
+
+                    : 'nao_foi_possivel_verificar',
+
+            url_anuncios:
+                `https://lista.mercadolivre.com.br/_CustId_${encodeURIComponent(
+                    buyerId
+                )}`,
+
+            tentativas
+        });
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ verificarVendedorML:',
+            error
+        );
+
+
+        return res
+            .status(
+                500
+            )
+            .json({
+
+                success:
+                    false,
+
+                error:
+                    error.message ||
+                    'Erro ao verificar vendedor.'
+            });
+    }
+}
+
 // ===================== EXPORTAÇÃO =====================
 module.exports = {
     emitirNFe,
@@ -5440,5 +6324,6 @@ module.exports = {
     testarEventoRaw,
     cadastrarCliente,      // ADICIONE
     buscarClientePorId,
+    verificarVendedorML,
     atualizarCliente
 };
