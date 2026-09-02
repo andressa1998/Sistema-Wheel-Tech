@@ -48328,6 +48328,337 @@ if (!window.__integracaoRegrasCondicionaisEstoqueV2) {
                 );
         };
 
+// ============================================================
+// CONTROLE GLOBAL DE FECHAMENTO DOS MODAIS DO ESTOQUE
+//
+// - Clique real fora do modal: fecha
+// - Clique no X ou Cancelar: fecha normalmente
+// - Arraste iniciado dentro e terminado fora: não fecha
+// ============================================================
+
+function protegerModaisEstoqueContraFechamentoPorArraste() {
+
+    if (
+        window
+            .controleCliqueForaModaisEstoqueAtivado
+    ) {
+
+        return;
+
+    }
+
+
+    window
+        .controleCliqueForaModaisEstoqueAtivado =
+        true;
+
+
+    let modalOndePressionou =
+        null;
+
+
+    let pressionouNoFundo =
+        false;
+
+
+    function localizarFundoModal(
+        elemento
+    ) {
+
+        let atual =
+            elemento instanceof Element
+                ? elemento
+                : null;
+
+
+        while (
+            atual
+        ) {
+
+            const id =
+                String(
+                    atual.id || ''
+                );
+
+
+            const estilo =
+                window.getComputedStyle(
+                    atual
+                );
+
+
+            const possuiConteudoModal =
+                Boolean(
+                    atual.querySelector(
+                        ':scope > .modal-content'
+                    )
+                );
+
+
+            const ehFundoModal =
+                atual.classList.contains(
+                    'modal'
+                ) ||
+                atual.classList.contains(
+                    'ch-overlay'
+                ) ||
+                atual.classList.contains(
+                    'overlay'
+                ) ||
+                (
+                    id
+                        .toLowerCase()
+                        .startsWith(
+                            'modal'
+                        ) &&
+                    estilo.position ===
+                        'fixed' &&
+                    possuiConteudoModal
+                );
+
+
+            if (
+                ehFundoModal
+            ) {
+
+                return atual;
+
+            }
+
+
+            atual =
+                atual.parentElement;
+
+        }
+
+
+        return null;
+
+    }
+
+
+    function localizarBotaoFecharModal(
+        modal
+    ) {
+
+        if (
+            !modal
+        ) {
+
+            return null;
+
+        }
+
+
+        const seletores = [
+
+            '.ch-x',
+
+            '.btn-close',
+
+            '.close',
+
+            '[data-dismiss="modal"]',
+
+            '[data-bs-dismiss="modal"]',
+
+            'button[onclick*="fechar"]',
+
+            'button[onclick*="Fechar"]',
+
+            'button[onclick*="close"]',
+
+            'button[onclick*="Close"]',
+
+            'button[onclick*="cancelar"]',
+
+            'button[onclick*="Cancelar"]'
+
+        ];
+
+
+        for (
+            const seletor of seletores
+        ) {
+
+            const botao =
+                modal.querySelector(
+                    seletor
+                );
+
+
+            if (
+                botao &&
+                !botao.disabled
+            ) {
+
+                return botao;
+
+            }
+
+        }
+
+
+        return null;
+
+    }
+
+
+    function fecharModalAoClicarFora(
+        modal
+    ) {
+
+        const botaoFechar =
+            localizarBotaoFecharModal(
+                modal
+            );
+
+
+        if (
+            botaoFechar
+        ) {
+
+            botaoFechar.click();
+
+            return true;
+
+        }
+
+
+        return false;
+
+    }
+
+
+    document.addEventListener(
+        'pointerdown',
+        event => {
+
+            modalOndePressionou =
+                localizarFundoModal(
+                    event.target
+                );
+
+
+            pressionouNoFundo =
+                Boolean(
+                    modalOndePressionou &&
+                    event.target ===
+                        modalOndePressionou
+                );
+
+        },
+        true
+    );
+
+
+    document.addEventListener(
+        'click',
+        event => {
+
+            const modalDoClique =
+                localizarFundoModal(
+                    event.target
+                );
+
+
+            const clicouNoFundo =
+                Boolean(
+                    modalDoClique &&
+                    event.target ===
+                        modalDoClique
+                );
+
+
+            const foiCliqueRealFora =
+                Boolean(
+                    clicouNoFundo &&
+                    pressionouNoFundo &&
+                    modalOndePressionou ===
+                        modalDoClique
+                );
+
+
+            const foiArrasteDeDentroParaFora =
+                Boolean(
+                    clicouNoFundo &&
+                    modalOndePressionou ===
+                        modalDoClique &&
+                    !pressionouNoFundo
+                );
+
+
+            modalOndePressionou =
+                null;
+
+
+            pressionouNoFundo =
+                false;
+
+
+            if (
+                foiArrasteDeDentroParaFora
+            ) {
+
+                event.preventDefault();
+
+                event.stopPropagation();
+
+                event.stopImmediatePropagation();
+
+                return;
+
+            }
+
+
+            if (
+                foiCliqueRealFora
+            ) {
+
+                const fechou =
+                    fecharModalAoClicarFora(
+                        modalDoClique
+                    );
+
+
+                if (
+                    fechou
+                ) {
+
+                    event.preventDefault();
+
+                    event.stopPropagation();
+
+                    event.stopImmediatePropagation();
+
+                }
+
+            }
+
+        },
+        true
+    );
+
+
+    document.addEventListener(
+        'pointercancel',
+        () => {
+
+            modalOndePressionou =
+                null;
+
+
+            pressionouNoFundo =
+                false;
+
+        },
+        true
+    );
+
+}
+
+protegerModaisEstoqueContraFechamentoPorArraste();
+
     // =====================================================
     // EXPORTAR FUNÇÕES
     // =====================================================

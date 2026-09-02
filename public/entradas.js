@@ -449,39 +449,298 @@ window.atualizarEstoqueML = async function(produto) {
     }
 };
 
-// ===== VERIFICAR SKU NO ESTOQUE =====
-function verificarSKUExistente(sku) {
-    if (!sku) return null;
-    const skuNormalizado = sku.trim().toLowerCase();
+// ============================================
+// VERIFICAR SKU NO ESTOQUE
+// COMPARA OS 8 PRIMEIROS CARACTERES
+// ============================================
 
-    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
-        console.warn('⚠️ produtosEstoque ainda não carregado. SKU não verificado:', skuNormalizado);
+function verificarSKUExistente(sku) {
+
+    if (!sku) {
         return null;
     }
 
-    const encontrado = produtosEstoque.find(p => {
-        const pSku = (p.sku || '').trim().toLowerCase();
-        return pSku === skuNormalizado;
-    });
-    if (encontrado) {
-        console.log(`✅ SKU encontrado diretamente: ${encontrado.sku}`);
+
+    // ========================================
+    // NORMALIZA SKU INFORMADO
+    // ========================================
+
+    const skuNormalizado =
+        String(sku)
+            .trim()
+            .toLowerCase();
+
+
+    // ========================================
+    // PEGA EXATAMENTE OS 8 PRIMEIROS
+    // ========================================
+
+    const prefixoBusca =
+        skuNormalizado.substring(
+            0,
+            8
+        );
+
+
+    // Se tiver menos de 8 caracteres,
+    // não tenta localizar por prefixo.
+    if (
+        prefixoBusca.length < 8
+    ) {
+
+        console.warn(
+            `⚠️ SKU "${skuNormalizado}" possui menos de 8 caracteres.`
+        );
+
+        return null;
+    }
+
+
+    // ========================================
+    // ESTOQUE PRECISA ESTAR CARREGADO
+    // ========================================
+
+    if (
+        typeof produtosEstoque ===
+            'undefined' ||
+
+        !Array.isArray(
+            produtosEstoque
+        ) ||
+
+        produtosEstoque.length === 0
+    ) {
+
+        console.warn(
+            '⚠️ produtosEstoque ainda não carregado. SKU não verificado:',
+            skuNormalizado
+        );
+
+        return null;
+    }
+
+
+    console.log(
+        `🔎 Buscando pelos 8 primeiros caracteres: "${prefixoBusca}"`
+    );
+
+
+    // ========================================
+    // PROCURA NO ESTOQUE
+    // ========================================
+
+    const encontrados =
+        produtosEstoque.filter(
+            produto => {
+
+                const skuProduto =
+                    String(
+                        produto.sku ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
+
+
+                if (
+                    skuProduto.length < 8
+                ) {
+
+                    return false;
+                }
+
+
+                const prefixoProduto =
+                    skuProduto.substring(
+                        0,
+                        8
+                    );
+
+
+                return (
+                    prefixoProduto ===
+                    prefixoBusca
+                );
+
+            }
+        );
+
+
+    // ========================================
+    // ENCONTROU UM ÚNICO PRODUTO
+    // ========================================
+
+    if (
+        encontrados.length === 1
+    ) {
+
+        const encontrado =
+            encontrados[0];
+
+
+        console.log(
+            '✅ SKU encontrado pelos 8 primeiros caracteres:',
+            {
+                skuEntrada:
+                    skuNormalizado,
+
+                prefixo:
+                    prefixoBusca,
+
+                skuEncontrado:
+                    encontrado.sku,
+
+                produto:
+                    encontrado.nome
+            }
+        );
+
+
         return encontrado;
     }
 
-    const fornecedor = buscarFornecedor(skuNormalizado);
-    if (fornecedor && fornecedor.sku_sistema) {
-        const skuSistema = fornecedor.sku_sistema.trim().toLowerCase();
-        const encontradoViaFornecedor = produtosEstoque.find(p => {
-            const pSku = (p.sku || '').trim().toLowerCase();
-            return pSku === skuSistema;
-        });
-        if (encontradoViaFornecedor) {
-            console.log(`✅ SKU mapeado via fornecedor: ${encontradoViaFornecedor.sku}`);
-            return encontradoViaFornecedor;
+
+    // ========================================
+    // ENCONTROU MAIS DE UM
+    // ========================================
+
+    if (
+        encontrados.length > 1
+    ) {
+
+        console.warn(
+            `⚠️ Mais de um SKU encontrado com os mesmos 8 primeiros caracteres "${prefixoBusca}":`,
+            encontrados.map(
+                produto => ({
+                    id:
+                        produto.id,
+
+                    sku:
+                        produto.sku,
+
+                    nome:
+                        produto.nome
+                })
+            )
+        );
+
+
+        // Por enquanto usa o primeiro encontrado
+        return encontrados[0];
+    }
+
+
+    // ========================================
+    // TENTA MAPEAMENTO DO FORNECEDOR
+    // ========================================
+
+    const fornecedor =
+        buscarFornecedor(
+            skuNormalizado
+        );
+
+
+    if (
+        fornecedor &&
+        fornecedor.sku_sistema
+    ) {
+
+        const skuSistema =
+            String(
+                fornecedor.sku_sistema
+            )
+                .trim()
+                .toLowerCase();
+
+
+        const prefixoSistema =
+            skuSistema.substring(
+                0,
+                8
+            );
+
+
+        if (
+            prefixoSistema.length === 8
+        ) {
+
+            const encontradosFornecedor =
+                produtosEstoque.filter(
+                    produto => {
+
+                        const skuProduto =
+                            String(
+                                produto.sku ||
+                                ''
+                            )
+                                .trim()
+                                .toLowerCase();
+
+
+                        if (
+                            skuProduto.length < 8
+                        ) {
+
+                            return false;
+                        }
+
+
+                        return (
+                            skuProduto.substring(
+                                0,
+                                8
+                            ) ===
+                            prefixoSistema
+                        );
+
+                    }
+                );
+
+
+            if (
+                encontradosFornecedor.length > 0
+            ) {
+
+                const encontrado =
+                    encontradosFornecedor[0];
+
+
+                console.log(
+                    '✅ SKU encontrado via fornecedor pelos 8 primeiros caracteres:',
+                    {
+                        skuEntrada:
+                            skuNormalizado,
+
+                        skuSistema:
+                            fornecedor.sku_sistema,
+
+                        prefixo:
+                            prefixoSistema,
+
+                        skuEncontrado:
+                            encontrado.sku,
+
+                        produto:
+                            encontrado.nome
+                    }
+                );
+
+
+                return encontrado;
+            }
         }
     }
 
-    console.log(`❌ SKU não encontrado: ${skuNormalizado}`);
+
+    // ========================================
+    // NÃO ENCONTRADO
+    // ========================================
+
+    console.log(
+        `❌ Nenhum SKU encontrado com os 8 primeiros caracteres "${prefixoBusca}".`
+    );
+
+
     return null;
 }
 

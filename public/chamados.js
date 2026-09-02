@@ -2405,10 +2405,45 @@
             'ch-overlay hidden-ch';
 
 
-        overlay.onclick =
-            () =>
-                window
-                    .fecharNovoChamado();
+                let pressionouNoFundoDoModal =
+            false;
+
+
+        overlay.addEventListener(
+            'pointerdown',
+            event => {
+
+                pressionouNoFundoDoModal =
+                    event.target === overlay;
+
+            }
+        );
+
+
+        overlay.addEventListener(
+            'click',
+            event => {
+
+                const clicouRealmenteFora =
+                    pressionouNoFundoDoModal &&
+                    event.target === overlay;
+
+
+                pressionouNoFundoDoModal =
+                    false;
+
+
+                if (
+                    clicouRealmenteFora
+                ) {
+
+                    window
+                        .fecharNovoChamado();
+
+                }
+
+            }
+        );
 
 
         overlay.innerHTML = `

@@ -34739,6 +34739,24 @@ acoes = `
     // =====================================================
     aplicarPreferenciasColunasNFE();
 
+    setTimeout(
+    () => {
+
+        verificarPossiveisConcorrentesTabelaNFE()
+            .catch(
+                error => {
+
+                    console.warn(
+                        '⚠️ Verificação de possíveis concorrentes:',
+                        error
+                    );
+                }
+            );
+
+    },
+    50
+);
+
     // =====================================================
     // ALERTAS FULL IMEDIATOS
     //
@@ -34855,9 +34873,16 @@ acoes = `
 // 👁️ DETALHES COMPLETOS DA VENDA - NF-E
 // =========================================================
 
-window._cacheDetalhesVendaNFE =
-    window._cacheDetalhesVendaNFE ||
-    new Map();
+if (
+    !(
+        window._cacheDetalhesVendaNFE
+        instanceof Map
+    )
+) {
+
+    window._cacheDetalhesVendaNFE =
+        new Map();
+}
 
 
 // =========================================================
@@ -34936,10 +34961,6 @@ function formatarDataHoraDetalhesNFE(
 }
 
 
-// =========================================================
-// STATUS DO ENVIO
-// =========================================================
-
 function traduzirStatusEnvioDetalhesNFE(
     status,
     substatus = ''
@@ -34963,20 +34984,31 @@ function traduzirStatusEnvioDetalhesNFE(
             .toLowerCase();
 
 
-    // =====================================================
-    // SUBSTATUS IMPORTANTES
-    // =====================================================
-
     const substatusMap = {
+
+        waiting_for_label_generation:
+            'Aguardando geração/liberação da etiqueta',
 
         invoice_pending:
             'Aguardando NF-e',
 
         ready_to_print:
-            'Documento fiscal processado / etiqueta liberada',
+            'Etiqueta pronta para imprimir',
 
         printed:
             'Etiqueta impressa',
+
+        in_pickup_list:
+            'Incluído na lista de coleta',
+
+        ready_for_pkl_creation:
+            'Preparando lista de coleta',
+
+        ready_for_pickup:
+            'Pronto para coleta',
+
+        ready_for_dropoff:
+            'Pronto para despacho',
 
         picked_up:
             'Coletado pela transportadora',
@@ -35018,10 +35050,6 @@ function traduzirStatusEnvioDetalhesNFE(
         ];
     }
 
-
-    // =====================================================
-    // STATUS PRINCIPAIS
-    // =====================================================
 
     const statusMap = {
 
@@ -35168,101 +35196,102 @@ function traduzirMotivoCancelamentoNFE(
 }
 
 
-// =========================================================
-// FETCH PADRÃO PELO WORKER
-// =========================================================
-
 async function buscarJsonMLDetalhesNFE(
     url,
-    token,
+    token = null,
     opcoes = {}
 ) {
 
-    const proxy =
-        `${window.WORKER_URL}/api/ml/proxy?url=` +
-        `${encodeURIComponent(
-            url
-        )}` +
-        `&token=${encodeURIComponent(
-            token
-        )}`;
-
-
-    const response =
-        await fetch(
-            proxy,
-            {
-                method:
-                    'GET',
-
-                headers: {
-                    'Accept':
-                        'application/json',
-
-                    'x-format-new':
-                        'true'
-                },
-
-                cache:
-                    'no-store'
-            }
-        );
+    token =
+        token ||
+        await obterTokenMLNFE();
 
 
     if (
-        response.status ===
-            404 &&
-        opcoes
-            .aceitar404 ===
-            true
+        !token
     ) {
 
-        return null;
+        throw new Error(
+            'Token Mercado Livre não disponível.'
+        );
     }
-
-
-    const texto =
-        await response
-            .text();
-
-
-    let dados =
-        null;
 
 
     try {
 
-        dados =
-            texto
-                ? JSON.parse(
-                    texto
-                )
-                : null;
+        // =====================================================
+        // USAR O MESMO GET ML QUE JÁ FUNCIONA NO SISTEMA
+        //
+        // Evita duplicar:
+        // - Worker
+        // - token
+        // - headers
+        // - tratamento da resposta
+        // =====================================================
+
+        const {
+            data
+        } =
+            await consultarGETMLFullNFE(
+                url,
+                token
+            );
+
+
+        return data;
+
 
     } catch (
         error
     ) {
 
-        dados =
-            null;
-    }
+        const mensagem =
+            String(
+                error?.message ||
+                error ||
+                ''
+            );
 
 
-    if (
-        !response.ok
-    ) {
+        // =====================================================
+        // 404 OPCIONAL
+        //
+        // Usado em:
+        // - carrier
+        // - histórico
+        // - feedback
+        // =====================================================
 
-        throw new Error(
-            dados
-                ?.message ||
-            dados
-                ?.error ||
-            `Mercado Livre HTTP ${response.status}`
+        if (
+            opcoes
+                ?.aceitar404 ===
+                true &&
+            (
+                mensagem.includes(
+                    'HTTP 404'
+                ) ||
+                mensagem.includes(
+                    '404'
+                )
+            )
+        ) {
+
+            return null;
+        }
+
+
+        console.error(
+            '❌ [DETALHES NFE] Erro consultando Mercado Livre:',
+            {
+                url,
+                erro:
+                    mensagem
+            }
         );
+
+
+        throw error;
     }
-
-
-    return dados;
 }
 
 
@@ -35503,10 +35532,878 @@ async function buscarPerfilCompradorNFE(
     };
 }
 
+// =========================================================
+// ⚠️ POSSÍVEL CONCORRENTE - CLIENTES COM ANÚNCIOS
+// =========================================================
+
+window._cacheConcorrentesNFE =
+    window._cacheConcorrentesNFE instanceof Map
+        ? window._cacheConcorrentesNFE
+        : new Map();
+
+
+window._consultaConcorrentesNFEEmAndamento =
+    false;
+
 
 // =========================================================
-// DETALHES DO ENVIO
+// CHAVE LOCAL
 // =========================================================
+
+const CHAVE_CACHE_CONCORRENTES_NFE =
+    'wheeltech_nfe_concorrentes_v1';
+
+
+// =========================================================
+// TTL
+//
+// 6 horas.
+// Não precisamos consultar o mesmo comprador a cada F5.
+// =========================================================
+
+const TTL_CACHE_CONCORRENTES_NFE =
+    6 * 60 * 60 * 1000;
+
+
+// =========================================================
+// CARREGAR CACHE LOCAL
+// =========================================================
+
+function carregarCacheConcorrentesLocalNFE() {
+
+    try {
+
+        const bruto =
+            localStorage.getItem(
+                CHAVE_CACHE_CONCORRENTES_NFE
+            );
+
+
+        if (
+            !bruto
+        ) {
+
+            return;
+        }
+
+
+        const dados =
+            JSON.parse(
+                bruto
+            );
+
+
+        if (
+            !dados ||
+            typeof dados !==
+                'object'
+        ) {
+
+            return;
+        }
+
+
+        Object.entries(
+            dados
+        )
+            .forEach(
+                (
+                    [
+                        buyerId,
+                        registro
+                    ]
+                ) => {
+
+                    if (
+                        !buyerId ||
+                        !registro
+                    ) {
+
+                        return;
+                    }
+
+
+                    window
+                        ._cacheConcorrentesNFE
+                        .set(
+                            String(
+                                buyerId
+                            ),
+                            registro
+                        );
+                }
+            );
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Não foi possível carregar cache de concorrentes:',
+            error
+        );
+    }
+}
+
+
+// =========================================================
+// SALVAR CACHE LOCAL
+// =========================================================
+
+function salvarCacheConcorrentesLocalNFE() {
+
+    try {
+
+        const objeto =
+            {};
+
+
+        window
+            ._cacheConcorrentesNFE
+            .forEach(
+                (
+                    registro,
+                    buyerId
+                ) => {
+
+                    objeto[
+                        buyerId
+                    ] =
+                        registro;
+                }
+            );
+
+
+        localStorage.setItem(
+            CHAVE_CACHE_CONCORRENTES_NFE,
+            JSON.stringify(
+                objeto
+            )
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Não foi possível salvar cache de concorrentes:',
+            error
+        );
+    }
+}
+
+
+// =========================================================
+// LOCALIZAR VENDA DA LINHA
+// =========================================================
+
+function localizarVendaConcorrenteNFE(
+    vendaId
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        return null;
+    }
+
+
+    const listas =
+        [
+
+            Array.isArray(
+                vendasPendentes
+            )
+                ? vendasPendentes
+                : [],
+
+
+            Array.isArray(
+                window._vendasTabelaNFEBase
+            )
+                ? window._vendasTabelaNFEBase
+                : []
+        ];
+
+
+    for (
+        const lista
+        of listas
+    ) {
+
+        const venda =
+            lista.find(
+                item => {
+
+                    const id =
+                        normalizarOrderIdML(
+
+                            item
+                                ?.id_venda_ml ||
+
+                            item
+                                ?.id
+                        );
+
+
+                    return (
+                        id ===
+                        vendaId
+                    );
+                }
+            );
+
+
+        if (
+            venda
+        ) {
+
+            return venda;
+        }
+    }
+
+
+    return null;
+}
+
+
+// =========================================================
+// OBTER BUYER ID
+//
+// Primeiro usa a própria venda.
+//
+// Se a venda veio somente do cache e perdeu buyer.id,
+// consulta a order UMA VEZ.
+// =========================================================
+
+async function obterBuyerIdVendaConcorrenteNFE(
+    venda,
+    token
+) {
+
+    if (
+        !venda
+    ) {
+
+        return null;
+    }
+
+
+    const buyerExistente =
+
+        venda
+            ?.buyer
+            ?.id ||
+
+        venda
+            ?.buyer_id ||
+
+        venda
+            ?.comprador_id ||
+
+        venda
+            ?._buyer_id_concorrente ||
+
+        null;
+
+
+    if (
+        buyerExistente
+    ) {
+
+        return String(
+            buyerExistente
+        );
+    }
+
+
+    const vendaId =
+        normalizarOrderIdML(
+
+            venda
+                ?.id_venda_ml ||
+
+            venda
+                ?.id
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        return null;
+    }
+
+
+    try {
+
+        const order =
+            await buscarJsonMLDetalhesNFE(
+
+                `https://api.mercadolibre.com/orders/${encodeURIComponent(
+                    vendaId
+                )}`,
+
+                token
+            );
+
+
+        const buyerId =
+            order
+                ?.buyer
+                ?.id ||
+            null;
+
+
+        if (
+            buyerId
+        ) {
+
+            venda._buyer_id_concorrente =
+                String(
+                    buyerId
+                );
+
+
+            if (
+                !venda.buyer ||
+                typeof venda.buyer !==
+                    'object'
+            ) {
+
+                venda.buyer =
+                    {};
+            }
+
+
+            venda.buyer.id =
+                buyerId;
+
+
+            if (
+                order
+                    ?.buyer
+                    ?.nickname
+            ) {
+
+                venda.buyer.nickname =
+                    order.buyer.nickname;
+            }
+
+
+            return String(
+                buyerId
+            );
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        console.debug(
+            `ℹ️ Não foi possível obter buyer da venda ${vendaId}:`,
+            error
+        );
+    }
+
+
+    return null;
+}
+
+
+// =========================================================
+// CONSULTAR SE É POSSÍVEL CONCORRENTE
+// =========================================================
+
+async function consultarPossivelConcorrenteNFE(
+    venda,
+    token
+) {
+
+    const buyerId =
+        await obterBuyerIdVendaConcorrenteNFE(
+            venda,
+            token
+        );
+
+
+    if (
+        !buyerId
+    ) {
+
+        return null;
+    }
+
+
+    // =====================================================
+    // CACHE
+    // =====================================================
+
+    const cache =
+        window
+            ._cacheConcorrentesNFE
+            .get(
+                buyerId
+            );
+
+
+    if (
+        cache &&
+        Date.now() -
+            Number(
+                cache.consultado_em ||
+                0
+            ) <
+            TTL_CACHE_CONCORRENTES_NFE
+    ) {
+
+        return cache;
+    }
+
+
+    // =====================================================
+    // CONSULTA
+    //
+    // Reaproveita a função do olhinho que já existe.
+    // =====================================================
+
+    let perfil =
+        null;
+
+
+    try {
+
+        perfil =
+            await buscarPerfilCompradorNFE(
+                buyerId,
+                token
+            );
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            `⚠️ Erro verificando anúncios do comprador ${buyerId}:`,
+            error
+        );
+    }
+
+
+    if (
+        !perfil
+    ) {
+
+        return null;
+    }
+
+
+    const resultado =
+        {
+
+            buyer_id:
+                buyerId,
+
+
+            nickname:
+                perfil.nickname ||
+                '',
+
+
+            tem_anuncios:
+                perfil.tem_anuncios ===
+                true,
+
+
+            total_anuncios:
+                Number.isFinite(
+                    Number(
+                        perfil.total_anuncios
+                    )
+                )
+                    ? Number(
+                        perfil.total_anuncios
+                    )
+                    : null,
+
+
+            url_anuncios:
+                perfil.url_anuncios ||
+                perfil.permalink ||
+                null,
+
+
+            consultado_em:
+                Date.now()
+        };
+
+
+    window
+        ._cacheConcorrentesNFE
+        .set(
+            buyerId,
+            resultado
+        );
+
+
+    salvarCacheConcorrentesLocalNFE();
+
+
+    return resultado;
+}
+
+
+// =========================================================
+// APLICAR AVISO NA COLUNA CLIENTE
+// =========================================================
+
+function aplicarAvisoPossivelConcorrenteLinhaNFE(
+    vendaId,
+    dados
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        return;
+    }
+
+
+    const linha =
+        document.querySelector(
+            `#vendasPendentesBody tr[data-venda-id-nfe="${CSS.escape(
+                String(
+                    vendaId
+                )
+            )}"]`
+        );
+
+
+    if (
+        !linha
+    ) {
+
+        return;
+    }
+
+
+    const tdCliente =
+        linha.querySelector(
+            ':scope > td[data-coluna-nfe="cliente"]'
+        );
+
+
+    if (
+        !tdCliente
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // REMOVER AVISO ANTIGO
+    // =====================================================
+
+    tdCliente
+        .querySelector(
+            '.aviso-concorrente-nfe'
+        )
+        ?.remove();
+
+
+    if (
+        dados
+            ?.tem_anuncios !==
+        true
+    ) {
+
+        tdCliente.dataset
+            .possivelConcorrente =
+            'nao';
+
+
+        return;
+    }
+
+
+    tdCliente.dataset
+        .possivelConcorrente =
+        'sim';
+
+
+    const aviso =
+        document.createElement(
+            dados.url_anuncios
+                ? 'a'
+                : 'div'
+        );
+
+
+    aviso.className =
+        'aviso-concorrente-nfe';
+
+
+    aviso.innerHTML = `
+        <i class="fas fa-exclamation-triangle"></i>
+        possível concorrente - verificar
+    `;
+
+
+    aviso.title =
+
+        dados.total_anuncios !==
+            null
+
+            ? `${dados.total_anuncios} anúncio(s) ativo(s) encontrado(s). Clique para verificar.`
+
+            : 'Cliente possui anúncios ativos no Mercado Livre.';
+
+
+    aviso.style.cssText = `
+        display:inline-block;
+        margin-top:5px;
+        padding:3px 6px;
+        border-radius:5px;
+        background:#fff3cd;
+        border:1px solid #ffc107;
+        color:#856404;
+        font-size:9px;
+        line-height:13px;
+        font-weight:800;
+        white-space:normal;
+        text-decoration:none;
+        cursor:${dados.url_anuncios ? 'pointer' : 'default'};
+    `;
+
+
+    if (
+        dados.url_anuncios
+    ) {
+
+        aviso.href =
+            dados.url_anuncios;
+
+
+        aviso.target =
+            '_blank';
+
+
+        aviso.rel =
+            'noopener noreferrer';
+
+
+        aviso.addEventListener(
+            'click',
+            event => {
+
+                event.stopPropagation();
+            }
+        );
+    }
+
+
+    tdCliente.appendChild(
+        aviso
+    );
+}
+
+
+// =========================================================
+// VERIFICAR CLIENTES DAS LINHAS DA TELA
+// =========================================================
+
+async function verificarPossiveisConcorrentesTabelaNFE() {
+
+    if (
+        window
+            ._consultaConcorrentesNFEEmAndamento ===
+        true
+    ) {
+
+        return;
+    }
+
+
+    const linhas =
+        Array.from(
+            document.querySelectorAll(
+                '#vendasPendentesBody tr[data-venda-id-nfe]'
+            )
+        );
+
+
+    if (
+        linhas.length ===
+        0
+    ) {
+
+        return;
+    }
+
+
+    window
+        ._consultaConcorrentesNFEEmAndamento =
+        true;
+
+
+    try {
+
+        const token =
+            await obterTokenMLNFE();
+
+
+        if (
+            !token
+        ) {
+
+            return;
+        }
+
+
+        // =================================================
+        // PROCESSAR EM LOTES PEQUENOS
+        //
+        // Para não disparar dezenas de chamadas simultâneas.
+        // =================================================
+
+        const vendas =
+            linhas
+                .map(
+                    linha => {
+
+                        const vendaId =
+                            normalizarOrderIdML(
+                                linha.dataset
+                                    .vendaIdNfe
+                            );
+
+
+                        return {
+
+                            vendaId,
+
+                            venda:
+                                localizarVendaConcorrenteNFE(
+                                    vendaId
+                                )
+                        };
+                    }
+                )
+                .filter(
+                    item =>
+                        item.vendaId &&
+                        item.venda
+                );
+
+
+        const TAMANHO_LOTE =
+            3;
+
+
+        for (
+            let i = 0;
+            i < vendas.length;
+            i += TAMANHO_LOTE
+        ) {
+
+            const lote =
+                vendas.slice(
+                    i,
+                    i +
+                    TAMANHO_LOTE
+                );
+
+
+            await Promise.all(
+
+                lote.map(
+                    async item => {
+
+                        try {
+
+                            const resultado =
+                                await consultarPossivelConcorrenteNFE(
+                                    item.venda,
+                                    token
+                                );
+
+
+                            aplicarAvisoPossivelConcorrenteLinhaNFE(
+                                item.vendaId,
+                                resultado
+                            );
+
+
+                        } catch (
+                            error
+                        ) {
+
+                            console.debug(
+                                `ℹ️ Concorrente ${item.vendaId}:`,
+                                error
+                            );
+                        }
+                    }
+                )
+            );
+
+
+            if (
+                i +
+                TAMANHO_LOTE <
+                vendas.length
+            ) {
+
+                await new Promise(
+                    resolve =>
+                        setTimeout(
+                            resolve,
+                            250
+                        )
+                );
+            }
+        }
+
+
+    } finally {
+
+        window
+            ._consultaConcorrentesNFEEmAndamento =
+            false;
+    }
+}
+
+
+// =========================================================
+// INICIALIZAR CACHE LOCAL
+// =========================================================
+
+carregarCacheConcorrentesLocalNFE();
+
+
+window.verificarPossiveisConcorrentesTabelaNFE =
+    verificarPossiveisConcorrentesTabelaNFE;
+
 
 async function buscarDetalhesEnvioNFE(
     shipmentId,
@@ -35518,6 +36415,7 @@ async function buscarDetalhesEnvioNFE(
     ) {
 
         return {
+
             existe:
                 false,
 
@@ -35528,6 +36426,51 @@ async function buscarDetalhesEnvioNFE(
                 [],
 
             carrier:
+                null,
+
+            status:
+                '',
+
+            substatus:
+                '',
+
+            status_nome:
+                'Sem envio',
+
+            foi_enviado:
+                false,
+
+            data_envio:
+                null,
+
+            entregue:
+                false,
+
+            data_entrega:
+                null,
+
+            ultima_atualizacao:
+                null,
+
+            prazo_despacho:
+                null,
+
+            previsao_entrega:
+                null,
+
+            tracking_number:
+                null,
+
+            carrier_nome:
+                null,
+
+            carrier_url:
+                null,
+
+            evento_invoice_pending:
+                null,
+
+            liberacao_fiscal_em:
                 null
         };
     }
@@ -35539,6 +36482,10 @@ async function buscarDetalhesEnvioNFE(
         );
 
 
+    // =====================================================
+    // SHIPMENT PRINCIPAL
+    // =====================================================
+
     const shipment =
         await buscarJsonMLDetalhesNFE(
 
@@ -35548,6 +36495,16 @@ async function buscarDetalhesEnvioNFE(
 
             token
         );
+
+
+    if (
+        !shipment
+    ) {
+
+        throw new Error(
+            `Shipment ${shipmentId} não retornado pelo Mercado Livre.`
+        );
+    }
 
 
     // =====================================================
@@ -35577,9 +36534,10 @@ async function buscarDetalhesEnvioNFE(
                     error => {
 
                         console.warn(
-                            '⚠️ Histórico shipment:',
+                            `⚠️ Histórico shipment ${shipmentId}:`,
                             error
                         );
+
 
                         return null;
                     }
@@ -35603,15 +36561,20 @@ async function buscarDetalhesEnvioNFE(
                     error => {
 
                         console.debug(
-                            'ℹ️ Carrier não disponível:',
+                            `ℹ️ Carrier ${shipmentId} não disponível:`,
                             error
                         );
+
 
                         return null;
                     }
                 )
         ]);
 
+
+    // =====================================================
+    // NORMALIZAR HISTÓRICO
+    // =====================================================
 
     let historico =
         [];
@@ -35626,6 +36589,7 @@ async function buscarDetalhesEnvioNFE(
         historico =
             historicoResposta;
 
+
     } else if (
         Array.isArray(
             historicoResposta
@@ -35636,7 +36600,52 @@ async function buscarDetalhesEnvioNFE(
         historico =
             historicoResposta
                 .history;
+
+
+    } else if (
+        Array.isArray(
+            historicoResposta
+                ?.results
+        )
+    ) {
+
+        historico =
+            historicoResposta
+                .results;
     }
+
+
+    // =====================================================
+    // PEGAR DATA DE UM EVENTO
+    //
+    // O endpoint de history normalmente usa "date",
+    // mas mantemos fallbacks para não perder informação.
+    // =====================================================
+
+    const obterDataEvento =
+        evento => {
+
+            if (
+                !evento
+            ) {
+
+                return null;
+            }
+
+
+            return (
+
+                evento.date ||
+
+                evento.date_created ||
+
+                evento.last_updated ||
+
+                evento.date_last_updated ||
+
+                null
+            );
+        };
 
 
     historico =
@@ -35655,27 +36664,51 @@ async function buscarDetalhesEnvioNFE(
                     b
                 ) => {
 
-                    const da =
-                        new Date(
-                            a.date ||
-                            0
-                        )
-                            .getTime();
+                    const dataA =
+                        obterDataEvento(
+                            a
+                        );
 
 
-                    const db =
-                        new Date(
-                            b.date ||
-                            0
-                        )
-                            .getTime();
+                    const dataB =
+                        obterDataEvento(
+                            b
+                        );
 
 
-                    return da -
-                        db;
+                    const timestampA =
+                        dataA
+
+                            ? new Date(
+                                dataA
+                            )
+                                .getTime()
+
+                            : 0;
+
+
+                    const timestampB =
+                        dataB
+
+                            ? new Date(
+                                dataB
+                            )
+                                .getTime()
+
+                            : 0;
+
+
+                    return (
+                        timestampA -
+                        timestampB
+                    );
                 }
             );
 
+
+    // =====================================================
+    // STATUS ATUAL
+    // =====================================================
 
     const statusAtual =
         String(
@@ -35698,13 +36731,41 @@ async function buscarDetalhesEnvioNFE(
 
 
     // =====================================================
-    // IDENTIFICAR EVENTO DE DESPACHO
+    // STATUS_HISTORY DO SHIPMENT
     //
-    // FULL:
-    // shipped
+    // IMPORTANTE:
     //
-    // Cross Docking:
-    // ready_to_ship + picked_up / authorized_by_carrier
+    // A API atual retorna:
+    //
+    // status_history: {
+    //     date_handling,
+    //     date_ready_to_ship,
+    //     date_shipped,
+    //     date_first_visit,
+    //     date_delivered,
+    //     date_not_delivered,
+    //     date_returned,
+    //     date_cancelled
+    // }
+    // =====================================================
+
+    const statusHistory =
+
+        shipment
+            ?.status_history &&
+
+        typeof shipment
+            .status_history ===
+            'object'
+
+            ? shipment
+                .status_history
+
+            : {};
+
+
+    // =====================================================
+    // EVENTO DE DESPACHO NO /history
     // =====================================================
 
     const eventoDespacho =
@@ -35717,6 +36778,7 @@ async function buscarDetalhesEnvioNFE(
                             ?.status ||
                         ''
                     )
+                        .trim()
                         .toLowerCase();
 
 
@@ -35726,30 +36788,77 @@ async function buscarDetalhesEnvioNFE(
                             ?.substatus ||
                         ''
                     )
+                        .trim()
                         .toLowerCase();
 
+
+                // -----------------------------------------
+                // SHIPPED É A CONFIRMAÇÃO PRINCIPAL
+                // -----------------------------------------
+
+                if (
+                    status ===
+                    'shipped'
+                ) {
+
+                    return true;
+                }
+
+
+                // -----------------------------------------
+                // Alguns fluxos logísticos apresentam
+                // coleta antes da mudança para shipped.
+                // -----------------------------------------
 
                 return (
 
                     status ===
-                        'shipped' ||
+                        'ready_to_ship' &&
 
-                    (
-                        status ===
-                            'ready_to_ship' &&
-                        [
-                            'picked_up',
-                            'authorized_by_carrier',
-                            'in_hub'
-                        ].includes(
-                            substatus
-                        )
+                    [
+                        'picked_up',
+                        'authorized_by_carrier',
+                        'in_hub'
+                    ].includes(
+                        substatus
                     )
                 );
             }
         ) ||
         null;
 
+
+    // =====================================================
+    // DATA REAL DE DESPACHO
+    //
+    // PRIORIDADE:
+    //
+    // 1. status_history.date_shipped
+    // 2. evento "shipped" do /history
+    // 3. date_shipped legado
+    //
+    // NÃO usamos last_updated como data de despacho,
+    // pois ela pode mudar várias vezes depois.
+    // =====================================================
+
+    const dataEnvio =
+
+        statusHistory
+            ?.date_shipped ||
+
+        obterDataEvento(
+            eventoDespacho
+        ) ||
+
+        shipment
+            ?.date_shipped ||
+
+        null;
+
+
+    // =====================================================
+    // EVENTO DE ENTREGA
+    // =====================================================
 
     const eventoEntregue =
         historico.find(
@@ -35759,13 +36868,41 @@ async function buscarDetalhesEnvioNFE(
                         ?.status ||
                     ''
                 )
+                    .trim()
                     .toLowerCase() ===
                 'delivered'
         ) ||
         null;
 
 
+    const dataEntrega =
+
+        statusHistory
+            ?.date_delivered ||
+
+        obterDataEvento(
+            eventoEntregue
+        ) ||
+
+        shipment
+            ?.date_delivered ||
+
+        null;
+
+
+    // =====================================================
+    // FOI ENVIADO?
+    //
+    // Se existe date_shipped, obviamente foi.
+    //
+    // Também considera status posteriores ao despacho.
+    // =====================================================
+
     const foiEnviado =
+
+        Boolean(
+            dataEnvio
+        ) ||
 
         Boolean(
             eventoDespacho
@@ -35782,6 +36919,7 @@ async function buscarDetalhesEnvioNFE(
         (
             statusAtual ===
                 'ready_to_ship' &&
+
             [
                 'picked_up',
                 'authorized_by_carrier',
@@ -35793,28 +36931,49 @@ async function buscarDetalhesEnvioNFE(
 
 
     // =====================================================
-    // EVENTO EM QUE O ML LIBEROU A ETAPA DA NF-E
+    // EVENTO DA LIBERAÇÃO DE NF-E
+    //
+    // invoice_pending pode ocorrer em handling
+    // ou ready_to_ship.
     // =====================================================
 
     const eventoInvoicePending =
         historico.find(
-            evento =>
+            evento => {
 
-                String(
-                    evento
-                        ?.status ||
-                    ''
-                )
-                    .toLowerCase() ===
-                    'ready_to_ship' &&
+                const status =
+                    String(
+                        evento
+                            ?.status ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
 
-                String(
-                    evento
-                        ?.substatus ||
-                    ''
-                )
-                    .toLowerCase() ===
-                    'invoice_pending'
+
+                const substatus =
+                    String(
+                        evento
+                            ?.substatus ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
+
+
+                return (
+
+                    substatus ===
+                        'invoice_pending' &&
+
+                    [
+                        'handling',
+                        'ready_to_ship'
+                    ].includes(
+                        status
+                    )
+                );
+            }
         ) ||
         null;
 
@@ -35843,14 +37002,15 @@ async function buscarDetalhesEnvioNFE(
         shipment
             ?.date_last_updated ||
 
-        ultimoHistorico
-            ?.date ||
+        obterDataEvento(
+            ultimoHistorico
+        ) ||
 
         null;
 
 
     // =====================================================
-    // PRAZOS
+    // PRAZO DE DESPACHO
     // =====================================================
 
     const prazoDespacho =
@@ -35871,6 +37031,10 @@ async function buscarDetalhesEnvioNFE(
 
         null;
 
+
+    // =====================================================
+    // PREVISÃO DE ENTREGA
+    // =====================================================
 
     const previsaoEntrega =
 
@@ -35897,25 +37061,117 @@ async function buscarDetalhesEnvioNFE(
         null;
 
 
+    // =====================================================
+    // RASTREIO
+    // =====================================================
+
+    const trackingNumber =
+
+        shipment
+            ?.tracking_number ||
+
+        carrier
+            ?.tracking_number ||
+
+        null;
+
+
+    // =====================================================
+    // TRANSPORTADORA
+    // =====================================================
+
+    const carrierNome =
+
+        carrier
+            ?.name ||
+
+        carrier
+            ?.carrier_name ||
+
+        shipment
+            ?.tracking_method ||
+
+        null;
+
+
+    const carrierUrl =
+
+        carrier
+            ?.url ||
+
+        carrier
+            ?.tracking_url ||
+
+        null;
+
+
+    // =====================================================
+    // LOG DE DIAGNÓSTICO
+    // =====================================================
+
+    console.log(
+        `🚚 [DETALHES ENVIO] ${shipmentId}`,
+        {
+
+            status:
+                statusAtual,
+
+            substatus:
+                substatusAtual,
+
+            status_history:
+                statusHistory,
+
+            date_shipped_status_history:
+                statusHistory
+                    ?.date_shipped ||
+                null,
+
+            evento_despacho:
+                eventoDespacho,
+
+            data_envio:
+                dataEnvio,
+
+            ultima_atualizacao:
+                ultimaAtualizacao,
+
+            tracking_number:
+                trackingNumber
+        }
+    );
+
+
+    // =====================================================
+    // RETORNO
+    // =====================================================
+
     return {
 
         existe:
             true,
 
+
         id:
             shipmentId,
 
+
         shipment,
+
 
         historico,
 
+
         carrier,
+
 
         status:
             statusAtual,
 
+
         substatus:
             substatusAtual,
+
 
         status_nome:
             traduzirStatusEnvioDetalhesNFE(
@@ -35923,57 +37179,60 @@ async function buscarDetalhesEnvioNFE(
                 substatusAtual
             ),
 
+
         foi_enviado:
             foiEnviado,
 
+
+        // =============================================
+        // AGORA USA status_history.date_shipped
+        // =============================================
+
         data_envio:
-            eventoDespacho
-                ?.date ||
-            shipment
-                ?.date_shipped ||
-            null,
+            dataEnvio,
+
 
         entregue:
             statusAtual ===
                 'delivered',
 
+
         data_entrega:
-            eventoEntregue
-                ?.date ||
-            shipment
-                ?.date_delivered ||
-            null,
+            dataEntrega,
+
 
         ultima_atualizacao:
             ultimaAtualizacao,
 
+
         prazo_despacho:
             prazoDespacho,
+
 
         previsao_entrega:
             previsaoEntrega,
 
+
         tracking_number:
-            shipment
-                ?.tracking_number ||
-            null,
+            trackingNumber,
+
 
         carrier_nome:
-            carrier
-                ?.name ||
-            null,
+            carrierNome,
+
 
         carrier_url:
-            carrier
-                ?.url ||
-            null,
+            carrierUrl,
+
 
         evento_invoice_pending:
             eventoInvoicePending,
 
+
         liberacao_fiscal_em:
-            eventoInvoicePending
-                ?.date ||
+            obterDataEvento(
+                eventoInvoicePending
+            ) ||
             null
     };
 }
@@ -36112,10 +37371,6 @@ async function buscarMotivoCancelamentoVendaNFE(
 }
 
 
-// =========================================================
-// LIBERAÇÃO PARA NF-E
-// =========================================================
-
 function calcularLiberacaoEmissaoVendaNFE(
     vendaLocal,
     order,
@@ -36124,25 +37379,19 @@ function calcularLiberacaoEmissaoVendaNFE(
 ) {
 
     const isFull =
-        opcoes.isFull ===
-            true;
+        opcoes.isFull === true;
 
 
     const temNfe =
-        opcoes.temNfe ===
-            true;
+        opcoes.temNfe === true;
 
 
     const cancelada =
-        opcoes.cancelada ===
-            true;
+        opcoes.cancelada === true;
 
 
     const separado =
-
-        isFull ===
-            true ||
-
+        isFull === true ||
         vendaEstaSeparadaNFE(
             vendaLocal
         );
@@ -36154,15 +37403,19 @@ function calcularLiberacaoEmissaoVendaNFE(
         );
 
 
+    // =====================================================
+    // INFORMAÇÃO LOCAL
+    //
+    // IMPORTANTE:
+    // Agora isso serve SOMENTE como previsão/referência.
+    //
+    // NÃO libera emissão.
+    // =====================================================
+
     const statusLiberacaoLocal =
         String(
-
-            vendaLocal
-                ?.status_liberacao ||
-
-            info
-                ?.status_liberacao ||
-
+            vendaLocal?.status_liberacao ||
+            info?.status_liberacao ||
             ''
         )
             .trim()
@@ -36170,20 +37423,20 @@ function calcularLiberacaoEmissaoVendaNFE(
 
 
     const dataLiberacaoLocal =
-
-        vendaLocal
-            ?.data_liberacao ||
-
-        info
-            ?.data_liberacao ||
-
+        vendaLocal?.data_liberacao ||
+        info?.data_liberacao ||
         null;
 
 
+    // =====================================================
+    // SITUAÇÃO ATUAL DO SHIPMENT
+    //
+    // ESTA É A FONTE PRINCIPAL.
+    // =====================================================
+
     const statusShipment =
         String(
-            envio
-                ?.status ||
+            envio?.status ||
             ''
         )
             .trim()
@@ -36192,12 +37445,18 @@ function calcularLiberacaoEmissaoVendaNFE(
 
     const substatusShipment =
         String(
-            envio
-                ?.substatus ||
+            envio?.substatus ||
             ''
         )
             .trim()
             .toLowerCase();
+
+
+    const consultaShipmentDisponivel =
+        envio?.existe === true &&
+        Boolean(
+            statusShipment
+        );
 
 
     // =====================================================
@@ -36228,8 +37487,17 @@ function calcularLiberacaoEmissaoVendaNFE(
             liberado_em:
                 null,
 
+            previsao_liberacao:
+                null,
+
             separado:
-                true
+                true,
+
+            status_shipment:
+                statusShipment,
+
+            substatus_shipment:
+                substatusShipment
         };
     }
 
@@ -36262,13 +37530,22 @@ function calcularLiberacaoEmissaoVendaNFE(
             liberado_em:
                 null,
 
-            separado
+            previsao_liberacao:
+                null,
+
+            separado,
+
+            status_shipment:
+                statusShipment,
+
+            substatus_shipment:
+                substatusShipment
         };
     }
 
 
     // =====================================================
-    // JÁ EMITIDA
+    // JÁ POSSUI NF-E
     // =====================================================
 
     if (
@@ -36293,56 +37570,58 @@ function calcularLiberacaoEmissaoVendaNFE(
                 'Esta venda já possui NF-e emitida pelo sistema.',
 
             liberado_em:
-
-                envio
-                    ?.liberacao_fiscal_em ||
-
+                envio?.liberacao_fiscal_em ||
                 dataLiberacaoLocal ||
-
                 null,
 
-            separado
+            previsao_liberacao:
+                null,
+
+            separado,
+
+            status_shipment:
+                statusShipment,
+
+            substatus_shipment:
+                substatusShipment
         };
     }
 
 
     // =====================================================
-    // ML ESTÁ AGUARDANDO A NF-E
+    // ML ESTÁ AGUARDANDO NF-E AGORA?
     //
-    // É O ESTADO MAIS FORTE DE LIBERAÇÃO.
+    // IMPORTANTE:
+    //
+    // invoice_pending pode aparecer com:
+    //
+    // handling / invoice_pending
+    //
+    // OU
+    //
+    // ready_to_ship / invoice_pending
+    //
+    // Portanto não exigimos somente ready_to_ship.
     // =====================================================
 
-    const mlAguardandoNfe =
-
-        statusShipment ===
-            'ready_to_ship' &&
+    const mlAguardandoNfeAgora =
 
         substatusShipment ===
-            'invoice_pending';
+            'invoice_pending' &&
 
-
-    // =====================================================
-    // SINAL JÁ EXISTENTE NO SEU CACHE
-    // =====================================================
-
-    const liberadoLocal =
         [
-            'liberado',
-            'released'
+            'handling',
+            'ready_to_ship'
         ].includes(
-            statusLiberacaoLocal
+            statusShipment
         );
 
 
-    const mlLiberou =
-        mlAguardandoNfe ||
-        liberadoLocal;
-
-
     // =====================================================
-    // ML JÁ PASSOU DA ETAPA DA NF-E
+    // ETAPA FISCAL JÁ PASSOU?
     //
-    // Pode significar que documento fiscal já foi enviado.
+    // Se estiver ready_to_print ou printed,
+    // não devemos permitir nova emissão automaticamente.
     // =====================================================
 
     const fiscalJaProcessadoML =
@@ -36377,28 +37656,32 @@ function calcularLiberacaoEmissaoVendaNFE(
                 'Etapa fiscal já processada no Mercado Livre',
 
             mensagem:
-                'O Mercado Livre já passou da etapa invoice_pending. Confira se já existe documento fiscal vinculado antes de emitir novamente.',
+                'O Mercado Livre já passou da etapa de envio da NF-e. Confira se já existe documento fiscal vinculado antes de emitir novamente.',
 
             liberado_em:
-
-                envio
-                    ?.liberacao_fiscal_em ||
-
-                dataLiberacaoLocal ||
-
+                envio?.liberacao_fiscal_em ||
                 null,
 
-            separado
+            previsao_liberacao:
+                null,
+
+            separado,
+
+            status_shipment:
+                statusShipment,
+
+            substatus_shipment:
+                substatusShipment
         };
     }
 
 
     // =====================================================
-    // LIBERADA PELO ML MAS AINDA NÃO SEPARADA
+    // ML ESTÁ AGUARDANDO A NF-E, MAS NÃO FOI SEPARADO
     // =====================================================
 
     if (
-        mlLiberou &&
+        mlAguardandoNfeAgora &&
         !separado
     ) {
 
@@ -36417,29 +37700,33 @@ function calcularLiberacaoEmissaoVendaNFE(
                 'Mercado Livre liberou a NF-e',
 
             mensagem:
-                'O ML já liberou o faturamento, mas o produto ainda precisa ser marcado como Separado no sistema.',
+                'O Mercado Livre está aguardando a NF-e, mas o produto ainda precisa ser marcado como Separado no sistema.',
 
             liberado_em:
+                envio?.liberacao_fiscal_em ||
+                null,
 
-                envio
-                    ?.liberacao_fiscal_em ||
-
-                dataLiberacaoLocal ||
-
+            previsao_liberacao:
                 null,
 
             separado:
-                false
+                false,
+
+            status_shipment:
+                statusShipment,
+
+            substatus_shipment:
+                substatusShipment
         };
     }
 
 
     // =====================================================
-    // LIBERADA E SEPARADA
+    // ML ESTÁ AGUARDANDO NF-E E JÁ FOI SEPARADO
     // =====================================================
 
     if (
-        mlLiberou &&
+        mlAguardandoNfeAgora &&
         separado
     ) {
 
@@ -36458,26 +37745,105 @@ function calcularLiberacaoEmissaoVendaNFE(
                 'Emissão liberada',
 
             mensagem:
-                'O Mercado Livre está aguardando a NF-e e a venda já foi separada. Pode emitir agora.',
+                'O Mercado Livre está aguardando a NF-e neste momento e a venda já foi separada. Pode emitir agora.',
 
             liberado_em:
+                envio?.liberacao_fiscal_em ||
+                new Date().toISOString(),
 
-                envio
-                    ?.liberacao_fiscal_em ||
-
-                dataLiberacaoLocal ||
-
+            previsao_liberacao:
                 null,
 
             separado:
-                true
+                true,
+
+            status_shipment:
+                statusShipment,
+
+            substatus_shipment:
+                substatusShipment
         };
     }
 
 
     // =====================================================
-    // AINDA NÃO LIBERADA
+    // AINDA NÃO FOI LIBERADA
+    //
+    // AQUI ESTÁ A CORREÇÃO PRINCIPAL.
+    //
+    // Mesmo que:
+    //
+    // status_liberacao = "liberado"
+    //
+    // no cache antigo, NÃO liberamos.
+    //
+    // O shipment atual precisa estar invoice_pending.
     // =====================================================
+
+    let mensagem =
+        'O Mercado Livre ainda não está aguardando a NF-e desta venda.';
+
+
+    // =====================================================
+    // ETIQUETA AINDA NÃO FOI GERADA
+    // =====================================================
+
+    if (
+        substatusShipment ===
+        'waiting_for_label_generation'
+    ) {
+
+        mensagem =
+            'O Mercado Livre ainda está preparando a etiqueta. A emissão da NF-e ainda não foi liberada.';
+
+
+    } else if (
+        statusShipment ===
+        'pending'
+    ) {
+
+        mensagem =
+            'O envio ainda está pendente no Mercado Livre. A NF-e ainda não foi liberada.';
+
+
+    } else if (
+        statusShipment ===
+        'handling'
+    ) {
+
+        mensagem =
+            'O pedido está em preparação, mas o Mercado Livre ainda não entrou em invoice_pending. A emissão ainda não está liberada.';
+
+
+    } else if (
+        statusShipment ===
+            'ready_to_ship' &&
+        substatusShipment &&
+        substatusShipment !==
+            'invoice_pending'
+    ) {
+
+        mensagem =
+            `O envio está em ${traduzirStatusEnvioDetalhesNFE(
+                statusShipment,
+                substatusShipment
+            )}, mas o Mercado Livre não está aguardando a NF-e neste momento.`;
+    }
+
+
+    // =====================================================
+    // SE NÃO CONSEGUIMOS CONSULTAR O SHIPMENT,
+    // TAMBÉM NÃO PODEMOS AFIRMAR QUE ESTÁ LIBERADA.
+    // =====================================================
+
+    if (
+        !consultaShipmentDisponivel
+    ) {
+
+        mensagem =
+            'Não foi possível confirmar ao vivo a liberação fiscal no shipment do Mercado Livre. Por segurança, a emissão permanece bloqueada.';
+    }
+
 
     return {
 
@@ -36493,13 +37859,25 @@ function calcularLiberacaoEmissaoVendaNFE(
         titulo:
             'Ainda não liberada pelo Mercado Livre',
 
-        mensagem:
-            'O envio ainda não entrou em ready_to_ship / invoice_pending. Aguarde a liberação do Mercado Livre.',
+        mensagem,
 
         liberado_em:
             null,
 
-        separado
+        // Informação local agora é somente previsão.
+        previsao_liberacao:
+            dataLiberacaoLocal,
+
+        status_liberacao_local:
+            statusLiberacaoLocal,
+
+        separado,
+
+        status_shipment:
+            statusShipment,
+
+        substatus_shipment:
+            substatusShipment
     };
 }
 
@@ -36525,10 +37903,6 @@ function garantirCacheDetalhesVendaNFE() {
     return window._cacheDetalhesVendaNFE;
 }
 
-// =========================================================
-// BUSCAR DETALHES COMPLETOS
-// =========================================================
-
 async function buscarDetalhesCompletosVendaNFE(
     vendaId,
     forcar = false
@@ -36551,6 +37925,35 @@ async function buscarDetalhesCompletosVendaNFE(
 
 
     // =====================================================
+    // GARANTIR CACHE
+    //
+    // IMPORTANTE:
+    // não importa se outro trecho apagou/sobrescreveu
+    // window._cacheDetalhesVendaNFE.
+    // =====================================================
+
+    if (
+        !(
+            window._cacheDetalhesVendaNFE
+            instanceof Map
+        )
+    ) {
+
+        console.warn(
+            '⚠️ Recriando cache de detalhes da venda.'
+        );
+
+
+        window._cacheDetalhesVendaNFE =
+            new Map();
+    }
+
+
+    const cacheDetalhes =
+        window._cacheDetalhesVendaNFE;
+
+
+    // =====================================================
     // CACHE CURTO - 2 MINUTOS
     // =====================================================
 
@@ -36559,24 +37962,34 @@ async function buscarDetalhesCompletosVendaNFE(
     ) {
 
         const cache =
-            window
-                ._cacheDetalhesVendaNFE
-                .get(
-                    vendaId
-                );
+            cacheDetalhes.get(
+                vendaId
+            );
 
 
         if (
             cache &&
             Date.now() -
-                cache.carregado_em <
+                Number(
+                    cache.carregado_em ||
+                    0
+                ) <
                 120000
         ) {
+
+            console.log(
+                `👁️ Detalhes ${vendaId} carregados do cache`
+            );
+
 
             return cache.dados;
         }
     }
 
+
+    // =====================================================
+    // VENDA LOCAL
+    // =====================================================
 
     const vendaLocal =
         localizarVendaDetalhesNFE(
@@ -36593,6 +38006,10 @@ async function buscarDetalhesCompletosVendaNFE(
         );
     }
 
+
+    // =====================================================
+    // TOKEN ML
+    // =====================================================
 
     const token =
         await obterTokenMLNFE();
@@ -36642,8 +38059,22 @@ async function buscarDetalhesCompletosVendaNFE(
         ];
 
 
+    console.log(
+        '👁️ Buscando detalhes:',
+        {
+            vendaId,
+            orderIds
+        }
+    );
+
+
+    // =====================================================
+    // BUSCAR TODAS AS ORDERS
+    // =====================================================
+
     const orders =
         await Promise.all(
+
             orderIds.map(
                 async orderId => {
 
@@ -36664,7 +38095,7 @@ async function buscarDetalhesCompletosVendaNFE(
                     ) {
 
                         console.warn(
-                            `⚠️ Order ${orderId}:`,
+                            `⚠️ Erro buscando order ${orderId}:`,
                             error
                         );
 
@@ -36693,32 +38124,72 @@ async function buscarDetalhesCompletosVendaNFE(
     }
 
 
+    // =====================================================
+    // ORDER PRINCIPAL
+    // =====================================================
+
     const orderPrincipal =
         ordersValidas.find(
             order =>
                 normalizarOrderIdML(
-                    order.id
+                    order?.id
                 ) ===
                 vendaId
         ) ||
         ordersValidas[0];
 
 
+    // =====================================================
+    // COMPRADOR
+    // =====================================================
+
     const buyerId =
+
         orderPrincipal
             ?.buyer
             ?.id ||
+
         vendaLocal
             ?.buyer
             ?.id ||
+
         null;
 
 
-    const shipmentId =
+    // =====================================================
+    // SHIPMENT
+    // =====================================================
 
-        obterShipmentIdNFE(
-            vendaLocal
-        ) ||
+    let shipmentId =
+        null;
+
+
+    try {
+
+        if (
+            typeof obterShipmentIdNFE ===
+            'function'
+        ) {
+
+            shipmentId =
+                obterShipmentIdNFE(
+                    vendaLocal
+                ) ||
+                null;
+        }
+
+    } catch (
+        error
+    ) {
+
+        shipmentId =
+            null;
+    }
+
+
+    shipmentId =
+
+        shipmentId ||
 
         orderPrincipal
             ?.shipping
@@ -36738,6 +38209,10 @@ async function buscarDetalhesCompletosVendaNFE(
         null;
 
 
+    // =====================================================
+    // FULL
+    // =====================================================
+
     const isFull =
 
         vendaLocal
@@ -36749,19 +38224,46 @@ async function buscarDetalhesCompletosVendaNFE(
         ) ||
 
         ordersValidas.some(
-            order =>
-                isFullByAnyField(
-                    order
-                )
+            order => {
+
+                try {
+
+                    return (
+                        typeof isFullByAnyField ===
+                            'function' &&
+                        isFullByAnyField(
+                            order
+                        )
+                    );
+
+                } catch (
+                    error
+                ) {
+
+                    return false;
+                }
+            }
         );
 
+
+    // =====================================================
+    // JÁ POSSUI NF-E
+    // =====================================================
 
     const temNfe =
         Boolean(
+
             vendaLocal
-                ?._tem_nfe
+                ?._tem_nfe ||
+
+            vendaLocal
+                ?.nfe_emitida
         );
 
+
+    // =====================================================
+    // CANCELAMENTO
+    // =====================================================
 
     const canceladaLocal =
         vendaEstaCanceladaNFE(
@@ -36771,30 +38273,38 @@ async function buscarDetalhesCompletosVendaNFE(
 
     const canceladas =
         ordersValidas.filter(
-            order =>
-                [
-                    'cancelled',
-                    'canceled'
-                ].includes(
+            order => {
+
+                const status =
                     String(
                         order
                             ?.status ||
                         ''
                     )
                         .trim()
-                        .toLowerCase()
-                )
+                        .toLowerCase();
+
+
+                return [
+                    'cancelled',
+                    'canceled'
+                ].includes(
+                    status
+                );
+            }
         );
 
 
     const cancelada =
+
         canceladaLocal ||
+
         canceladas.length >
             0;
 
 
     // =====================================================
-    // PERFIL + ENVIO
+    // PERFIL DO CLIENTE + ENVIO
     // =====================================================
 
     const [
@@ -36806,7 +38316,20 @@ async function buscarDetalhesCompletosVendaNFE(
             buscarPerfilCompradorNFE(
                 buyerId,
                 token
-            ),
+            )
+                .catch(
+                    error => {
+
+                        console.warn(
+                            '⚠️ Perfil do comprador:',
+                            error
+                        );
+
+
+                        return null;
+                    }
+                ),
+
 
             buscarDetalhesEnvioNFE(
                 shipmentId,
@@ -36816,17 +38339,72 @@ async function buscarDetalhesCompletosVendaNFE(
                     error => {
 
                         console.warn(
-                            '⚠️ Detalhes de envio:',
+                            '⚠️ Detalhes do envio:',
                             error
                         );
 
 
                         return {
+
                             existe:
                                 false,
 
+                            id:
+                                shipmentId,
+
+                            shipment:
+                                null,
+
                             historico:
-                                []
+                                [],
+
+                            carrier:
+                                null,
+
+                            status:
+                                '',
+
+                            substatus:
+                                '',
+
+                            status_nome:
+                                'Não foi possível consultar',
+
+                            foi_enviado:
+                                false,
+
+                            data_envio:
+                                null,
+
+                            entregue:
+                                false,
+
+                            data_entrega:
+                                null,
+
+                            ultima_atualizacao:
+                                null,
+
+                            prazo_despacho:
+                                null,
+
+                            previsao_entrega:
+                                null,
+
+                            tracking_number:
+                                null,
+
+                            carrier_nome:
+                                null,
+
+                            carrier_url:
+                                null,
+
+                            evento_invoice_pending:
+                                null,
+
+                            liberacao_fiscal_em:
+                                null
                         };
                     }
                 )
@@ -36834,7 +38412,7 @@ async function buscarDetalhesCompletosVendaNFE(
 
 
     // =====================================================
-    // CANCELAMENTOS
+    // DETALHES DOS CANCELAMENTOS
     // =====================================================
 
     const detalhesCancelamentos =
@@ -36846,6 +38424,7 @@ async function buscarDetalhesCompletosVendaNFE(
     ) {
 
         const ordersCancelamento =
+
             canceladas.length >
                 0
 
@@ -36868,17 +38447,51 @@ async function buscarDetalhesCompletosVendaNFE(
                 );
 
 
-            const feedback =
-                await buscarMotivoCancelamentoVendaNFE(
-                    orderId,
-                    token
+            if (
+                !orderId
+            ) {
+
+                continue;
+            }
+
+
+            let feedback = {
+
+                motivo_codigo:
+                    null,
+
+                motivo:
+                    'Motivo não informado pelo Mercado Livre',
+
+                mensagem:
+                    null
+            };
+
+
+            try {
+
+                feedback =
+                    await buscarMotivoCancelamentoVendaNFE(
+                        orderId,
+                        token
+                    );
+
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    `⚠️ Motivo do cancelamento ${orderId}:`,
+                    error
                 );
+            }
 
 
             detalhesCancelamentos.push({
 
                 order_id:
                     orderId,
+
 
                 cancelado_em:
 
@@ -36896,17 +38509,22 @@ async function buscarDetalhesCompletosVendaNFE(
 
                     null,
 
+
                 motivo_codigo:
                     feedback
-                        .motivo_codigo,
+                        ?.motivo_codigo ||
+                    null,
+
 
                 motivo:
                     feedback
-                        .motivo,
+                        ?.motivo ||
+                    'Motivo não informado pelo Mercado Livre',
+
 
                 mensagem:
                     feedback
-                        .mensagem ||
+                        ?.mensagem ||
                     null
             });
         }
@@ -36934,61 +38552,108 @@ async function buscarDetalhesCompletosVendaNFE(
         );
 
 
+    // =====================================================
+    // RESULTADO FINAL
+    // =====================================================
+
     const dados = {
 
         venda_id:
             vendaId,
 
+
         order_ids:
             orderIds,
+
 
         venda_local:
             vendaLocal,
 
+
         order:
             orderPrincipal,
+
 
         orders:
             ordersValidas,
 
+
         comprador:
             perfilComprador,
 
+
         envio,
+
 
         is_full:
             isFull,
 
+
         tem_nfe:
             temNfe,
 
+
         separado:
+
             isFull
+
                 ? true
+
                 : vendaEstaSeparadaNFE(
                     vendaLocal
                 ),
 
+
         cancelada,
+
 
         cancelamentos:
             detalhesCancelamentos,
+
 
         liberacao
     };
 
 
-    window
-        ._cacheDetalhesVendaNFE
-        .set(
-            vendaId,
-            {
-                carregado_em:
-                    Date.now(),
+    // =====================================================
+    // SALVAR CACHE
+    //
+    // NÃO usa window...set diretamente.
+    // Usa a referência que já garantimos ser Map.
+    // =====================================================
 
-                dados
-            }
-        );
+    cacheDetalhes.set(
+        vendaId,
+        {
+            carregado_em:
+                Date.now(),
+
+            dados
+        }
+    );
+
+
+    console.log(
+        '✅ Detalhes da venda carregados:',
+        {
+            venda:
+                vendaId,
+
+            comprador:
+                buyerId,
+
+            shipment:
+                shipmentId,
+
+            full:
+                isFull,
+
+            cancelada,
+
+            liberacao:
+                liberacao?.tipo
+        }
+    );
 
 
     return dados;
