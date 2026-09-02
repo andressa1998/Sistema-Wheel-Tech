@@ -2946,250 +2946,1221 @@ window.processarXML = async function() {
 };
 
 // ============================================
-// PROCESSAR ENTRADA (Excel) - COM HORÁRIO CORRETO
+// PROCESSAR ENTRADA MANUAL
+//
+// NOVO LAYOUT DA PLANILHA:
+//
+// A = IGNORAR
+// B = RASTREIO
+// C = CÓD. FORNECEDOR (OPCIONAL)
+// D = IGNORAR
+// E = IGNORAR
+// F = FORNECEDOR
+// G = IGNORAR
+// H = IGNORAR
+// I = QUANTIDADE
+// J = DESCRIÇÃO
+// K = SKU
+// L = VALOR TOTAL
+//
+// IMPORTANTE:
+// - Só afeta NOVAS entradas coladas.
+// - Não altera entradas já existentes.
+// - Valor total é convertido em custo unitário.
 // ============================================
-window.processarEntrada = async function() {
+
+window.processarEntrada =
+    async function() {
+
         // ========================================
-    // BLOQUEIO DE ENTRADA MANUAL
-    // BRUNA E ARTHUR SOMENTE XML
-    // ========================================
+        // BRUNA E ARTHUR NÃO CRIAM ENTRADA MANUAL
+        // ========================================
 
-    if (usuarioSomenteXMLEntradas()) {
+        if (
+            usuarioSomenteXMLEntradas()
+        ) {
 
-        showToast(
-            '🔒 Seu usuário pode criar entradas somente por XML.',
-            'warning'
-        );
+            showToast(
+                '🔒 Seu usuário pode criar entradas somente por XML.',
+                'warning'
+            );
 
-        return;
-    }
-    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
-        showToast('🔄 Carregando estoque...', 'info');
-        if (typeof carregarProdutosEstoque === 'function') {
-            await carregarProdutosEstoque();
-        } else {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-    }
-    console.log('✅ Estoque carregado:', produtosEstoque?.length || 0, 'produtos');
-
-    await aguardarEstoqueCarregado();
-
-    const pasteArea = document.getElementById('entradaPasteArea');
-    if (!pasteArea) return;
-
-    const texto = pasteArea.value.trim();
-    if (!texto) {
-        showToast('⚠️ Cole os dados antes de processar', 'warning');
-        return;
-    }
-
-    let linhas = texto.split('\n').filter(l => l.trim() !== '');
-    if (linhas.length === 0) {
-        showToast('⚠️ Nenhuma linha encontrada', 'warning');
-        return;
-    }
-
-    let separador = '\t';
-    const primeiraLinha = linhas[0];
-    if (primeiraLinha.includes('\t')) separador = '\t';
-    else if (primeiraLinha.includes(';')) separador = ';';
-    else if (primeiraLinha.includes(',')) separador = ',';
-
-    const cabecalho = linhas[0].split(separador).map(c => c.trim().toLowerCase());
-    const colunasEsperadas = ['cd fornecedor', 'rastreio', 'fornecedor', 'quant', 'produto', 'sku', 'observações'];
-    const isCabecalho = colunasEsperadas.every(c => cabecalho.some(h => h.includes(c)));
-
-    let dadosLinhas = linhas;
-    if (isCabecalho) {
-        dadosLinhas = linhas.slice(1);
-        if (dadosLinhas.length === 0) {
-            showToast('⚠️ Nenhum dado encontrado (apenas cabeçalho)', 'warning');
             return;
         }
-    }
 
-    const itensRaw = [];
-    let erros = [];
-    let duplicatasEncontradas = [];
 
-    for (let idx = 0; idx < dadosLinhas.length; idx++) {
-        const linha = dadosLinhas[idx];
-        const partes = linha.split(separador).map(c => c.trim());
-        if (partes.length < 6) {
-            erros.push(`Linha ${idx + 1}: poucas colunas (${partes.length})`);
-            continue;
+        // ========================================
+        // CARREGA ESTOQUE
+        // ========================================
+
+        if (
+            typeof produtosEstoque ===
+                'undefined' ||
+
+            !Array.isArray(
+                produtosEstoque
+            ) ||
+
+            produtosEstoque.length ===
+                0
+        ) {
+
+            showToast(
+                '🔄 Carregando estoque...',
+                'info'
+            );
+
+
+            if (
+                typeof carregarProdutosEstoque ===
+                'function'
+            ) {
+
+                await carregarProdutosEstoque();
+
+            } else {
+
+                await new Promise(
+                    resolve =>
+                        setTimeout(
+                            resolve,
+                            2000
+                        )
+                );
+            }
         }
 
-        const cdFornecedor = partes[0] || '';
-        const rastreio = partes[1] || '';
-        const fornecedorNome = partes[2] || '';
-        const quantidade = parseInt(partes[3]) || 0;
-        const produto = partes[4] || '';
-        const sku = partes[5] ? partes[5].trim() : '';
-        const observacao = partes[6] || '';
-        let valorCusto = 0;
-        if (partes.length > 7) {
-            const rawCusto = partes[7].replace(',', '.').trim();
-            valorCusto = parseFloat(rawCusto) || 0;
+
+        console.log(
+            '✅ Estoque carregado:',
+            produtosEstoque?.length || 0,
+            'produtos'
+        );
+
+
+        await aguardarEstoqueCarregado();
+
+
+        // ========================================
+        // ÁREA DE COLAGEM
+        // ========================================
+
+        const pasteArea =
+            document.getElementById(
+                'entradaPasteArea'
+            );
+
+
+        if (!pasteArea) {
+
+            showToast(
+                '❌ Área de entrada não encontrada.',
+                'error'
+            );
+
+            return;
         }
 
-        if (!sku && !cdFornecedor) {
-            erros.push(`Linha ${idx + 1}: SKU e cd fornecedor vazios`);
-            continue;
+
+        const texto =
+            pasteArea.value.trim();
+
+
+        if (!texto) {
+
+            showToast(
+                '⚠️ Cole os dados antes de processar.',
+                'warning'
+            );
+
+            return;
         }
 
-        if (rastreio && sku) {
-            const duplicado = await verificarDuplicidadeEntrada(rastreio, sku);
-            if (duplicado && duplicado.duplicado) {
-                duplicatasEncontradas.push({
-                    linha: idx + 1,
-                    rastreio: rastreio,
-                    sku: sku,
-                    entrada: duplicado.entrada
-                });
+
+        // ========================================
+        // LINHAS
+        // ========================================
+
+        let linhas =
+            texto
+                .split(/\r?\n/)
+                .filter(
+                    linha =>
+                        linha.trim() !==
+                        ''
+                );
+
+
+        if (
+            linhas.length ===
+            0
+        ) {
+
+            showToast(
+                '⚠️ Nenhuma linha encontrada.',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        // ========================================
+        // SEPARADOR
+        //
+        // Excel copiado normalmente usa TAB.
+        // ========================================
+
+        let separador =
+            '\t';
+
+
+        const primeiraLinha =
+            linhas[0];
+
+
+        if (
+            primeiraLinha.includes(
+                '\t'
+            )
+        ) {
+
+            separador =
+                '\t';
+
+        } else if (
+            primeiraLinha.includes(
+                ';'
+            )
+        ) {
+
+            separador =
+                ';';
+
+        } else {
+
+            // Não usamos vírgula como preferência porque
+            // o valor monetário pode ser 342,10.
+            //
+            // Se não houver TAB ou ;, tenta vírgula.
+            separador =
+                ',';
+        }
+
+
+        // ========================================
+        // NORMALIZADOR DE CABEÇALHO
+        // ========================================
+
+        const normalizarCabecalho =
+            valor =>
+
+                String(
+                    valor ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase()
+                    .normalize(
+                        'NFD'
+                    )
+                    .replace(
+                        /[\u0300-\u036f]/g,
+                        ''
+                    );
+
+
+        // ========================================
+        // IDENTIFICA CABEÇALHO NOVO
+        //
+        // Não usamos as colunas "Ignora",
+        // porque aparecem várias vezes.
+        // ========================================
+
+        const cabecalho =
+            primeiraLinha
+                .split(
+                    separador
+                )
+                .map(
+                    normalizarCabecalho
+                );
+
+
+        const isCabecalhoNovo =
+            (
+                cabecalho.length >=
+                    11
+            ) &&
+            (
+                cabecalho[1]
+                    ?.includes(
+                        'rastreio'
+                    )
+            ) &&
+            (
+                (
+                    cabecalho[8]
+                        ?.includes(
+                            'quantidade'
+                        )
+                ) ||
+                (
+                    cabecalho[8]
+                        ?.includes(
+                            'quant'
+                        )
+                )
+            ) &&
+            (
+                (
+                    cabecalho[9]
+                        ?.includes(
+                            'descricao'
+                        )
+                ) ||
+                (
+                    cabecalho[9]
+                        ?.includes(
+                            'produto'
+                        )
+                )
+            ) &&
+            (
+                cabecalho[10]
+                    ?.includes(
+                        'sku'
+                    )
+            );
+
+
+        let dadosLinhas =
+            linhas;
+
+
+        if (
+            isCabecalhoNovo
+        ) {
+
+            dadosLinhas =
+                linhas.slice(
+                    1
+                );
+
+
+            if (
+                dadosLinhas.length ===
+                0
+            ) {
+
+                showToast(
+                    '⚠️ A planilha possui apenas o cabeçalho.',
+                    'warning'
+                );
+
+                return;
+            }
+        }
+
+
+        // ========================================
+        // CONVERSOR DE NÚMERO BRASILEIRO
+        //
+        // Aceita:
+        // 342,1
+        // 342,10
+        // 1.234,56
+        // R$ 1.234,56
+        // 342.10
+        // ========================================
+
+        const converterValorNumero =
+            valor => {
+
+                if (
+                    valor === null ||
+                    valor === undefined
+                ) {
+
+                    return 0;
+                }
+
+
+                let textoValor =
+                    String(
+                        valor
+                    )
+                        .trim()
+                        .replace(
+                            /R\$/gi,
+                            ''
+                        )
+                        .replace(
+                            /\s/g,
+                            ''
+                        );
+
+
+                if (
+                    !textoValor
+                ) {
+
+                    return 0;
+                }
+
+
+                // Tem ponto e vírgula:
+                // padrão BR 1.234,56
+                if (
+                    textoValor.includes(
+                        '.'
+                    ) &&
+                    textoValor.includes(
+                        ','
+                    )
+                ) {
+
+                    textoValor =
+                        textoValor
+                            .replace(
+                                /\./g,
+                                ''
+                            )
+                            .replace(
+                                ',',
+                                '.'
+                            );
+
+
+                // Somente vírgula:
+                // 342,10
+                } else if (
+                    textoValor.includes(
+                        ','
+                    )
+                ) {
+
+                    textoValor =
+                        textoValor.replace(
+                            ',',
+                            '.'
+                        );
+                }
+
+
+                const numero =
+                    parseFloat(
+                        textoValor
+                    );
+
+
+                return Number.isFinite(
+                    numero
+                )
+                    ? numero
+                    : 0;
+            };
+
+
+        // ========================================
+        // RESULTADO DO PARSING
+        // ========================================
+
+        const itensRaw =
+            [];
+
+
+        const erros =
+            [];
+
+
+        const duplicatasEncontradas =
+            [];
+
+
+        // ========================================
+        // PERCORRE LINHAS
+        // ========================================
+
+        for (
+            let idx = 0;
+            idx < dadosLinhas.length;
+            idx++
+        ) {
+
+            const linha =
+                dadosLinhas[idx];
+
+
+            const partes =
+                linha
+                    .split(
+                        separador
+                    )
+                    .map(
+                        campo =>
+                            campo.trim()
+                    );
+
+
+            // ====================================
+            // NOVO ARQUIVO PRECISA TER ATÉ COLUNA L
+            // ====================================
+
+            if (
+                partes.length <
+                11
+            ) {
+
+                erros.push(
+                    `Linha ${idx + 1}: poucas colunas (${partes.length}). Esperado layout até a coluna L.`
+                );
+
                 continue;
             }
+
+
+            // ====================================
+            // NOVO MAPEAMENTO
+            // ====================================
+
+            // A = ignorar
+            // partes[0]
+
+
+            // B = Rastreio
+            const rastreio =
+                partes[1] ||
+                '';
+
+
+            // C = Código fornecedor opcional
+            const cdFornecedor =
+                partes[2] ||
+                '';
+
+
+            // D = ignorar
+            // partes[3]
+
+
+            // E = ignorar
+            // partes[4]
+
+
+            // F = Fornecedor
+            const fornecedorNome =
+                partes[5] ||
+                '';
+
+
+            // G = ignorar
+            // partes[6]
+
+
+            // H = ignorar
+            // partes[7]
+
+
+            // I = Quantidade
+            const quantidade =
+                parseInt(
+                    String(
+                        partes[8] ||
+                        ''
+                    )
+                        .replace(
+                            /\D/g,
+                            ''
+                        ),
+                    10
+                ) ||
+                0;
+
+
+            // J = Descrição
+            const produto =
+                partes[9] ||
+                '';
+
+
+            // K = SKU
+            const sku =
+                partes[10]
+                    ? String(
+                        partes[10]
+                    ).trim()
+                    : '';
+
+
+            // L = Valor TOTAL
+            const valorTotal =
+                converterValorNumero(
+                    partes[11] ||
+                    ''
+                );
+
+
+            // ====================================
+            // CONVERTE VALOR TOTAL EM CUSTO UNITÁRIO
+            // ====================================
+
+            let valorCusto =
+                0;
+
+
+            if (
+                quantidade > 0 &&
+                valorTotal > 0
+            ) {
+
+                valorCusto =
+                    valorTotal /
+                    quantidade;
+
+
+                // Limita ruído de ponto flutuante
+                valorCusto =
+                    Math.round(
+                        (
+                            valorCusto +
+                            Number.EPSILON
+                        ) *
+                        1000000
+                    ) /
+                    1000000;
+            }
+
+
+            // ====================================
+            // VALIDAÇÕES
+            // ====================================
+
+            if (
+                !sku &&
+                !cdFornecedor
+            ) {
+
+                erros.push(
+                    `Linha ${idx + 1}: SKU e código do fornecedor estão vazios.`
+                );
+
+                continue;
+            }
+
+
+            if (
+                quantidade <= 0
+            ) {
+
+                erros.push(
+                    `Linha ${idx + 1}: quantidade inválida para o SKU "${sku || cdFornecedor}".`
+                );
+
+                continue;
+            }
+
+
+            // ====================================
+            // DUPLICIDADE
+            // ====================================
+
+            if (
+                rastreio &&
+                sku
+            ) {
+
+                const duplicado =
+                    await verificarDuplicidadeEntrada(
+                        rastreio,
+                        sku
+                    );
+
+
+                if (
+                    duplicado &&
+                    duplicado.duplicado
+                ) {
+
+                    duplicatasEncontradas.push({
+
+                        linha:
+                            idx + 1,
+
+                        rastreio:
+                            rastreio,
+
+                        sku:
+                            sku,
+
+                        entrada:
+                            duplicado.entrada
+
+                    });
+
+
+                    continue;
+                }
+            }
+
+
+            // ====================================
+            // MONTA ITEM
+            // ====================================
+
+            itensRaw.push({
+
+                cd_fornecedor:
+                    cdFornecedor,
+
+                rastreio:
+                    rastreio,
+
+                fornecedor_nome:
+                    fornecedorNome,
+
+                quantidade:
+                    quantidade,
+
+                produto:
+                    produto,
+
+                sku_original:
+                    sku,
+
+                // Nova planilha não possui
+                // coluna de observação.
+                observacao:
+                    '',
+
+                // O sistema trabalha com
+                // custo UNITÁRIO.
+                valor_custo:
+                    valorCusto,
+
+                sku_match:
+                    null,
+
+                produto_id:
+                    null,
+
+                status:
+                    'pendente',
+
+                acao:
+                    null,
+
+                responsavel:
+                    null,
+
+                quantidade_entrada:
+                    0,
+
+                data_acao:
+                    null
+
+            });
+
+
+            console.log(
+                `📦 Linha ${idx + 1} interpretada:`,
+                {
+
+                    rastreio:
+                        rastreio,
+
+                    cdFornecedor:
+                        cdFornecedor,
+
+                    fornecedor:
+                        fornecedorNome,
+
+                    quantidade:
+                        quantidade,
+
+                    produto:
+                        produto,
+
+                    sku:
+                        sku,
+
+                    valorTotal:
+                        valorTotal,
+
+                    valorCustoUnitario:
+                        valorCusto
+
+                }
+            );
         }
 
-        itensRaw.push({
-            cd_fornecedor: cdFornecedor,
-            rastreio: rastreio,
-            fornecedor_nome: fornecedorNome,
-            quantidade: quantidade,
-            produto: produto,
-            sku_original: sku,
-            observacao: observacao,
-            valor_custo: valorCusto,
-            sku_match: null,
-            produto_id: null,
-            status: 'pendente',
-            acao: null,
-            responsavel: null,
-            quantidade_entrada: 0,
-            data_acao: null
-        });
-    }
 
-    if (duplicatasEncontradas.length > 0) {
-        let mensagem = '⚠️ Foram encontradas entradas duplicadas:\n\n';
-        duplicatasEncontradas.forEach(d => {
-            mensagem += `Linha ${d.linha}: Referência "${d.rastreio}" + SKU "${d.sku}" → Já existe na entrada ${d.entrada}\n`;
-        });
-        mensagem += '\n\n❌ Corrija os dados e tente novamente.';
-        alert(mensagem);
-        showToast('❌ Entradas duplicadas detectadas. Corrija os dados.', 'error');
-        return;
-    }
+        // ========================================
+        // BLOQUEIA DUPLICATAS
+        // ========================================
 
-    if (itensRaw.length === 0) {
-        showToast(`⚠️ Nenhum item válido encontrado. ${erros.length} erro(s).`, 'error');
-        return;
-    }
+        if (
+            duplicatasEncontradas.length >
+            0
+        ) {
 
-    if (erros.length > 0) {
-        showToast(`⚠️ ${erros.length} erro(s) encontrado(s). ${itensRaw.length} item(s) processados.`, 'warning');
-        console.warn('Erros no parsing:', erros);
-    }
+            let mensagem =
+                '⚠️ Foram encontradas entradas duplicadas:\n\n';
 
-    itensRaw.sort((a, b) => (a.rastreio || '').localeCompare(b.rastreio || ''));
 
-    for (const item of itensRaw) {
-        let fornecedor = null;
+            duplicatasEncontradas.forEach(
+                duplicata => {
 
-        if (item.cd_fornecedor) {
-            fornecedor = buscarFornecedor(item.cd_fornecedor);
-        }
-        if (!fornecedor && item.sku_original) {
-            fornecedor = buscarFornecedor(item.sku_original);
+                    mensagem +=
+                        `Linha ${duplicata.linha}: Referência "${duplicata.rastreio}" + SKU "${duplicata.sku}" → Já existe na entrada ${duplicata.entrada}\n`;
+
+                }
+            );
+
+
+            mensagem +=
+                '\n❌ Corrija os dados e tente novamente.';
+
+
+            alert(
+                mensagem
+            );
+
+
+            showToast(
+                '❌ Entradas duplicadas detectadas. Corrija os dados.',
+                'error'
+            );
+
+
+            return;
         }
 
-        if (fornecedor) {
-            if (!item.produto || item.produto.trim() === '' || item.produto === item.sku_original) {
-                item.produto = fornecedor.descricao_produto || item.produto;
-            }
-            if (!item.fornecedor_nome) {
-                item.fornecedor_nome = fornecedor.nome_fornecedor;
-            }
-            if (!item.cd_fornecedor) {
-                item.cd_fornecedor = fornecedor.cd_fornecedor;
-            }
-            if (fornecedor.sku_sistema) {
-                item.sku_match = fornecedor.sku_sistema;
-            }
+
+        // ========================================
+        // NENHUM ITEM
+        // ========================================
+
+        if (
+            itensRaw.length ===
+            0
+        ) {
+
+            console.warn(
+                'Erros no parsing:',
+                erros
+            );
+
+
+            showToast(
+                `⚠️ Nenhum item válido encontrado. ${erros.length} erro(s).`,
+                'error'
+            );
+
+
+            return;
         }
 
-        const skuParaBuscar = item.sku_match || item.sku_original;
-        if (skuParaBuscar) {
-            const produtoEstoque = verificarSKUExistente(skuParaBuscar);
-            if (produtoEstoque) {
-                item.produto_id = produtoEstoque.id;
-                item.sku_match = produtoEstoque.sku;
-                if (!item.produto || item.produto.trim() === '') {
-                    item.produto = produtoEstoque.nome;
+
+        // ========================================
+        // HOUVE ALGUM ERRO, MAS TEM ITENS VÁLIDOS
+        // ========================================
+
+        if (
+            erros.length >
+            0
+        ) {
+
+            showToast(
+                `⚠️ ${erros.length} linha(s) ignorada(s). ${itensRaw.length} item(s) válidos.`,
+                'warning'
+            );
+
+
+            console.warn(
+                '⚠️ Erros no parsing:',
+                erros
+            );
+        }
+
+
+        // ========================================
+        // ORDENA POR RASTREIO
+        // ========================================
+
+        itensRaw.sort(
+            (
+                a,
+                b
+            ) =>
+
+                (
+                    a.rastreio ||
+                    ''
+                ).localeCompare(
+                    b.rastreio ||
+                    ''
+                )
+        );
+
+
+        // ========================================
+        // IDENTIFICA FORNECEDOR E PRODUTO
+        // ========================================
+
+        for (
+            const item
+            of itensRaw
+        ) {
+
+            let fornecedor =
+                null;
+
+
+            // ====================================
+            // PRIMEIRO PROCURA PELO CÓDIGO
+            // DO FORNECEDOR, SE INFORMADO
+            // ====================================
+
+            if (
+                item.cd_fornecedor
+            ) {
+
+                fornecedor =
+                    buscarFornecedor(
+                        item.cd_fornecedor
+                    );
+            }
+
+
+            // ====================================
+            // SENÃO PROCURA PELO SKU
+            // ====================================
+
+            if (
+                !fornecedor &&
+                item.sku_original
+            ) {
+
+                fornecedor =
+                    buscarFornecedor(
+                        item.sku_original
+                    );
+            }
+
+
+            // ====================================
+            // DADOS DO MAPEAMENTO DO FORNECEDOR
+            // ====================================
+
+            if (
+                fornecedor
+            ) {
+
+                if (
+                    !item.produto ||
+                    item.produto.trim() ===
+                        '' ||
+                    item.produto ===
+                        item.sku_original
+                ) {
+
+                    item.produto =
+                        fornecedor.descricao_produto ||
+                        item.produto;
+                }
+
+
+                if (
+                    !item.fornecedor_nome
+                ) {
+
+                    item.fornecedor_nome =
+                        fornecedor.nome_fornecedor;
+                }
+
+
+                if (
+                    !item.cd_fornecedor
+                ) {
+
+                    item.cd_fornecedor =
+                        fornecedor.cd_fornecedor;
+                }
+
+
+                if (
+                    fornecedor.sku_sistema
+                ) {
+
+                    item.sku_match =
+                        fornecedor.sku_sistema;
+                }
+            }
+
+
+            // ====================================
+            // PROCURA PRODUTO NO ESTOQUE
+            //
+            // Esta chamada continua utilizando
+            // sua regra atual dos 8 primeiros
+            // caracteres.
+            // ====================================
+
+            const skuParaBuscar =
+                item.sku_match ||
+                item.sku_original;
+
+
+            if (
+                skuParaBuscar
+            ) {
+
+                const produtoEstoque =
+                    verificarSKUExistente(
+                        skuParaBuscar
+                    );
+
+
+                if (
+                    produtoEstoque
+                ) {
+
+                    item.produto_id =
+                        produtoEstoque.id;
+
+
+                    item.sku_match =
+                        produtoEstoque.sku;
+
+
+                    // Mantém a descrição da planilha.
+                    // Só usa o cadastro se vier vazia.
+                    if (
+                        !item.produto ||
+                        item.produto.trim() ===
+                            ''
+                    ) {
+
+                        item.produto =
+                            produtoEstoque.nome;
+                    }
                 }
             }
         }
-    }
 
-    const numeroEntrada = await gerarNumeroEntrada();
 
-    try {
-        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+        // ========================================
+        // GERA NOVO NÚMERO
+        // ========================================
 
-        const cardData = {
-            numero_entrada: numeroEntrada,
-            dados_brutos: texto,
-            status: 'pendente',
-            criado_por: currentUser.name,
-            criado_em: getDataHoraLocalISO(),  // <- USANDO HORÁRIO LOCAL
-            total_items: itensRaw.length,
-            items_concluidos: 0,
-            tipo_entrada: 'excel'
-        };
+        const numeroEntrada =
+            await gerarNumeroEntrada();
 
-        const { data: cardResult, error: cardError } = await window.supabaseClient
-            .from('entradas_cards')
-            .insert([cardData])
-            .select();
 
-        if (cardError) throw cardError;
-        const card = cardResult[0];
+        // ========================================
+        // SALVA
+        // ========================================
 
-        const itemsToInsert = itensRaw.map(item => ({
-            entrada_id: card.id,
-            cd_fornecedor: item.cd_fornecedor,
-            rastreio: item.rastreio,
-            fornecedor_nome: item.fornecedor_nome,
-            quantidade: item.quantidade,
-            produto: item.produto,
-            sku_original: item.sku_original,
-            sku_match: item.sku_match,
-            produto_id: item.produto_id,
-            observacao: item.observacao,
-            valor_custo: item.valor_custo || 0,
-            status: 'pendente',
-            acao: null,
-            responsavel: null,
-            data_acao: null,
-            tipo_entrada: 'excel'
-        }));
+        try {
 
-        const { error: itemsError } = await window.supabaseClient
-            .from('entrada_items')
-            .insert(itemsToInsert);
+            if (
+                !window.supabaseClient
+            ) {
 
-        if (itemsError) throw itemsError;
+                throw new Error(
+                    'Supabase não conectado'
+                );
+            }
 
-        showToast(`✅ Entrada ${numeroEntrada} criada com ${itensRaw.length} item(s)!`, 'success');
-        pasteArea.value = '';
-        await carregarEntradas();
 
-    } catch (error) {
-        console.error('❌ Erro ao salvar entrada:', error);
-        showToast('❌ Erro ao processar entrada: ' + error.message, 'error');
-    }
-};
+            // ====================================
+            // CARD
+            // ====================================
+
+            const cardData = {
+
+                numero_entrada:
+                    numeroEntrada,
+
+                // Preserva exatamente o texto
+                // original colado.
+                dados_brutos:
+                    texto,
+
+                status:
+                    'pendente',
+
+                criado_por:
+                    currentUser.name,
+
+                criado_em:
+                    getDataHoraLocalISO(),
+
+                total_items:
+                    itensRaw.length,
+
+                items_concluidos:
+                    0,
+
+                tipo_entrada:
+                    'excel'
+
+            };
+
+
+            const {
+                data: cardResult,
+                error: cardError
+            } =
+                await window.supabaseClient
+
+                    .from(
+                        'entradas_cards'
+                    )
+
+                    .insert(
+                        [
+                            cardData
+                        ]
+                    )
+
+                    .select();
+
+
+            if (
+                cardError
+            ) {
+
+                throw cardError;
+            }
+
+
+            const card =
+                cardResult[0];
+
+
+            // ====================================
+            // ITENS
+            // ====================================
+
+            const itemsToInsert =
+                itensRaw.map(
+                    item => ({
+
+                        entrada_id:
+                            card.id,
+
+                        cd_fornecedor:
+                            item.cd_fornecedor,
+
+                        rastreio:
+                            item.rastreio,
+
+                        fornecedor_nome:
+                            item.fornecedor_nome,
+
+                        quantidade:
+                            item.quantidade,
+
+                        produto:
+                            item.produto,
+
+                        sku_original:
+                            item.sku_original,
+
+                        sku_match:
+                            item.sku_match,
+
+                        produto_id:
+                            item.produto_id,
+
+                        observacao:
+                            item.observacao,
+
+                        valor_custo:
+                            item.valor_custo ||
+                            0,
+
+                        status:
+                            'pendente',
+
+                        acao:
+                            null,
+
+                        responsavel:
+                            null,
+
+                        data_acao:
+                            null,
+
+                        quantidade_entrada:
+                            0,
+
+                        tipo_entrada:
+                            'excel'
+
+                    })
+                );
+
+
+            const {
+                error: itemsError
+            } =
+                await window.supabaseClient
+
+                    .from(
+                        'entrada_items'
+                    )
+
+                    .insert(
+                        itemsToInsert
+                    );
+
+
+            if (
+                itemsError
+            ) {
+
+                throw itemsError;
+            }
+
+
+            // ====================================
+            // SUCESSO
+            // ====================================
+
+            showToast(
+                `✅ Entrada ${numeroEntrada} criada com ${itensRaw.length} item(s)!`,
+                'success'
+            );
+
+
+            pasteArea.value =
+                '';
+
+
+            await carregarEntradas();
+
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                '❌ Erro ao salvar entrada:',
+                error
+            );
+
+
+            showToast(
+                '❌ Erro ao processar entrada: ' +
+                error.message,
+                'error'
+            );
+        }
+
+    };
 
 // ============================================
 // EXPORTAR ENTRADAS PARA EXCEL
