@@ -920,13 +920,6 @@ function aplicarFiltroPainelNFE(
     opcoes = {}
 ) {
 
-    // =====================================================
-    // PRESERVAR O FILTRO ATUAL
-    //
-    // Só usa nfe_liberadas se realmente ainda não existir
-    // filtro selecionado.
-    // =====================================================
-
     filtro =
         filtro ||
         window._filtroPainelNFE ||
@@ -952,19 +945,15 @@ function aplicarFiltroPainelNFE(
         );
 
 
-    // =====================================================
-    // SOMENTE ALTERAR ESTADO VISUAL
-    //
-    // NÃO recria controles.
-    // =====================================================
-
     atualizarEstadoVisualFiltroPainelNFE(
         filtro
     );
 
 
     // =====================================================
-    // RENDERIZAR SOMENTE AS VENDAS DO FILTRO ATUAL
+    // O USUÁRIO TROCOU O FILTRO:
+    //
+    // aqui render completo é correto.
     // =====================================================
 
     renderizarVendasNFETabela(
@@ -972,12 +961,49 @@ function aplicarFiltroPainelNFE(
     );
 
 
-    aplicarPreferenciasColunasNFE();
+    // =====================================================
+    // REGISTRAR O ESTADO VISUAL DAS LINHAS
+    //
+    // A partir daqui, alterações automáticas serão
+    // incrementais.
+    // =====================================================
+
+    window._hashRenderVendaNFE =
+        new Map();
 
 
-    // =====================================================
-    // NÃO SOBRESCREVER STATUS DE SINCRONIZAÇÃO
-    // =====================================================
+    for (
+        const venda
+        of filtradas
+    ) {
+
+        const id =
+            normalizarOrderIdML(
+                venda.id_venda_ml ||
+                venda.id
+            );
+
+
+        if (!id) {
+            continue;
+        }
+
+
+        window._hashRenderVendaNFE.set(
+            id,
+            obterAssinaturaVisualVendaNFE(
+                venda
+            )
+        );
+    }
+
+
+    try {
+
+        aplicarPreferenciasColunasNFE();
+
+    } catch (error) {}
+
 
     if (
         opcoes.atualizarStatus !==
@@ -996,6 +1022,10 @@ function aplicarFiltroPainelNFE(
                 `${filtradas.length} venda(s) neste filtro`;
         }
     }
+
+
+    vendasPendentes =
+        filtradas;
 
 
     return filtradas;
@@ -15999,15 +16029,6 @@ function refrescarPainelNFEPreservandoFiltro(
     opcoes = {}
 ) {
 
-    const renderizar =
-        opcoes.renderizar !==
-        false;
-
-
-    // =====================================================
-    // NUNCA ESCOLHER OUTRO FILTRO AUTOMATICAMENTE
-    // =====================================================
-
     if (
         !window._filtroPainelNFE
     ) {
@@ -16021,15 +16042,30 @@ function refrescarPainelNFEPreservandoFiltro(
         window._filtroPainelNFE;
 
 
+    // =====================================================
+    // CONTADORES
+    // =====================================================
+
     atualizarContadoresPainelNFE();
 
+
+    // =====================================================
+    // NÃO RECRIAR OS BOTÕES
+    // =====================================================
 
     atualizarEstadoVisualFiltroPainelNFE(
         filtroAtual
     );
 
 
-    if (!renderizar) {
+    // =====================================================
+    // QUANDO QUEREMOS APENAS OS DADOS
+    // =====================================================
+
+    if (
+        opcoes.renderizar ===
+        false
+    ) {
 
         return filtrarVendasPainelNFE(
             window._vendasPainelNFEBase ||
@@ -16039,13 +16075,13 @@ function refrescarPainelNFEPreservandoFiltro(
     }
 
 
-    return aplicarFiltroPainelNFE(
-        filtroAtual,
-        {
-            atualizarStatus:
-                false
-        }
-    );
+    // =====================================================
+    // DURANTE SINCRONIZAÇÃO:
+    //
+    // NÃO RENDERIZAR A TABELA INTEIRA.
+    // =====================================================
+
+    return atualizarPainelNFEIncremental();
 }
 
 function obterSkusExibidosTabelaNFE(venda) {
@@ -17584,6 +17620,612 @@ async function sincronizarPainelOperacionalNFE(
             }
         }
     }
+}
+
+function obterAssinaturaVisualVendaNFE(venda) {
+
+    if (!venda) {
+        return '';
+    }
+
+
+    try {
+
+        const copia = {
+            ...venda
+        };
+
+
+        // =====================================================
+        // CAMPOS QUE MUDAM A CADA CONSULTA, MAS NÃO EXIGEM
+        // REDESENHAR A LINHA
+        // =====================================================
+
+        delete copia
+            ._status_operacional_atualizado_em;
+
+        delete copia
+            ._status_operacional_atualizado_nesta_execucao;
+
+        delete copia
+            ._dados_reparados_em;
+
+        delete copia
+            ._shipment_last_updated;
+
+        delete copia
+            .atualizado_em;
+
+
+        return JSON.stringify(
+            copia
+        );
+
+
+    } catch (error) {
+
+        return String(
+            venda.id_venda_ml ||
+            venda.id ||
+            ''
+        );
+    }
+}
+
+function gerarLinhaVendaNFEIsolada(
+    venda
+) {
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+
+    if (
+        !tbody ||
+        !venda
+    ) {
+
+        return null;
+    }
+
+
+    // =====================================================
+    // GUARDAR TODAS AS LINHAS ATUAIS SEM DESTRUÍ-LAS
+    //
+    // Movê-las para DocumentFragment mantém listeners,
+    // botões e estado atual.
+    // =====================================================
+
+    const fragmento =
+        document.createDocumentFragment();
+
+
+    while (
+        tbody.firstChild
+    ) {
+
+        fragmento.appendChild(
+            tbody.firstChild
+        );
+    }
+
+
+    const vendasPendentesAntes =
+        Array.isArray(
+            vendasPendentes
+        )
+            ? vendasPendentes
+            : [];
+
+
+    let linhaNova =
+        null;
+
+
+    try {
+
+        // =================================================
+        // O RENDER EXISTENTE GERA SOMENTE ESTA VENDA
+        // =================================================
+
+        renderizarVendasNFETabela(
+            [venda]
+        );
+
+
+        linhaNova =
+            tbody.querySelector(
+                'tr[data-venda-id-nfe]'
+            );
+
+
+        if (linhaNova) {
+
+            // Retira a nova linha antes de restaurar
+            // as antigas.
+
+            linhaNova.remove();
+        }
+
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ [NFE] Erro gerando linha isolada:',
+            error
+        );
+
+
+    } finally {
+
+        // =================================================
+        // RESTAURAR AS LINHAS QUE JÁ ESTAVAM NA TELA
+        // =================================================
+
+        tbody.replaceChildren(
+            fragmento
+        );
+
+
+        vendasPendentes =
+            vendasPendentesAntes;
+    }
+
+
+    return linhaNova;
+}
+
+function atualizarPainelNFEIncremental() {
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+
+    if (!tbody) {
+        return [];
+    }
+
+
+    if (
+        !(window._hashRenderVendaNFE instanceof Map)
+    ) {
+
+        window._hashRenderVendaNFE =
+            new Map();
+    }
+
+
+    const filtroAtual =
+        window._filtroPainelNFE ||
+        'nfe_liberadas';
+
+
+    const base =
+        Array.isArray(
+            window._vendasPainelNFEBase
+        )
+            ? window._vendasPainelNFEBase
+            : [];
+
+
+    const filtradas =
+        filtrarVendasPainelNFE(
+            base,
+            filtroAtual
+        );
+
+
+    // =====================================================
+    // NÃO EXISTE NENHUMA VENDA NESTE FILTRO
+    // =====================================================
+
+    if (
+        filtradas.length === 0
+    ) {
+
+        const linhasReais =
+            tbody.querySelectorAll(
+                'tr[data-venda-id-nfe]'
+            );
+
+
+        if (
+            linhasReais.length > 0
+        ) {
+
+            renderizarVendasNFETabela(
+                []
+            );
+        }
+
+
+        window._hashRenderVendaNFE.clear();
+
+
+        vendasPendentes =
+            [];
+
+
+        return [];
+    }
+
+
+    // =====================================================
+    // SE É A PRIMEIRA RENDERIZAÇÃO DA TELA
+    //
+    // AQUI SIM PODE RENDERIZAR TUDO UMA VEZ.
+    // =====================================================
+
+    const linhasExistentes =
+        Array.from(
+            tbody.querySelectorAll(
+                'tr[data-venda-id-nfe]'
+            )
+        );
+
+
+    if (
+        linhasExistentes.length === 0
+    ) {
+
+        renderizarVendasNFETabela(
+            filtradas
+        );
+
+
+        window._hashRenderVendaNFE.clear();
+
+
+        for (
+            const venda
+            of filtradas
+        ) {
+
+            const id =
+                normalizarOrderIdML(
+                    venda.id_venda_ml ||
+                    venda.id
+                );
+
+
+            if (!id) {
+                continue;
+            }
+
+
+            window._hashRenderVendaNFE.set(
+                id,
+                obterAssinaturaVisualVendaNFE(
+                    venda
+                )
+            );
+        }
+
+
+        vendasPendentes =
+            filtradas;
+
+
+        return filtradas;
+    }
+
+
+    // =====================================================
+    // MAPA DE LINHAS QUE JÁ ESTÃO NA TELA
+    // =====================================================
+
+    const mapaLinhas =
+        new Map();
+
+
+    for (
+        const linha
+        of linhasExistentes
+    ) {
+
+        const id =
+            normalizarOrderIdML(
+                linha.dataset
+                    .vendaIdNfe
+        );
+
+
+        if (id) {
+
+            mapaLinhas.set(
+                id,
+                linha
+            );
+        }
+    }
+
+
+    // =====================================================
+    // IDS QUE DEVEM CONTINUAR NESTE FILTRO
+    // =====================================================
+
+    const idsDestino =
+        new Set(
+            filtradas
+                .map(
+                    venda =>
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        )
+                )
+                .filter(Boolean)
+        );
+
+
+    // =====================================================
+    // REMOVER SOMENTE AS VENDAS QUE SAÍRAM DESTE FILTRO
+    //
+    // Ex:
+    // Liberada -> A caminho
+    //
+    // Remove apenas aquela linha.
+    // =====================================================
+
+    for (
+        const [
+            id,
+            linha
+        ]
+        of mapaLinhas.entries()
+    ) {
+
+        if (
+            !idsDestino.has(
+                id
+            )
+        ) {
+
+            linha.remove();
+
+
+            mapaLinhas.delete(
+                id
+            );
+
+
+            window._hashRenderVendaNFE.delete(
+                id
+            );
+        }
+    }
+
+
+    // =====================================================
+    // ADICIONAR / ATUALIZAR SOMENTE AS QUE MUDARAM
+    // =====================================================
+
+    for (
+        const venda
+        of filtradas
+    ) {
+
+        const id =
+            normalizarOrderIdML(
+                venda.id_venda_ml ||
+                venda.id
+            );
+
+
+        if (!id) {
+            continue;
+        }
+
+
+        const assinaturaNova =
+            obterAssinaturaVisualVendaNFE(
+                venda
+            );
+
+
+        const assinaturaAnterior =
+            window._hashRenderVendaNFE.get(
+                id
+            );
+
+
+        const linhaAtual =
+            mapaLinhas.get(
+                id
+            );
+
+
+        // =================================================
+        // NÃO MUDOU NADA
+        //
+        // NÃO ENCOSTA NA LINHA.
+        // =================================================
+
+        if (
+            linhaAtual &&
+            assinaturaAnterior ===
+                assinaturaNova
+        ) {
+
+            continue;
+        }
+
+
+        const linhaNova =
+            gerarLinhaVendaNFEIsolada(
+                venda
+            );
+
+
+        if (!linhaNova) {
+
+            continue;
+        }
+
+
+        if (linhaAtual) {
+
+            // =================================================
+            // TROCA SOMENTE A LINHA ALTERADA
+            // =================================================
+
+            const displayAnterior =
+                linhaAtual.style.display;
+
+
+            linhaNova.style.display =
+                displayAnterior;
+
+
+            linhaAtual.replaceWith(
+                linhaNova
+            );
+
+
+        } else {
+
+            // =================================================
+            // VENDA NOVA QUE ENTROU NESTE FILTRO
+            // =================================================
+
+            tbody.appendChild(
+                linhaNova
+            );
+        }
+
+
+        mapaLinhas.set(
+            id,
+            linhaNova
+        );
+
+
+        window._hashRenderVendaNFE.set(
+            id,
+            assinaturaNova
+        );
+    }
+
+
+    // =====================================================
+    // REMOVER EVENTUAL LINHA "NENHUMA VENDA"
+    // =====================================================
+
+    Array.from(
+        tbody.querySelectorAll(
+            'tr:not([data-venda-id-nfe])'
+        )
+    )
+        .forEach(
+            linha => {
+
+                if (
+                    filtradas.length >
+                    0
+                ) {
+
+                    linha.remove();
+                }
+            }
+        );
+
+
+    // =====================================================
+    // ORDENAR SEM RECRIAR
+    //
+    // appendChild em um nó que já existe apenas move ele.
+    // Não destrói listeners.
+    // =====================================================
+
+    const mapaAtual =
+        new Map();
+
+
+    tbody
+        .querySelectorAll(
+            'tr[data-venda-id-nfe]'
+        )
+        .forEach(
+            linha => {
+
+                const id =
+                    normalizarOrderIdML(
+                        linha.dataset
+                            .vendaIdNfe
+                    );
+
+
+                if (id) {
+
+                    mapaAtual.set(
+                        id,
+                        linha
+                    );
+                }
+            }
+        );
+
+
+    for (
+        const venda
+        of filtradas
+    ) {
+
+        const id =
+            normalizarOrderIdML(
+                venda.id_venda_ml ||
+                venda.id
+            );
+
+
+        const linha =
+            mapaAtual.get(
+                id
+            );
+
+
+        if (linha) {
+
+            tbody.appendChild(
+                linha
+            );
+        }
+    }
+
+
+    vendasPendentes =
+        filtradas;
+
+
+    // =====================================================
+    // COLUNAS / OLHINHO
+    // =====================================================
+
+    try {
+
+        aplicarPreferenciasColunasNFE();
+
+    } catch (error) {}
+
+
+    try {
+
+        if (
+            typeof aplicarBotoesDetalhesVendaNFE ===
+            'function'
+        ) {
+
+            aplicarBotoesDetalhesVendaNFE();
+        }
+
+    } catch (error) {}
+
+
+    return filtradas;
 }
 
 async function mostrarTodasVendasCacheNFE() {
@@ -53420,14 +54062,7 @@ async function carregarVendasPendentes(
 
 
     // =====================================================
-    // 1. DESLIGAR QUALQUER MONITOR AUTOMÁTICO ANTIGO
-    //
-    // A partir de agora:
-    //
-    // - atualiza ao entrar na aba
-    // - ou ao clicar em "Atualizar agora"
-    //
-    // Não existe mais atualização automática por intervalo.
+    // DESLIGAR MONITOR ANTIGO
     // =====================================================
 
     try {
@@ -53440,20 +54075,11 @@ async function carregarVendasPendentes(
             iniciarMonitorPainelOperacionalNFE();
         }
 
-    } catch (error) {
-
-        console.warn(
-            '⚠️ [NFE] Erro desligando monitor antigo:',
-            error
-        );
-    }
+    } catch (error) {}
 
 
     // =====================================================
-    // 2. NÃO RESETAR O FILTRO SELECIONADO
-    //
-    // Só usa NF-e liberadas quando ainda não existe
-    // absolutamente nenhum filtro selecionado.
+    // FILTRO
     // =====================================================
 
     if (
@@ -53470,74 +54096,115 @@ async function carregarVendasPendentes(
 
 
     // =====================================================
-    // 3. CARREGAR CACHE COMPLETO
+    // BASE QUE JÁ ESTÁ NA MEMÓRIA
     //
-    // Primeiro carregamos os dados.
-    // Só depois mexemos na interface.
+    // ESSA BASE É NOSSO FALLBACK.
     // =====================================================
 
-    let vendas =
-        [];
+    const baseAnterior =
+        Array.isArray(
+            window._vendasPainelNFEBase
+        )
+            ? window._vendasPainelNFEBase
+            : [];
 
+
+    let vendas =
+        baseAnterior;
+
+
+    let cacheCarregado =
+        false;
+
+
+    // =====================================================
+    // CARREGAR SUPABASE
+    // =====================================================
 
     try {
+
+        let carregadas =
+            [];
+
 
         if (
             typeof carregarVendasCachePeriodoNFE ===
             'function'
         ) {
 
-            vendas =
+            carregadas =
                 await carregarVendasCachePeriodoNFE(
                     null,
                     null
                 );
+
 
         } else if (
             typeof carregarVendasCacheNFE ===
             'function'
         ) {
 
-            vendas =
+            carregadas =
                 await carregarVendasCacheNFE();
-
-        } else {
-
-            console.warn(
-                '⚠️ [NFE] Nenhuma função de carregamento do cache encontrada.'
-            );
         }
+
+
+        if (
+            Array.isArray(
+                carregadas
+            )
+        ) {
+
+            vendas =
+                carregadas;
+
+
+            cacheCarregado =
+                true;
+        }
+
 
     } catch (error) {
 
+        // =================================================
+        // CRÍTICO:
+        //
+        // NÃO FAZER:
+        //
+        // vendas = [];
+        //
+        // Mantemos o que já estava na tela/memória.
+        // =================================================
+
         console.error(
-            '❌ [NFE] Erro carregando vendas do cache:',
+            '❌ [NFE] Erro carregando cache. Mantendo tabela atual:',
             error
         );
 
 
         vendas =
-            [];
+            baseAnterior;
     }
 
 
-    vendas =
-        Array.isArray(vendas)
-            ? vendas
-            : [];
+    // =====================================================
+    // SOMENTE SUBSTITUIR BASE SE TEMOS DADOS VÁLIDOS
+    // OU SE REALMENTE NÃO EXISTIA BASE ANTERIOR
+    // =====================================================
 
+    if (
+        cacheCarregado ||
+        baseAnterior.length ===
+            0
+    ) {
 
-    window._vendasPainelNFEBase =
-        vendas;
-
-
-    console.log(
-        `📦 [NFE] ${vendas.length} venda(s) carregadas do cache`
-    );
+        window._vendasPainelNFEBase =
+            vendas;
+    }
 
 
     // =====================================================
-    // 4. HIDRATAR ESTADOS LOCAIS
+    // ESTADOS LOCAIS
     // =====================================================
 
     try {
@@ -53550,13 +54217,7 @@ async function carregarVendasPendentes(
             hidratarEstadosFullLocalNFE();
         }
 
-    } catch (error) {
-
-        console.warn(
-            '⚠️ [NFE] Erro hidratando estados FULL:',
-            error
-        );
-    }
+    } catch (error) {}
 
 
     try {
@@ -53569,13 +54230,7 @@ async function carregarVendasPendentes(
             hidratarRegrasFixasTipoAnuncioLocalNFE();
         }
 
-    } catch (error) {
-
-        console.warn(
-            '⚠️ [NFE] Erro hidratando regras fixas:',
-            error
-        );
-    }
+    } catch (error) {}
 
 
     try {
@@ -53588,101 +54243,60 @@ async function carregarVendasPendentes(
             reconciliarEstadosFullComRegrasFixasNFE();
         }
 
-    } catch (error) {
-
-        console.warn(
-            '⚠️ [NFE] Erro reconciliando estados FULL:',
-            error
-        );
-    }
+    } catch (error) {}
 
 
     // =====================================================
-    // 5. GARANTIR CONTROLES
-    //
-    // Essa função NÃO deve reconstruir os filtros se eles
-    // já estiverem na tela.
+    // CONTROLES
     // =====================================================
 
     try {
 
-        if (
-            typeof garantirControlesVendasNFE ===
-            'function'
-        ) {
+        garantirControlesVendasNFE();
 
-            garantirControlesVendasNFE();
-        }
+    } catch (error) {}
 
-    } catch (error) {
-
-        console.warn(
-            '⚠️ [NFE] Erro preparando controles:',
-            error
-        );
-    }
-
-
-    // =====================================================
-    // 6. GARANTIR QUE O FILTRO CONTINUE O MESMO
-    // =====================================================
 
     window._filtroPainelNFE =
         filtroSelecionado;
 
 
     // =====================================================
-    // 7. MOSTRAR CACHE IMEDIATAMENTE
-    //
-    // O usuário não precisa esperar Mercado Livre.
+    // NÃO APAGAR UMA TABELA JÁ EXISTENTE
     // =====================================================
 
-    try {
-
-        if (
-            typeof atualizarContadoresPainelNFE ===
-            'function'
-        ) {
-
-            atualizarContadoresPainelNFE();
-        }
+    const temLinhasNaTela =
+        tbody.querySelector(
+            'tr[data-venda-id-nfe]'
+        ) !== null;
 
 
-        if (
-            typeof aplicarFiltroPainelNFE ===
-            'function'
-        ) {
+    if (
+        !temLinhasNaTela
+    ) {
 
-            aplicarFiltroPainelNFE(
-                filtroSelecionado,
-                {
-                    atualizarStatus:
-                        false
-                }
-            );
-        }
+        // Primeira entrada / página recém-carregada.
 
-
-        if (
-            typeof aplicarPreferenciasColunasNFE ===
-            'function'
-        ) {
-
-            aplicarPreferenciasColunasNFE();
-        }
-
-    } catch (error) {
-
-        console.warn(
-            '⚠️ [NFE] Erro exibindo vendas do cache:',
-            error
+        aplicarFiltroPainelNFE(
+            filtroSelecionado,
+            {
+                atualizarStatus:
+                    false
+            }
         );
+
+
+    } else {
+
+        // A tabela já existe.
+        // Atualizar só diferenças.
+
+        refrescarPainelNFEPreservandoFiltro();
     }
 
 
-    // =====================================================
-    // 8. STATUS DA TELA
-    // =====================================================
+    atualizarContadoresPainelNFE();
+
 
     const statusTela =
         document.getElementById(
@@ -53692,15 +54306,21 @@ async function carregarVendasPendentes(
 
     if (statusTela) {
 
-        statusTela.textContent =
-            `${vendas.length} venda(s) carregada(s)`;
+        if (cacheCarregado) {
+
+            statusTela.textContent =
+                `${window._vendasPainelNFEBase.length} venda(s) carregada(s)`;
+
+        } else {
+
+            statusTela.textContent =
+                'Usando dados já carregados; banco temporariamente indisponível';
+        }
     }
 
 
     // =====================================================
-    // 9. CARREGAR ALERTAS FULL DO BANCO
-    //
-    // Isso não deve iniciar sincronização.
+    // ALERTAS FULL
     // =====================================================
 
     if (
@@ -53716,21 +54336,9 @@ async function carregarVendasPendentes(
 
                     try {
 
-                        if (
-                            typeof aplicarEstadosFullTabelaNFE ===
-                            'function'
-                        ) {
+                        aplicarEstadosFullTabelaNFE();
 
-                            aplicarEstadosFullTabelaNFE();
-                        }
-
-                    } catch (error) {
-
-                        console.warn(
-                            '⚠️ [NFE] Aplicando estados FULL:',
-                            error
-                        );
-                    }
+                    } catch (error) {}
                 }
             )
             .catch(
@@ -53744,14 +54352,15 @@ async function carregarVendasPendentes(
             );
     }
 
+
+    // =====================================================
+    // JÁ TEM UMA SINCRONIZAÇÃO DE ENTRADA RODANDO
+    // =====================================================
+
     if (
         window._entradaAbaNFEAtualizando ===
         true
     ) {
-
-        console.log(
-            'ℹ️ [NFE] Atualização de entrada já está em andamento.'
-        );
 
         return;
     }
@@ -53764,200 +54373,41 @@ async function carregarVendasPendentes(
     try {
 
         // =================================================
-        // 11. SINCRONIZAÇÃO PRINCIPAL
+        // SINCRONIZAR
         //
-        // ORDEM:
-        //
-        // 1 - conferir NF-e liberadas
-        // 2 - buscar vendas novas
-        // 3 - conferir restante
-        //
-        // entregues/canceladas não são consultadas novamente
+        // A função de sincronização chama
+        // refrescarPainelNFEPreservandoFiltro(),
+        // que agora é INCREMENTAL.
         // =================================================
 
-        if (
-            typeof sincronizarPainelOperacionalNFE ===
-            'function'
-        ) {
+        await sincronizarPainelOperacionalNFE(
+            {
+                forcar:
+                    true,
 
-            console.log(
-                '🔄 [NFE] Iniciando atualização única da entrada na aba...'
-            );
+                origem:
+                    'entrada_aba'
+            }
+        );
 
-
-            await sincronizarPainelOperacionalNFE(
-                {
-                    forcar:
-                        true,
-
-                    origem:
-                        'entrada_aba'
-                }
-            );
-        }
-
-
-        // =================================================
-        // 12. PRESERVAR FILTRO NOVAMENTE
-        //
-        // Mesmo depois da sincronização, a seleção do
-        // usuário não pode mudar.
-        // =================================================
 
         window._filtroPainelNFE =
             filtroSelecionado;
 
 
-        try {
-
-            if (
-                typeof refrescarPainelNFEPreservandoFiltro ===
-                'function'
-            ) {
-
-                refrescarPainelNFEPreservandoFiltro();
-
-            } else {
-
-                if (
-                    typeof atualizarContadoresPainelNFE ===
-                    'function'
-                ) {
-
-                    atualizarContadoresPainelNFE();
-                }
-
-
-                if (
-                    typeof aplicarFiltroPainelNFE ===
-                    'function'
-                ) {
-
-                    aplicarFiltroPainelNFE(
-                        filtroSelecionado,
-                        {
-                            atualizarStatus:
-                                false
-                        }
-                    );
-                }
-            }
-
-        } catch (error) {
-
-            console.warn(
-                '⚠️ [NFE] Erro atualizando painel depois da sincronização:',
-                error
-            );
-        }
-
-
         // =================================================
-        // 13. CORRIGIR VENDAS INCOMPLETAS
-        //
-        // Agora que a sincronização principal terminou,
-        // corrigimos registros antigos que ficaram salvos
-        // somente na versão básica.
-        //
-        // Exemplos:
-        //
-        // - sem SKU
-        // - sem shipment
-        // - sem modalidade
-        // - sem status
-        // - sem data
-        //
-        // NÃO executamos isso simultaneamente com a
-        // sincronização principal para não sobrecarregar
-        // as requisições do ML.
+        // SÓ ALTERAR O QUE REALMENTE MUDOU
         // =================================================
 
-        if (
-            typeof corrigirVendasIncompletasCacheNFE ===
-            'function'
-        ) {
-
-            console.log(
-                '🧩 [NFE] Verificando vendas incompletas...'
-            );
-
-
-            try {
-
-            } catch (error) {
-
-                console.warn(
-                    '⚠️ [NFE] Correção de vendas incompletas:',
-                    error
-                );
-            }
-        }
-
-
-        // =================================================
-        // 14. RESTAURAR FILTRO DEPOIS DO ENRIQUECIMENTO
-        // =================================================
-
-        window._filtroPainelNFE =
-            filtroSelecionado;
+        refrescarPainelNFEPreservandoFiltro();
 
 
         try {
 
-            if (
-                typeof refrescarPainelNFEPreservandoFiltro ===
-                'function'
-            ) {
+            aplicarPreferenciasColunasNFE();
 
-                refrescarPainelNFEPreservandoFiltro();
+        } catch (error) {}
 
-            } else {
-
-                if (
-                    typeof atualizarContadoresPainelNFE ===
-                    'function'
-                ) {
-
-                    atualizarContadoresPainelNFE();
-                }
-
-
-                if (
-                    typeof aplicarFiltroPainelNFE ===
-                    'function'
-                ) {
-
-                    aplicarFiltroPainelNFE(
-                        filtroSelecionado,
-                        {
-                            atualizarStatus:
-                                false
-                        }
-                    );
-                }
-            }
-
-
-            if (
-                typeof aplicarPreferenciasColunasNFE ===
-                'function'
-            ) {
-
-                aplicarPreferenciasColunasNFE();
-            }
-
-        } catch (error) {
-
-            console.warn(
-                '⚠️ [NFE] Erro na renderização final:',
-                error
-            );
-        }
-
-
-        // =================================================
-        // 15. FINAL
-        // =================================================
 
         const totalFinal =
             Array.isArray(
@@ -53974,18 +54424,6 @@ async function carregarVendasPendentes(
         }
 
 
-        console.log(
-            '✅ [NFE] Entrada na aba concluída.',
-            {
-                total:
-                    totalFinal,
-
-                filtro:
-                    window._filtroPainelNFE
-            }
-        );
-
-
     } catch (error) {
 
         console.error(
@@ -53994,21 +54432,21 @@ async function carregarVendasPendentes(
         );
 
 
+        // =================================================
+        // NÃO LIMPAR A TABELA EM CASO DE ERRO
+        // =================================================
+
         if (statusTela) {
 
             statusTela.textContent =
-                `Erro ao atualizar: ${error.message}`;
+                `Erro ao atualizar: ${
+                    error?.message ||
+                    'erro desconhecido'
+                }`;
         }
 
 
     } finally {
-
-        // =================================================
-        // LIBERA SOMENTE O CONTROLE DE EXECUÇÃO.
-        //
-        // NÃO cria timer.
-        // NÃO chama novamente.
-        // =================================================
 
         window._entradaAbaNFEAtualizando =
             false;

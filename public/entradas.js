@@ -2969,6 +2969,28 @@ window.processarXML = async function() {
 // - Valor total é convertido em custo unitário.
 // ============================================
 
+// ============================================
+// PROCESSAR ENTRADA MANUAL - EXCEL
+//
+// NOVA ORDEM DA PLANILHA:
+//
+// A = DATA                -> IGNORAR
+// B = RASTREIO
+// C = CÓD. FORNECEDOR
+// D = Nº PEDIDO           -> IGNORAR
+// E = CONF                -> IGNORAR
+// F = FORNECEDOR / VENDEDOR
+// G = QUANTIDADE
+// H = PRODUTO
+// I = SKU
+// J = VALOR TOTAL
+//
+// IMPORTANTE:
+// - NÃO altera entradas antigas.
+// - Só vale para novas entradas coladas.
+// - Valor total é convertido para custo unitário.
+// ============================================
+
 window.processarEntrada =
     async function() {
 
@@ -2977,6 +2999,7 @@ window.processarEntrada =
         // ========================================
 
         if (
+            typeof usuarioSomenteXMLEntradas === 'function' &&
             usuarioSomenteXMLEntradas()
         ) {
 
@@ -2990,19 +3013,13 @@ window.processarEntrada =
 
 
         // ========================================
-        // CARREGA ESTOQUE
+        // GARANTE ESTOQUE CARREGADO
         // ========================================
 
         if (
-            typeof produtosEstoque ===
-                'undefined' ||
-
-            !Array.isArray(
-                produtosEstoque
-            ) ||
-
-            produtosEstoque.length ===
-                0
+            typeof produtosEstoque === 'undefined' ||
+            !Array.isArray(produtosEstoque) ||
+            produtosEstoque.length === 0
         ) {
 
             showToast(
@@ -3012,8 +3029,7 @@ window.processarEntrada =
 
 
             if (
-                typeof carregarProdutosEstoque ===
-                'function'
+                typeof carregarProdutosEstoque === 'function'
             ) {
 
                 await carregarProdutosEstoque();
@@ -3038,7 +3054,12 @@ window.processarEntrada =
         );
 
 
-        await aguardarEstoqueCarregado();
+        if (
+            typeof aguardarEstoqueCarregado === 'function'
+        ) {
+
+            await aguardarEstoqueCarregado();
+        }
 
 
         // ========================================
@@ -3078,7 +3099,7 @@ window.processarEntrada =
 
 
         // ========================================
-        // LINHAS
+        // SEPARA AS LINHAS
         // ========================================
 
         let linhas =
@@ -3086,14 +3107,12 @@ window.processarEntrada =
                 .split(/\r?\n/)
                 .filter(
                     linha =>
-                        linha.trim() !==
-                        ''
+                        linha.trim() !== ''
                 );
 
 
         if (
-            linhas.length ===
-            0
+            linhas.length === 0
         ) {
 
             showToast(
@@ -3106,13 +3125,12 @@ window.processarEntrada =
 
 
         // ========================================
-        // SEPARADOR
+        // IDENTIFICA SEPARADOR
         //
         // Excel copiado normalmente usa TAB.
         // ========================================
 
-        let separador =
-            '\t';
+        let separador = '\t';
 
 
         const primeiraLinha =
@@ -3120,117 +3138,80 @@ window.processarEntrada =
 
 
         if (
-            primeiraLinha.includes(
-                '\t'
-            )
+            primeiraLinha.includes('\t')
         ) {
 
-            separador =
-                '\t';
+            separador = '\t';
 
         } else if (
-            primeiraLinha.includes(
-                ';'
-            )
+            primeiraLinha.includes(';')
         ) {
 
-            separador =
-                ';';
+            separador = ';';
 
         } else {
 
-            // Não usamos vírgula como preferência porque
-            // o valor monetário pode ser 342,10.
-            //
-            // Se não houver TAB ou ;, tenta vírgula.
-            separador =
-                ',';
+            separador = ',';
         }
 
 
         // ========================================
-        // NORMALIZADOR DE CABEÇALHO
+        // NORMALIZA CABEÇALHO
         // ========================================
 
         const normalizarCabecalho =
             valor =>
 
                 String(
-                    valor ||
-                    ''
+                    valor || ''
                 )
                     .trim()
                     .toLowerCase()
-                    .normalize(
-                        'NFD'
-                    )
+                    .normalize('NFD')
                     .replace(
                         /[\u0300-\u036f]/g,
                         ''
                     );
 
 
-        // ========================================
-        // IDENTIFICA CABEÇALHO NOVO
-        //
-        // Não usamos as colunas "Ignora",
-        // porque aparecem várias vezes.
-        // ========================================
-
         const cabecalho =
             primeiraLinha
-                .split(
-                    separador
-                )
+                .split(separador)
                 .map(
                     normalizarCabecalho
                 );
 
 
-        const isCabecalhoNovo =
+        // ========================================
+        // DETECTA O NOVO CABEÇALHO
+        //
+        // A Data
+        // B Rastreio
+        // C Cod Fornecedor
+        // D N Pedido
+        // E Conf
+        // F Vendedor
+        // G Quant.
+        // H Produto
+        // I SKU
+        // J V Total
+        // ========================================
+
+        const isCabecalho =
+            cabecalho.length >= 9 &&
+            cabecalho[1]?.includes('rastreio') &&
             (
-                cabecalho.length >=
-                    11
+                cabecalho[2]?.includes('fornecedor') ||
+                cabecalho[2]?.includes('cod')
             ) &&
             (
-                cabecalho[1]
-                    ?.includes(
-                        'rastreio'
-                    )
+                cabecalho[6]?.includes('quant')
             ) &&
             (
-                (
-                    cabecalho[8]
-                        ?.includes(
-                            'quantidade'
-                        )
-                ) ||
-                (
-                    cabecalho[8]
-                        ?.includes(
-                            'quant'
-                        )
-                )
+                cabecalho[7]?.includes('produto')
             ) &&
             (
-                (
-                    cabecalho[9]
-                        ?.includes(
-                            'descricao'
-                        )
-                ) ||
-                (
-                    cabecalho[9]
-                        ?.includes(
-                            'produto'
-                        )
-                )
-            ) &&
-            (
-                cabecalho[10]
-                    ?.includes(
-                        'sku'
-                    )
+                cabecalho[8]?.includes('sku')
             );
 
 
@@ -3239,18 +3220,15 @@ window.processarEntrada =
 
 
         if (
-            isCabecalhoNovo
+            isCabecalho
         ) {
 
             dadosLinhas =
-                linhas.slice(
-                    1
-                );
+                linhas.slice(1);
 
 
             if (
-                dadosLinhas.length ===
-                0
+                dadosLinhas.length === 0
             ) {
 
                 showToast(
@@ -3264,122 +3242,104 @@ window.processarEntrada =
 
 
         // ========================================
-        // CONVERSOR DE NÚMERO BRASILEIRO
+        // CONVERTE VALORES
         //
-        // Aceita:
-        // 342,1
-        // 342,10
-        // 1.234,56
-        // R$ 1.234,56
-        // 342.10
+        // Exemplos aceitos:
+        //
+        // 325,22
+        // 325.22
+        // 1.325,22
+        // R$ 325,22
         // ========================================
 
-        const converterValorNumero =
-            valor => {
+        function converterValorEntrada(
+            valor
+        ) {
 
-                if (
-                    valor === null ||
-                    valor === undefined
-                ) {
+            if (
+                valor === null ||
+                valor === undefined
+            ) {
 
-                    return 0;
-                }
+                return 0;
+            }
 
 
-                let textoValor =
-                    String(
-                        valor
+            let textoValor =
+                String(valor)
+                    .trim()
+                    .replace(
+                        /R\$/gi,
+                        ''
                     )
-                        .trim()
-                        .replace(
-                            /R\$/gi,
-                            ''
-                        )
-                        .replace(
-                            /\s/g,
-                            ''
-                        );
-
-
-                if (
-                    !textoValor
-                ) {
-
-                    return 0;
-                }
-
-
-                // Tem ponto e vírgula:
-                // padrão BR 1.234,56
-                if (
-                    textoValor.includes(
-                        '.'
-                    ) &&
-                    textoValor.includes(
-                        ','
-                    )
-                ) {
-
-                    textoValor =
-                        textoValor
-                            .replace(
-                                /\./g,
-                                ''
-                            )
-                            .replace(
-                                ',',
-                                '.'
-                            );
-
-
-                // Somente vírgula:
-                // 342,10
-                } else if (
-                    textoValor.includes(
-                        ','
-                    )
-                ) {
-
-                    textoValor =
-                        textoValor.replace(
-                            ',',
-                            '.'
-                        );
-                }
-
-
-                const numero =
-                    parseFloat(
-                        textoValor
+                    .replace(
+                        /\s/g,
+                        ''
                     );
 
 
-                return Number.isFinite(
-                    numero
-                )
-                    ? numero
-                    : 0;
-            };
+            if (!textoValor) {
+
+                return 0;
+            }
+
+
+            // 1.234,56
+            if (
+                textoValor.includes('.') &&
+                textoValor.includes(',')
+            ) {
+
+                textoValor =
+                    textoValor
+                        .replace(
+                            /\./g,
+                            ''
+                        )
+                        .replace(
+                            ',',
+                            '.'
+                        );
+
+
+            // 325,22
+            } else if (
+                textoValor.includes(',')
+            ) {
+
+                textoValor =
+                    textoValor.replace(
+                        ',',
+                        '.'
+                    );
+            }
+
+
+            const numero =
+                Number.parseFloat(
+                    textoValor
+                );
+
+
+            return Number.isFinite(numero)
+                ? numero
+                : 0;
+        }
 
 
         // ========================================
-        // RESULTADO DO PARSING
+        // ARRAYS
         // ========================================
 
-        const itensRaw =
-            [];
+        const itensRaw = [];
 
+        const erros = [];
 
-        const erros =
-            [];
-
-
-        const duplicatasEncontradas =
-            [];
+        const duplicatasEncontradas = [];
 
 
         // ========================================
-        // PERCORRE LINHAS
+        // PERCORRE CADA LINHA
         // ========================================
 
         for (
@@ -3394,9 +3354,7 @@ window.processarEntrada =
 
             const partes =
                 linha
-                    .split(
-                        separador
-                    )
+                    .split(separador)
                     .map(
                         campo =>
                             campo.trim()
@@ -3404,16 +3362,16 @@ window.processarEntrada =
 
 
             // ====================================
-            // NOVO ARQUIVO PRECISA TER ATÉ COLUNA L
+            // PRECISA TER PELO MENOS ATÉ O SKU
+            // COLUNA I = índice 8
             // ====================================
 
             if (
-                partes.length <
-                11
+                partes.length < 9
             ) {
 
                 erros.push(
-                    `Linha ${idx + 1}: poucas colunas (${partes.length}). Esperado layout até a coluna L.`
+                    `Linha ${idx + 1}: quantidade de colunas insuficiente (${partes.length}).`
                 );
 
                 continue;
@@ -3424,85 +3382,112 @@ window.processarEntrada =
             // NOVO MAPEAMENTO
             // ====================================
 
-            // A = ignorar
-            // partes[0]
+
+            // ------------------------------------
+            // A = DATA
+            // IGNORADA
+            // ------------------------------------
+
+            const dataIgnorada =
+                partes[0] || '';
 
 
-            // B = Rastreio
+            // ------------------------------------
+            // B = RASTREIO
+            // ------------------------------------
+
             const rastreio =
-                partes[1] ||
-                '';
+                partes[1] || '';
 
 
-            // C = Código fornecedor opcional
+            // ------------------------------------
+            // C = CÓDIGO FORNECEDOR
+            // ------------------------------------
+
             const cdFornecedor =
-                partes[2] ||
-                '';
+                partes[2] || '';
 
 
-            // D = ignorar
-            // partes[3]
+            // ------------------------------------
+            // D = NÚMERO DO PEDIDO
+            // IGNORADO
+            // ------------------------------------
+
+            const numeroPedidoIgnorado =
+                partes[3] || '';
 
 
-            // E = ignorar
-            // partes[4]
+            // ------------------------------------
+            // E = CONF
+            // IGNORADO
+            // ------------------------------------
+
+            const confIgnorado =
+                partes[4] || '';
 
 
-            // F = Fornecedor
+            // ------------------------------------
+            // F = FORNECEDOR / VENDEDOR
+            // ------------------------------------
+
             const fornecedorNome =
-                partes[5] ||
-                '';
+                partes[5] || '';
 
 
-            // G = ignorar
-            // partes[6]
+            // ------------------------------------
+            // G = QUANTIDADE
+            // ------------------------------------
 
-
-            // H = ignorar
-            // partes[7]
-
-
-            // I = Quantidade
             const quantidade =
-                parseInt(
+                Number.parseInt(
                     String(
-                        partes[8] ||
-                        ''
+                        partes[6] || ''
                     )
                         .replace(
-                            /\D/g,
+                            /[^\d]/g,
                             ''
                         ),
                     10
-                ) ||
-                0;
+                ) || 0;
 
 
-            // J = Descrição
+            // ------------------------------------
+            // H = PRODUTO
+            // ------------------------------------
+
             const produto =
-                partes[9] ||
-                '';
+                partes[7] || '';
 
 
-            // K = SKU
+            // ------------------------------------
+            // I = SKU
+            // ------------------------------------
+
             const sku =
-                partes[10]
-                    ? String(
-                        partes[10]
-                    ).trim()
-                    : '';
+                String(
+                    partes[8] || ''
+                )
+                    .trim();
 
 
-            // L = Valor TOTAL
+            // ------------------------------------
+            // J = VALOR TOTAL
+            // ------------------------------------
+
             const valorTotal =
-                converterValorNumero(
-                    partes[11] ||
-                    ''
+                converterValorEntrada(
+                    partes[9] || ''
                 );
 
 
             // ====================================
-            // CONVERTE VALOR TOTAL EM CUSTO UNITÁRIO
+            // CUSTO UNITÁRIO
+            //
+            // Ex.:
+            // Qtd 10
+            // Total 325,22
+            //
+            // custo = 32,522
             // ====================================
 
             let valorCusto =
@@ -3519,7 +3504,6 @@ window.processarEntrada =
                     quantidade;
 
 
-                // Limita ruído de ponto flutuante
                 valorCusto =
                     Math.round(
                         (
@@ -3533,28 +3517,31 @@ window.processarEntrada =
 
 
             // ====================================
-            // VALIDAÇÕES
+            // VALIDA SKU
             // ====================================
 
             if (
-                !sku &&
-                !cdFornecedor
+                !sku
             ) {
 
                 erros.push(
-                    `Linha ${idx + 1}: SKU e código do fornecedor estão vazios.`
+                    `Linha ${idx + 1}: SKU não informado.`
                 );
 
                 continue;
             }
 
+
+            // ====================================
+            // VALIDA QUANTIDADE
+            // ====================================
 
             if (
                 quantidade <= 0
             ) {
 
                 erros.push(
-                    `Linha ${idx + 1}: quantidade inválida para o SKU "${sku || cdFornecedor}".`
+                    `Linha ${idx + 1}: quantidade inválida para o SKU "${sku}".`
                 );
 
                 continue;
@@ -3562,12 +3549,14 @@ window.processarEntrada =
 
 
             // ====================================
-            // DUPLICIDADE
+            // VERIFICA DUPLICIDADE
             // ====================================
 
             if (
                 rastreio &&
-                sku
+                sku &&
+                typeof verificarDuplicidadeEntrada ===
+                    'function'
             ) {
 
                 const duplicado =
@@ -3578,8 +3567,7 @@ window.processarEntrada =
 
 
                 if (
-                    duplicado &&
-                    duplicado.duplicado
+                    duplicado?.duplicado
                 ) {
 
                     duplicatasEncontradas.push({
@@ -3605,7 +3593,7 @@ window.processarEntrada =
 
 
             // ====================================
-            // MONTA ITEM
+            // CRIA ITEM
             // ====================================
 
             itensRaw.push({
@@ -3628,21 +3616,17 @@ window.processarEntrada =
                 sku_original:
                     sku,
 
-                // Nova planilha não possui
-                // coluna de observação.
-                observacao:
-                    '',
-
-                // O sistema trabalha com
-                // custo UNITÁRIO.
-                valor_custo:
-                    valorCusto,
-
                 sku_match:
                     null,
 
                 produto_id:
                     null,
+
+                observacao:
+                    '',
+
+                valor_custo:
+                    valorCusto,
 
                 status:
                     'pendente',
@@ -3653,11 +3637,11 @@ window.processarEntrada =
                 responsavel:
                     null,
 
-                quantidade_entrada:
-                    0,
-
                 data_acao:
-                    null
+                    null,
+
+                quantidade_entrada:
+                    0
 
             });
 
@@ -3666,11 +3650,20 @@ window.processarEntrada =
                 `📦 Linha ${idx + 1} interpretada:`,
                 {
 
+                    dataIgnorada:
+                        dataIgnorada,
+
                     rastreio:
                         rastreio,
 
                     cdFornecedor:
                         cdFornecedor,
+
+                    numeroPedidoIgnorado:
+                        numeroPedidoIgnorado,
+
+                    confIgnorado:
+                        confIgnorado,
 
                     fornecedor:
                         fornecedorNome,
@@ -3696,12 +3689,11 @@ window.processarEntrada =
 
 
         // ========================================
-        // BLOQUEIA DUPLICATAS
+        // DUPLICATAS
         // ========================================
 
         if (
-            duplicatasEncontradas.length >
-            0
+            duplicatasEncontradas.length > 0
         ) {
 
             let mensagem =
@@ -3712,7 +3704,7 @@ window.processarEntrada =
                 duplicata => {
 
                     mensagem +=
-                        `Linha ${duplicata.linha}: Referência "${duplicata.rastreio}" + SKU "${duplicata.sku}" → Já existe na entrada ${duplicata.entrada}\n`;
+                        `Linha ${duplicata.linha}: Rastreio "${duplicata.rastreio}" + SKU "${duplicata.sku}" → já existe na entrada ${duplicata.entrada}\n`;
 
                 }
             );
@@ -3728,7 +3720,7 @@ window.processarEntrada =
 
 
             showToast(
-                '❌ Entradas duplicadas detectadas. Corrija os dados.',
+                '❌ Entradas duplicadas detectadas.',
                 'error'
             );
 
@@ -3738,16 +3730,15 @@ window.processarEntrada =
 
 
         // ========================================
-        // NENHUM ITEM
+        // NENHUM ITEM VÁLIDO
         // ========================================
 
         if (
-            itensRaw.length ===
-            0
+            itensRaw.length === 0
         ) {
 
             console.warn(
-                'Erros no parsing:',
+                '❌ Erros encontrados:',
                 erros
             );
 
@@ -3763,23 +3754,22 @@ window.processarEntrada =
 
 
         // ========================================
-        // HOUVE ALGUM ERRO, MAS TEM ITENS VÁLIDOS
+        // AVISA SOBRE LINHAS IGNORADAS
         // ========================================
 
         if (
-            erros.length >
-            0
+            erros.length > 0
         ) {
 
-            showToast(
-                `⚠️ ${erros.length} linha(s) ignorada(s). ${itensRaw.length} item(s) válidos.`,
-                'warning'
+            console.warn(
+                '⚠️ Linhas ignoradas:',
+                erros
             );
 
 
-            console.warn(
-                '⚠️ Erros no parsing:',
-                erros
+            showToast(
+                `⚠️ ${erros.length} linha(s) ignorada(s). ${itensRaw.length} item(s) válido(s).`,
+                'warning'
             );
         }
 
@@ -3794,18 +3784,18 @@ window.processarEntrada =
                 b
             ) =>
 
-                (
-                    a.rastreio ||
-                    ''
+                String(
+                    a.rastreio || ''
                 ).localeCompare(
-                    b.rastreio ||
-                    ''
+                    String(
+                        b.rastreio || ''
+                    )
                 )
         );
 
 
         // ========================================
-        // IDENTIFICA FORNECEDOR E PRODUTO
+        // MAPEIA FORNECEDOR + PRODUTO DO ESTOQUE
         // ========================================
 
         for (
@@ -3818,12 +3808,13 @@ window.processarEntrada =
 
 
             // ====================================
-            // PRIMEIRO PROCURA PELO CÓDIGO
-            // DO FORNECEDOR, SE INFORMADO
+            // 1) PROCURA PELO CÓDIGO DO FORNECEDOR
             // ====================================
 
             if (
-                item.cd_fornecedor
+                item.cd_fornecedor &&
+                typeof buscarFornecedor ===
+                    'function'
             ) {
 
                 fornecedor =
@@ -3834,12 +3825,14 @@ window.processarEntrada =
 
 
             // ====================================
-            // SENÃO PROCURA PELO SKU
+            // 2) PROCURA PELO SKU ORIGINAL
             // ====================================
 
             if (
                 !fornecedor &&
-                item.sku_original
+                item.sku_original &&
+                typeof buscarFornecedor ===
+                    'function'
             ) {
 
                 fornecedor =
@@ -3850,7 +3843,7 @@ window.processarEntrada =
 
 
             // ====================================
-            // DADOS DO MAPEAMENTO DO FORNECEDOR
+            // SE HOUVER MAPEAMENTO DE FORNECEDOR
             // ====================================
 
             if (
@@ -3858,25 +3851,12 @@ window.processarEntrada =
             ) {
 
                 if (
-                    !item.produto ||
-                    item.produto.trim() ===
-                        '' ||
-                    item.produto ===
-                        item.sku_original
-                ) {
-
-                    item.produto =
-                        fornecedor.descricao_produto ||
-                        item.produto;
-                }
-
-
-                if (
                     !item.fornecedor_nome
                 ) {
 
                     item.fornecedor_nome =
-                        fornecedor.nome_fornecedor;
+                        fornecedor.nome_fornecedor ||
+                        '';
                 }
 
 
@@ -3885,7 +3865,8 @@ window.processarEntrada =
                 ) {
 
                     item.cd_fornecedor =
-                        fornecedor.cd_fornecedor;
+                        fornecedor.cd_fornecedor ||
+                        '';
                 }
 
 
@@ -3900,11 +3881,11 @@ window.processarEntrada =
 
 
             // ====================================
-            // PROCURA PRODUTO NO ESTOQUE
+            // PROCURA NO ESTOQUE
             //
-            // Esta chamada continua utilizando
-            // sua regra atual dos 8 primeiros
-            // caracteres.
+            // Sua verificarSKUExistente() continua
+            // responsável pela regra dos
+            // 8 PRIMEIROS CARACTERES IDÊNTICOS.
             // ====================================
 
             const skuParaBuscar =
@@ -3913,37 +3894,39 @@ window.processarEntrada =
 
 
             if (
-                skuParaBuscar
+                skuParaBuscar &&
+                typeof verificarSKUExistente ===
+                    'function'
             ) {
 
-                const produtoEstoque =
+                const produtoEncontrado =
                     verificarSKUExistente(
                         skuParaBuscar
                     );
 
 
                 if (
-                    produtoEstoque
+                    produtoEncontrado
                 ) {
 
                     item.produto_id =
-                        produtoEstoque.id;
+                        produtoEncontrado.id;
 
 
+                    // Usa o SKU REAL cadastrado
                     item.sku_match =
-                        produtoEstoque.sku;
+                        produtoEncontrado.sku;
 
 
-                    // Mantém a descrição da planilha.
-                    // Só usa o cadastro se vier vazia.
+                    // Mantém o nome da planilha.
+                    // Só pega do cadastro se vier vazio.
                     if (
-                        !item.produto ||
-                        item.produto.trim() ===
-                            ''
+                        !item.produto
                     ) {
 
                         item.produto =
-                            produtoEstoque.nome;
+                            produtoEncontrado.nome ||
+                            '';
                     }
                 }
             }
@@ -3951,7 +3934,7 @@ window.processarEntrada =
 
 
         // ========================================
-        // GERA NOVO NÚMERO
+        // GERA NÚMERO DA ENTRADA
         // ========================================
 
         const numeroEntrada =
@@ -3959,7 +3942,7 @@ window.processarEntrada =
 
 
         // ========================================
-        // SALVA
+        // SALVA NO SUPABASE
         // ========================================
 
         try {
@@ -3975,7 +3958,7 @@ window.processarEntrada =
 
 
             // ====================================
-            // CARD
+            // CARD DA ENTRADA
             // ====================================
 
             const cardData = {
@@ -3983,8 +3966,7 @@ window.processarEntrada =
                 numero_entrada:
                     numeroEntrada,
 
-                // Preserva exatamente o texto
-                // original colado.
+                // Guarda exatamente o texto colado.
                 dados_brutos:
                     texto,
 
@@ -3992,10 +3974,18 @@ window.processarEntrada =
                     'pendente',
 
                 criado_por:
-                    currentUser.name,
+                    currentUser?.name ||
+                    currentUser?.username ||
+                    'Sistema',
 
                 criado_em:
-                    getDataHoraLocalISO(),
+                    typeof getDataHoraLocalISO ===
+                        'function'
+
+                        ? getDataHoraLocalISO()
+
+                        : new Date()
+                            .toISOString(),
 
                 total_items:
                     itensRaw.length,
@@ -4019,11 +4009,9 @@ window.processarEntrada =
                         'entradas_cards'
                     )
 
-                    .insert(
-                        [
-                            cardData
-                        ]
-                    )
+                    .insert([
+                        cardData
+                    ])
 
                     .select();
 
@@ -4052,31 +4040,39 @@ window.processarEntrada =
                             card.id,
 
                         cd_fornecedor:
-                            item.cd_fornecedor,
+                            item.cd_fornecedor ||
+                            '',
 
                         rastreio:
-                            item.rastreio,
+                            item.rastreio ||
+                            '',
 
                         fornecedor_nome:
-                            item.fornecedor_nome,
+                            item.fornecedor_nome ||
+                            '',
 
                         quantidade:
                             item.quantidade,
 
                         produto:
-                            item.produto,
+                            item.produto ||
+                            '',
 
                         sku_original:
-                            item.sku_original,
+                            item.sku_original ||
+                            '',
 
                         sku_match:
-                            item.sku_match,
+                            item.sku_match ||
+                            null,
 
                         produto_id:
-                            item.produto_id,
+                            item.produto_id ||
+                            null,
 
                         observacao:
-                            item.observacao,
+                            item.observacao ||
+                            '',
 
                         valor_custo:
                             item.valor_custo ||
@@ -4155,7 +4151,10 @@ window.processarEntrada =
 
             showToast(
                 '❌ Erro ao processar entrada: ' +
-                error.message,
+                (
+                    error.message ||
+                    'Erro desconhecido'
+                ),
                 'error'
             );
         }
