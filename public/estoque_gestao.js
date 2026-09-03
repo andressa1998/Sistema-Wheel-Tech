@@ -118,11 +118,458 @@ let regrasFixasTipoAnuncioMLCarregadas = false;
 let estadoFiltrosEstoque = {
     termo: '',
     categoria: '',
+    situacao: 'ativos',
     pagina: 1,
     itensPorPagina: 20,
     colunaOrdem: 'id',
     direcaoOrdem: 'asc'
 };
+
+// =========================================================
+// PRODUTO INATIVO?
+// =========================================================
+
+function produtoEstaInativo(
+    produto
+) {
+
+    if (!produto) {
+        return false;
+    }
+
+
+    return (
+        produto.dados_extra
+            ?.inativo === true
+    );
+}
+
+
+// =========================================================
+// PRODUTO ATIVO?
+// =========================================================
+
+function produtoEstaAtivo(
+    produto
+) {
+
+    return !produtoEstaInativo(
+        produto
+    );
+}
+
+
+// =========================================================
+// ADICIONAR FILTRO DE SITUAÇÃO NA BARRA
+// =========================================================
+
+function garantirFiltroSituacaoEstoque() {
+
+    let select =
+        document.getElementById(
+            'filtroSituacaoEstoque'
+        );
+
+
+    if (select) {
+        return select;
+    }
+
+
+    const categoriaSelect =
+        document.getElementById(
+            'filtroCategoriaEstoque'
+        );
+
+
+    if (!categoriaSelect) {
+        return null;
+    }
+
+
+    select =
+        document.createElement(
+            'select'
+        );
+
+
+    select.id =
+        'filtroSituacaoEstoque';
+
+
+    select.className =
+        'form-control';
+
+
+    select.style.width =
+        '145px';
+
+
+    select.innerHTML = `
+
+        <option value="ativos">
+            Ativos
+        </option>
+
+        <option value="inativos">
+            Inativos
+        </option>
+
+        <option value="todos">
+            Todos
+        </option>
+
+    `;
+
+
+    select.value =
+        estadoFiltrosEstoque
+            ?.situacao ||
+        'ativos';
+
+
+    select.addEventListener(
+        'change',
+        filtrarProdutosEstoque
+    );
+
+
+    categoriaSelect
+        .insertAdjacentElement(
+            'afterend',
+            select
+        );
+
+
+    return select;
+}
+
+
+// =========================================================
+// ALTERAR SITUAÇÃO DOS PRODUTOS SELECIONADOS
+// =========================================================
+
+async function alterarSituacaoProdutosSelecionados(
+    inativar
+) {
+
+    const ids =
+        Array.from(
+            produtosSelecionadosMassa
+        );
+
+
+    if (
+        ids.length === 0
+    ) {
+
+        showToast(
+            '⚠️ Selecione pelo menos um produto.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const produtos =
+        produtosEstoque.filter(
+            produto =>
+                ids.includes(
+                    String(
+                        produto.id
+                    )
+                )
+        );
+
+
+    if (
+        produtos.length === 0
+    ) {
+
+        showToast(
+            '❌ Produtos selecionados não encontrados.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // IGNORAR QUEM JÁ ESTÁ NA SITUAÇÃO DESEJADA
+    // =====================================================
+
+    const alterar =
+        produtos.filter(
+            produto => {
+
+                const inativo =
+                    produtoEstaInativo(
+                        produto
+                    );
+
+
+                return (
+                    inativar
+                        ? !inativo
+                        : inativo
+                );
+
+            }
+        );
+
+
+    if (
+        alterar.length === 0
+    ) {
+
+        showToast(
+
+            inativar
+
+                ? 'ℹ️ Todos os produtos selecionados já estão inativos.'
+
+                : 'ℹ️ Todos os produtos selecionados já estão ativos.',
+
+            'info'
+
+        );
+
+        return;
+    }
+
+
+    const acao =
+        inativar
+            ? 'INATIVAR'
+            : 'REATIVAR';
+
+
+    const confirmou =
+        confirm(
+
+            `${acao} ${alterar.length} produto(s)?\n\n` +
+
+            (
+                inativar
+
+                    ? 'Os produtos deixarão de aparecer na listagem e nos relatórios padrão.'
+
+                    : 'Os produtos voltarão a aparecer normalmente na listagem e nos relatórios.'
+            )
+
+        );
+
+
+    if (!confirmou) {
+        return;
+    }
+
+
+    let sucesso =
+        0;
+
+
+    const erros =
+        [];
+
+
+    const agora =
+        new Date()
+            .toISOString();
+
+
+    const usuario =
+        currentUser?.name ||
+        currentUser?.username ||
+        'sistema';
+
+
+    for (
+        const produto
+        of alterar
+    ) {
+
+        try {
+
+            // =================================================
+            // PRESERVAR TODO O DADOS_EXTRA
+            // =================================================
+
+            const dadosExtra = {
+
+                ...(
+                    produto.dados_extra ||
+                    {}
+                ),
+
+                inativo:
+                    !!inativar
+
+            };
+
+
+            // =================================================
+            // AUDITORIA
+            // =================================================
+
+            if (
+                inativar
+            ) {
+
+                dadosExtra.inativado_em =
+                    agora;
+
+
+                dadosExtra.inativado_por =
+                    usuario;
+
+
+                delete dadosExtra
+                    .reativado_em;
+
+
+                delete dadosExtra
+                    .reativado_por;
+
+            }
+
+            else {
+
+                dadosExtra.reativado_em =
+                    agora;
+
+
+                dadosExtra.reativado_por =
+                    usuario;
+
+            }
+
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update({
+
+                        dados_extra:
+                            dadosExtra
+
+                    })
+                    .eq(
+                        'id',
+                        produto.id
+                    );
+
+
+            if (
+                error
+            ) {
+
+                throw error;
+
+            }
+
+
+            // =================================================
+            // MEMÓRIA LOCAL
+            // =================================================
+
+            produto.dados_extra =
+                dadosExtra;
+
+
+            sucesso++;
+
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                `❌ Erro alterando situação de ${produto.sku}:`,
+                error
+            );
+
+
+            erros.push(
+                produto.sku ||
+                produto.id
+            );
+
+        }
+
+    }
+
+
+    // =====================================================
+    // LIMPAR SELEÇÃO
+    // =====================================================
+
+    limparSelecaoEstoqueMassa();
+
+
+    // =====================================================
+    // REAPLICAR FILTRO
+    //
+    // Se estamos em Ativos e inativamos,
+    // os produtos desaparecem imediatamente.
+    // =====================================================
+
+    aplicarFiltrosEOrdenacao();
+
+
+    if (
+        erros.length === 0
+    ) {
+
+        showToast(
+
+            inativar
+
+                ? `✅ ${sucesso} produto(s) inativado(s).`
+
+                : `✅ ${sucesso} produto(s) reativado(s).`,
+
+            'success'
+
+        );
+
+    }
+
+    else {
+
+        showToast(
+            `⚠️ ${sucesso} alterado(s) e ${erros.length} erro(s).`,
+            'warning'
+        );
+
+    }
+}
+
+
+// =========================================================
+// ATALHOS PARA O HTML
+// =========================================================
+
+function inativarProdutosSelecionados() {
+
+    return alterarSituacaoProdutosSelecionados(
+        true
+    );
+}
+
+
+function reativarProdutosSelecionados() {
+
+    return alterarSituacaoProdutosSelecionados(
+        false
+    );
+}
 
 // =========================================================
 // GARANTIR QUE AS SUBCATEGORIAS ESTEJAM CARREGADAS
@@ -2966,13 +3413,19 @@ function fecharMenuAcessibilidadeEstoque() {
     }
 }
 
+// =========================================================
+// ABRIR GESTÃO DE ESTOQUE
+// =========================================================
+
 window.abrirGestaoEstoque = function() {
+
+    // =====================================================
+    // VERIFICAR LOGIN
+    // =====================================================
 
     if (!currentUser) {
 
-        if (
-            window.showToast
-        ) {
+        if (window.showToast) {
 
             showToast(
                 '⚠️ Faça login primeiro',
@@ -2987,10 +3440,13 @@ window.abrirGestaoEstoque = function() {
 
         }
 
-
         return;
     }
 
+
+    // =====================================================
+    // ESCONDER OUTROS SISTEMAS
+    // =====================================================
 
     const sistemas = [
 
@@ -3030,6 +3486,10 @@ window.abrirGestaoEstoque = function() {
     );
 
 
+    // =====================================================
+    // MOSTRAR GESTÃO DE ESTOQUE
+    // =====================================================
+
     const gestaoSystem =
         document.getElementById(
             'estoqueGestaoSystem'
@@ -3043,9 +3503,7 @@ window.abrirGestaoEstoque = function() {
         );
 
 
-        if (
-            window.showToast
-        ) {
+        if (window.showToast) {
 
             showToast(
                 'Erro: sistema de estoque não configurado',
@@ -3053,7 +3511,6 @@ window.abrirGestaoEstoque = function() {
             );
 
         }
-
 
         return;
     }
@@ -3065,7 +3522,7 @@ window.abrirGestaoEstoque = function() {
 
 
     // =====================================================
-    // USUÁRIO
+    // DADOS DO USUÁRIO
     // =====================================================
 
     const userNameEl =
@@ -3111,7 +3568,8 @@ window.abrirGestaoEstoque = function() {
 
 
     // =====================================================
-    // CARREGAMENTOS
+    // IMPORTANTE:
+    // MANTER EXATAMENTE O CARREGAMENTO QUE JÁ FUNCIONAVA
     // =====================================================
 
     carregarProdutosEstoque();
@@ -3121,17 +3579,28 @@ window.abrirGestaoEstoque = function() {
     carregarCategoriasCustomizadas();
 
 
-    garantirSubcategoriasEstoqueCarregadas()
-        .catch(
-            error => {
+    // =====================================================
+    // SUBCATEGORIAS
+    // =====================================================
 
-                console.error(
-                    '❌ Erro carregando subcategorias:',
-                    error
-                );
+    if (
+        typeof garantirSubcategoriasEstoqueCarregadas ===
+        'function'
+    ) {
 
-            }
-        );
+        garantirSubcategoriasEstoqueCarregadas()
+            .catch(
+                error => {
+
+                    console.error(
+                        '❌ Erro carregando subcategorias:',
+                        error
+                    );
+
+                }
+            );
+
+    }
 
 
     // =====================================================
@@ -3161,7 +3630,7 @@ window.abrirGestaoEstoque = function() {
 
 
     // =====================================================
-    // FILTRO
+    // FILTRO DE CATEGORIA
     // =====================================================
 
     const categoriaFilter =
@@ -3188,7 +3657,6 @@ window.abrirGestaoEstoque = function() {
 
     // =====================================================
     // BOTÃO CATEGORIAS
-    // MANTÉM COMPORTAMENTO ATUAL
     // =====================================================
 
     const btnCategorias =
@@ -3209,37 +3677,158 @@ window.abrirGestaoEstoque = function() {
     // MENU ACESSIBILIDADE
     // =====================================================
 
-    garantirMenuAcessibilidadeEstoque();
+    if (
+        typeof garantirMenuAcessibilidadeEstoque ===
+        'function'
+    ) {
+
+        garantirMenuAcessibilidadeEstoque();
+
+    }
 
 
     // =====================================================
-    // BOTÕES DINÂMICOS
+    // IMPORTAR PLANILHA ML
     // =====================================================
 
-    setTimeout(
-        adicionarBotaoImportarPlanilhaML,
-        100
-    );
+    if (
+        typeof adicionarBotaoImportarPlanilhaML ===
+        'function'
+    ) {
+
+        setTimeout(
+            adicionarBotaoImportarPlanilhaML,
+            100
+        );
+
+    }
 
 
-    setTimeout(
-        adicionarBotaoImportacaoCadastroInicial,
-        150
-    );
+    // =====================================================
+    // IMPORTAR PRODUTOS
+    // =====================================================
+
+    if (
+        typeof adicionarBotaoImportacaoCadastroInicial ===
+        'function'
+    ) {
+
+        setTimeout(
+            adicionarBotaoImportacaoCadastroInicial,
+            150
+        );
+
+    }
 
 
-    setTimeout(
-        adicionarBotaoCriarCategoria,
-        200
-    );
+    // =====================================================
+    // CRIAR CATEGORIA
+    // =====================================================
+
+    if (
+        typeof adicionarBotaoCriarCategoria ===
+        'function'
+    ) {
+
+        setTimeout(
+            adicionarBotaoCriarCategoria,
+            200
+        );
+
+    }
 
 
-    // Depois que todos forem criados,
-    // reorganizar novamente.
-    setTimeout(
-        garantirMenuAcessibilidadeEstoque,
-        350
-    );
+    // =====================================================
+    // INFORMAR RASTREIO
+    // =====================================================
+
+    if (
+        typeof adicionarBotaoInformarRastreioCompra ===
+        'function'
+    ) {
+
+        setTimeout(
+            adicionarBotaoInformarRastreioCompra,
+            250
+        );
+
+    }
+
+
+    // =====================================================
+    // ADICIONAR PREÇO DE CUSTO
+    // Ronald + Andressamiotto
+    // =====================================================
+
+    if (
+        typeof adicionarBotaoCustoFiltroRonald ===
+        'function'
+    ) {
+
+        setTimeout(
+            adicionarBotaoCustoFiltroRonald,
+            300
+        );
+
+    }
+
+
+    // =====================================================
+    // NOVO:
+    // ATIVOS / INATIVOS / TODOS
+    //
+    // SOMENTE DEPOIS DA TELA JÁ ESTAR ABERTA.
+    // NÃO INTERFERE NO CARREGAMENTO DOS PRODUTOS.
+    // =====================================================
+
+    if (
+        typeof garantirControlesSituacaoProdutosEstoque ===
+        'function'
+    ) {
+
+        setTimeout(
+            garantirControlesSituacaoProdutosEstoque,
+            350
+        );
+
+    }
+
+
+    // =====================================================
+    // REORGANIZAR MENU APÓS BOTÕES DINÂMICOS
+    // =====================================================
+
+    if (
+        typeof garantirMenuAcessibilidadeEstoque ===
+        'function'
+    ) {
+
+        setTimeout(
+            garantirMenuAcessibilidadeEstoque,
+            450
+        );
+
+    }
+
+
+    // =====================================================
+    // GARANTIA EXTRA DOS CONTROLES DE SITUAÇÃO
+    //
+    // A barra de ações pode terminar de montar depois.
+    // =====================================================
+
+    if (
+        typeof garantirControlesSituacaoProdutosEstoque ===
+        'function'
+    ) {
+
+        setTimeout(
+            garantirControlesSituacaoProdutosEstoque,
+            800
+        );
+
+    }
+
 };
 
 // =========================================================
@@ -3466,6 +4055,20 @@ async function carregarProdutosEstoque() {
                 'filtroCategoriaEstoque'
             );
 
+        const situacao =
+            document.getElementById(
+                'filtroSituacaoEstoque'
+            );    
+        if (
+            situacao
+        ) {
+
+            situacao.value =
+                estadoFiltrosEstoque
+                    .situacao ||
+                'ativos';
+
+        }
 
         if (
             termo
@@ -3595,111 +4198,556 @@ async function carregarProdutosEstoque() {
 // =========================================================
 
 function filtrarProdutosEstoque() {
-    const termo = document.getElementById('buscaEstoqueInput').value.toLowerCase().trim();
-    const categoriaSelecionada = document.getElementById('filtroCategoriaEstoque')?.value || '';
 
-    estadoFiltrosEstoque.termo = termo;
-    estadoFiltrosEstoque.categoria = categoriaSelecionada;
-    estadoFiltrosEstoque.pagina = 1;
+    const termo =
+        document.getElementById(
+            'buscaEstoqueInput'
+        )
+        ?.value
+        ?.toLowerCase()
+        ?.trim() || '';
+
+
+    const categoriaSelecionada =
+        document.getElementById(
+            'filtroCategoriaEstoque'
+        )?.value || '';
+
+
+    const situacaoSelecionada =
+        document.getElementById(
+            'filtroSituacaoEstoque'
+        )?.value ||
+        'ativos';
+
+
+    estadoFiltrosEstoque.termo =
+        termo;
+
+
+    estadoFiltrosEstoque.categoria =
+        categoriaSelecionada;
+
+
+    estadoFiltrosEstoque.situacao =
+        situacaoSelecionada;
+
+
+    estadoFiltrosEstoque.pagina =
+        1;
+
 
     aplicarFiltrosEOrdenacao();
+    garantirControlesSituacaoProdutosEstoque();
 }
 
 // =========================================================
-// APLICAR FILTROS E ORDENAÇÃO - COM PESQUISA EM ATRIBUTOS
+// APLICAR FILTROS E ORDENAÇÃO
+// CATEGORIA + SITUAÇÃO + PESQUISA EM ATRIBUTOS
 // =========================================================
 
 function aplicarFiltrosEOrdenacao() {
-    let filtrados = produtosEstoque;
 
-    // Filtro por categoria
-    if (estadoFiltrosEstoque.categoria && estadoFiltrosEstoque.categoria !== '') {
-        filtrados = filtrados.filter(prod => prod.categoria === estadoFiltrosEstoque.categoria);
+    let filtrados =
+        produtosEstoque || [];
+
+
+    // =====================================================
+    // SITUAÇÃO
+    //
+    // PADRÃO = ATIVOS
+    // =====================================================
+
+    const situacao =
+        estadoFiltrosEstoque
+            ?.situacao ||
+        'ativos';
+
+
+    // =====================================================
+    // SOMENTE ATIVOS
+    // =====================================================
+
+    if (
+        situacao ===
+        'ativos'
+    ) {
+
+        filtrados =
+            filtrados.filter(
+                produto =>
+                    produtoEstaAtivo(
+                        produto
+                    )
+            );
+
     }
 
-    // Filtro por termo de busca (incluindo atributos específicos)
-    if (estadoFiltrosEstoque.termo) {
-        const termo = estadoFiltrosEstoque.termo.toLowerCase();
-        
-        filtrados = filtrados.filter(prod => {
-            // ===== BUSCA EM CAMPOS PADRÃO =====
-            if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
-            if (prod.sku && prod.sku.toLowerCase().includes(termo)) return true;
-            if (prod.categoria && prod.categoria.toLowerCase().includes(termo)) return true;
-            
-            // ===== BUSCA EM MLB CODES =====
-            if (prod.mlb_codes) {
-                let mlbArray = prod.mlb_codes;
-                if (typeof mlbArray === 'string') mlbArray = mlbArray.split(',').map(s => s.trim());
-                if (Array.isArray(mlbArray)) {
-                    if (mlbArray.some(code => code.toLowerCase().includes(termo))) return true;
-                }
-            }
-            
-            // ===== BUSCA EM ATRIBUTOS ESPECÍFICOS (dados_extra) =====
-            if (prod.dados_extra && typeof prod.dados_extra === 'object') {
-                for (const [chave, valor] of Object.entries(prod.dados_extra)) {
-                    // Ignorar campos especiais
-                    if (chave === 'mlb_codes' || chave === 'historico_custos' || chave === 'bloquear_sync_ml') continue;
-                    
-                    // Se o valor é string e contém o termo
-                    if (typeof valor === 'string' && valor.toLowerCase().includes(termo)) return true;
-                    
-                    // Se o valor é número, converter para string e verificar
-                    if (typeof valor === 'number' && String(valor).includes(termo)) return true;
-                    
-                    // Se o valor é array (ex: opções de seleção múltipla)
-                    if (Array.isArray(valor)) {
-                        if (valor.some(item => typeof item === 'string' && item.toLowerCase().includes(termo))) return true;
-                    }
-                    
-                    // Se o valor é objeto (caso aninhado)
-                    if (typeof valor === 'object' && valor !== null) {
-                        const valorString = JSON.stringify(valor).toLowerCase();
-                        if (valorString.includes(termo)) return true;
-                    }
-                }
-            }
-            
-            return false;
-        });
+
+    // =====================================================
+    // SOMENTE INATIVOS
+    // =====================================================
+
+    else if (
+        situacao ===
+        'inativos'
+    ) {
+
+        filtrados =
+            filtrados.filter(
+                produto =>
+                    produtoEstaInativo(
+                        produto
+                    )
+            );
+
     }
 
-    produtosFiltradosAtuais = filtrados;
-    paginaAtualEstoque = estadoFiltrosEstoque.pagina;
-    itensPorPaginaEstoque = estadoFiltrosEstoque.itensPorPagina;
-    ordemColunaEstoque.coluna = estadoFiltrosEstoque.colunaOrdem;
-    ordemColunaEstoque.direcao = estadoFiltrosEstoque.direcaoOrdem;
 
-    renderizarTabelaProdutos(produtosFiltradosAtuais);
+    // =====================================================
+    // TODOS
+    //
+    // Não aplica filtro de situação.
+    // =====================================================
+
+
+    // =====================================================
+    // CATEGORIA
+    // =====================================================
+
+    if (
+        estadoFiltrosEstoque.categoria &&
+        estadoFiltrosEstoque.categoria !==
+            ''
+    ) {
+
+        filtrados =
+            filtrados.filter(
+                produto =>
+                    produto.categoria ===
+                    estadoFiltrosEstoque
+                        .categoria
+            );
+
+    }
+
+
+    // =====================================================
+    // BUSCA
+    // =====================================================
+
+    if (
+        estadoFiltrosEstoque.termo
+    ) {
+
+        const termo =
+            estadoFiltrosEstoque
+                .termo
+                .toLowerCase();
+
+
+        filtrados =
+            filtrados.filter(
+                produto => {
+
+                    // =====================================
+                    // CAMPOS PADRÃO
+                    // =====================================
+
+                    if (
+                        produto.nome &&
+                        produto.nome
+                            .toLowerCase()
+                            .includes(
+                                termo
+                            )
+                    ) {
+
+                        return true;
+
+                    }
+
+
+                    if (
+                        produto.sku &&
+                        produto.sku
+                            .toLowerCase()
+                            .includes(
+                                termo
+                            )
+                    ) {
+
+                        return true;
+
+                    }
+
+
+                    if (
+                        produto.categoria &&
+                        produto.categoria
+                            .toLowerCase()
+                            .includes(
+                                termo
+                            )
+                    ) {
+
+                        return true;
+
+                    }
+
+
+                    // =====================================
+                    // MLB CODES
+                    // =====================================
+
+                    if (
+                        produto.mlb_codes
+                    ) {
+
+                        let mlbArray =
+                            produto.mlb_codes;
+
+
+                        if (
+                            typeof mlbArray ===
+                            'string'
+                        ) {
+
+                            mlbArray =
+                                mlbArray
+                                    .split(',')
+                                    .map(
+                                        s =>
+                                            s.trim()
+                                    );
+
+                        }
+
+
+                        if (
+                            Array.isArray(
+                                mlbArray
+                            )
+                        ) {
+
+                            if (
+                                mlbArray.some(
+                                    code =>
+                                        String(
+                                            code
+                                        )
+                                        .toLowerCase()
+                                        .includes(
+                                            termo
+                                        )
+                                )
+                            ) {
+
+                                return true;
+
+                            }
+
+                        }
+
+                    }
+
+
+                    // =====================================
+                    // DADOS EXTRA
+                    // =====================================
+
+                    if (
+                        produto.dados_extra &&
+                        typeof produto
+                            .dados_extra ===
+                            'object'
+                    ) {
+
+                        for (
+                            const [
+                                chave,
+                                valor
+                            ]
+                            of Object.entries(
+                                produto
+                                    .dados_extra
+                            )
+                        ) {
+
+                            // =================================
+                            // NÃO USAR CAMPOS INTERNOS
+                            // NA BUSCA
+                            // =================================
+
+                            if (
+                                chave ===
+                                    'mlb_codes'
+                                ||
+                                chave ===
+                                    'historico_custos'
+                                ||
+                                chave ===
+                                    'bloquear_sync_ml'
+                                ||
+                                chave ===
+                                    'inativo'
+                                ||
+                                chave ===
+                                    'inativado_em'
+                                ||
+                                chave ===
+                                    'inativado_por'
+                                ||
+                                chave ===
+                                    'reativado_em'
+                                ||
+                                chave ===
+                                    'reativado_por'
+                            ) {
+
+                                continue;
+
+                            }
+
+
+                            if (
+                                typeof valor ===
+                                    'string'
+                                &&
+                                valor
+                                    .toLowerCase()
+                                    .includes(
+                                        termo
+                                    )
+                            ) {
+
+                                return true;
+
+                            }
+
+
+                            if (
+                                typeof valor ===
+                                    'number'
+                                &&
+                                String(
+                                    valor
+                                ).includes(
+                                    termo
+                                )
+                            ) {
+
+                                return true;
+
+                            }
+
+
+                            if (
+                                Array.isArray(
+                                    valor
+                                )
+                            ) {
+
+                                if (
+                                    valor.some(
+                                        item =>
+                                            typeof item ===
+                                                'string'
+                                            &&
+                                            item
+                                                .toLowerCase()
+                                                .includes(
+                                                    termo
+                                                )
+                                    )
+                                ) {
+
+                                    return true;
+
+                                }
+
+                            }
+
+
+                            if (
+                                typeof valor ===
+                                    'object'
+                                &&
+                                valor !==
+                                    null
+                            ) {
+
+                                const valorString =
+                                    JSON.stringify(
+                                        valor
+                                    )
+                                    .toLowerCase();
+
+
+                                if (
+                                    valorString.includes(
+                                        termo
+                                    )
+                                ) {
+
+                                    return true;
+
+                                }
+
+                            }
+
+                        }
+
+                    }
+
+
+                    return false;
+
+                }
+            );
+
+    }
+
+
+    // =====================================================
+    // SALVAR RESULTADO DO FILTRO
+    // =====================================================
+
+    produtosFiltradosAtuais =
+        filtrados;
+
+
+    paginaAtualEstoque =
+        estadoFiltrosEstoque
+            .pagina;
+
+
+    itensPorPaginaEstoque =
+        estadoFiltrosEstoque
+            .itensPorPagina;
+
+
+    ordemColunaEstoque.coluna =
+        estadoFiltrosEstoque
+            .colunaOrdem;
+
+
+    ordemColunaEstoque.direcao =
+        estadoFiltrosEstoque
+            .direcaoOrdem;
+
+
+    renderizarTabelaProdutos(
+        produtosFiltradosAtuais
+    );
 }
 
 // =========================================================
 // LIMPAR FILTROS
+// VOLTA PARA ATIVOS
 // =========================================================
 
 function limparFiltrosEstoque() {
+
     estadoFiltrosEstoque = {
+
         termo: '',
+
         categoria: '',
+
+        situacao: 'ativos',
+
         pagina: 1,
+
         itensPorPagina: 20,
+
         colunaOrdem: 'id',
+
         direcaoOrdem: 'asc'
+
     };
-    
-    const termoInput = document.getElementById('buscaEstoqueInput');
-    const categoriaSelect = document.getElementById('filtroCategoriaEstoque');
-    
-    if (termoInput) termoInput.value = '';
-    if (categoriaSelect) categoriaSelect.value = '';
-    
-    paginaAtualEstoque = 1;
-    itensPorPaginaEstoque = 20;
-    ordemColunaEstoque = { coluna: 'id', direcao: 'asc' };
-    
+
+
+    const termoInput =
+        document.getElementById(
+            'buscaEstoqueInput'
+        );
+
+
+    const categoriaSelect =
+        document.getElementById(
+            'filtroCategoriaEstoque'
+        );
+
+
+    const situacaoSelect =
+        document.getElementById(
+            'filtroSituacaoEstoque'
+        );
+
+
+    if (
+        termoInput
+    ) {
+
+        termoInput.value =
+            '';
+
+    }
+
+
+    if (
+        categoriaSelect
+    ) {
+
+        categoriaSelect.value =
+            '';
+
+    }
+
+
+    if (
+        situacaoSelect
+    ) {
+
+        situacaoSelect.value =
+            'ativos';
+
+    }
+
+
+    paginaAtualEstoque =
+        1;
+
+
+    itensPorPaginaEstoque =
+        20;
+
+
+    ordemColunaEstoque = {
+
+        coluna:
+            'id',
+
+        direcao:
+            'asc'
+
+    };
+
+
     aplicarFiltrosEOrdenacao();
-    if (window.showToast) showToast('🧹 Filtros limpos!', 'info');
+
+
+    if (
+        window.showToast
+    ) {
+
+        showToast(
+            '🧹 Filtros limpos! Exibindo produtos ativos.',
+            'info'
+        );
+
+    }
 }
 
 // =========================================================
@@ -28634,6 +29682,10 @@ function renderizarSkusKit(skus) {
 document.addEventListener(
     'DOMContentLoaded',
     () => {
+        setTimeout(
+                garantirFiltroSituacaoEstoque,
+                300
+            );
 
         console.log(
             '🚀 Inicializando Gestão de Estoque com Categorias Dinâmicas...'
@@ -44758,9 +45810,7 @@ if (
         window.abrirGestaoEstoque;
 
 
-    window.abrirGestaoEstoque =
-        function(...args) {
-
+    window.abrirGestaoEstoque = function(...args) {
             const retorno =
                 abrirGestaoAntesRastreio
                     ?.apply(
@@ -48328,13 +49378,438 @@ if (!window.__integracaoRegrasCondicionaisEstoqueV2) {
                 );
         };
 
-// ============================================================
-// CONTROLE GLOBAL DE FECHAMENTO DOS MODAIS DO ESTOQUE
-//
-// - Clique real fora do modal: fecha
-// - Clique no X ou Cancelar: fecha normalmente
-// - Arraste iniciado dentro e terminado fora: não fecha
-// ============================================================
+// =========================================================
+// GARANTIR CONTROLES DE ATIVOS / INATIVOS
+// =========================================================
+
+function garantirControlesSituacaoProdutosEstoque() {
+
+    // =====================================================
+    // 1. GARANTIR FILTRO:
+    // ATIVOS / INATIVOS / TODOS
+    // =====================================================
+
+    if (
+        typeof garantirFiltroSituacaoEstoque ===
+        'function'
+    ) {
+
+        garantirFiltroSituacaoEstoque();
+
+    }
+
+
+    // =====================================================
+    // 2. LOCALIZAR BARRA DE AÇÕES EM MASSA
+    // =====================================================
+
+    const barra =
+        document.getElementById(
+            'barraAcoesMassaEstoque'
+        );
+
+
+    if (!barra) {
+
+        console.warn(
+            '⚠️ Barra #barraAcoesMassaEstoque não encontrada.'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // 3. LOCALIZAR O BOTÃO "AJUSTAR EM MASSA"
+    // =====================================================
+
+    const btnAjustar =
+        barra.querySelector(
+            'button[onclick*="abrirModalAjusteMassaEstoque"]'
+        );
+
+
+    // =====================================================
+    // IMPORTANTE:
+    //
+    // O botão "Ajustar em massa" fica dentro de uma DIV
+    // interna da barra.
+    //
+    // Portanto os novos botões precisam entrar nessa
+    // MESMA DIV, e não diretamente na barra.
+    // =====================================================
+
+    let containerAcoes =
+        btnAjustar?.parentElement ||
+        null;
+
+
+    // =====================================================
+    // FALLBACK
+    //
+    // Procura a DIV que contém Editar SKUs.
+    // =====================================================
+
+    if (!containerAcoes) {
+
+        const btnEditarSkus =
+            barra.querySelector(
+                'button[onclick*="abrirModalEdicaoSKUsMassa"]'
+            );
+
+
+        containerAcoes =
+            btnEditarSkus?.parentElement ||
+            null;
+
+    }
+
+
+    // =====================================================
+    // ÚLTIMO FALLBACK
+    // =====================================================
+
+    if (!containerAcoes) {
+
+        const divs =
+            barra.querySelectorAll(
+                ':scope > div'
+            );
+
+
+        if (
+            divs.length >= 2
+        ) {
+
+            containerAcoes =
+                divs[
+                    divs.length - 1
+                ];
+
+        }
+
+    }
+
+
+    if (!containerAcoes) {
+
+        console.warn(
+            '⚠️ Container dos botões da seleção em massa não encontrado.'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // 4. BOTÃO INATIVAR
+    // =====================================================
+
+    let btnInativar =
+        document.getElementById(
+            'btnInativarProdutosSelecionados'
+        );
+
+
+    if (!btnInativar) {
+
+        btnInativar =
+            document.createElement(
+                'button'
+            );
+
+
+        btnInativar.id =
+            'btnInativarProdutosSelecionados';
+
+
+        btnInativar.type =
+            'button';
+
+
+        btnInativar.className =
+            'btn btn-sm btn-danger';
+
+
+        btnInativar.innerHTML = `
+
+            <i class="fas fa-eye-slash"></i>
+
+            Inativar
+
+        `;
+
+
+        btnInativar.title =
+            'Inativar os produtos selecionados';
+
+
+        btnInativar.onclick =
+            function() {
+
+                inativarProdutosSelecionados();
+
+            };
+
+
+        // =================================================
+        // INSERIR NA MESMA DIV DO AJUSTAR EM MASSA
+        // =================================================
+
+        if (
+            btnAjustar &&
+            btnAjustar.parentElement ===
+                containerAcoes
+        ) {
+
+            containerAcoes.insertBefore(
+                btnInativar,
+                btnAjustar
+            );
+
+        }
+
+        else {
+
+            containerAcoes.appendChild(
+                btnInativar
+            );
+
+        }
+
+    }
+
+
+    // =====================================================
+    // SE O BOTÃO EXISTIA MAS ESTÁ NO LUGAR ERRADO,
+    // MOVER PARA O CONTAINER CERTO
+    // =====================================================
+
+    else if (
+        btnInativar.parentElement !==
+        containerAcoes
+    ) {
+
+        if (
+            btnAjustar &&
+            btnAjustar.parentElement ===
+                containerAcoes
+        ) {
+
+            containerAcoes.insertBefore(
+                btnInativar,
+                btnAjustar
+            );
+
+        }
+
+        else {
+
+            containerAcoes.appendChild(
+                btnInativar
+            );
+
+        }
+
+    }
+
+
+    // =====================================================
+    // 5. BOTÃO REATIVAR
+    // =====================================================
+
+    let btnReativar =
+        document.getElementById(
+            'btnReativarProdutosSelecionados'
+        );
+
+
+    if (!btnReativar) {
+
+        btnReativar =
+            document.createElement(
+                'button'
+            );
+
+
+        btnReativar.id =
+            'btnReativarProdutosSelecionados';
+
+
+        btnReativar.type =
+            'button';
+
+
+        btnReativar.className =
+            'btn btn-sm btn-success';
+
+
+        btnReativar.innerHTML = `
+
+            <i class="fas fa-eye"></i>
+
+            Reativar
+
+        `;
+
+
+        btnReativar.title =
+            'Reativar os produtos selecionados';
+
+
+        btnReativar.onclick =
+            function() {
+
+                reativarProdutosSelecionados();
+
+            };
+
+
+        // =================================================
+        // INSERIR ANTES DO AJUSTAR EM MASSA
+        // =================================================
+
+        if (
+            btnAjustar &&
+            btnAjustar.parentElement ===
+                containerAcoes
+        ) {
+
+            containerAcoes.insertBefore(
+                btnReativar,
+                btnAjustar
+            );
+
+        }
+
+        else {
+
+            containerAcoes.appendChild(
+                btnReativar
+            );
+
+        }
+
+    }
+
+
+    // =====================================================
+    // SE ESTAVA NO CONTAINER ERRADO
+    // =====================================================
+
+    else if (
+        btnReativar.parentElement !==
+        containerAcoes
+    ) {
+
+        if (
+            btnAjustar &&
+            btnAjustar.parentElement ===
+                containerAcoes
+        ) {
+
+            containerAcoes.insertBefore(
+                btnReativar,
+                btnAjustar
+            );
+
+        }
+
+        else {
+
+            containerAcoes.appendChild(
+                btnReativar
+            );
+
+        }
+
+    }
+
+
+    // =====================================================
+    // 6. DEFINIR QUAL BOTÃO APARECE
+    // =====================================================
+
+    const situacao =
+        document.getElementById(
+            'filtroSituacaoEstoque'
+        )?.value ||
+        estadoFiltrosEstoque
+            ?.situacao ||
+        'ativos';
+
+
+    // =====================================================
+    // ATIVOS
+    //
+    // Pode INATIVAR.
+    // =====================================================
+
+    if (
+        situacao ===
+        'ativos'
+    ) {
+
+        btnInativar.style.display =
+            'inline-flex';
+
+
+        btnReativar.style.display =
+            'none';
+
+    }
+
+
+    // =====================================================
+    // INATIVOS
+    //
+    // Pode REATIVAR.
+    // =====================================================
+
+    else if (
+        situacao ===
+        'inativos'
+    ) {
+
+        btnInativar.style.display =
+            'none';
+
+
+        btnReativar.style.display =
+            'inline-flex';
+
+    }
+
+
+    // =====================================================
+    // TODOS
+    //
+    // Mostra as duas possibilidades.
+    // =====================================================
+
+    else {
+
+        btnInativar.style.display =
+            'inline-flex';
+
+
+        btnReativar.style.display =
+            'inline-flex';
+
+    }
+
+
+    console.log(
+        '✅ Controles Ativo/Inativo preparados.',
+        {
+            situacao,
+            btnInativar:
+                !!btnInativar,
+            btnReativar:
+                !!btnReativar
+        }
+    );
+}
 
 function protegerModaisEstoqueContraFechamentoPorArraste() {
 
@@ -48680,6 +50155,12 @@ protegerModaisEstoqueContraFechamentoPorArraste();
     window.adicionarBotaoCustoFiltroRonald = adicionarBotaoCustoFiltroRonald;
     window.analisarReversaoUltimoCustoEmMassa = analisarReversaoUltimoCustoEmMassa;
     window.reverterUltimoCustoEmMassa = reverterUltimoCustoEmMassa;
+    window.inativarProdutosSelecionados = inativarProdutosSelecionados;
+    window.reativarProdutosSelecionados = reativarProdutosSelecionados;
+    window.garantirFiltroSituacaoEstoque = garantirFiltroSituacaoEstoque;
+    window.garantirControlesSituacaoProdutosEstoque = garantirControlesSituacaoProdutosEstoque;
+    window.inativarProdutosSelecionados = inativarProdutosSelecionados;
+    window.reativarProdutosSelecionados = reativarProdutosSelecionados;
 }
 
 console.log('📦 Gestão de Estoque carregada com sucesso! (Versão completa com categorias customizadas)');
