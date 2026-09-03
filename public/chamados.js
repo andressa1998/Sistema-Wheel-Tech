@@ -11,22 +11,22 @@
     // ========================================================
 
     const CFG_CHAMADOS = {
-        tabelaChamados: 'chamados',
-        tabelaMensagens: 'chamados_mensagens',
+    tabelaChamados: 'chamados',
+    tabelaMensagens: 'chamados_mensagens',
+    tabelaRecados: 'chamados_recados',
 
-        // Nome do bucket PUBLIC do Supabase Storage
-        bucket: 'chamados',
+    // Nome do bucket PUBLIC do Supabase Storage
+    bucket: 'chamados',
 
-        // Estes usuários enxergam TODOS os chamados
-        // Além de qualquer usuário com role === "admin"
-        admins: [
-            'andressamiotto',
-            'ronald'
-        ],
+    // Estes usuários enxergam TODOS os chamados
+    admins: [
+        'andressamiotto',
+        'ronald'
+    ],
 
-        // Máximo 8 MB por imagem
-        maxImagem: 8 * 1024 * 1024
-    };
+    // Máximo 8 MB por imagem
+    maxImagem: 8 * 1024 * 1024
+};
 
 
     const MODULOS_CHAMADOS = [
@@ -132,18 +132,14 @@
     // ========================================================
 
     let chamadosCache = [];
-
     let chamadoAberto = null;
-
     let mensagensCache = [];
-
     let printNovoChamado = null;
-
     let printNovaMensagem = null;
-
     let salvandoChamado = false;
-
     let salvandoMensagem = false;
+    let recadosChamadosCache = [];
+    let salvandoRecadoChamados = false;
 
 
     // ========================================================
@@ -362,6 +358,10 @@ function atualizarCabecalhoVisibilidadeChamados() {
         );
 
     }
+
+    function podeGerenciarRecadosChamados() {
+    return usernameChamados() === 'andressamiotto';
+}
 
 
     function toastChamados(
@@ -1840,6 +1840,83 @@ function atualizarCabecalhoVisibilidadeChamados() {
                 }
 
             }
+                #chamadosSystem .ch-recados-area {
+    display: grid;
+    gap: 10px;
+    margin: 0 0 18px;
+}
+
+#chamadosSystem .ch-recado {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(0, 0, 0, .10);
+    border-left: 7px solid var(--ch-recado-cor);
+    border-radius: 12px;
+    padding: 16px 18px;
+    background: #eef5ff;
+    background: color-mix(
+        in srgb,
+        var(--ch-recado-cor) 13%,
+        white
+    );
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .05);
+}
+
+#chamadosSystem .ch-recado-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 7px;
+}
+
+#chamadosSystem .ch-recado-titulo {
+    color: #263238;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+#chamadosSystem .ch-recado-texto {
+    color: #263238;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+#chamadosSystem .ch-recado-acoes {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+#chamadosSystem .ch-recado-acao {
+    border: 1px solid rgba(0, 0, 0, .14);
+    border-radius: 7px;
+    padding: 5px 9px;
+    background: rgba(255, 255, 255, .82);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.ch-recado-cores {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-wrap: wrap;
+}
+
+.ch-recado-cor-opcao {
+    width: 31px;
+    height: 31px;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px #adb5bd;
+    cursor: pointer;
+}
+
+.ch-recado-cor-opcao.ativo {
+    box-shadow: 0 0 0 3px #263238;
+}
 
 
             @media(max-width: 600px) {
@@ -1870,6 +1947,705 @@ function atualizarCabecalhoVisibilidadeChamados() {
         );
 
     }
+
+    function corRecadoChamadosSegura(cor) {
+    return /^#[0-9a-f]{6}$/i.test(cor || '')
+        ? cor
+        : '#0d6efd';
+}
+
+
+function renderizarRecadosChamados() {
+    const area =
+        document.getElementById(
+            'chRecadosArea'
+        );
+
+    if (!area) {
+        return;
+    }
+
+    const podeGerenciar =
+        podeGerenciarRecadosChamados();
+
+    const botaoNovo =
+        podeGerenciar
+            ? `
+                <div
+                    style="
+                        display:flex;
+                        justify-content:flex-end;
+                        margin-bottom:2px;
+                    "
+                >
+                    <button
+                        class="btn btn-primary btn-sm"
+                        onclick="abrirEditorRecadoChamados()"
+                    >
+                        <i class="fas fa-bullhorn"></i>
+                        Novo recado
+                    </button>
+                </div>
+            `
+            : '';
+
+    const cards =
+        recadosChamadosCache
+            .map(
+                recado => {
+                    const cor =
+                        corRecadoChamadosSegura(
+                            recado.cor
+                        );
+
+                    const acoes =
+                        podeGerenciar
+                            ? `
+                                <div
+                                    class="ch-recado-acoes"
+                                >
+                                    <button
+                                        class="ch-recado-acao"
+                                        onclick="
+                                            event.stopPropagation();
+                                            abrirEditorRecadoChamados(
+                                                '${escChamados(recado.id)}'
+                                            )
+                                        "
+                                    >
+                                        Editar
+                                    </button>
+
+                                    <button
+                                        class="ch-recado-acao"
+                                        onclick="
+                                            event.stopPropagation();
+                                            excluirRecadoChamados(
+                                                '${escChamados(recado.id)}'
+                                            )
+                                        "
+                                    >
+                                        Excluir
+                                    </button>
+                                </div>
+                            `
+                            : '';
+
+                    return `
+                        <div
+                            class="ch-recado"
+                            style="
+                                --ch-recado-cor:${cor};
+                            "
+                        >
+                            <div
+                                class="ch-recado-cabecalho"
+                            >
+                                <div
+                                    class="ch-recado-titulo"
+                                >
+                                    <i
+                                        class="fas fa-bullhorn"
+                                    ></i>
+
+                                    AVISO IMPORTANTE
+                                </div>
+
+                                ${acoes}
+                            </div>
+
+                            <div
+                                class="ch-recado-texto"
+                            >
+                                ${nlChamados(recado.mensagem)}
+                            </div>
+                        </div>
+                    `;
+                }
+            )
+            .join('');
+
+    area.innerHTML =
+        botaoNovo + cards;
+}
+
+
+async function carregarRecadosChamados() {
+    const sb =
+        sbChamados();
+
+    if (!sb) {
+        return;
+    }
+
+    const {
+        data,
+        error
+    } =
+        await sb
+            .from(
+                CFG_CHAMADOS.tabelaRecados
+            )
+            .select(`
+                id,
+                mensagem,
+                cor,
+                ativo,
+                criado_por,
+                created_at,
+                updated_at
+            `)
+            .eq(
+                'ativo',
+                true
+            )
+            .order(
+                'created_at',
+                {
+                    ascending: false
+                }
+            );
+
+    if (error) {
+        console.error(
+            'Erro ao carregar recados:',
+            error
+        );
+
+        recadosChamadosCache = [];
+
+        renderizarRecadosChamados();
+
+        return;
+    }
+
+    recadosChamadosCache =
+        data || [];
+
+    renderizarRecadosChamados();
+}
+
+
+function criarModalRecadoChamados() {
+    if (
+        document.getElementById(
+            'modalRecadoChamados'
+        )
+    ) {
+        return;
+    }
+
+    const cores = [
+        '#0d6efd',
+        '#198754',
+        '#ffc107',
+        '#fd7e14',
+        '#dc3545',
+        '#6f42c1'
+    ];
+
+    const botoesCores =
+        cores
+            .map(
+                cor => `
+                    <button
+                        type="button"
+                        class="ch-recado-cor-opcao"
+                        data-cor="${cor}"
+                        style="
+                            background:${cor};
+                        "
+                        onclick="
+                            selecionarCorRecadoChamados(
+                                '${cor}'
+                            )
+                        "
+                        title="Selecionar esta cor"
+                    >
+                    </button>
+                `
+            )
+            .join('');
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+    modal.id =
+        'modalRecadoChamados';
+
+    modal.className =
+        'modal hidden';
+
+    modal.innerHTML = `
+        <div
+            class="modal-content"
+            style="
+                max-width:620px;
+            "
+        >
+            <div
+                class="modal-header"
+            >
+                <h3
+                    style="margin:0;"
+                >
+                    <i
+                        class="fas fa-bullhorn"
+                    ></i>
+
+                    <span
+                        id="chRecadoModalTitulo"
+                    >
+                        Novo recado
+                    </span>
+                </h3>
+
+                <button
+                    class="close"
+                    type="button"
+                    onclick="fecharEditorRecadoChamados()"
+                >
+                    &times;
+                </button>
+            </div>
+
+            <div
+                class="modal-body"
+            >
+                <input
+                    type="hidden"
+                    id="chRecadoId"
+                >
+
+                <label
+                    style="
+                        font-weight:700;
+                        display:block;
+                        margin-bottom:7px;
+                    "
+                >
+                    Recado para todos
+                </label>
+
+                <textarea
+                    id="chRecadoMensagem"
+                    class="form-control"
+                    rows="6"
+                    maxlength="2000"
+                    placeholder="Digite o aviso que aparecerá para todos os usuários..."
+                ></textarea>
+
+                <label
+                    style="
+                        font-weight:700;
+                        display:block;
+                        margin:18px 0 10px;
+                    "
+                >
+                    Cor do aviso
+                </label>
+
+                <div
+                    class="ch-recado-cores"
+                    id="chRecadoCores"
+                >
+                    ${botoesCores}
+
+                    <input
+                        type="color"
+                        id="chRecadoCor"
+                        value="#0d6efd"
+                        onchange="
+                            selecionarCorRecadoChamados(
+                                this.value
+                            )
+                        "
+                        title="Escolher outra cor"
+                    >
+                </div>
+            </div>
+
+            <div
+                class="modal-footer"
+            >
+                <button
+                    class="btn btn-secondary"
+                    type="button"
+                    onclick="fecharEditorRecadoChamados()"
+                >
+                    Cancelar
+                </button>
+
+                <button
+                    class="btn btn-primary"
+                    id="chBtnSalvarRecado"
+                    type="button"
+                    onclick="salvarRecadoChamados()"
+                >
+                    Salvar recado
+                </button>
+            </div>
+        </div>
+    `;
+
+    modal.addEventListener(
+        'click',
+        evento => {
+            if (
+                evento.target === modal
+            ) {
+                window
+                    .fecharEditorRecadoChamados();
+            }
+        }
+    );
+
+    document.body.appendChild(
+        modal
+    );
+}
+
+
+window.selecionarCorRecadoChamados =
+    function(cor) {
+        const corSegura =
+            corRecadoChamadosSegura(
+                cor
+            );
+
+        const input =
+            document.getElementById(
+                'chRecadoCor'
+            );
+
+        if (input) {
+            input.value =
+                corSegura;
+        }
+
+        document
+            .querySelectorAll(
+                '#chRecadoCores .ch-recado-cor-opcao'
+            )
+            .forEach(
+                botao => {
+                    botao.classList.toggle(
+                        'ativo',
+                        botao.dataset.cor
+                            .toLowerCase() ===
+                            corSegura.toLowerCase()
+                    );
+                }
+            );
+    };
+
+
+window.abrirEditorRecadoChamados =
+    function(id = '') {
+        if (
+            !podeGerenciarRecadosChamados()
+        ) {
+            toastChamados(
+                'Somente andressamiotto pode gerenciar os recados.',
+                'warning'
+            );
+
+            return;
+        }
+
+        criarModalRecadoChamados();
+
+        const recado =
+            id
+                ? recadosChamadosCache.find(
+                    item =>
+                        String(item.id) ===
+                        String(id)
+                )
+                : null;
+
+        const inputId =
+            document.getElementById(
+                'chRecadoId'
+            );
+
+        const inputMensagem =
+            document.getElementById(
+                'chRecadoMensagem'
+            );
+
+        const titulo =
+            document.getElementById(
+                'chRecadoModalTitulo'
+            );
+
+        if (inputId) {
+            inputId.value =
+                recado?.id || '';
+        }
+
+        if (inputMensagem) {
+            inputMensagem.value =
+                recado?.mensagem || '';
+        }
+
+        if (titulo) {
+            titulo.textContent =
+                recado
+                    ? 'Editar recado'
+                    : 'Novo recado';
+        }
+
+        window
+            .selecionarCorRecadoChamados(
+                recado?.cor ||
+                '#0d6efd'
+            );
+
+        document
+            .getElementById(
+                'modalRecadoChamados'
+            )
+            ?.classList
+            .remove(
+                'hidden'
+            );
+
+        inputMensagem?.focus();
+    };
+
+
+window.fecharEditorRecadoChamados =
+    function() {
+        document
+            .getElementById(
+                'modalRecadoChamados'
+            )
+            ?.classList
+            .add(
+                'hidden'
+            );
+    };
+
+
+window.salvarRecadoChamados =
+    async function() {
+        if (
+            !podeGerenciarRecadosChamados() ||
+            salvandoRecadoChamados
+        ) {
+            return;
+        }
+
+        const sb =
+            sbChamados();
+
+        if (!sb) {
+            toastChamados(
+                'Supabase não está disponível.',
+                'error'
+            );
+
+            return;
+        }
+
+        const id =
+            document
+                .getElementById(
+                    'chRecadoId'
+                )
+                ?.value || '';
+
+        const mensagem =
+            document
+                .getElementById(
+                    'chRecadoMensagem'
+                )
+                ?.value
+                .trim() || '';
+
+        const cor =
+            corRecadoChamadosSegura(
+                document
+                    .getElementById(
+                        'chRecadoCor'
+                    )
+                    ?.value
+            );
+
+        if (!mensagem) {
+            toastChamados(
+                'Digite o recado antes de salvar.',
+                'warning'
+            );
+
+            return;
+        }
+
+        salvandoRecadoChamados =
+            true;
+
+        const botao =
+            document.getElementById(
+                'chBtnSalvarRecado'
+            );
+
+        if (botao) {
+            botao.disabled =
+                true;
+
+            botao.textContent =
+                'Salvando...';
+        }
+
+        try {
+            const payload = {
+                mensagem,
+                cor,
+                ativo: true,
+                criado_por:
+                    usernameChamados(),
+                updated_at:
+                    new Date()
+                        .toISOString()
+            };
+
+            const consulta =
+                id
+                    ? sb
+                        .from(
+                            CFG_CHAMADOS
+                                .tabelaRecados
+                        )
+                        .update(
+                            payload
+                        )
+                        .eq(
+                            'id',
+                            id
+                        )
+                    : sb
+                        .from(
+                            CFG_CHAMADOS
+                                .tabelaRecados
+                        )
+                        .insert(
+                            payload
+                        );
+
+            const {
+                error
+            } =
+                await consulta;
+
+            if (error) {
+                throw error;
+            }
+
+            window
+                .fecharEditorRecadoChamados();
+
+            await carregarRecadosChamados();
+
+            toastChamados(
+                id
+                    ? 'Recado atualizado.'
+                    : 'Recado publicado para todos.',
+                'success'
+            );
+
+        } catch (erro) {
+            console.error(
+                'Erro ao salvar recado:',
+                erro
+            );
+
+            toastChamados(
+                'Não foi possível salvar o recado: ' +
+                (
+                    erro.message ||
+                    erro
+                ),
+                'error'
+            );
+
+        } finally {
+            salvandoRecadoChamados =
+                false;
+
+            if (botao) {
+                botao.disabled =
+                    false;
+
+                botao.textContent =
+                    'Salvar recado';
+            }
+        }
+    };
+
+
+window.excluirRecadoChamados =
+    async function(id) {
+        if (
+            !podeGerenciarRecadosChamados()
+        ) {
+            return;
+        }
+
+        const confirmar =
+            window.confirm(
+                'Excluir este recado para todos os usuários?'
+            );
+
+        if (!confirmar) {
+            return;
+        }
+
+        const sb =
+            sbChamados();
+
+        if (!sb) {
+            toastChamados(
+                'Supabase não está disponível.',
+                'error'
+            );
+
+            return;
+        }
+
+        const {
+            error
+        } =
+            await sb
+                .from(
+                    CFG_CHAMADOS
+                        .tabelaRecados
+                )
+                .delete()
+                .eq(
+                    'id',
+                    id
+                );
+
+        if (error) {
+            toastChamados(
+                'Não foi possível excluir o recado: ' +
+                error.message,
+                'error'
+            );
+
+            return;
+        }
+
+        await carregarRecadosChamados();
+
+        toastChamados(
+            'Recado excluído.',
+            'success'
+        );
+    };
 
 
     // ========================================================
@@ -2024,6 +2800,12 @@ function atualizarCabecalhoVisibilidadeChamados() {
             <div
                 class="ch-wrap"
             >
+
+            <div
+    id="chRecadosArea"
+    class="ch-recados-area"
+>
+</div>
 
                 <div
                     class="
@@ -4002,13 +4784,10 @@ window.salvarNovoChamado =
 
             }
 
-
             criarAbaChamados();
-
             criarModalNovoChamado();
-
             criarModalDetalhesChamados();
-
+            criarModalRecadoChamados();
 
             // Esconde todas as outras abas do sistema
             document
@@ -4164,10 +4943,10 @@ window.salvarNovoChamado =
             }
 
 
-            await window
-                .carregarChamados(
-                    false
-                );
+await Promise.all([
+    window.carregarChamados(false),
+    carregarRecadosChamados()
+]);
 
         };
 
