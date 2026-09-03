@@ -10878,6 +10878,157 @@ async function marcarVendaComoSeparadaNFE(
 window.marcarVendaComoSeparadaNFE =
     marcarVendaComoSeparadaNFE;
 
+    function atualizarEstadoEstoqueVendaMemoriaNFE(
+    registros
+) {
+
+    registros =
+        Array.isArray(registros)
+            ? registros
+            : [];
+
+
+    if (
+        registros.length === 0
+    ) {
+        return;
+    }
+
+
+    const mapa =
+        new Map();
+
+
+    for (
+        const registro
+        of registros
+    ) {
+
+        const id =
+            normalizarOrderIdML(
+                registro.id_venda_ml ||
+                registro.id
+            );
+
+
+        if (id) {
+
+            mapa.set(
+                id,
+                registro
+            );
+        }
+    }
+
+
+    const atualizarLista =
+        lista => {
+
+            if (
+                !Array.isArray(lista)
+            ) {
+                return;
+            }
+
+
+            for (
+                const venda
+                of lista
+            ) {
+
+                if (!venda) {
+                    continue;
+                }
+
+
+                const id =
+                    normalizarOrderIdML(
+                        venda.id_venda_ml ||
+                        venda.id
+                    );
+
+
+                const registro =
+                    mapa.get(id);
+
+
+                if (!registro) {
+                    continue;
+                }
+
+
+                venda._estoque_baixado =
+                    registro.estoque_baixado ===
+                    true;
+
+
+                venda.estoque_baixado =
+                    registro.estoque_baixado ===
+                    true;
+
+
+                venda._estoque_status =
+                    registro.estoque_status ||
+                    venda._estoque_status ||
+                    'nao_verificado';
+
+
+                venda.estoque_status =
+                    registro.estoque_status ||
+                    venda.estoque_status ||
+                    venda._estoque_status;
+
+
+                venda._estoque_baixado_em =
+                    registro.estoque_baixado_em ||
+                    venda._estoque_baixado_em ||
+                    null;
+
+
+                venda._estoque_baixado_por_username =
+                    registro
+                        .estoque_baixado_por_username ||
+                    venda
+                        ._estoque_baixado_por_username ||
+                    null;
+
+
+                venda._estoque_baixado_por_nome =
+                    registro
+                        .estoque_baixado_por_nome ||
+                    venda
+                        ._estoque_baixado_por_nome ||
+                    null;
+
+
+                if (
+                    Array.isArray(
+                        registro.estoque_detalhes
+                    )
+                ) {
+
+                    venda._estoque_detalhes =
+                        registro.estoque_detalhes;
+                }
+            }
+        };
+
+
+    atualizarLista(
+        window._vendasPainelNFEBase
+    );
+
+
+    atualizarLista(
+        window._vendasTabelaNFEBase
+    );
+
+
+    atualizarLista(
+        vendasPendentes
+    );
+}
+
     async function enriquecerVendasComSeparacaoNFE(
     vendas
 ) {
@@ -16415,12 +16566,11 @@ async function sincronizarPainelOperacionalNFE(
 ) {
 
     // =====================================================
-    // EVITAR DUAS SINCRONIZAÇÕES AO MESMO TEMPO
+    // NÃO PERMITIR DUAS SINCRONIZAÇÕES AO MESMO TEMPO
     // =====================================================
 
     if (
-        window._sincronizacaoPainelNFEEmAndamento ===
-        true
+        window._sincronizacaoPainelNFEEmAndamento === true
     ) {
 
         console.log(
@@ -16456,13 +16606,9 @@ async function sincronizarPainelOperacionalNFE(
 
 
     // =====================================================
-    // GARANTIR FILTRO INICIAL
+    // FILTRO
     //
-    // IMPORTANTE:
-    // depois disso NÃO vamos mais forçar filtro algum.
-    //
-    // Se o usuário mudar de filtro durante a atualização,
-    // ele permanece no filtro escolhido.
+    // Nunca resetar durante sincronização.
     // =====================================================
 
     if (
@@ -16475,7 +16621,7 @@ async function sincronizarPainelOperacionalNFE(
 
 
     // =====================================================
-    // HELPER: ID DA VENDA
+    // HELPER: NORMALIZAR ID
     // =====================================================
 
     const obterId =
@@ -16487,9 +16633,7 @@ async function sincronizarPainelOperacionalNFE(
 
 
     // =====================================================
-    // HELPER: MESCLAR BASE
-    //
-    // Uma venda atualizada substitui a versão anterior.
+    // HELPER: MESCLAR VENDA NOVA/ATUALIZADA NA BASE
     // =====================================================
 
     const mesclarBase =
@@ -16559,12 +16703,17 @@ async function sincronizarPainelOperacionalNFE(
 
 
     // =====================================================
-    // HELPER: ATUALIZAR A TELA
+    // HELPER: ATUALIZAR TELA
     //
-    // NÃO redefine filtro.
+    // IMPORTANTE:
     //
-    // Usa exatamente o filtro que estiver selecionado
-    // naquele momento.
+    // refrescarPainelNFEPreservandoFiltro()
+    // deve estar na versão incremental.
+    //
+    // Então:
+    // - não some a tabela
+    // - não recria todas as linhas
+    // - altera somente a venda que mudou
     // =====================================================
 
     const atualizarTela =
@@ -16620,16 +16769,51 @@ async function sincronizarPainelOperacionalNFE(
 
 
     // =====================================================
-    // HELPER: REMOVER MARCADOR TEMPORÁRIO
+    // HELPER: ALERTA DE SEPARAÇÃO
+    // =====================================================
+
+    const atualizarAlertaSeparacao =
+        () => {
+
+            try {
+
+                if (
+                    typeof atualizarAlertaProdutosSemSepararNFE ===
+                    'function'
+                ) {
+
+                    atualizarAlertaProdutosSemSepararNFE({
+                        consultarBanco:
+                            false
+                    });
+
+                } else if (
+                    typeof renderizarAlertaProdutosSemSepararNFE ===
+                    'function'
+                ) {
+
+                    renderizarAlertaProdutosSemSepararNFE();
+                }
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ [NFE] Alerta de separação:',
+                    error
+                );
+            }
+        };
+
+
+    // =====================================================
+    // HELPER: LIMPAR FLAG TEMPORÁRIA
     // =====================================================
 
     const limparMarcadoresStatus =
         lista => {
 
             if (
-                !Array.isArray(
-                    lista
-                )
+                !Array.isArray(lista)
             ) {
 
                 return;
@@ -16653,7 +16837,7 @@ async function sincronizarPainelOperacionalNFE(
 
 
     // =====================================================
-    // HELPER: SALVAR SOMENTE STATUS CONSULTADOS
+    // HELPER: SALVAR SOMENTE STATUS ATUALIZADOS
     // =====================================================
 
     const salvarAtualizacoesStatus =
@@ -16675,8 +16859,7 @@ async function sincronizarPainelOperacionalNFE(
 
 
             if (
-                alteradas.length ===
-                0
+                alteradas.length === 0
             ) {
 
                 return;
@@ -16708,13 +16891,47 @@ async function sincronizarPainelOperacionalNFE(
 
 
     // =====================================================
-    // HELPER:
-    // PROCESSAR VENDAS NOVAS COMPLETAMENTE
+    // HELPER: SABER SE VENDA TEM DADOS FALTANDO
     //
-    // processarListaVendasNFE usa Promise.all internamente.
-    //
-    // Se houver um erro geral, fazemos fallback individual
-    // para não perder todas as vendas novas por causa de uma.
+    // VERIFICAÇÃO LOCAL.
+    // ZERO API.
+    // =====================================================
+
+    const vendaTemDadosFaltando =
+        venda => {
+
+            if (
+                typeof obterPendenciasVendaNFE !==
+                'function'
+            ) {
+
+                return false;
+            }
+
+
+            try {
+
+                const pendencias =
+                    obterPendenciasVendaNFE(
+                        venda
+                    );
+
+
+                return (
+                    Array.isArray(pendencias) &&
+                    pendencias.length > 0
+                );
+
+
+            } catch (error) {
+
+                return false;
+            }
+        };
+
+
+    // =====================================================
+    // HELPER: PROCESSAMENTO COMPLETO DE VENDAS NOVAS
     // =====================================================
 
     const processarNovasCompleto =
@@ -16746,9 +16963,7 @@ async function sincronizarPainelOperacionalNFE(
                     );
 
 
-                return Array.isArray(
-                    processadas
-                )
+                return Array.isArray(processadas)
                     ? processadas.filter(Boolean)
                     : [];
 
@@ -16765,7 +16980,6 @@ async function sincronizarPainelOperacionalNFE(
                     [];
 
 
-                // Poucas simultâneas para não sobrecarregar ML
                 const TAMANHO_LOTE =
                     4;
 
@@ -16786,6 +17000,7 @@ async function sincronizarPainelOperacionalNFE(
 
                     const processadas =
                         await Promise.all(
+
                             lote.map(
                                 async venda => {
 
@@ -16831,7 +17046,7 @@ async function sincronizarPainelOperacionalNFE(
 
 
     // =====================================================
-    // VARIÁVEIS GERAIS
+    // VARIÁVEIS
     // =====================================================
 
     let vendas =
@@ -16883,8 +17098,6 @@ async function sincronizarPainelOperacionalNFE(
 
         // =====================================================
         // TOKEN
-        //
-        // BUSCAR UMA ÚNICA VEZ
         // =====================================================
 
         const token =
@@ -16901,6 +17114,9 @@ async function sincronizarPainelOperacionalNFE(
 
         // =====================================================
         // CARREGAR CACHE
+        //
+        // Se falhar:
+        // mantém a base que já está na memória.
         // =====================================================
 
         if (statusTela) {
@@ -16910,17 +17126,48 @@ async function sincronizarPainelOperacionalNFE(
         }
 
 
-        vendas =
-            await carregarVendasCachePeriodoNFE(
-                null,
-                null
+        try {
+
+            const carregadas =
+                await carregarVendasCachePeriodoNFE(
+                    null,
+                    null
+                );
+
+
+            if (
+                Array.isArray(carregadas)
+            ) {
+
+                vendas =
+                    carregadas;
+
+            } else {
+
+                vendas =
+                    Array.isArray(
+                        window._vendasPainelNFEBase
+                    )
+                        ? window._vendasPainelNFEBase
+                        : [];
+            }
+
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ [NFE] Cache falhou. Mantendo base atual:',
+                error
             );
 
 
-        vendas =
-            Array.isArray(vendas)
-                ? vendas
-                : [];
+            vendas =
+                Array.isArray(
+                    window._vendasPainelNFEBase
+                )
+                    ? window._vendasPainelNFEBase
+                    : [];
+        }
 
 
         window._vendasPainelNFEBase =
@@ -16931,7 +17178,7 @@ async function sincronizarPainelOperacionalNFE(
 
 
         console.log(
-            `📦 [NFE] Base carregada: ${vendas.length} venda(s)`
+            `📦 [NFE] Base: ${vendas.length} venda(s)`
         );
 
 
@@ -16941,7 +17188,9 @@ async function sincronizarPainelOperacionalNFE(
         // 1/4
         //
         // NF-e LIBERADAS
-        // COMPLETAR DADOS FALTANTES
+        //
+        // PRIMEIRO:
+        // COMPLETAR SOMENTE AS QUE TÊM DADOS FALTANDO
         //
         // =====================================================
         // =====================================================
@@ -16967,12 +17216,6 @@ async function sincronizarPainelOperacionalNFE(
             );
 
 
-        // =====================================================
-        // GUARDAR IDS
-        //
-        // Essas vendas não entram novamente na etapa 4.
-        // =====================================================
-
         for (
             const venda
             of liberadas
@@ -16993,38 +17236,77 @@ async function sincronizarPainelOperacionalNFE(
         }
 
 
+        // =====================================================
+        // SOMENTE LIBERADAS INCOMPLETAS
+        // =====================================================
+
+        const liberadasIncompletas =
+            liberadas.filter(
+                venda =>
+                    vendaTemDadosFaltando(
+                        venda
+                    )
+            );
+
+
         console.log(
-            `1️⃣ [NFE] NF-e liberadas: ${liberadas.length}`
+            '1️⃣ [NFE] Liberadas:',
+            {
+                total:
+                    liberadas.length,
+
+                incompletas:
+                    liberadasIncompletas.length,
+
+                completas:
+                    liberadas.length -
+                    liberadasIncompletas.length
+            }
         );
 
 
-        if (statusTela) {
-
-            statusTela.textContent =
-                '1/4 - Conferindo dados das NF-e liberadas...';
-        }
-
-
-        // =====================================================
-        // SOMENTE VENDAS COM DADOS FALTANDO FAZEM CONSULTAS
-        // =====================================================
-
         if (
-            liberadas.length >
+            liberadasIncompletas.length >
             0
         ) {
 
-            liberadas =
+            if (statusTela) {
+
+                statusTela.textContent =
+                    `1/4 - Completando ${liberadasIncompletas.length} NF-e liberada(s)...`;
+            }
+
+
+            const liberadasCorrigidas =
                 await completarSomenteDadosFaltantesVendasNFE(
-                    liberadas,
-                    token
+                    liberadasIncompletas,
+                    token,
+                    {
+                        prefixo:
+                            '1/4 - Completando NF-e liberadas'
+                    }
                 );
 
+
+            // =================================================
+            // MESCLAR NAS LIBERADAS
+            // =================================================
+
+            liberadas =
+                mesclarBase(
+                    liberadas,
+                    liberadasCorrigidas
+                );
+
+
+            // =================================================
+            // MESCLAR NA BASE TOTAL
+            // =================================================
 
             vendas =
                 mesclarBase(
                     vendas,
-                    liberadas
+                    liberadasCorrigidas
                 );
 
 
@@ -17033,6 +17315,9 @@ async function sincronizarPainelOperacionalNFE(
 
 
             atualizarTela();
+
+
+            atualizarAlertaSeparacao();
         }
 
 
@@ -17041,8 +17326,7 @@ async function sincronizarPainelOperacionalNFE(
         //
         // 2/4
         //
-        // NF-e LIBERADAS
-        // VERIFICAR STATUS DE TODAS
+        // STATUS DE TODAS AS NF-e LIBERADAS
         //
         // =====================================================
         // =====================================================
@@ -17050,7 +17334,7 @@ async function sincronizarPainelOperacionalNFE(
         if (statusTela) {
 
             statusTela.textContent =
-                '2/4 - Conferindo status das NF-e liberadas...';
+                `2/4 - Conferindo status de ${liberadas.length} NF-e liberada(s)...`;
         }
 
 
@@ -17096,17 +17380,10 @@ async function sincronizarPainelOperacionalNFE(
                 vendas;
 
 
-            // =================================================
-            // Venda que mudou:
-            //
-            // Liberada -> A caminho
-            // Liberada -> Entregue
-            // etc.
-            //
-            // muda de filtro naturalmente.
-            // =================================================
-
             atualizarTela();
+
+
+            atualizarAlertaSeparacao();
         }
 
 
@@ -17174,24 +17451,20 @@ async function sincronizarPainelOperacionalNFE(
         } catch (error) {
 
             console.warn(
-                '⚠️ [NFE] Erro buscando vendas novas:',
+                '⚠️ [NFE] Busca de vendas novas:',
                 error
             );
         }
 
 
         vendasRecentes =
-            Array.isArray(
-                vendasRecentes
-            )
+            Array.isArray(vendasRecentes)
                 ? vendasRecentes
                 : [];
 
 
         vendasResgate =
-            Array.isArray(
-                vendasResgate
-            )
+            Array.isArray(vendasResgate)
                 ? vendasResgate
                 : [];
 
@@ -17215,9 +17488,7 @@ async function sincronizarPainelOperacionalNFE(
 
                     return (
                         id &&
-                        !idsExistentes.has(
-                            id
-                        )
+                        !idsExistentes.has(id)
                     );
                 }
             );
@@ -17229,14 +17500,14 @@ async function sincronizarPainelOperacionalNFE(
                 encontradas:
                     encontradas.length,
 
-                realmente_novas:
+                novas:
                     novas.length
             }
         );
 
 
         // =====================================================
-        // PROCESSAR VENDAS NOVAS
+        // VENDAS NOVAS
         // =====================================================
 
         if (
@@ -17256,14 +17527,14 @@ async function sincronizarPainelOperacionalNFE(
             } catch (error) {
 
                 console.warn(
-                    '⚠️ [NFE] Erro carregando IDs de NF-e:',
+                    '⚠️ [NFE] IDs de NF-e:',
                     error
                 );
             }
 
 
             // =================================================
-            // 3A. PREPARAÇÃO BÁSICA
+            // 3A. PREPARAÇÃO
             // =================================================
 
             novasProcessadas =
@@ -17293,31 +17564,11 @@ async function sincronizarPainelOperacionalNFE(
                     .filter(Boolean);
 
 
-            console.log(
-                `🆕 [NFE] ${novasProcessadas.length} nova(s) preparada(s)`
-            );
-
-
             // =================================================
             // 3B. PROCESSAMENTO COMPLETO
             //
-            // IMPORTANTE:
-            //
-            // A VENDA NOVA AINDA NÃO É SALVA.
-            //
-            // Aqui preenche:
-            //
-            // - SKU
-            // - produto
-            // - MLB
-            // - valor
-            // - pagamento
-            // - estoque interno
-            // - estoque anúncio
-            // - FULL
-            // - modalidade
-            // - datas
-            //
+            // Vendas novas:
+            // sempre precisam nascer completas.
             // =================================================
 
             if (statusTela) {
@@ -17335,77 +17586,75 @@ async function sincronizarPainelOperacionalNFE(
 
 
             // =================================================
-            // 3C. SEGUNDA VALIDAÇÃO
-            //
-            // Se o processamento completo ainda deixou algum
-            // campo faltando, tenta preencher somente aquele.
+            // 3C. SÓ AS NOVAS QUE AINDA TIVEREM PENDÊNCIA
             // =================================================
 
+            const novasAindaIncompletas =
+                novasProcessadas.filter(
+                    venda =>
+                        vendaTemDadosFaltando(
+                            venda
+                        )
+                );
+
+
             if (
-                novasProcessadas.length >
+                novasAindaIncompletas.length >
                 0
             ) {
 
                 if (statusTela) {
 
                     statusTela.textContent =
-                        '3/4 - Validando dados das vendas novas...';
+                        `3/4 - Completando ${novasAindaIncompletas.length} venda(s) nova(s)...`;
                 }
 
 
-                novasProcessadas =
+                const novasCorrigidas =
                     await completarSomenteDadosFaltantesVendasNFE(
-                        novasProcessadas,
-                        token
-                    );
-            }
-
-
-            // =================================================
-            // 3D. STATUS OPERACIONAL REAL
-            //
-            // Decide:
-            //
-            // - NF-e liberadas
-            // - NF-e não liberadas
-            // - Despachadas
-            // - A caminho
-            // - Entregues
-            //
-            // =================================================
-
-            if (
-                novasProcessadas.length >
-                0
-            ) {
-
-                if (statusTela) {
-
-                    statusTela.textContent =
-                        '3/4 - Classificando vendas novas...';
-                }
-
-
-                novasProcessadas =
-                    await atualizarStatusOperacionalVendasNFE(
-                        novasProcessadas,
+                        novasAindaIncompletas,
+                        token,
                         {
-                            forcar:
-                                true,
-
-                            forcarLista:
-                                true,
-
-                            statusPrefixo:
-                                '3/4 - Classificando vendas novas'
+                            prefixo:
+                                '3/4 - Completando vendas novas'
                         }
                     );
+
+
+                novasProcessadas =
+                    mesclarBase(
+                        novasProcessadas,
+                        novasCorrigidas
+                    );
             }
 
 
             // =================================================
-            // GUARDAR IDS PARA NÃO REPETIR NA ETAPA 4
+            // 3D. CLASSIFICAR STATUS REAL
             // =================================================
+
+            if (statusTela) {
+
+                statusTela.textContent =
+                    `3/4 - Classificando ${novasProcessadas.length} venda(s) nova(s)...`;
+            }
+
+
+            novasProcessadas =
+                await atualizarStatusOperacionalVendasNFE(
+                    novasProcessadas,
+                    {
+                        forcar:
+                            true,
+
+                        forcarLista:
+                            true,
+
+                        statusPrefixo:
+                            '3/4 - Classificando vendas novas'
+                    }
+                );
+
 
             for (
                 const venda
@@ -17433,14 +17682,7 @@ async function sincronizarPainelOperacionalNFE(
 
 
             // =================================================
-            // 3E. SALVAR SOMENTE AGORA
-            //
-            // Só entra definitivamente na base depois de:
-            //
-            // ✓ processamento completo
-            // ✓ validação dos dados
-            // ✓ status operacional
-            //
+            // SALVAR SÓ DEPOIS DE ESTAREM PROCESSADAS
             // =================================================
 
             if (
@@ -17467,9 +17709,7 @@ async function sincronizarPainelOperacionalNFE(
                 atualizarTela();
 
 
-                console.log(
-                    `💾 [NFE NOVAS] ${novasProcessadas.length} venda(s) nova(s) salva(s) após processamento completo`
-                );
+                atualizarAlertaSeparacao();
             }
         }
 
@@ -17479,24 +17719,16 @@ async function sincronizarPainelOperacionalNFE(
         //
         // 4/4
         //
-        // RESTANTE DAS VENDAS
+        // RESTANTE
         //
         // =====================================================
         //
-        // ENTRA:
-        //
-        // - NF-e não liberadas
-        // - Despachadas
-        // - A caminho
-        // - FULL
-        // - outros estados ativos
-        //
-        // NÃO ENTRA:
+        // Exclui:
         //
         // - Entregues
         // - Canceladas
-        // - liberadas já verificadas
-        // - novas já verificadas
+        // - Liberadas já verificadas
+        // - Novas já verificadas
         //
         // =====================================================
         // =====================================================
@@ -17504,7 +17736,7 @@ async function sincronizarPainelOperacionalNFE(
         if (statusTela) {
 
             statusTela.textContent =
-                '4/4 - Preparando restante das vendas...';
+                '4/4 - Preparando vendas ativas...';
         }
 
 
@@ -17519,14 +17751,9 @@ async function sincronizarPainelOperacionalNFE(
 
 
                     if (!id) {
-
                         return false;
                     }
 
-
-                    // =========================================
-                    // JÁ PASSOU PELA ETAPA LIBERADAS
-                    // =========================================
 
                     if (
                         idsLiberadasVerificadas.has(
@@ -17537,10 +17764,6 @@ async function sincronizarPainelOperacionalNFE(
                         return false;
                     }
 
-
-                    // =========================================
-                    // NOVA JÁ FOI COMPLETAMENTE PROCESSADA
-                    // =========================================
 
                     if (
                         idsNovasVerificadas.has(
@@ -17553,7 +17776,7 @@ async function sincronizarPainelOperacionalNFE(
 
 
                     let classe =
-                        null;
+                        '';
 
 
                     try {
@@ -17565,10 +17788,6 @@ async function sincronizarPainelOperacionalNFE(
 
                     } catch (error) {}
 
-
-                    // =========================================
-                    // NÃO CONSULTAR ESTADOS FINAIS
-                    // =========================================
 
                     if (
                         classe ===
@@ -17587,44 +17806,125 @@ async function sincronizarPainelOperacionalNFE(
             );
 
 
+        // =====================================================
+        // 4A.
+        //
+        // SÓ NF-e NÃO LIBERADAS PODEM TER DADOS COMPLETADOS
+        //
+        // NÃO processar:
+        //
+        // - A caminho
+        // - Despachadas
+        // - FULL
+        //
+        // Isso elimina aquele absurdo de 1000+ vendas
+        // sendo enriquecidas.
+        // =====================================================
+
+        let naoLiberadasDoRestante =
+            restantes.filter(
+                venda => {
+
+                    try {
+
+                        return (
+                            classificarVendaPainelNFE(
+                                venda
+                            ) ===
+                            'nfe_nao_liberadas'
+                        );
+
+                    } catch (error) {
+
+                        return false;
+                    }
+                }
+            );
+
+
+        // =====================================================
+        // DENTRO DAS NÃO LIBERADAS:
+        //
+        // SÓ AS QUE REALMENTE TÊM DADO FALTANDO
+        // =====================================================
+
+        const naoLiberadasIncompletas =
+            naoLiberadasDoRestante.filter(
+                venda =>
+                    vendaTemDadosFaltando(
+                        venda
+                    )
+            );
+
+
         console.log(
-            `4️⃣ [NFE] Restante ativo: ${restantes.length} venda(s)`
+            '4️⃣ [NFE] Restante:',
+            {
+                ativos:
+                    restantes.length,
+
+                nao_liberadas:
+                    naoLiberadasDoRestante.length,
+
+                nao_liberadas_incompletas:
+                    naoLiberadasIncompletas.length
+            }
         );
 
 
-        // =====================================================
-        // 4A. COMPLETAR SOMENTE DADOS FALTANTES
-        //
-        // Venda completa:
-        // não faz consulta extra de dados.
-        //
-        // Venda incompleta:
-        // busca somente o que estiver faltando.
-        // =====================================================
-
         if (
-            restantes.length >
+            naoLiberadasIncompletas.length >
             0
         ) {
 
             if (statusTela) {
 
                 statusTela.textContent =
-                    `4/4 - Conferindo dados de ${restantes.length} venda(s)...`;
+                    `4/4 - Completando ${naoLiberadasIncompletas.length} NF-e não liberada(s)...`;
             }
 
 
-            restantes =
+            const naoLiberadasCorrigidas =
                 await completarSomenteDadosFaltantesVendasNFE(
-                    restantes,
-                    token
+                    naoLiberadasIncompletas,
+                    token,
+                    {
+                        prefixo:
+                            '4/4 - Completando NF-e não liberadas'
+                    }
                 );
 
+
+            // =================================================
+            // MESCLAR NO GRUPO NÃO LIBERADAS
+            // =================================================
+
+            naoLiberadasDoRestante =
+                mesclarBase(
+                    naoLiberadasDoRestante,
+                    naoLiberadasCorrigidas
+                );
+
+
+            // =================================================
+            // MESCLAR EM RESTANTES
+            // =================================================
+
+            restantes =
+                mesclarBase(
+                    restantes,
+                    naoLiberadasCorrigidas
+                );
+
+
+            // =================================================
+            // MESCLAR NA BASE PRINCIPAL
+            // =================================================
 
             vendas =
                 mesclarBase(
                     vendas,
-                    restantes
+                    naoLiberadasCorrigidas
                 );
 
 
@@ -17633,50 +17933,68 @@ async function sincronizarPainelOperacionalNFE(
 
 
             atualizarTela();
+
+
+            atualizarAlertaSeparacao();
         }
 
 
         // =====================================================
-        // 4B. REMOVER FINAIS DEPOIS DA COMPLEMENTAÇÃO
+        // 4B.
+        //
+        // REMOVER EVENTUAL ENTREGUE/CANCELADA QUE TENHA
+        // SIDO IDENTIFICADA DURANTE O COMPLEMENTO
         // =====================================================
 
         restantes =
             restantes.filter(
                 venda => {
 
-                    let classe =
-                        null;
-
-
                     try {
 
-                        classe =
+                        const classe =
                             classificarVendaPainelNFE(
                                 venda
                             );
 
-                    } catch (error) {}
+
+                        return (
+                            classe !==
+                                'entregues' &&
+
+                            classe !==
+                                'canceladas'
+                        );
 
 
-                    return (
-                        classe !==
-                            'entregues' &&
+                    } catch (error) {
 
-                        classe !==
-                            'canceladas'
-                    );
+                        return true;
+                    }
                 }
             );
 
 
         // =====================================================
-        // 4C. VERIFICAR STATUS OPERACIONAL
+        // 4C.
+        //
+        // STATUS DO RESTANTE
+        //
+        // AQUI SIM:
+        //
+        // - Não liberadas
+        // - Despachadas
+        // - A caminho
+        // - FULL
+        //
+        // Só consulta STATUS.
+        // Não faz processamento completo.
         // =====================================================
 
         if (statusTela) {
 
             statusTela.textContent =
-                '4/4 - Conferindo status do restante...';
+                `4/4 - Conferindo status de ${restantes.length} venda(s) ativa(s)...`;
         }
 
 
@@ -17723,6 +18041,9 @@ async function sincronizarPainelOperacionalNFE(
 
 
             atualizarTela();
+
+
+            atualizarAlertaSeparacao();
         }
 
 
@@ -17736,6 +18057,9 @@ async function sincronizarPainelOperacionalNFE(
 
         const exibidas =
             atualizarTela();
+
+
+        atualizarAlertaSeparacao();
 
 
         try {
@@ -17764,16 +18088,25 @@ async function sincronizarPainelOperacionalNFE(
                 total:
                     vendas.length,
 
-                liberadas_verificadas:
+                liberadas:
                     idsLiberadasVerificadas.size,
 
-                vendas_novas:
+                liberadas_incompletas:
+                    liberadasIncompletas.length,
+
+                novas:
                     idsNovasVerificadas.size,
 
-                restante_verificado:
+                restante_ativo:
                     restantes.length,
 
-                filtro_atual:
+                nao_liberadas:
+                    naoLiberadasDoRestante.length,
+
+                nao_liberadas_incompletas:
+                    naoLiberadasIncompletas.length,
+
+                filtro:
                     window._filtroPainelNFE,
 
                 exibidas:
@@ -17782,6 +18115,57 @@ async function sincronizarPainelOperacionalNFE(
                         : null
             }
         );
+
+
+        // =====================================================
+        // RECLAMAÇÕES
+        //
+        // BACKGROUND.
+        // NÃO SEGURA O BOTÃO.
+        // =====================================================
+
+        if (
+            typeof buscarReclamacoesAbertasPainelNFE ===
+                'function'
+        ) {
+
+            setTimeout(
+                () => {
+
+                    buscarReclamacoesAbertasPainelNFE()
+                        .then(
+                            () => {
+
+                                try {
+
+                                    atualizarContadoresPainelNFE();
+
+
+                                    if (
+                                        window._filtroPainelNFE ===
+                                        'reclamacoes'
+                                    ) {
+
+                                        atualizarTela();
+                                    }
+
+                                } catch (error) {}
+                            }
+                        )
+                        .catch(
+                            error => {
+
+                                console.warn(
+                                    '⚠️ [NFE CLAIMS]',
+                                    error
+                                );
+                            }
+                        );
+
+                },
+                300
+            );
+        }
 
 
         return vendas;
@@ -17798,7 +18182,10 @@ async function sincronizarPainelOperacionalNFE(
         if (statusTela) {
 
             statusTela.textContent =
-                `Erro ao atualizar: ${error.message}`;
+                `Erro ao atualizar: ${
+                    error?.message ||
+                    'erro desconhecido'
+                }`;
         }
 
 
@@ -17808,16 +18195,25 @@ async function sincronizarPainelOperacionalNFE(
         ) {
 
             showToast(
-                `❌ Erro ao atualizar NF-e: ${error.message}`,
+                `❌ Erro ao atualizar NF-e: ${
+                    error?.message ||
+                    'erro desconhecido'
+                }`,
                 'error'
             );
         }
 
 
+        // =====================================================
+        // NÃO ZERAR TABELA POR CAUSA DE ERRO
+        // =====================================================
+
         return (
-            window._vendasPainelNFEBase ||
-            vendas ||
-            []
+            Array.isArray(
+                window._vendasPainelNFEBase
+            )
+                ? window._vendasPainelNFEBase
+                : vendas
         );
 
 
@@ -17852,6 +18248,8 @@ async function sincronizarPainelOperacionalNFE(
 
         // =====================================================
         // CONCORRENTES SOMENTE DEPOIS DE TUDO
+        //
+        // NÃO aguardamos.
         // =====================================================
 
         if (
@@ -17866,12 +18264,473 @@ async function sincronizarPainelOperacionalNFE(
             } catch (error) {
 
                 console.warn(
-                    '⚠️ [NFE] Erro agendando concorrentes:',
+                    '⚠️ [NFE] Concorrentes:',
                     error
                 );
             }
         }
     }
+}
+
+async function garantirDetalhesEstoqueParaBaixaNFE(
+    vendaId,
+    vendaCache = null
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (!vendaId) {
+
+        return {
+            success: false,
+            detalhes: [],
+            error: 'ID da venda inválido'
+        };
+    }
+
+
+    // =====================================================
+    // 1. SE JÁ EXISTEM DETALHES, NÃO FAZER NADA
+    // =====================================================
+
+    let detalhesExistentes =
+        Array.isArray(
+            vendaCache?.estoque_detalhes
+        )
+            ? vendaCache.estoque_detalhes
+            : [];
+
+
+    if (
+        detalhesExistentes.length > 0
+    ) {
+
+        return {
+            success: true,
+            detalhes: detalhesExistentes,
+            recuperado: false
+        };
+    }
+
+
+    console.log(
+        `🔎 [BAIXA] Venda ${vendaId} sem estoque_detalhes. Verificando agora...`
+    );
+
+
+    // =====================================================
+    // 2. LOCALIZAR OBJETO COMPLETO DA VENDA EM MEMÓRIA
+    // =====================================================
+
+    const fontes = [
+
+        Array.isArray(
+            window._vendasPainelNFEBase
+        )
+            ? window._vendasPainelNFEBase
+            : [],
+
+        Array.isArray(
+            window._vendasTabelaNFEBase
+        )
+            ? window._vendasTabelaNFEBase
+            : [],
+
+        Array.isArray(
+            vendasPendentes
+        )
+            ? vendasPendentes
+            : []
+    ];
+
+
+    let vendaCompleta =
+        null;
+
+
+    for (
+        const lista
+        of fontes
+    ) {
+
+        vendaCompleta =
+            lista.find(
+                venda => {
+
+                    const id =
+                        normalizarOrderIdML(
+                            venda?.id_venda_ml ||
+                            venda?.id
+                        );
+
+
+                    if (
+                        id ===
+                        vendaId
+                    ) {
+
+                        return true;
+                    }
+
+
+                    if (
+                        Array.isArray(
+                            venda?._order_ids_pack
+                        )
+                    ) {
+
+                        return venda
+                            ._order_ids_pack
+                            .map(
+                                normalizarOrderIdML
+                            )
+                            .includes(
+                                vendaId
+                            );
+                    }
+
+
+                    return false;
+                }
+            );
+
+
+        if (vendaCompleta) {
+            break;
+        }
+    }
+
+
+    // =====================================================
+    // 3. SE NÃO ESTÁ NA MEMÓRIA, PEGAR venda_json DO CACHE
+    // =====================================================
+
+    if (!vendaCompleta) {
+
+        let registro =
+            vendaCache;
+
+
+        if (
+            !registro?.venda_json
+        ) {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .select(`
+                        id_venda_ml,
+                        venda_json,
+                        estoque_status,
+                        estoque_detalhes
+                    `)
+                    .eq(
+                        'id_venda_ml',
+                        vendaId
+                    )
+                    .maybeSingle();
+
+
+            if (error) {
+
+                return {
+                    success: false,
+                    detalhes: [],
+                    error:
+                        `Erro buscando venda no cache: ${error.message}`
+                };
+            }
+
+
+            registro =
+                data;
+        }
+
+
+        let vendaJson =
+            registro?.venda_json ||
+            {};
+
+
+        if (
+            typeof vendaJson ===
+            'string'
+        ) {
+
+            try {
+
+                vendaJson =
+                    JSON.parse(
+                        vendaJson
+                    );
+
+            } catch (error) {
+
+                vendaJson =
+                    {};
+            }
+        }
+
+
+        vendaCompleta = {
+
+            ...vendaJson,
+
+            id:
+                vendaId,
+
+            id_venda_ml:
+                vendaId
+        };
+    }
+
+
+    // =====================================================
+    // 4. AINDA NÃO TEM INFORMAÇÃO SUFICIENTE?
+    // =====================================================
+
+    if (
+        !vendaCompleta ||
+        (
+            !vendaCompleta.sku &&
+            !(
+                Array.isArray(
+                    vendaCompleta.order_items
+                ) &&
+                vendaCompleta.order_items.length >
+                    0
+            ) &&
+            !(
+                vendaCompleta.eh_kit &&
+                Array.isArray(
+                    vendaCompleta.skus_kit
+                ) &&
+                vendaCompleta.skus_kit.length >
+                    0
+            )
+        )
+    ) {
+
+        return {
+            success: false,
+            detalhes: [],
+            error:
+                'Não foi possível identificar o SKU da venda para verificar o estoque.'
+        };
+    }
+
+
+    // =====================================================
+    // 5. VERIFICAR ESTOQUE AGORA
+    // =====================================================
+
+    let verificacao =
+        null;
+
+
+    try {
+
+        verificacao =
+            await verificarEstoqueVenda(
+                vendaCompleta
+            );
+
+    } catch (error) {
+
+        console.error(
+            `❌ [BAIXA] Erro verificando estoque da venda ${vendaId}:`,
+            error
+        );
+
+
+        return {
+            success: false,
+            detalhes: [],
+            error:
+                `Erro verificando estoque: ${error.message}`
+        };
+    }
+
+
+    const detalhes =
+        Array.isArray(
+            verificacao?.produtos
+        )
+            ? verificacao.produtos
+            : [];
+
+
+    if (
+        detalhes.length === 0
+    ) {
+
+        return {
+            success: false,
+            detalhes: [],
+            error:
+                'Não foi possível identificar os produtos físicos desta venda.'
+        };
+    }
+
+
+    const todosEncontrados =
+        detalhes.every(
+            item =>
+                item?.encontrado ===
+                true
+        );
+
+
+    const estoqueStatus =
+        verificacao?.status ||
+        (
+            todosEncontrados
+                ? 'disponivel'
+                : 'sem_cadastro'
+        );
+
+
+    // =====================================================
+    // 6. SALVAR A VERIFICAÇÃO NO CACHE
+    //
+    // Isso é essencial porque a RPC de baixa utiliza
+    // estoque_detalhes.
+    // =====================================================
+
+    const agora =
+        new Date()
+            .toISOString();
+
+
+    const {
+        error:
+            erroSalvar
+    } =
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .update({
+
+                estoque_status:
+                    estoqueStatus,
+
+                estoque_detalhes:
+                    detalhes,
+
+                atualizado_em:
+                    agora
+
+            })
+            .eq(
+                'id_venda_ml',
+                vendaId
+            );
+
+
+    if (erroSalvar) {
+
+        return {
+            success: false,
+            detalhes: [],
+            error:
+                `Não foi possível salvar a verificação de estoque: ${erroSalvar.message}`
+        };
+    }
+
+
+    // =====================================================
+    // 7. ATUALIZAR MEMÓRIA
+    // =====================================================
+
+    const atualizarLista =
+        lista => {
+
+            if (
+                !Array.isArray(lista)
+            ) {
+                return;
+            }
+
+
+            for (
+                const venda
+                of lista
+            ) {
+
+                const id =
+                    normalizarOrderIdML(
+                        venda?.id_venda_ml ||
+                        venda?.id
+                    );
+
+
+                if (
+                    id !==
+                    vendaId
+                ) {
+                    continue;
+                }
+
+
+                venda._estoque_status =
+                    estoqueStatus;
+
+                venda.estoque_status =
+                    estoqueStatus;
+
+                venda._estoque_detalhes =
+                    detalhes;
+
+                venda.estoque_detalhes =
+                    detalhes;
+            }
+        };
+
+
+    atualizarLista(
+        window._vendasPainelNFEBase
+    );
+
+    atualizarLista(
+        window._vendasTabelaNFEBase
+    );
+
+    atualizarLista(
+        vendasPendentes
+    );
+
+
+    console.log(
+        `✅ [BAIXA] Estoque da venda ${vendaId} verificado automaticamente`,
+        {
+            status:
+                estoqueStatus,
+
+            produtos:
+                detalhes
+        }
+    );
+
+
+    return {
+        success: true,
+        detalhes,
+        status:
+            estoqueStatus,
+        recuperado: true
+    };
 }
 
 function obterAssinaturaVisualVendaNFE(venda) {
@@ -48277,6 +49136,23 @@ async function sincronizarEstoqueVendaManual(
     vendaId
 ) {
 
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (!vendaId) {
+
+        showToast(
+            '❌ Venda inválida.',
+            'error'
+        );
+
+        return false;
+    }
+
+
     try {
 
         showToast(
@@ -48284,69 +49160,127 @@ async function sincronizarEstoqueVendaManual(
             'info'
         );
 
+
         const sucesso =
             await sincronizarEstoqueComML(
-                String(vendaId)
+                vendaId
             );
+
+
+        const agora =
+            new Date()
+                .toISOString();
+
+
+        // =====================================================
+        // ATUALIZAR CACHE
+        // =====================================================
+
+        const novoStatus =
+            sucesso
+                ? 'baixado'
+                : 'baixado_sync_pendente';
+
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
+
+                    estoque_baixado:
+                        true,
+
+                    estoque_status:
+                        novoStatus,
+
+                    atualizado_em:
+                        agora
+
+                })
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                )
+                .select(`
+                    id_venda_ml,
+                    estoque_baixado,
+                    estoque_status,
+                    estoque_baixado_em,
+                    estoque_baixado_por_username,
+                    estoque_baixado_por_nome,
+                    estoque_detalhes
+                `);
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        // =====================================================
+        // MEMÓRIA
+        // =====================================================
+
+        atualizarEstadoEstoqueVendaMemoriaNFE(
+            data ||
+            []
+        );
+
+
+        // =====================================================
+        // SOMENTE A LINHA ALTERADA
+        // =====================================================
+
+        if (
+            typeof refrescarPainelNFEPreservandoFiltro ===
+            'function'
+        ) {
+
+            refrescarPainelNFEPreservandoFiltro();
+        }
+
 
         if (!sucesso) {
 
             showToast(
-                '⚠️ Ainda não foi possível sincronizar o estoque.',
+                '⚠️ Ainda não foi possível sincronizar com o Mercado Livre.',
                 'warning'
             );
 
-            return;
+            return false;
         }
 
-        await window
-            .supabaseClient
-            .from(
-                'vendas_nfe_cache'
-            )
-            .update({
-
-                estoque_status:
-                    'baixado'
-
-            })
-            .eq(
-                'id_venda_ml',
-                String(vendaId)
-            );
 
         showToast(
-            '✅ Estoque sincronizado com o ML!',
+            '✅ Estoque sincronizado com o Mercado Livre!',
             'success'
         );
 
-        const data =
-            document.getElementById(
-                'filtroDataEnvioNFE'
-            )?.value ||
-            obterDataHojeLocal();
 
-        const vendas =
-            await carregarVendasCacheNFE(
-                window._nfeFiltroTodas
-                    ? null
-                    : data
-            );
+        return true;
 
-        renderizarVendasNFETabela(
-            vendas
-        );
 
     } catch (error) {
 
         console.error(
+            '❌ Erro ao sincronizar estoque:',
             error
         );
 
+
         showToast(
-            '❌ Erro ao sincronizar estoque',
+            `❌ Erro ao sincronizar estoque: ${error.message}`,
             'error'
         );
+
+
+        return false;
     }
 }
 
@@ -48451,6 +49385,7 @@ async function darBaixaEstoqueVenda(
             vendaId
         );
 
+
     if (!vendaId) {
 
         showToast(
@@ -48461,9 +49396,13 @@ async function darBaixaEstoqueVenda(
         return;
     }
 
+
+    // =====================================================
+    // EVITAR DUPLICIDADE
+    // =====================================================
+
     if (
-        window
-            ._baixaEstoqueEmAndamento
+        window._baixaEstoqueEmAndamento
     ) {
 
         showToast(
@@ -48474,6 +49413,7 @@ async function darBaixaEstoqueVenda(
         return;
     }
 
+
     // =====================================================
     // PACK
     // =====================================================
@@ -48483,10 +49423,10 @@ async function darBaixaEstoqueVenda(
             vendaId
         );
 
+
     orderIds =
         [
             ...new Set(
-
                 (
                     orderIds ||
                     [vendaId]
@@ -48498,9 +49438,9 @@ async function darBaixaEstoqueVenda(
             )
         ];
 
+
     if (
-        orderIds.length ===
-        0
+        orderIds.length === 0
     ) {
 
         orderIds = [
@@ -48508,16 +49448,19 @@ async function darBaixaEstoqueVenda(
         ];
     }
 
+
     // =====================================================
-    // PRÉ-VALIDAÇÃO DE TODAS AS ORDERS
+    // 1. PRÉ-VALIDAÇÃO
     // =====================================================
+
+    let vendasCache =
+        [];
+
 
     try {
 
         const {
-            data:
-                vendasCache,
-
+            data,
             error
         } =
             await window
@@ -48528,8 +49471,373 @@ async function darBaixaEstoqueVenda(
                 .select(`
                     id_venda_ml,
                     is_full,
+                    venda_cancelada,
+                    ml_status,
                     estoque_baixado,
                     estoque_status,
+                    estoque_detalhes,
+                    venda_json
+                `)
+                .in(
+                    'id_venda_ml',
+                    orderIds
+                );
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        vendasCache =
+            Array.isArray(data)
+                ? data
+                : [];
+
+
+        if (
+            vendasCache.length === 0
+        ) {
+
+            throw new Error(
+                'Venda não encontrada no cache.'
+            );
+        }
+
+
+        // =================================================
+        // VALIDAR CADA ORDER
+        // =================================================
+
+        for (
+            const venda
+            of vendasCache
+        ) {
+
+            const id =
+                normalizarOrderIdML(
+                    venda.id_venda_ml
+                );
+
+
+            const statusML =
+                String(
+                    venda.ml_status ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase();
+
+
+            // =============================================
+            // CANCELADA
+            // =============================================
+
+            if (
+                venda.venda_cancelada ===
+                    true ||
+                statusML ===
+                    'cancelled' ||
+                statusML ===
+                    'canceled'
+            ) {
+
+                throw new Error(
+                    `Venda ${id} está cancelada.`
+                );
+            }
+
+
+            // =============================================
+            // FULL
+            // =============================================
+
+            if (
+                venda.is_full ===
+                true
+            ) {
+
+                continue;
+            }
+
+
+            // =============================================
+            // JÁ BAIXADA
+            //
+            // NÃO precisa verificar novamente para dar baixa.
+            // =============================================
+
+            if (
+                venda.estoque_baixado ===
+                true
+            ) {
+
+                continue;
+            }
+
+
+            // =============================================
+            // ESTOQUE DETALHADO
+            //
+            // Se estiver vazio:
+            //
+            // NÃO dá erro.
+            //
+            // Verifica agora e salva.
+            // =============================================
+
+            const verificacao =
+                await garantirDetalhesEstoqueParaBaixaNFE(
+                    id,
+                    venda
+                );
+
+
+            if (
+                !verificacao.success
+            ) {
+
+                throw new Error(
+                    `Venda ${id}: ${verificacao.error}`
+                );
+            }
+
+
+            const naoEncontrado =
+                verificacao
+                    .detalhes
+                    .find(
+                        item =>
+                            item?.encontrado !==
+                            true
+                    );
+
+
+            if (naoEncontrado) {
+
+                throw new Error(
+                    `Venda ${id}: SKU ${
+                        naoEncontrado.sku ||
+                        'SEM_SKU'
+                    } não está cadastrado`
+                );
+            }
+        }
+
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ Pré-validação da baixa:',
+            error
+        );
+
+
+        showToast(
+            `⚠️ Não foi possível dar baixa: ${error.message}`,
+            'warning'
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // 2. SE TODAS AS ORDERS JÁ ESTÃO BAIXADAS
+    //
+    // Não pedir confirmação e jamais baixar novamente.
+    //
+    // Se houver sync pendente, garantirBaixaEstoqueVenda()
+    // apenas repete a sincronização.
+    // =====================================================
+
+    const naoFull =
+        vendasCache.filter(
+            venda =>
+                venda.is_full !==
+                true
+        );
+
+
+    const todasJaBaixadas =
+        naoFull.length > 0 &&
+        naoFull.every(
+            venda =>
+                venda.estoque_baixado ===
+                true
+        );
+
+
+    if (todasJaBaixadas) {
+
+        const resultados =
+            [];
+
+
+        for (
+            const id
+            of orderIds
+        ) {
+
+            const resultado =
+                await garantirBaixaEstoqueVenda(
+                    id,
+                    'manual'
+                );
+
+
+            resultados.push({
+                orderId: id,
+                ...resultado
+            });
+        }
+
+
+        if (
+            typeof refrescarPainelNFEPreservandoFiltro ===
+            'function'
+        ) {
+
+            refrescarPainelNFEPreservandoFiltro();
+        }
+
+
+        const pendentes =
+            resultados.filter(
+                resultado =>
+                    resultado.success &&
+                    resultado.sincronizado ===
+                    false
+            );
+
+
+        if (
+            pendentes.length > 0
+        ) {
+
+            showToast(
+                '⚠️ O estoque já estava baixado. A sincronização com o Mercado Livre continua pendente.',
+                'warning'
+            );
+
+        } else {
+
+            showToast(
+                '✅ O estoque desta venda já estava baixado.',
+                'success'
+            );
+        }
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // 3. CONFIRMAÇÃO
+    // =====================================================
+
+    const confirmar =
+        confirm(
+
+            orderIds.length > 1
+
+                ? (
+                    `Confirma a baixa do estoque deste PACK?\n\n` +
+                    `${orderIds.length} pedidos serão processados.\n\n` +
+                    `Os produtos já foram verificados no estoque.\n` +
+                    `Após a baixa, a sincronização com o Mercado Livre será acionada.`
+                )
+
+                : (
+                    `Confirma a baixa do estoque da venda ${vendaId}?\n\n` +
+                    `O produto já foi verificado no estoque.\n` +
+                    `Após a baixa, a sincronização com o Mercado Livre será acionada.`
+                )
+        );
+
+
+    if (!confirmar) {
+        return;
+    }
+
+
+    window._baixaEstoqueEmAndamento =
+        vendaId;
+
+
+    try {
+
+        // =====================================================
+        // 4. PROCESSAR TODAS AS ORDERS
+        // =====================================================
+
+        const resultados =
+            [];
+
+
+        for (
+            const orderId
+            of orderIds
+        ) {
+
+            try {
+
+                const resultado =
+                    await garantirBaixaEstoqueVenda(
+                        orderId,
+                        'manual'
+                    );
+
+
+                resultados.push({
+
+                    orderId,
+
+                    ...resultado
+                });
+
+
+            } catch (error) {
+
+                resultados.push({
+
+                    orderId,
+
+                    success: false,
+
+                    error:
+                        error?.message ||
+                        'Erro desconhecido'
+                });
+            }
+        }
+
+
+        // =====================================================
+        // 5. RECARREGAR SOMENTE ESTADO DESTAS ORDERS
+        // =====================================================
+
+        const {
+            data:
+                estadoAtual,
+
+            error:
+                erroEstado
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .select(`
+                    id_venda_ml,
+                    estoque_baixado,
+                    estoque_status,
+                    estoque_baixado_em,
+                    estoque_baixado_por_username,
+                    estoque_baixado_por_nome,
                     estoque_detalhes
                 `)
                 .in(
@@ -48537,212 +49845,92 @@ async function darBaixaEstoqueVenda(
                     orderIds
                 );
 
-        if (error) {
 
-            throw error;
+        if (!erroEstado) {
+
+            if (
+                typeof atualizarEstadoEstoqueVendaMemoriaNFE ===
+                'function'
+            ) {
+
+                atualizarEstadoEstoqueVendaMemoriaNFE(
+                    estadoAtual ||
+                    []
+                );
+            }
         }
 
-        const cache =
-            Array.isArray(
-                vendasCache
-            )
-                ? vendasCache
-                : [];
 
-        for (
-            const venda
-            of cache
-        ) {
-
-            const statusML =
-    String(
-        venda.ml_status ||
-        ''
-    )
-        .trim()
-        .toLowerCase();
+        // =====================================================
+        // 6. ATUALIZAÇÃO INCREMENTAL
+        //
+        // Não recarrega a tabela inteira.
+        // =====================================================
 
         if (
-            venda.venda_cancelada ===
-                true ||
-            statusML ===
-                'cancelled' ||
-            statusML ===
-                'canceled'
+            typeof refrescarPainelNFEPreservandoFiltro ===
+            'function'
         ) {
 
-            throw new Error(
-                `Venda ${venda.id_venda_ml} está CANCELADA. Baixa de estoque bloqueada.`
-            );
+            refrescarPainelNFEPreservandoFiltro();
         }
 
-            if (
-                venda.is_full ||
-                venda.estoque_baixado
-            ) {
-
-                continue;
-            }
-
-            const detalhes =
-                Array.isArray(
-                    venda.estoque_detalhes
-                )
-                    ? venda.estoque_detalhes
-                    : [];
-
-            if (
-                detalhes.length ===
-                0
-            ) {
-
-                throw new Error(
-                    `Venda ${venda.id_venda_ml}: estoque ainda não verificado`
-                );
-            }
-
-            const faltante =
-                detalhes.find(
-                    item =>
-                        !item.encontrado
-                );
-
-            if (
-                faltante
-            ) {
-
-                throw new Error(
-                    `SKU ${faltante.sku || 'SEM_SKU'} não está cadastrado`
-                );
-            }
-        }
-
-    } catch (error) {
-
-        showToast(
-            `⚠️ Não foi possível dar baixa: ${error.message}`,
-            'warning'
-        );
-
-        return;
-    }
-
-    // =====================================================
-    // CONFIRMAÇÃO
-    // =====================================================
-
-    const confirmar =
-        confirm(
-
-            orderIds.length >
-                1
-
-                ? (
-                    `Confirma a baixa do estoque deste PACK?\n\n` +
-                    `${orderIds.length} pedidos serão processados.\n\n` +
-                    `Após cada baixa o estoque será sincronizado com o Mercado Livre.`
-                )
-
-                : (
-                    `Confirma a baixa do estoque da venda ${vendaId}?\n\n` +
-                    `Após a baixa o estoque será sincronizado com o Mercado Livre.`
-                )
-        );
-
-    if (!confirmar) {
-
-        return;
-    }
-
-    window
-        ._baixaEstoqueEmAndamento =
-        vendaId;
-
-    try {
-
-        const resultados =
-            [];
 
         // =====================================================
-        // CADA ORDER PASSA PELA MESMA ROTINA CENTRAL
+        // 7. RESULTADOS
         // =====================================================
-
-        for (
-            const orderId
-            of orderIds
-        ) {
-
-            const resultado =
-                await garantirBaixaEstoqueVenda(
-                    orderId,
-                    'manual'
-                );
-
-            resultados.push({
-
-                orderId,
-
-                ...resultado
-            });
-        }
 
         const falhas =
             resultados.filter(
-                item =>
-                    !item.success
+                resultado =>
+                    !resultado.success
             );
 
-        const baixadosAgora =
-            resultados.filter(
-                item =>
-                    item.success &&
-                    !item.already &&
-                    !item.skipped
-            );
-
-        const jaBaixados =
-            resultados.filter(
-                item =>
-                    item.success &&
-                    (
-                        item.already ||
-                        item.skipped
-                    )
-            );
 
         const syncPendente =
             resultados.filter(
-                item =>
-                    item.success &&
-                    item.sincronizado ===
-                        false
+                resultado =>
+                    resultado.success &&
+                    !resultado.full &&
+                    resultado.sincronizado ===
+                    false
             );
 
-        // =====================================================
-        // MENSAGEM
-        // =====================================================
+
+        const baixados =
+            resultados.filter(
+                resultado =>
+                    resultado.success &&
+                    !resultado.already &&
+                    !resultado.skipped &&
+                    !resultado.full
+            );
+
 
         if (
-            falhas.length >
-            0
+            falhas.length > 0
         ) {
 
-            const erros =
+            const mensagem =
                 falhas
                     .map(
-                        item =>
-                            `${item.orderId}: ${item.error || 'erro'}`
+                        resultado =>
+                            `${resultado.orderId}: ${
+                                resultado.error ||
+                                'erro'
+                            }`
                     )
                     .join(' | ');
 
+
             showToast(
-                `⚠️ Houve erro em parte da baixa: ${erros}`,
+                `⚠️ Houve erro em parte da baixa: ${mensagem}`,
                 'warning'
             );
 
+
         } else if (
-            syncPendente.length >
-            0
+            syncPendente.length > 0
         ) {
 
             showToast(
@@ -48750,66 +49938,31 @@ async function darBaixaEstoqueVenda(
                 'warning'
             );
 
+
         } else if (
-            baixadosAgora.length >
-            0
+            baixados.length > 0
         ) {
 
             showToast(
+
                 orderIds.length > 1
-                    ? `✅ Pack baixado e sincronizado com ML! ${baixadosAgora.length} pedido(s) processado(s).`
+
+                    ? `✅ Estoque do pack baixado e sincronizado! ${baixados.length} pedido(s) processado(s).`
+
                     : '✅ Estoque baixado e sincronizado com o Mercado Livre!',
+
                 'success'
             );
 
-        } else if (
-            jaBaixados.length >
-            0
-        ) {
+
+        } else {
 
             showToast(
-                '✅ O estoque já havia sido baixado anteriormente.',
+                '✅ Estoque já estava processado.',
                 'success'
             );
         }
 
-        // =====================================================
-        // ATUALIZAR TABELA
-        // =====================================================
-
-        const data =
-            document
-                .getElementById(
-                    'filtroDataEnvioNFE'
-                )
-                ?.value ||
-            obterDataHojeLocal();
-
-        const vendas =
-            await carregarVendasCacheNFE(
-
-                window._nfeFiltroTodas
-                    ? null
-                    : data
-            );
-
-        renderizarVendasNFETabela(
-            vendas
-        );
-
-        if (
-            typeof window
-                .carregarProdutosEstoque ===
-            'function'
-        ) {
-
-            try {
-
-                await window
-                    .carregarProdutosEstoque();
-
-            } catch (error) {}
-        }
 
     } catch (error) {
 
@@ -48818,15 +49971,16 @@ async function darBaixaEstoqueVenda(
             error
         );
 
+
         showToast(
             `❌ Erro ao baixar estoque: ${error.message}`,
             'error'
         );
 
+
     } finally {
 
-        window
-            ._baixaEstoqueEmAndamento =
+        window._baixaEstoqueEmAndamento =
             null;
     }
 }
@@ -61929,14 +63083,10 @@ async function garantirBaixaEstoqueVenda(
         );
 
 
-    if (
-        !vendaId
-    ) {
+    if (!vendaId) {
 
         return {
-            success:
-                false,
-
+            success: false,
             error:
                 'ID da venda inválido'
         };
@@ -61959,7 +63109,7 @@ async function garantirBaixaEstoqueVenda(
     try {
 
         // =====================================================
-        // 1. ESTADO DA VENDA
+        // 1. BUSCAR ESTADO DA VENDA
         // =====================================================
 
         const {
@@ -61975,15 +63125,18 @@ async function garantirBaixaEstoqueVenda(
                     'vendas_nfe_cache'
                 )
                 .select(`
-                        id_venda_ml,
-                        is_full,
-                        venda_cancelada,
-                        ml_status,
-                        estoque_baixado,
-                        estoque_status,
-                        estoque_baixado_em,
-                        estoque_detalhes
-                    `)
+                    id_venda_ml,
+                    is_full,
+                    venda_cancelada,
+                    ml_status,
+                    estoque_baixado,
+                    estoque_status,
+                    estoque_baixado_em,
+                    estoque_baixado_por_username,
+                    estoque_baixado_por_nome,
+                    estoque_detalhes,
+                    venda_json
+                `)
                 .eq(
                     'id_venda_ml',
                     vendaId
@@ -61991,139 +63144,186 @@ async function garantirBaixaEstoqueVenda(
                 .maybeSingle();
 
 
-        if (
-            erroVenda
-        ) {
-
+        if (erroVenda) {
             throw erroVenda;
         }
 
 
-        if (
-            !vendaCache
-        ) {
+        if (!vendaCache) {
 
             throw new Error(
                 `Venda ${vendaId} não encontrada no cache`
             );
         }
 
-        // =====================================================
-// VENDA CANCELADA
-//
-// BLOQUEIO ABSOLUTO DE NOVA BAIXA
-// =====================================================
-
-const statusML =
-    String(
-        vendaCache.ml_status ||
-        ''
-    )
-        .trim()
-        .toLowerCase();
-
-
-if (
-    vendaCache.venda_cancelada ===
-        true ||
-    statusML ===
-        'cancelled' ||
-    statusML ===
-        'canceled'
-) {
-
-    console.warn(
-        `🚫 ${vendaId}: venda cancelada. Baixa bloqueada.`
-    );
-
-
-    return {
-
-        success:
-            false,
-
-        cancelada:
-            true,
-
-        skipped:
-            true,
-
-        error:
-            'Venda cancelada. Não é permitido dar baixa no estoque.'
-    };
-}
-
 
         // =====================================================
-        // 2. FULL
+        // 2. CANCELADA
         // =====================================================
+
+        const statusML =
+            String(
+                vendaCache.ml_status ||
+                ''
+            )
+                .trim()
+                .toLowerCase();
+
 
         if (
-            vendaCache.is_full
+            vendaCache.venda_cancelada ===
+                true ||
+            statusML ===
+                'cancelled' ||
+            statusML ===
+                'canceled'
         ) {
 
-            console.log(
-                `ℹ️ ${vendaId}: FULL, sem baixa local`
-            );
-
-
             return {
-                success:
-                    true,
 
-                full:
-                    true,
+                success: false,
 
-                skipped:
-                    true
+                cancelada: true,
+
+                skipped: true,
+
+                error:
+                    'Venda cancelada. Não é permitido dar baixa no estoque.'
             };
         }
 
 
         // =====================================================
-        // 3. JÁ BAIXADO
-        //
-        // NÃO alterar responsável original.
+        // 3. FULL
         // =====================================================
 
         if (
-            vendaCache
-                .estoque_baixado
+            vendaCache.is_full ===
+            true
+        ) {
+
+            return {
+
+                success: true,
+
+                full: true,
+
+                skipped: true,
+
+                sincronizado: true
+            };
+        }
+
+
+        // =====================================================
+        // 4. JÁ FOI BAIXADO
+        //
+        // NUNCA executar RPC novamente.
+        // =====================================================
+
+        if (
+            vendaCache.estoque_baixado ===
+            true
         ) {
 
             console.log(
-                `✅ ${vendaId}: estoque já baixado`,
-                {
-                    baixadoPor:
-                        vendaCache
-                            .estoque_baixado_por_nome ||
-                        'não registrado'
-                }
+                `✅ ${vendaId}: estoque já estava baixado`
             );
 
 
+            // =================================================
+            // SYNC PENDENTE
+            //
+            // Só repetir sincronização do ML.
+            // =================================================
+
             if (
-                vendaCache
-                    .estoque_status ===
+                vendaCache.estoque_status ===
                 'baixado_sync_pendente'
             ) {
 
-                console.log(
-                    `🔄 ${vendaId}: repetindo sincronização ML`
-                );
+                let detalhes =
+                    Array.isArray(
+                        vendaCache.estoque_detalhes
+                    )
+                        ? vendaCache.estoque_detalhes
+                        : [];
 
 
-                const sincronizado =
-                    await sincronizarProdutosBaixadosNFE(
-                        vendaCache
-                            .estoque_detalhes ||
-                        []
-                    );
+                // =============================================
+                // Caso muito antigo:
+                // baixa existe, mas detalhes não foram salvos.
+                // =============================================
+
+                if (
+                    detalhes.length ===
+                    0
+                ) {
+
+                    const recuperacao =
+                        await garantirDetalhesEstoqueParaBaixaNFE(
+                            vendaId,
+                            vendaCache
+                        );
+
+
+                    if (
+                        recuperacao.success
+                    ) {
+
+                        detalhes =
+                            recuperacao.detalhes;
+                    }
+                }
 
 
                 if (
-                    sincronizado
+                    detalhes.length ===
+                    0
                 ) {
+
+                    return {
+
+                        success: true,
+
+                        already: true,
+
+                        skipped: true,
+
+                        sincronizado: false,
+
+                        error:
+                            'Baixa já realizada, mas não foi possível reconstruir os produtos para sincronizar com o ML.'
+                    };
+                }
+
+
+                console.log(
+                    `🔄 ${vendaId}: repetindo somente sincronização ML`
+                );
+
+
+                let sincronizado =
+                    false;
+
+
+                try {
+
+                    sincronizado =
+                        await sincronizarProdutosBaixadosNFE(
+                            detalhes
+                        );
+
+                } catch (error) {
+
+                    console.error(
+                        `❌ ${vendaId}: erro repetindo sincronização ML:`,
+                        error
+                    );
+                }
+
+
+                if (sincronizado) {
 
                     await window
                         .supabaseClient
@@ -62138,6 +63338,7 @@ if (
                             atualizado_em:
                                 new Date()
                                     .toISOString()
+
                         })
                         .eq(
                             'id_venda_ml',
@@ -62147,14 +63348,12 @@ if (
 
 
                 return {
-                    success:
-                        true,
 
-                    already:
-                        true,
+                    success: true,
 
-                    skipped:
-                        true,
+                    already: true,
+
+                    skipped: true,
 
                     sincronizado
                 };
@@ -62162,106 +63361,134 @@ if (
 
 
             return {
-                success:
-                    true,
 
-                already:
-                    true,
+                success: true,
 
-                skipped:
-                    true,
+                already: true,
 
-                sincronizado:
-                    true
+                skipped: true,
+
+                sincronizado: true
             };
         }
 
 
         // =====================================================
-        // 4. PRODUTOS
+        // 5. GARANTIR PRODUTOS DA BAIXA
+        //
+        // ESTA É A CORREÇÃO PRINCIPAL.
+        //
+        // Se estoque_detalhes estiver vazio:
+        //
+        // → verifica estoque agora
+        // → salva estoque_detalhes
+        // → continua
         // =====================================================
 
-        const detalhesEstoque =
-            Array.isArray(
+        const verificacao =
+            await garantirDetalhesEstoqueParaBaixaNFE(
+                vendaId,
                 vendaCache
-                    .estoque_detalhes
-            )
-                ? vendaCache
-                    .estoque_detalhes
-                : [];
-
-
-        if (
-            detalhesEstoque.length ===
-            0
-        ) {
-
-            return {
-                success:
-                    false,
-
-                error:
-                    'Produtos ainda não foram verificados no estoque'
-            };
-        }
-
-
-        const naoEncontrado =
-            detalhesEstoque.find(
-                item =>
-                    !item.encontrado
             );
 
 
         if (
-            naoEncontrado
+            !verificacao.success
         ) {
 
             return {
-                success:
-                    false,
 
-                semCadastro:
-                    true,
+                success: false,
 
                 error:
-                    `SKU ${naoEncontrado.sku || 'SEM_SKU'} não cadastrado`
+                    verificacao.error ||
+                    'Não foi possível verificar os produtos no estoque.'
+            };
+        }
+
+
+        const detalhesEstoque =
+            verificacao.detalhes;
+
+
+        // =====================================================
+        // 6. VALIDAR CADASTRO
+        // =====================================================
+
+        const naoEncontrado =
+            detalhesEstoque.find(
+                item =>
+                    item?.encontrado !==
+                    true
+            );
+
+
+        if (naoEncontrado) {
+
+            return {
+
+                success: false,
+
+                semCadastro: true,
+
+                error:
+                    `SKU ${
+                        naoEncontrado.sku ||
+                        'SEM_SKU'
+                    } não cadastrado`
             };
         }
 
 
         console.log(
-            '📦 Produtos da baixa:',
+            '📦 Produtos confirmados para baixa:',
             detalhesEstoque
         );
 
 
         // =====================================================
-        // 5. PROCESSANDO
+        // 7. MARCAR PROCESSANDO
         // =====================================================
 
-        await window
-            .supabaseClient
-            .from(
-                'vendas_nfe_cache'
-            )
-            .update({
+        const {
+            error:
+                erroProcessando
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
 
-                estoque_status:
-                    'processando'
-            })
-            .eq(
-                'id_venda_ml',
-                vendaId
-            )
-            .eq(
-                'estoque_baixado',
-                false
-            );
+                    estoque_status:
+                        'processando',
+
+                    atualizado_em:
+                        new Date()
+                            .toISOString()
+
+                })
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                )
+                .eq(
+                    'estoque_baixado',
+                    false
+                );
+
+
+        if (erroProcessando) {
+            throw erroProcessando;
+        }
 
 
         // =====================================================
-        // 6. RPC
+        // 8. RPC
+        //
+        // A RPC continua sendo a proteção principal contra
+        // baixa duplicada.
         // =====================================================
 
         console.log(
@@ -62287,10 +63514,7 @@ if (
                 );
 
 
-        if (
-            erroBaixa
-        ) {
-
+        if (erroBaixa) {
             throw erroBaixa;
         }
 
@@ -62308,14 +63532,11 @@ if (
 
 
         // =====================================================
-        // OUTRA EXECUÇÃO JÁ FEZ A BAIXA
-        //
-        // NÃO registrar usuário atual.
+        // OUTRA EXECUÇÃO JÁ BAIXOU
         // =====================================================
 
         if (
-            resultado
-                .already ===
+            resultado.already ===
             true
         ) {
 
@@ -62325,28 +63546,27 @@ if (
 
 
             return {
-                success:
-                    true,
 
-                already:
-                    true,
+                success: true,
 
-                skipped:
-                    true
+                already: true,
+
+                skipped: true,
+
+                sincronizado:
+                    null
             };
         }
 
 
         if (
-            resultado
-                .success !==
+            resultado.success !==
             true
         ) {
 
             throw new Error(
-                resultado
-                    .error ||
-                'RPC realizou a operação, mas não retornou success=true'
+                resultado.error ||
+                'RPC não retornou success=true'
             );
         }
 
@@ -62357,7 +63577,7 @@ if (
 
 
         // =====================================================
-        // 7. REGISTRAR IMEDIATAMENTE QUEM DEU BAIXA
+        // 9. REGISTRAR RESPONSÁVEL IMEDIATAMENTE
         // =====================================================
 
         const agoraBaixa =
@@ -62383,15 +63603,16 @@ if (
                         agoraBaixa,
 
                     estoque_baixado_por_username:
-                        usuarioBaixa
-                            .username,
+                        usuarioBaixa?.username ||
+                        null,
 
                     estoque_baixado_por_nome:
-                        usuarioBaixa
-                            .nome,
+                        usuarioBaixa?.nome ||
+                        null,
 
                     atualizado_em:
                         agoraBaixa
+
                 })
                 .eq(
                     'id_venda_ml',
@@ -62399,81 +63620,156 @@ if (
                 );
 
 
-        if (
-            erroResponsavel
-        ) {
+        if (erroResponsavel) {
 
             console.warn(
-                `⚠️ Baixa feita, mas não foi possível salvar o responsável da venda ${vendaId}:`,
+                `⚠️ Baixa feita, mas responsável não foi salvo para ${vendaId}:`,
                 erroResponsavel
             );
         }
 
 
         // =====================================================
-        // 8. HISTÓRICO INDIVIDUAL
+        // 10. ATUALIZAR MEMÓRIA IMEDIATAMENTE
+        //
+        // O botão "Dar baixa" deve desaparecer ANTES mesmo
+        // da sincronização ML terminar.
         // =====================================================
 
-        const movimentacoes =
-            await registrarMovimentacoesProdutosBaixaNFE(
+        if (
+            typeof atualizarEstadoEstoqueVendaMemoriaNFE ===
+            'function'
+        ) {
 
-                vendaId,
+            atualizarEstadoEstoqueVendaMemoriaNFE([
+                {
+                    id_venda_ml:
+                        vendaId,
 
-                origem,
+                    estoque_baixado:
+                        true,
 
-                detalhesEstoque
-            );
+                    estoque_status:
+                        'baixado_sync_pendente',
+
+                    estoque_baixado_em:
+                        agoraBaixa,
+
+                    estoque_baixado_por_username:
+                        usuarioBaixa?.username ||
+                        null,
+
+                    estoque_baixado_por_nome:
+                        usuarioBaixa?.nome ||
+                        null,
+
+                    estoque_detalhes:
+                        detalhesEstoque
+                }
+            ]);
+        }
 
 
         if (
-            movimentacoes.success
+            typeof refrescarPainelNFEPreservandoFiltro ===
+            'function'
         ) {
 
-            console.log(
-                `✅ ${movimentacoes.registrados} movimentação(ões) registrada(s) nos produtos`
-            );
+            refrescarPainelNFEPreservandoFiltro();
+        }
 
-        } else {
+
+        // =====================================================
+        // 11. HISTÓRICO INDIVIDUAL
+        // =====================================================
+
+        let movimentacoes = {
+
+            success: true,
+            registrados: 0,
+            erros: []
+        };
+
+
+        try {
+
+            movimentacoes =
+                await registrarMovimentacoesProdutosBaixaNFE(
+
+                    vendaId,
+
+                    origem,
+
+                    detalhesEstoque
+                );
+
+
+            if (
+                !movimentacoes.success
+            ) {
+
+                console.warn(
+                    '⚠️ Falha em alguma movimentação:',
+                    movimentacoes
+                );
+            }
+
+        } catch (error) {
 
             console.warn(
-                '⚠️ Falha em alguma movimentação de produto:',
-                movimentacoes
+                '⚠️ Histórico individual:',
+                error
             );
         }
 
 
         // =====================================================
-        // 9. HISTÓRICO GERAL
+        // 12. HISTÓRICO GERAL
         // =====================================================
 
-        const historico =
-            await registrarHistoricoBaixaEstoqueNFE(
-
-                vendaId,
-
-                origem,
-
-                detalhesEstoque
-            );
+        let historico = {
+            success: true
+        };
 
 
-        if (
-            !historico.success
-        ) {
+        try {
+
+            historico =
+                await registrarHistoricoBaixaEstoqueNFE(
+
+                    vendaId,
+
+                    origem,
+
+                    detalhesEstoque
+                );
+
+
+            if (
+                !historico.success
+            ) {
+
+                console.warn(
+                    '⚠️ Histórico geral não foi gravado:',
+                    historico
+                );
+            }
+
+        } catch (error) {
 
             console.warn(
-                '⚠️ Histórico geral não foi gravado:',
-                historico
+                '⚠️ Histórico geral:',
+                error
             );
         }
 
 
         // =====================================================
-        // 10. SYNC ML
+        // 13. SINCRONIZAR ESTOQUE COM ML
         // =====================================================
 
         console.log(
-            `🚀 Acionando sincronização da Gestão de Estoque após baixa da venda ${vendaId}...`
+            `🚀 Sincronizando produtos da venda ${vendaId} com o ML...`
         );
 
 
@@ -62488,13 +63784,10 @@ if (
                     detalhesEstoque
                 );
 
-
-        } catch (
-            syncError
-        ) {
+        } catch (syncError) {
 
             console.error(
-                `❌ Erro ao sincronizar produtos da venda ${vendaId}:`,
+                `❌ Erro sincronizando produtos da venda ${vendaId}:`,
                 syncError
             );
 
@@ -62505,7 +63798,7 @@ if (
 
 
         // =====================================================
-        // 11. ESTADO FINAL
+        // 14. ESTADO FINAL
         // =====================================================
 
         const agora =
@@ -62513,116 +63806,136 @@ if (
                 .toISOString();
 
 
-        if (
+        const statusFinal =
             sincronizado
-        ) {
-
-            const {
-                error:
-                    erroStatus
-            } =
-                await window
-                    .supabaseClient
-                    .from(
-                        'vendas_nfe_cache'
-                    )
-                    .update({
-
-                        estoque_baixado:
-                            true,
-
-                        estoque_status:
-                            'baixado',
-
-                        estoque_baixado_em:
-                            agoraBaixa,
-
-                        estoque_baixado_por_username:
-                            usuarioBaixa
-                                .username,
-
-                        estoque_baixado_por_nome:
-                            usuarioBaixa
-                                .nome,
-
-                        atualizado_em:
-                            agora
-                    })
-                    .eq(
-                        'id_venda_ml',
-                        vendaId
-                    );
+                ? 'baixado'
+                : 'baixado_sync_pendente';
 
 
-            if (
+        const {
+            data:
+                estadoFinal,
+
+            error:
                 erroStatus
-            ) {
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
 
-                console.error(
-                    '⚠️ Erro salvando status baixado:',
-                    erroStatus
-                );
-            }
+                    estoque_baixado:
+                        true,
+
+                    estoque_status:
+                        statusFinal,
+
+                    estoque_baixado_em:
+                        agoraBaixa,
+
+                    estoque_baixado_por_username:
+                        usuarioBaixa?.username ||
+                        null,
+
+                    estoque_baixado_por_nome:
+                        usuarioBaixa?.nome ||
+                        null,
+
+                    estoque_detalhes:
+                        detalhesEstoque,
+
+                    atualizado_em:
+                        agora
+
+                })
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                )
+                .select(`
+                    id_venda_ml,
+                    estoque_baixado,
+                    estoque_status,
+                    estoque_baixado_em,
+                    estoque_baixado_por_username,
+                    estoque_baixado_por_nome,
+                    estoque_detalhes
+                `);
 
 
-        } else {
+        if (erroStatus) {
 
-            const {
-                error:
-                    erroStatus
-            } =
-                await window
-                    .supabaseClient
-                    .from(
-                        'vendas_nfe_cache'
-                    )
-                    .update({
-
-                        estoque_baixado:
-                            true,
-
-                        estoque_status:
-                            'baixado_sync_pendente',
-
-                        estoque_baixado_em:
-                            agoraBaixa,
-
-                        estoque_baixado_por_username:
-                            usuarioBaixa
-                                .username,
-
-                        estoque_baixado_por_nome:
-                            usuarioBaixa
-                                .nome,
-
-                        atualizado_em:
-                            agora
-                    })
-                    .eq(
-                        'id_venda_ml',
-                        vendaId
-                    );
-
-
-            if (
+            console.error(
+                '⚠️ Erro salvando estado final da baixa:',
                 erroStatus
-            ) {
-
-                console.error(
-                    '⚠️ Erro salvando sync pendente:',
-                    erroStatus
-                );
-            }
-
-
-            console.warn(
-                `⚠️ ${vendaId}: baixa realizada, mas sync ML ficou pendente`
             );
         }
 
 
         // =====================================================
-        // 12. ATUALIZAR ESTOQUE VISUAL
+        // 15. MEMÓRIA + LINHA
+        // =====================================================
+
+        if (
+            typeof atualizarEstadoEstoqueVendaMemoriaNFE ===
+            'function'
+        ) {
+
+            atualizarEstadoEstoqueVendaMemoriaNFE(
+
+                Array.isArray(
+                    estadoFinal
+                ) &&
+                estadoFinal.length >
+                    0
+
+                    ? estadoFinal
+
+                    : [
+                        {
+                            id_venda_ml:
+                                vendaId,
+
+                            estoque_baixado:
+                                true,
+
+                            estoque_status:
+                                statusFinal,
+
+                            estoque_baixado_em:
+                                agoraBaixa,
+
+                            estoque_baixado_por_username:
+                                usuarioBaixa?.username ||
+                                null,
+
+                            estoque_baixado_por_nome:
+                                usuarioBaixa?.nome ||
+                                null,
+
+                            estoque_detalhes:
+                                detalhesEstoque
+                        }
+                    ]
+            );
+        }
+
+
+        if (
+            typeof refrescarPainelNFEPreservandoFiltro ===
+            'function'
+        ) {
+
+            refrescarPainelNFEPreservandoFiltro();
+        }
+
+
+        // =====================================================
+        // 16. ATUALIZAR GESTÃO DE ESTOQUE
+        //
+        // Não interfere no resultado da baixa.
         // =====================================================
 
         if (
@@ -62631,53 +63944,43 @@ if (
             'function'
         ) {
 
-            try {
+            window
+                .carregarProdutosEstoque()
+                .catch(
+                    error => {
 
-                await window
-                    .carregarProdutosEstoque();
-
-            } catch (
-                error
-            ) {
-
-                console.warn(
-                    '⚠️ Erro recarregando produtos:',
-                    error
+                        console.warn(
+                            '⚠️ Recarregando gestão de estoque:',
+                            error
+                        );
+                    }
                 );
-            }
         }
 
 
         return {
 
-            success:
-                true,
+            success: true,
 
-            already:
-                false,
+            already: false,
 
-            skipped:
-                false,
+            skipped: false,
 
             sincronizado,
 
-            responsavel:
-                usuarioBaixa,
-
             movimentacoes:
-                movimentacoes
-                    .registrados,
+                movimentacoes?.registrados ||
+                0,
 
             historico:
-                historico.success,
+                historico?.success ===
+                true,
 
             resultado
         };
 
 
-    } catch (
-        error
-    ) {
+    } catch (error) {
 
         console.error(
             `❌ Erro na baixa ${vendaId}:`,
@@ -62685,67 +63988,48 @@ if (
         );
 
 
+        // =====================================================
+        // NÃO DEIXAR PRESO EM "PROCESSANDO"
+        //
+        // Só altera se a baixa ainda NÃO aconteceu.
+        // =====================================================
+
         try {
 
-            const {
-                data:
-                    estadoAtual
-            } =
-                await window
-                    .supabaseClient
-                    .from(
-                        'vendas_nfe_cache'
-                    )
-                    .select(
-                        'estoque_baixado'
-                    )
-                    .eq(
-                        'id_venda_ml',
-                        vendaId
-                    )
-                    .maybeSingle();
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
 
+                    estoque_status:
+                        'disponivel',
 
-            if (
-                !estadoAtual
-                    ?.estoque_baixado
-            ) {
+                    atualizado_em:
+                        new Date()
+                            .toISOString()
 
-                await window
-                    .supabaseClient
-                    .from(
-                        'vendas_nfe_cache'
-                    )
-                    .update({
+                })
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                )
+                .eq(
+                    'estoque_baixado',
+                    false
+                );
 
-                        estoque_status:
-                            'erro'
-                    })
-                    .eq(
-                        'id_venda_ml',
-                        vendaId
-                    );
-            }
-
-
-        } catch (
-            erroStatus
-        ) {
-
-            console.warn(
-                '⚠️ Erro verificando status depois da falha:',
-                erroStatus
-            );
-        }
+        } catch (erroStatus) {}
 
 
         return {
 
-            success:
-                false,
+            success: false,
 
             error:
-                error.message
+                error?.message ||
+                'Erro desconhecido na baixa'
         };
     }
 }
