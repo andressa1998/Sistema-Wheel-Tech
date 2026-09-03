@@ -13,6 +13,8 @@ let sessionTimer = null;
 let refreshTokenInterval = null;
 let reembolsoNotificationCount = null;
 let reembolsoNotificationBell = null;
+let todasOSRelatorio = [];
+let carregandoTodasOSRelatorio = false;
 
 // ===== VARIÁVEIS DE PAGINAÇÃO =====
 let paginaAtualOS = 1;
@@ -20466,116 +20468,750 @@ Sistema Wheel Tech`;
     }
 };
 
-// ============================================
-// RELATÓRIO DE OS
-// ============================================
+// ============================================================
+// BUSCAR TODAS AS OS DIRETAMENTE DO SUPABASE PARA O RELATÓRIO
+//
+// IMPORTANTE:
+// - Não usa o array "orders" da tela.
+// - Não usa paginação da tabela.
+// - Busca em lotes de 1000.
+// - Continua buscando até acabar.
+// ============================================================
+
+async function buscarTodasOSParaRelatorio(
+    forcarAtualizacao = false
+) {
+
+    if (
+        todasOSRelatorio.length > 0 &&
+        !forcarAtualizacao
+    ) {
+
+        return todasOSRelatorio;
+    }
+
+
+    if (
+        carregandoTodasOSRelatorio
+    ) {
+
+        while (
+            carregandoTodasOSRelatorio
+        ) {
+
+            await new Promise(
+                resolve =>
+                    setTimeout(
+                        resolve,
+                        100
+                    )
+            );
+        }
+
+
+        return todasOSRelatorio;
+    }
+
+
+    carregandoTodasOSRelatorio =
+        true;
+
+
+    try {
+
+        if (!supabaseClient) {
+
+            throw new Error(
+                'Supabase não conectado'
+            );
+        }
+
+
+        const TAMANHO_LOTE =
+            1000;
+
+
+        let inicio =
+            0;
+
+
+        let terminou =
+            false;
+
+
+        const registros =
+            [];
+
+
+        console.log(
+            '📊 Buscando TODAS as OS para o relatório...'
+        );
+
+
+        while (
+            !terminou
+        ) {
+
+            const fim =
+                inicio +
+                TAMANHO_LOTE -
+                1;
+
+
+            console.log(
+                `📥 Relatório OS: buscando ${inicio} até ${fim}`
+            );
+
+
+            const {
+                data,
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .select(`
+                        id,
+                        codigo,
+                        produto_nome,
+                        responsavel,
+                        urgencia,
+                        tipo_os,
+                        status,
+                        tipo_foto,
+                        local_foto,
+                        tem_video,
+                        qtd_fotos,
+                        qtd_edicoes,
+                        criado_por,
+                        data_criacao,
+                        data_inicio,
+                        data_conclusao,
+                        ultima_atualizacao,
+                        conferido,
+                        conferido_por,
+                        data_conferencia,
+                        prazo_horas,
+                        prazo_esperado
+                    `)
+                    .order(
+                        'data_criacao',
+                        {
+                            ascending:
+                                false
+                        }
+                    )
+                    .range(
+                        inicio,
+                        fim
+                    );
+
+
+            if (error) {
+
+                throw error;
+            }
+
+
+            const lote =
+                Array.isArray(data)
+                    ? data
+                    : [];
+
+
+            registros.push(
+                ...lote
+            );
+
+
+            console.log(
+                `✅ Lote recebido: ${lote.length} | Total acumulado: ${registros.length}`
+            );
+
+
+            /*
+             * Se vier menos de 1000,
+             * chegamos ao final.
+             */
+            if (
+                lote.length <
+                TAMANHO_LOTE
+            ) {
+
+                terminou =
+                    true;
+
+            } else {
+
+                inicio +=
+                    TAMANHO_LOTE;
+            }
+
+
+            /*
+             * Proteção contra loop infinito.
+             */
+            if (
+                inicio >
+                1000000
+            ) {
+
+                console.warn(
+                    '⚠️ Limite de segurança da busca do relatório atingido.'
+                );
+
+                terminou =
+                    true;
+            }
+        }
+
+
+        // ====================================================
+        // CONVERTER CAMPOS DO BANCO PARA O PADRÃO DO SISTEMA
+        // ====================================================
+
+        todasOSRelatorio =
+            registros.map(
+                order => ({
+
+                    id:
+                        order.id,
+
+                    code:
+                        order.codigo ||
+                        `OS-${String(
+                            order.id
+                        ).padStart(
+                            4,
+                            '0'
+                        )}`,
+
+                    productName:
+                        order.produto_nome ||
+                        'Sem nome',
+
+                    responsibleName:
+                        order.responsavel ||
+                        '',
+
+                    urgency:
+                        order.urgencia ||
+                        'normal',
+
+                    osType:
+                        order.tipo_os ||
+                        'normal',
+
+                    status:
+                        order.status ||
+                        'pendente',
+
+                    photoType:
+                        order.tipo_foto ||
+                        'edicao',
+
+                    localFoto:
+                        order.local_foto ||
+                        'sem_foto',
+
+                    video:
+                        (
+                            order.tem_video ===
+                            true
+                        )
+                            ? 'sim'
+                            : 'nao',
+
+                    photosTaken:
+                        Number(
+                            order.qtd_fotos
+                        ) ||
+                        0,
+
+                    editsMade:
+                        Number(
+                            order.qtd_edicoes
+                        ) ||
+                        0,
+
+                    createdBy:
+                        order.criado_por ||
+                        'Sistema',
+
+                    createdAt:
+                        order.data_criacao ||
+                        null,
+
+                    startedAt:
+                        order.data_inicio ||
+                        null,
+
+                    completionDate:
+                        order.data_conclusao ||
+                        null,
+
+                    updatedAt:
+                        order.ultima_atualizacao ||
+                        order.data_criacao ||
+                        null,
+
+                    conferido:
+                        order.conferido ===
+                        true,
+
+                    conferidoPor:
+                        order.conferido_por ||
+                        null,
+
+                    dataConferencia:
+                        order.data_conferencia ||
+                        null,
+
+                    prazo_horas:
+                        order.prazo_horas ||
+                        null,
+
+                    prazo_esperado:
+                        order.prazo_esperado ||
+                        null
+                })
+            );
+
+
+        console.log(
+            `✅ TOTAL REAL DE OS PARA RELATÓRIO: ${todasOSRelatorio.length}`
+        );
+
+
+        return todasOSRelatorio;
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro buscando todas as OS para o relatório:',
+            error
+        );
+
+
+        todasOSRelatorio =
+            [];
+
+
+        throw error;
+
+
+    } finally {
+
+        carregandoTodasOSRelatorio =
+            false;
+    }
+}
 
 async function abrirModalRelatorioOS() {
-    console.log('🔍 Abrindo modal de relatório...');
-    
-    // 1. Garantir que as OS estão carregadas
-    if (!orders || orders.length === 0) {
-        console.log('⏳ Nenhuma OS carregada. Aguardando...');
-        showToast('Carregando ordens de serviço...', 'info');
-        
-        // Tenta carregar as OS (se a função existir)
-        if (typeof loadOrders === 'function') {
-            await loadOrders();
-        }
-        
-        // Se ainda estiver vazio, exibe erro
-        if (!orders || orders.length === 0) {
-            showToast('Não foi possível carregar as OS. Verifique a conexão.', 'error');
-            return;
-        }
-    }
-    
-    console.log(`✅ ${orders.length} OS carregadas`);
-    
-    // 2. Obter o modal
-    const modal = document.getElementById('relatorioOSModal');
+
+    console.log(
+        '🔍 Abrindo modal de relatório...'
+    );
+
+
+    const modal =
+        document.getElementById(
+            'relatorioOSModal'
+        );
+
+
     if (!modal) {
-        console.error('Modal #relatorioOSModal não encontrado!');
-        showToast('Erro: elemento do modal não encontrado', 'error');
+
+        console.error(
+            'Modal #relatorioOSModal não encontrado!'
+        );
+
+
+        showToast(
+            'Erro: elemento do modal não encontrado',
+            'error'
+        );
+
+
         return;
     }
-    
-    // 3. Exibir o modal
-    modal.classList.remove('hidden');
-    
-    // 4. Preencher a lista de usuários
+
+
+    // ========================================================
+    // ABRIR MODAL
+    // ========================================================
+
+    modal.classList.remove(
+        'hidden'
+    );
+
+
+    showToast(
+        '🔄 Carregando todas as OS do relatório...',
+        'info'
+    );
+
+
     try {
-        const container = document.getElementById('usuariosCheckboxes');
+
+        // ====================================================
+        // SEMPRE BUSCA DO BANCO AO ABRIR O RELATÓRIO
+        // ====================================================
+
+        const dadosRelatorio =
+            await buscarTodasOSParaRelatorio(
+                true
+            );
+
+
+        console.log(
+            `✅ ${dadosRelatorio.length} OS disponíveis no relatório`
+        );
+
+
+        // ====================================================
+        // USUÁRIOS
+        // ====================================================
+
+        const container =
+            document.getElementById(
+                'usuariosCheckboxes'
+            );
+
+
         if (container) {
-            const usuariosSet = new Set();
-            orders.forEach(order => {
-                if (order.responsibleName && order.responsibleName.trim())
-                    usuariosSet.add(order.responsibleName.trim());
-                if (order.createdBy && order.createdBy.trim())
-                    usuariosSet.add(order.createdBy.trim());
-            });
-            
-            const usuariosList = Array.from(usuariosSet).sort();
-            container.innerHTML = '';
-            
-            if (usuariosList.length === 0) {
-                container.innerHTML = '<div class="text-muted">Nenhum usuário encontrado</div>';
-            } else {
-                usuariosList.forEach(user => {
-                    const id = 'chk_' + user.replace(/\s/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-                    const div = document.createElement('div');
-                    div.className = 'form-check';
+
+            const usuariosSet =
+                new Set();
+
+
+            dadosRelatorio.forEach(
+                order => {
+
+                    if (
+                        order.responsibleName &&
+                        order.responsibleName.trim()
+                    ) {
+
+                        usuariosSet.add(
+                            order.responsibleName.trim()
+                        );
+                    }
+
+
+                    if (
+                        order.createdBy &&
+                        order.createdBy.trim()
+                    ) {
+
+                        usuariosSet.add(
+                            order.createdBy.trim()
+                        );
+                    }
+                }
+            );
+
+
+            const usuariosList =
+                Array.from(
+                    usuariosSet
+                ).sort(
+                    (
+                        a,
+                        b
+                    ) =>
+                        a.localeCompare(
+                            b,
+                            'pt-BR'
+                        )
+                );
+
+
+            container.innerHTML =
+                '';
+
+
+            usuariosList.forEach(
+                user => {
+
+                    const id =
+                        'chk_' +
+                        user
+                            .normalize(
+                                'NFD'
+                            )
+                            .replace(
+                                /[\u0300-\u036f]/g,
+                                ''
+                            )
+                            .replace(
+                                /\s/g,
+                                '_'
+                            )
+                            .replace(
+                                /[^a-zA-Z0-9_]/g,
+                                ''
+                            );
+
+
+                    const div =
+                        document.createElement(
+                            'div'
+                        );
+
+
+                    div.className =
+                        'form-check';
+
+
                     div.innerHTML = `
-                        <input type="checkbox" class="form-check-input usuario-checkbox" value="${user}" id="${id}">
-                        <label class="form-check-label" for="${id}">${user}</label>
+                        <input
+                            type="checkbox"
+                            class="form-check-input usuario-checkbox"
+                            value="${escapeHtml(user)}"
+                            id="${id}"
+                            checked
+                        >
+
+                        <label
+                            class="form-check-label"
+                            for="${id}"
+                        >
+                            ${escapeHtml(user)}
+                        </label>
                     `;
-                    container.appendChild(div);
-                });
-            }
-            
-            // Comportamento do checkbox "Todos"
-            const chkTodos = document.getElementById('usuarioTodos');
+
+
+                    container.appendChild(
+                        div
+                    );
+                }
+            );
+
+
+            // =================================================
+            // CHECKBOX TODOS
+            // =================================================
+
+            const chkTodos =
+                document.getElementById(
+                    'usuarioTodos'
+                );
+
+
             if (chkTodos) {
-                const checkboxes = document.querySelectorAll('.usuario-checkbox');
-                const updateTodos = () => {
-                    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-                    chkTodos.checked = allChecked && checkboxes.length > 0;
-                };
-                checkboxes.forEach(cb => {
-                    cb.removeEventListener('change', updateTodos);
-                    cb.addEventListener('change', updateTodos);
-                });
-                chkTodos.removeEventListener('change', updateTodos);
-                chkTodos.addEventListener('change', function() {
-                    checkboxes.forEach(cb => cb.checked = this.checked);
-                });
-                updateTodos();
+
+                chkTodos.checked =
+                    true;
+
+
+                const checkboxes =
+                    container.querySelectorAll(
+                        '.usuario-checkbox'
+                    );
+
+
+                chkTodos.onchange =
+                    function() {
+
+                        checkboxes.forEach(
+                            cb => {
+
+                                cb.checked =
+                                    this.checked;
+                            }
+                        );
+                    };
+
+
+                checkboxes.forEach(
+                    cb => {
+
+                        cb.onchange =
+                            function() {
+
+                                chkTodos.checked =
+                                    Array.from(
+                                        checkboxes
+                                    ).every(
+                                        item =>
+                                            item.checked
+                                    );
+                            };
+                    }
+                );
             }
-        } else {
-            console.warn('Elemento #usuariosCheckboxes não encontrado');
         }
+
+
+        // ====================================================
+        // DATAS PADRÃO
+        // ====================================================
+
+        const dataInicio =
+            document.getElementById(
+                'relDataInicio'
+            );
+
+
+        const dataFim =
+            document.getElementById(
+                'relDataFim'
+            );
+
+
+        if (
+            dataInicio &&
+            !dataInicio.value
+        ) {
+
+            const datasValidas =
+                dadosRelatorio
+                    .map(
+                        order =>
+                            order.createdAt
+                    )
+                    .filter(Boolean)
+                    .map(
+                        data =>
+                            new Date(
+                                data
+                            )
+                    )
+                    .filter(
+                        data =>
+                            !isNaN(
+                                data.getTime()
+                            )
+                    );
+
+
+            /*
+             * Em vez de 30 dias,
+             * ao abrir o relatório colocamos
+             * a data da OS mais antiga.
+             *
+             * Assim o padrão realmente é TODAS.
+             */
+            if (
+                datasValidas.length >
+                0
+            ) {
+
+                const menorData =
+                    new Date(
+                        Math.min(
+                            ...datasValidas.map(
+                                data =>
+                                    data.getTime()
+                            )
+                        )
+                    );
+
+
+                const ano =
+                    menorData.getFullYear();
+
+
+                const mes =
+                    String(
+                        menorData.getMonth() +
+                        1
+                    ).padStart(
+                        2,
+                        '0'
+                    );
+
+
+                const dia =
+                    String(
+                        menorData.getDate()
+                    ).padStart(
+                        2,
+                        '0'
+                    );
+
+
+                dataInicio.value =
+                    `${ano}-${mes}-${dia}`;
+            }
+        }
+
+
+        if (
+            dataFim &&
+            !dataFim.value
+        ) {
+
+            const hoje =
+                new Date();
+
+
+            const ano =
+                hoje.getFullYear();
+
+
+            const mes =
+                String(
+                    hoje.getMonth() +
+                    1
+                ).padStart(
+                    2,
+                    '0'
+                );
+
+
+            const dia =
+                String(
+                    hoje.getDate()
+                ).padStart(
+                    2,
+                    '0'
+                );
+
+
+            dataFim.value =
+                `${ano}-${mes}-${dia}`;
+        }
+
+
+        // ====================================================
+        // ABA TABELA
+        // ====================================================
+
+        if (
+            typeof switchRelatorioTab ===
+            'function'
+        ) {
+
+            switchRelatorioTab(
+                'tabela'
+            );
+        }
+
+
+        showToast(
+            `✅ Relatório pronto - ${dadosRelatorio.length} OS disponíveis`,
+            'success'
+        );
+
+
     } catch (error) {
-        console.error('Erro ao preencher usuários:', error);
+
+        console.error(
+            '❌ Erro abrindo relatório:',
+            error
+        );
+
+
+        showToast(
+            '❌ Não foi possível carregar todas as OS: ' +
+            error.message,
+            'error'
+        );
     }
-    
-    // 5. Definir datas padrão (últimos 30 dias)
-    const dataInicio = document.getElementById('relDataInicio');
-    const dataFim = document.getElementById('relDataFim');
-    if (dataInicio && !dataInicio.value) {
-        const d = new Date();
-        d.setDate(d.getDate() - 30);
-        dataInicio.value = d.toISOString().split('T')[0];
-    }
-    if (dataFim && !dataFim.value) {
-        dataFim.value = new Date().toISOString().split('T')[0];
-    }
-    
-    // 6. Garantir que a aba ativa seja a de tabela
-    if (typeof switchRelatorioTab === 'function') {
-        switchRelatorioTab('tabela');
-    }
-    
-    showToast(`Relatório pronto - ${orders.length} OS disponíveis`, 'success');
 }
 
     function abrirModal() {
@@ -21227,557 +21863,724 @@ function fecharModalRelatorioOS() {
     document.getElementById('relatorioOSModal').classList.add('hidden');
 }
 
-// ============================================
-// GERAR RELATÓRIO COMPLETO DE OS
-// ============================================
 async function gerarRelatorioOS() {
 
     console.log(
-        '📊 Gerando relatório de OS...'
+        '📊 Gerando relatório completo de OS...'
     );
 
 
-    if (
-        !orders ||
-        orders.length === 0
-    ) {
+    try {
 
-        showToast(
-            'Nenhuma OS carregada. Carregando...',
-            'warning'
-        );
-
+        // ====================================================
+        // GARANTIR TODOS OS REGISTROS
+        // ====================================================
 
         if (
-            typeof loadOrders ===
-            'function'
+            !Array.isArray(
+                todasOSRelatorio
+            ) ||
+            todasOSRelatorio.length ===
+            0
         ) {
 
-            await loadOrders();
+            showToast(
+                '🔄 Buscando todas as OS...',
+                'info'
+            );
+
+
+            await buscarTodasOSParaRelatorio(
+                true
+            );
         }
 
 
         if (
-            !orders ||
-            orders.length === 0
+            todasOSRelatorio.length ===
+            0
         ) {
 
             showToast(
                 'Nenhuma OS disponível',
-                'error'
+                'warning'
             );
 
             return;
         }
-    }
 
 
-    const dataInicio =
-        document
-            .getElementById(
+        console.log(
+            `📦 Base total do relatório: ${todasOSRelatorio.length} OS`
+        );
+
+
+        // ====================================================
+        // CAMPOS DO FILTRO
+        // ====================================================
+
+        const dataInicio =
+            document.getElementById(
                 'relDataInicio'
-            )
-            ?.value || '';
+            )?.value ||
+            '';
 
 
-    const dataFim =
-        document
-            .getElementById(
+        const dataFim =
+            document.getElementById(
                 'relDataFim'
-            )
-            ?.value || '';
+            )?.value ||
+            '';
 
 
-    const tipoPeriodo =
-        document
-            .getElementById(
+        const tipoPeriodo =
+            document.getElementById(
                 'relTipoPeriodo'
-            )
-            ?.value ||
-        'criacao';
+            )?.value ||
+            'criacao';
 
 
-    const statusFiltro =
-        document
-            .getElementById(
+        const statusFiltro =
+            document.getElementById(
                 'relStatus'
+            )?.value ||
+            'todas';
+
+
+        // ====================================================
+        // USUÁRIOS
+        // ====================================================
+
+        const usuariosSelecionados =
+            Array.from(
+                document.querySelectorAll(
+                    '.usuario-checkbox:checked'
+                )
             )
-            ?.value ||
-        'todas';
-
-
-    // ========================================
-    // USUÁRIOS
-    // ========================================
-
-    const usuariosSelecionados =
-        [];
-
-
-    document
-        .querySelectorAll(
-            '.usuario-checkbox:checked'
-        )
-        .forEach(
-            cb => {
-
-                usuariosSelecionados.push(
-                    cb.value
+                .map(
+                    cb =>
+                        cb.value
                 );
 
+
+        const todosUsuarios =
+            document.getElementById(
+                'usuarioTodos'
+            )?.checked ===
+            true;
+
+
+        let dados =
+            [
+                ...todasOSRelatorio
+            ];
+
+
+        console.log(
+            `📊 Antes dos filtros: ${dados.length}`
+        );
+
+
+        // ====================================================
+        // FILTRO DE DATA
+        // ====================================================
+
+        if (
+            dataInicio ||
+            dataFim
+        ) {
+
+            const inicio =
+                dataInicio
+                    ? new Date(
+                        `${dataInicio}T00:00:00`
+                    )
+                    : null;
+
+
+            const fim =
+                dataFim
+                    ? new Date(
+                        `${dataFim}T23:59:59.999`
+                    )
+                    : null;
+
+
+            dados =
+                dados.filter(
+                    order => {
+
+                        /*
+                         * Criação ou conclusão,
+                         * conforme seleção do usuário.
+                         */
+                        const dataRef =
+                            tipoPeriodo ===
+                            'conclusao'
+                                ? order.completionDate
+                                : order.createdAt;
+
+
+                        if (!dataRef) {
+
+                            return false;
+                        }
+
+
+                        const data =
+                            new Date(
+                                dataRef
+                            );
+
+
+                        if (
+                            isNaN(
+                                data.getTime()
+                            )
+                        ) {
+
+                            return false;
+                        }
+
+
+                        if (
+                            inicio &&
+                            data <
+                            inicio
+                        ) {
+
+                            return false;
+                        }
+
+
+                        if (
+                            fim &&
+                            data >
+                            fim
+                        ) {
+
+                            return false;
+                        }
+
+
+                        return true;
+                    }
+                );
+
+
+            console.log(
+                `📅 Após filtro de período: ${dados.length}`
+            );
+        }
+
+
+        // ====================================================
+        // FILTRO DE STATUS
+        //
+        // CORREÇÃO:
+        // Antes somente "concluida" funcionava.
+        // Agora todos funcionam.
+        // ====================================================
+
+        if (
+            statusFiltro &&
+            statusFiltro !==
+            'todas'
+        ) {
+
+            dados =
+                dados.filter(
+                    order =>
+
+                        String(
+                            order.status ||
+                            ''
+                        )
+                            .trim()
+                            .toLowerCase() ===
+
+                        String(
+                            statusFiltro
+                        )
+                            .trim()
+                            .toLowerCase()
+                );
+
+
+            console.log(
+                `📌 Após status "${statusFiltro}": ${dados.length}`
+            );
+        }
+
+
+        // ====================================================
+        // FILTRO DE USUÁRIOS
+        // ====================================================
+
+        if (
+            !todosUsuarios
+        ) {
+
+            if (
+                usuariosSelecionados.length ===
+                0
+            ) {
+
+                /*
+                 * Nenhum marcado = nenhum resultado.
+                 */
+                dados =
+                    [];
+
+            } else {
+
+                dados =
+                    dados.filter(
+                        order => {
+
+                            return (
+                                usuariosSelecionados.includes(
+                                    order.responsibleName
+                                ) ||
+
+                                usuariosSelecionados.includes(
+                                    order.createdBy
+                                )
+                            );
+                        }
+                    );
+            }
+
+
+            console.log(
+                `👤 Após usuário: ${dados.length}`
+            );
+        }
+
+
+        // ====================================================
+        // ORDENAÇÃO
+        // MAIS RECENTE PRIMEIRO
+        // ====================================================
+
+        dados.sort(
+            (
+                a,
+                b
+            ) => {
+
+                const dataA =
+                    tipoPeriodo ===
+                    'conclusao'
+                        ? a.completionDate
+                        : a.createdAt;
+
+
+                const dataB =
+                    tipoPeriodo ===
+                    'conclusao'
+                        ? b.completionDate
+                        : b.createdAt;
+
+
+                return (
+                    new Date(
+                        dataB ||
+                        0
+                    ) -
+                    new Date(
+                        dataA ||
+                        0
+                    )
+                );
             }
         );
 
 
-    const todosUsuarios =
-        document
-            .getElementById(
-                'usuarioTodos'
-            )
-            ?.checked ||
-        false;
+        // ====================================================
+        // TABELA
+        // ====================================================
 
-
-    const filtroUsuarios =
-        todosUsuarios
-            ? null
-            : usuariosSelecionados;
-
-
-    let dados =
-        [...orders];
-
-
-    // ========================================
-    // DATA
-    // ========================================
-
-    if (
-        dataInicio &&
-        dataFim
-    ) {
-
-        const inicio =
-            new Date(
-                dataInicio +
-                'T00:00:00'
+        const tbody =
+            document.getElementById(
+                'relatorioOSBody'
             );
 
 
-        const fim =
-            new Date(
-                dataFim +
-                'T23:59:59.999'
+        if (!tbody) {
+
+            throw new Error(
+                'Tabela do relatório não encontrada'
+            );
+        }
+
+
+        tbody.innerHTML =
+            '';
+
+
+        if (
+            dados.length ===
+            0
+        ) {
+
+            tbody.innerHTML = `
+                <tr>
+                    <td
+                        colspan="13"
+                        class="text-center"
+                        style="padding:30px;"
+                    >
+                        Nenhuma OS encontrada com os filtros selecionados.
+                    </td>
+                </tr>
+            `;
+
+
+            atualizarResumoRelatorioOS(
+                []
             );
 
 
-        dados =
-            dados.filter(
-                order => {
-
-                    const dataRef =
-                        tipoPeriodo ===
-                        'criacao'
-                            ? order.createdAt
-                            : order.completionDate;
+            ultimosDadosFiltrados =
+                [];
 
 
-                    if (!dataRef) {
-                        return false;
-                    }
+            window.ultimosDadosFiltrados =
+                [];
 
 
-                    const data =
+            showToast(
+                'Nenhuma OS encontrada com esses filtros',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        const agora =
+            new Date();
+
+
+        dados.forEach(
+            order => {
+
+                const criacao =
+                    order.createdAt
+                        ? new Date(
+                            order.createdAt
+                        ).toLocaleString(
+                            'pt-BR'
+                        )
+                        : '-';
+
+
+                const inicioReal =
+                    obterInicioExecucaoOS(
+                        order
+                    );
+
+
+                const inicioTexto =
+                    inicioReal
+                        ? new Date(
+                            inicioReal
+                        ).toLocaleString(
+                            'pt-BR'
+                        )
+                        : '-';
+
+
+                let conclusao =
+                    '-';
+
+
+                if (
+                    order.completionDate
+                ) {
+
+                    const dataConclusao =
                         new Date(
-                            dataRef
+                            order.completionDate
                         );
 
 
-                    return (
-                        data >= inicio &&
-                        data <= fim
-                    );
+                    if (
+                        !isNaN(
+                            dataConclusao.getTime()
+                        )
+                    ) {
+
+                        conclusao =
+                            dataConclusao.toLocaleString(
+                                'pt-BR'
+                            );
+                    }
                 }
-            );
-    }
 
 
-    // ========================================
-    // STATUS
-    // ========================================
-
-    if (
-        statusFiltro ===
-        'concluida'
-    ) {
-
-        dados =
-            dados.filter(
-                order =>
-                    order.status ===
-                    'concluida'
-            );
-    }
+                const minutos =
+                    calcularTempoExecucaoOS(
+                        order,
+                        agora
+                    );
 
 
-    // ========================================
-    // USUÁRIO
-    // ========================================
-
-    if (
-        filtroUsuarios &&
-        filtroUsuarios.length > 0
-    ) {
-
-        dados =
-            dados.filter(
-                order =>
-
-                    filtroUsuarios.includes(
-                        order.responsibleName
-                    ) ||
-
-                    filtroUsuarios.includes(
-                        order.createdBy
+                const tempoTexto =
+                    (
+                        order.status ===
+                            'andamento' ||
+                        order.status ===
+                            'concluida'
                     )
-            );
-    }
+                        ? formatarDuracaoOS(
+                            minutos
+                        )
+                        : '-';
 
 
-    const tbody =
-        document.getElementById(
-            'relatorioOSBody'
+                const fotos =
+                    Number(
+                        order.photosTaken
+                    ) ||
+                    0;
+
+
+                const edicoes =
+                    Number(
+                        order.editsMade
+                    ) ||
+                    0;
+
+
+                const mediaFoto =
+                    (
+                        order.status ===
+                            'andamento' ||
+                        order.status ===
+                            'concluida'
+                    )
+                        ? formatarMediaFotoOS(
+                            order,
+                            minutos
+                        )
+                        : '-';
+
+
+                const statusMap = {
+
+                    pendente:
+                        'Pendente',
+
+                    andamento:
+                        'Em andamento',
+
+                    concluida:
+                        'Concluída'
+                };
+
+
+                const urgencyMap = {
+
+                    alta:
+                        'Alta',
+
+                    normal:
+                        'Normal',
+
+                    baixa:
+                        'Baixa'
+                };
+
+
+                const row =
+                    tbody.insertRow();
+
+
+                row.innerHTML = `
+
+                    <td>
+                        <strong>
+                            ${escapeHtml(
+                                String(
+                                    order.code ||
+                                    order.id
+                                )
+                            )}
+                        </strong>
+                    </td>
+
+
+                    <td>
+                        ${escapeHtml(
+                            order.productName ||
+                            '-'
+                        )}
+                    </td>
+
+
+                    <td>
+                        ${escapeHtml(
+                            order.createdBy ||
+                            '-'
+                        )}
+                    </td>
+
+
+                    <td>
+                        ${escapeHtml(
+                            order.responsibleName ||
+                            '-'
+                        )}
+                    </td>
+
+
+                    <td style="white-space:nowrap;">
+                        ${criacao}
+                    </td>
+
+
+                    <td style="white-space:nowrap;">
+                        ${inicioTexto}
+
+                        ${
+                            !order.startedAt &&
+                            order.createdAt
+                                ? `
+                                    <div
+                                        style="
+                                            font-size:9px;
+                                            color:#999;
+                                        "
+                                        title="OS antiga sem data_inicio. Foi usada a data de criação."
+                                    >
+                                        legado
+                                    </div>
+                                `
+                                : ''
+                        }
+                    </td>
+
+
+                    <td style="white-space:nowrap;">
+                        ${conclusao}
+                    </td>
+
+
+                    <td style="text-align:center;">
+                        <strong>
+                            ${fotos}
+                        </strong>
+                    </td>
+
+
+                    <td style="text-align:center;">
+                        <strong>
+                            ${edicoes}
+                        </strong>
+                    </td>
+
+
+                    <td style="white-space:nowrap;">
+                        <strong>
+                            ${tempoTexto}
+                        </strong>
+                    </td>
+
+
+                    <td style="white-space:nowrap;">
+                        ${mediaFoto}
+                    </td>
+
+
+                    <td>
+                        ${
+                            urgencyMap[
+                                order.urgency
+                            ] ||
+                            order.urgency ||
+                            '-'
+                        }
+                    </td>
+
+
+                    <td>
+                        ${
+                            statusMap[
+                                order.status
+                            ] ||
+                            order.status ||
+                            '-'
+                        }
+                    </td>
+                `;
+            }
         );
 
 
-    if (!tbody) {
-        return;
-    }
-
-
-    tbody.innerHTML = '';
-
-
-    // ========================================
-    // SEM REGISTROS
-    // ========================================
-
-    if (
-        dados.length === 0
-    ) {
-
-        tbody.innerHTML = `
-            <tr>
-                <td
-                    colspan="13"
-                    class="text-center"
-                >
-                    Nenhuma OS encontrada no período
-                </td>
-            </tr>
-        `;
-
+        // ====================================================
+        // RESUMO
+        // ====================================================
 
         atualizarResumoRelatorioOS(
-            []
+            dados
         );
 
 
+        // ====================================================
+        // GRÁFICOS
+        // ====================================================
+
+        if (
+            typeof atualizarGraficosOSComDados ===
+            'function'
+        ) {
+
+            atualizarGraficosOSComDados(
+                dados
+            );
+        }
+
+
+        // ====================================================
+        // GUARDAR RESULTADO PARA EXCEL E GRÁFICOS
+        // ====================================================
+
         ultimosDadosFiltrados =
-            [];
+            dados;
 
 
         window.ultimosDadosFiltrados =
-            [];
+            dados;
 
 
-        return;
-    }
+        console.log(
+            `✅ RELATÓRIO FINAL: ${dados.length} / ${todasOSRelatorio.length} OS`
+        );
 
 
-    // ========================================
-    // TABELA
-    // ========================================
+        showToast(
+            `✅ Relatório gerado: ${dados.length} de ${todasOSRelatorio.length} OS`,
+            'success'
+        );
 
-    const agora =
-        new Date();
 
+    } catch (error) {
 
-    dados.forEach(
-        order => {
+        console.error(
+            '❌ Erro gerando relatório:',
+            error
+        );
 
-            const criacao =
-                order.createdAt
-                    ? new Date(
-                        order.createdAt
-                    ).toLocaleString(
-                        'pt-BR'
-                    )
-                    : '-';
 
-
-            const inicioReal =
-                obterInicioExecucaoOS(
-                    order
-                );
-
-
-            const inicioTexto =
-                inicioReal
-                    ? new Date(
-                        inicioReal
-                    ).toLocaleString(
-                        'pt-BR'
-                    )
-                    : '-';
-
-
-            let conclusao =
-                '-';
-
-
-            if (
-                order.completionDate &&
-                order.status ===
-                    'concluida'
-            ) {
-
-                conclusao =
-                    new Date(
-                        order.completionDate
-                    ).toLocaleString(
-                        'pt-BR'
-                    );
-            }
-
-
-            const minutos =
-                calcularTempoExecucaoOS(
-                    order,
-                    agora
-                );
-
-
-            const tempoTexto =
-                (
-                    order.status ===
-                        'andamento' ||
-
-                    order.status ===
-                        'concluida'
-                )
-                    ? formatarDuracaoOS(
-                        minutos
-                    )
-                    : '-';
-
-
-            const fotos =
-                Number(
-                    order.photosTaken
-                ) || 0;
-
-
-            const edicoes =
-                Number(
-                    order.editsMade
-                ) || 0;
-
-
-            const mediaFoto =
-                (
-                    order.status ===
-                        'andamento' ||
-
-                    order.status ===
-                        'concluida'
-                )
-                    ? formatarMediaFotoOS(
-                        order,
-                        minutos
-                    )
-                    : '-';
-
-
-            let statusText =
-                'Pendente';
-
-
-            if (
-                order.status ===
-                'andamento'
-            ) {
-
-                statusText =
-                    'Em andamento';
-
-
-            } else if (
-                order.status ===
-                'concluida'
-            ) {
-
-                statusText =
-                    'Concluída';
-            }
-
-
-            const urgencyMap = {
-
-                alta:
-                    'Alta',
-
-                normal:
-                    'Normal',
-
-                baixa:
-                    'Baixa'
-            };
-
-
-            const row =
-                tbody.insertRow();
-
-
-            row.innerHTML = `
-
-                <td>
-                    <strong>
-                        ${escapeHtml(
-                            String(
-                                order.code ||
-                                order.id
-                            )
-                        )}
-                    </strong>
-                </td>
-
-                <td>
-                    ${escapeHtml(
-                        order.productName ||
-                        '-'
-                    )}
-                </td>
-
-                <td>
-                    ${escapeHtml(
-                        order.createdBy ||
-                        '-'
-                    )}
-                </td>
-
-                <td>
-                    ${escapeHtml(
-                        order.responsibleName ||
-                        '-'
-                    )}
-                </td>
-
-                <td style="white-space:nowrap;">
-                    ${criacao}
-                </td>
-
-                <td style="white-space:nowrap;">
-                    ${inicioTexto}
-
-                    ${
-                        !order.startedAt &&
-                        order.createdAt
-                            ? `
-                                <div
-                                    style="
-                                        font-size:9px;
-                                        color:#999;
-                                    "
-                                    title="OS antiga sem data_inicio. Foi usada a data de criação."
-                                >
-                                    legado
-                                </div>
-                            `
-                            : ''
-                    }
-                </td>
-
-                <td style="white-space:nowrap;">
-                    ${conclusao}
-                </td>
-
-                <td style="text-align:center;">
-                    <strong>
-                        ${fotos}
-                    </strong>
-                </td>
-
-                <td style="text-align:center;">
-                    <strong>
-                        ${edicoes}
-                    </strong>
-                </td>
-
-                <td style="white-space:nowrap;">
-                    <strong>
-                        ${tempoTexto}
-                    </strong>
-                </td>
-
-                <td style="white-space:nowrap;">
-                    ${mediaFoto}
-                </td>
-
-                <td>
-                    ${
-                        urgencyMap[
-                            order.urgency
-                        ] ||
-                        order.urgency ||
-                        '-'
-                    }
-                </td>
-
-                <td>
-                    ${statusText}
-                </td>
-            `;
-        }
-    );
-
-
-    // ========================================
-    // RESUMO
-    // ========================================
-
-    atualizarResumoRelatorioOS(
-        dados
-    );
-
-
-    // ========================================
-    // GRÁFICOS
-    // ========================================
-
-    if (
-        typeof atualizarGraficosOSComDados ===
-        'function'
-    ) {
-
-        atualizarGraficosOSComDados(
-            dados
+        showToast(
+            '❌ Erro ao gerar relatório: ' +
+            error.message,
+            'error'
         );
     }
-
-
-    ultimosDadosFiltrados =
-        dados;
-
-
-    window.ultimosDadosFiltrados =
-        dados;
-
-
-    showToast(
-        `✅ Relatório gerado: ${dados.length} OS`,
-        'success'
-    );
 }
 
 // ============================================
