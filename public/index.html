@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="icon" type="image/png" href="favicon3.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wheel Tech - Sistema Integrado</title>
@@ -11,6 +11,23 @@
     
     <!-- Bibliotecas -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style id="wheelTechDashboardStyles">
+#menuSystem.wt-dashboard{--navy:#00183f;--blue:#076cf0;--cyan:#20b8ff;--ink:#071a42;position:relative;z-index:2;min-height:100vh;color:var(--ink);background:#f5f8fc}
+#menuSystem .wt-sidebar{position:fixed;inset:0 auto 0 0;z-index:30;width:270px;padding:22px 14px 18px;display:flex;flex-direction:column;color:#fff;background:linear-gradient(180deg,#001a45,#001231);box-shadow:12px 0 35px rgba(0,25,72,.12)}
+.wt-sidebar-brand{min-height:92px;padding:6px 20px 18px;display:flex;align-items:center;justify-content:center}.wt-sidebar-brand img{width:155px;max-height:76px;object-fit:contain;filter:brightness(0) invert(1)}
+.wt-module-nav{flex:1;padding:4px 0;display:flex;flex-direction:column;gap:3px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.22) transparent}.wt-nav-item{width:100%;min-height:42px;padding:9px 16px;display:flex;align-items:center;gap:14px;color:rgba(255,255,255,.84);background:transparent;border:0;border-radius:10px;font-size:.82rem;text-align:left;cursor:pointer;transition:.2s}.wt-nav-item i{width:22px;color:#d8e8ff;font-size:1rem!important;text-align:center}.wt-nav-item:hover{color:#fff;background:rgba(255,255,255,.09);transform:translateX(2px)}.wt-nav-item.active{color:#fff;background:linear-gradient(90deg,#075fd8,#0878f6);box-shadow:0 8px 22px rgba(0,90,240,.26)}
+.wt-sidebar-footer{padding:15px 12px 0;border-top:1px solid rgba(255,255,255,.11)}.wt-user-row{display:grid;grid-template-columns:46px 1fr 18px;gap:12px;align-items:center}.wt-user-row .user-avatar{width:46px;height:46px;background:linear-gradient(145deg,#12b9ff,#2178f4);font-size:1rem}.wt-user-copy{min-width:0}.wt-user-copy #userName{color:#fff;font-size:.84rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wt-user-role{margin-top:3px;color:rgba(255,255,255,.5);font-size:.7rem}.wt-user-chevron{color:rgba(255,255,255,.75)}.wt-logout{width:100%;margin-top:12px;padding:9px 4px;display:flex;align-items:center;gap:14px;color:rgba(255,255,255,.82);background:none;border:0;font-size:.82rem;cursor:pointer}.wt-logout:hover{color:#fff}.wt-logout i{width:22px;font-size:1rem!important}
+.wt-main{min-height:100vh;margin-left:270px;padding:28px 30px 34px;background:radial-gradient(circle at 92% 4%,rgba(32,184,255,.07),transparent 20%),linear-gradient(180deg,#f8fbff,#f3f7fc)}.wt-topbar{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:22px}.wt-welcome h1{margin:0;color:var(--ink);font-size:2rem!important;line-height:1.1;font-weight:800}.wt-welcome p{margin:7px 0 0;color:#64728d;font-size:.88rem}.wt-top-actions{display:flex;align-items:flex-start;gap:10px}.wt-icon-button{position:relative;width:42px;height:42px;display:grid;place-items:center;color:var(--ink);background:#f5f8fd;border:1px solid #dce5f1;border-radius:10px;box-shadow:0 4px 12px rgba(0,28,80,.07);cursor:pointer}.wt-icon-button:hover{color:var(--blue);border-color:#bad8ff}.wt-icon-button i{font-size:1rem!important}.wt-date{padding-top:4px;margin-left:12px;color:#66758f;font-size:.73rem;line-height:1.45;text-align:right}
+#menuSystem .carousel-container.wt-values{max-width:none;min-height:225px;margin:0 0 22px;padding:0;color:#fff;background:#00205a;border:0;border-radius:14px;box-shadow:0 12px 30px rgba(0,35,100,.16)}#menuSystem .wt-values .carousel-slide{position:relative;min-height:225px;padding:38px 120px;align-items:flex-start;text-align:left;background:linear-gradient(90deg,rgba(0,38,115,.98),rgba(0,35,100,.89) 48%,rgba(0,30,83,.3) 74%,rgba(0,22,64,.18)),url('BICICLETA.png') right center/cover no-repeat}#menuSystem .wt-values .carousel-slide:before{content:'';position:absolute;inset:0 auto 0 0;width:130px;background:linear-gradient(135deg,rgba(16,102,238,.62),transparent 62%)}.wt-value-kicker{position:relative;z-index:1;color:#d9e9ff;font-size:.7rem;letter-spacing:.28em;text-transform:uppercase}#menuSystem .wt-values .carousel-slide h2{position:relative;z-index:1;margin:7px 0 12px;color:#fff;font-size:2rem!important;line-height:1.1;font-weight:800}#menuSystem .wt-values .carousel-slide p{position:relative;z-index:1;max-width:520px;margin:0;color:rgba(255,255,255,.88);font-size:.9rem;line-height:1.5}#menuSystem .wt-values .carousel-btn{width:44px;height:44px;color:#fff;background:rgba(255,255,255,.15)}#menuSystem .wt-values .carousel-btn:hover{background:var(--blue)}#menuSystem .wt-values .carousel-indicators span{width:7px;height:7px;background:rgba(255,255,255,.52)}#menuSystem .wt-values .carousel-indicators span.active{background:#fff}
+.wt-summary-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:18px}.wt-summary-card{min-height:128px;padding:18px 18px 16px;display:grid;grid-template-columns:54px 1fr 24px;grid-template-rows:54px auto;gap:10px 12px;background:#fff;border:1px solid #e0e8f2;border-radius:13px;box-shadow:0 8px 24px rgba(8,43,91,.05);cursor:pointer;transition:.2s}.wt-summary-card:hover{transform:translateY(-3px);border-color:#bdd9ff;box-shadow:0 13px 30px rgba(8,78,175,.11)}.wt-summary-icon{width:54px;height:54px;display:grid;place-items:center;color:var(--blue);background:#edf5ff;border-radius:12px}.wt-summary-icon i{font-size:1.45rem!important}.wt-summary-arrow{align-self:center;width:24px;height:24px;display:grid;place-items:center;color:var(--blue);background:#edf5ff;border-radius:50%}.wt-summary-arrow i{font-size:.72rem!important}.wt-summary-copy{grid-column:1/-1;display:flex;align-items:center;gap:14px}.wt-summary-number{color:#071a42;font-size:2rem;line-height:1;font-weight:800}.wt-summary-label{color:#14274a;font-size:.8rem;line-height:1.35}
+.wt-wide-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}.wt-wide-card{min-height:94px;padding:17px 22px;display:flex;align-items:center;gap:18px;background:linear-gradient(110deg,#fff,#edf6ff);border:1px solid #d6e7fb;border-radius:13px;cursor:pointer}.wt-wide-card.purple{background:linear-gradient(110deg,#fff,#f5f1ff);border-color:#e6dcff}.wt-wide-card .wt-summary-icon{flex:0 0 54px}.wt-wide-card.purple .wt-summary-icon{color:#6846ef;background:#f0ebff}.wt-wide-number{font-size:1.8rem;font-weight:800}.wt-wide-label{color:#15294d;font-size:.82rem}.wt-wide-card .wt-summary-arrow{margin-left:auto}
+.wt-bottom-grid{display:grid;grid-template-columns:1.25fr 1fr .86fr;gap:14px}.wt-panel{min-height:245px;padding:16px 18px;background:#fff;border:1px solid #e0e8f2;border-radius:13px;box-shadow:0 8px 24px rgba(8,43,91,.05)}.wt-panel-head{padding-bottom:12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e9eef5}.wt-panel-title{display:flex;align-items:center;gap:10px;color:#102449;font-size:.81rem;font-weight:800}.wt-panel-title i{color:var(--blue)}.wt-panel-link{color:#0875ee;font-size:.68rem;font-weight:700;text-decoration:none}.wt-mini-row{min-height:38px;padding:8px 0;display:grid;grid-template-columns:12px 52px 1fr auto auto;gap:8px;align-items:center;border-bottom:1px solid #eef2f7;font-size:.66rem}.wt-dot{width:8px;height:8px;border-radius:50%;background:#17a8ff}.wt-dot.red{background:#ff6767}.wt-dot.green{background:#19b967}.wt-ticket{color:#11254b;font-weight:800}.wt-muted{color:#7e8aa1}.wt-status{padding:4px 8px;color:#0674e7;background:#e7f3ff;border-radius:999px;font-weight:700;white-space:nowrap}.wt-status.open{color:#e25050;background:#fff0f0}.wt-status.done{color:#139755;background:#e5f8ed}.wt-event-row{min-height:46px;padding:7px 0;display:grid;grid-template-columns:55px 1fr auto;gap:10px;align-items:center;border-bottom:1px solid #eef2f7;font-size:.66rem}.wt-event-date{padding:5px;color:#132951;background:#f0f5fb;border-radius:7px;text-align:center;font-weight:800}.wt-event-date span{display:block;font-size:.57rem}.wt-event-title{color:#13284c;font-weight:700}.wt-event-sub{margin-top:2px;color:#7c899f}.wt-goal{padding-top:16px;display:grid;grid-template-columns:78px 1fr;gap:14px;align-items:center}.wt-goal-ring{width:78px;height:78px;display:grid;place-items:center;border-radius:50%;background:conic-gradient(#16aaf8 0 75%,#e4edf6 75%);position:relative;font-size:.9rem;font-weight:800}.wt-goal-ring:before{content:'';position:absolute;inset:9px;background:#fff;border-radius:50%}.wt-goal-ring span{position:relative}.wt-goal-value{color:#0b2048;font-size:.83rem;font-weight:800}.wt-goal-total{margin-top:5px;color:#728098;font-size:.68rem}.wt-progress{height:7px;margin-top:12px;background:#e7eef6;border-radius:10px;overflow:hidden}.wt-progress span{display:block;width:75%;height:100%;background:linear-gradient(90deg,#19b8ff,#0875ed)}.wt-help-card{margin-top:14px;min-height:82px;padding:16px 20px;display:grid;grid-template-columns:40px 1fr 34px;gap:12px;align-items:center;color:#fff;background:linear-gradient(120deg,#075bd7,#48a5ff);border-radius:12px;cursor:pointer}.wt-help-card i{font-size:1.35rem!important}.wt-help-card strong{display:block;font-size:.78rem}.wt-help-card span{font-size:.66rem;opacity:.9}.wt-help-arrow{width:32px;height:32px;display:grid;place-items:center;color:#0875ed;background:#fff;border-radius:50%}
+@media(max-width:1250px){.wt-summary-grid{grid-template-columns:repeat(3,1fr)}.wt-bottom-grid{grid-template-columns:1fr 1fr}.wt-side-stack{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:14px}.wt-help-card{margin-top:0}}@media(max-width:900px){#menuSystem .wt-sidebar{width:78px;padding-inline:9px}.wt-sidebar-brand{padding-inline:4px}.wt-sidebar-brand img{width:58px}.wt-nav-item{justify-content:center;padding-inline:8px}.wt-nav-item span,.wt-user-copy,.wt-user-chevron,.wt-logout span{display:none}.wt-sidebar-footer{padding-inline:7px}.wt-user-row{display:flex;justify-content:center}.wt-logout{justify-content:center}.wt-main{margin-left:78px;padding:22px 18px}.wt-summary-grid{grid-template-columns:repeat(2,1fr)}.wt-wide-grid,.wt-bottom-grid{grid-template-columns:1fr}.wt-side-stack{grid-column:auto;grid-template-columns:1fr}}@media(max-width:580px){#menuSystem .wt-sidebar{position:static;width:100%;min-height:auto;padding:12px}.wt-sidebar-brand,.wt-sidebar-footer{display:none}.wt-module-nav{flex-direction:row;overflow-x:auto}.wt-nav-item{flex:0 0 48px;min-height:44px}.wt-main{margin-left:0;padding:18px 12px}.wt-topbar{flex-direction:column}.wt-date{display:none}#menuSystem .wt-values .carousel-slide{padding:34px 58px}.wt-summary-grid{grid-template-columns:1fr}.wt-summary-card{min-height:105px}}
+
+    .wt-empty{padding:28px 8px;color:#7e8aa1;font-size:.72rem;text-align:center}
+    #wtGoalRing{background:conic-gradient(#16aaf8 0 var(--wt-goal,0%),#e4edf6 var(--wt-goal,0%))}
+    #wtGoalProgress{width:var(--wt-goal,0%)}
+    </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -1287,205 +1304,414 @@ body > * {
     white-space: nowrap;
 }
 
+/* ===== LOGIN WHEEL TECH — CARTAO 3D ===== */
+body.login-active,
+body:has(#loginScreen:not(.hidden)) {
+    background:
+        radial-gradient(circle at 38% 22%, rgba(0, 145, 255, 0.48), transparent 27%),
+        linear-gradient(135deg, rgba(0, 38, 143, 0.92), rgba(0, 96, 230, 0.78)),
+        url('BICICLETA.png') center / cover fixed !important;
+    overflow-x: hidden;
+}
+
+#loginScreen.login-container {
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    margin: 0;
+    padding: 28px;
+    display: grid;
+    place-items: center;
+    background: transparent !important;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    perspective: 1500px;
+}
+
+.auth-shell {
+    position: relative;
+    width: min(930px, 100%);
+    min-height: 610px;
+    display: grid;
+    grid-template-columns: minmax(260px, 44%) minmax(340px, 56%);
+    align-items: center;
+}
+
+.auth-brand {
+    position: relative;
+    z-index: 1;
+    min-height: 540px;
+    padding: 64px 52px 42px;
+    display: flex;
+    flex-direction: column;
+    color: #fff;
+    background: linear-gradient(145deg, rgba(0, 40, 139, 0.76), rgba(0, 74, 183, 0.48));
+    border: 1px solid rgba(65, 184, 255, 0.72);
+    border-radius: 30px 0 0 30px;
+    box-shadow: 0 28px 70px rgba(0, 16, 74, 0.38);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+}
+
+.auth-brand::after {
+    content: '';
+    position: absolute;
+    inset: auto -100px -170px -80px;
+    height: 330px;
+    border: 1px solid rgba(61, 190, 255, 0.2);
+    border-radius: 50%;
+    transform: rotate(-10deg);
+}
+
+.brand-logo {
+    width: 146px;
+    max-height: 72px;
+    object-fit: contain;
+    object-position: left center;
+    filter: brightness(0) invert(1);
+}
+
+.brand-line {
+    width: 54px;
+    height: 5px;
+    margin: 40px 0 38px;
+    border-radius: 20px;
+    background: #18b9ff;
+}
+
+.brand-message {
+    max-width: 230px;
+    font-size: 1.5rem;
+    line-height: 1.28;
+    color: rgba(255,255,255,.9);
+}
+
+.brand-message strong { color: #20baff; font-weight: 700; }
+
+.brand-footer {
+    margin-top: auto;
+    position: relative;
+    z-index: 1;
+    font-size: .78rem;
+    line-height: 1.55;
+    color: rgba(255,255,255,.72);
+}
+
+.brand-footer strong { color: #fff; }
+
+.auth-card-wrap {
+    position: relative;
+    z-index: 2;
+    width: calc(100% + 34px);
+    min-height: 610px;
+    margin-left: -34px;
+    transform-style: preserve-3d;
+    transition: transform .75s cubic-bezier(.2,.72,.22,1);
+}
+
+.auth-card-wrap.is-flipped { transform: rotateY(180deg); }
+
+.auth-face {
+    position: absolute;
+    inset: 0;
+    padding: 56px 60px 44px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: rgba(255,255,255,.97);
+    border: 1px solid rgba(255,255,255,.88);
+    border-radius: 30px;
+    box-shadow: 0 28px 65px rgba(0, 18, 76, .28);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    overflow: auto;
+}
+
+.auth-back { transform: rotateY(180deg); }
+
+.auth-mark {
+    width: 42px;
+    height: 42px;
+    margin: 0 auto 15px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    font-size: 19px;
+    background: linear-gradient(145deg, #176cff, #004ddc);
+    border-radius: 13px 13px 13px 4px;
+    box-shadow: 0 10px 24px rgba(15,96,255,.25);
+    transform: rotate(-12deg);
+}
+
+.auth-mark i { transform: rotate(12deg); }
+.auth-mark.auth-logo {
+    width: 300px;
+    height: 300px;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    transform: none;
+}
+
+.auth-mark.auth-logo img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+}
+.auth-title { text-align: center; font-size: 1.72rem; color: #071a4e; margin: 0; }
+.auth-subtitle { text-align: center; color: #8790a9; font-size: .9rem; margin: 8px 0 28px; }
+
+#loginScreen .form-group { margin-bottom: 15px; }
+#loginScreen .field-shell { position: relative; }
+#loginScreen .field-shell > i {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #667394;
+    font-size: .9rem;
+}
+
+#loginScreen .form-control {
+    height: 48px;
+    padding: 0 44px;
+    color: #12204a;
+    border: 1px solid #d9e1f0;
+    border-radius: 11px;
+    background: #fbfcff;
+    font-size: .9rem;
+}
+
+#loginScreen .form-control:focus {
+    border-color: #0d6bff;
+    box-shadow: 0 0 0 4px rgba(13,107,255,.1);
+}
+
+.password-toggle {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    width: 34px;
+    height: 34px;
+    transform: translateY(-50%);
+    border: 0;
+    color: #7f8aa5;
+    background: transparent;
+    cursor: pointer;
+}
+
+.auth-options {
+    margin: 2px 1px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    font-size: .78rem;
+}
+
+.remember-me { display: flex; align-items: center; gap: 7px; color: #69748f; cursor: pointer; }
+.remember-me input { accent-color: #0968fa; }
+.auth-link { border: 0; padding: 0; color: #0867f7; background: none; font: inherit; font-weight: 700; cursor: pointer; }
+
+#loginScreen .auth-submit {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+    color: #fff;
+    background: linear-gradient(90deg, #096cf6, #0058ef);
+    border-radius: 11px;
+    box-shadow: 0 10px 22px rgba(0,96,245,.22);
+}
+
+.auth-switch {
+    margin-top: 25px;
+    text-align: center;
+    color: #8790a6;
+    font-size: .82rem;
+}
+
+.auth-switch .auth-link { margin-left: 4px; }
+
+@media (max-width: 760px) {
+    #loginScreen.login-container { padding: 16px; align-items: start; }
+    .auth-shell { display: block; min-height: 690px; }
+    .auth-brand {
+        min-height: 190px;
+        padding: 26px 28px 42px;
+        border-radius: 24px 24px 0 0;
+    }
+    .brand-logo { width: 112px; height: 48px; }
+    .brand-line { width: 40px; height: 4px; margin: 12px 0; }
+    .brand-message { max-width: none; font-size: 1rem; }
+    .brand-footer { display: none; }
+    .auth-card-wrap { width: 100%; min-height: 515px; margin: -22px 0 0; }
+    .auth-face { padding: 34px 24px 28px; border-radius: 24px; }
+    .auth-title { font-size: 1.45rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .auth-card-wrap { transition-duration: .01ms; }
+}
+#loginScreen .field-shell .form-control {
+    padding-left: 52px !important;
+}
+
+#loginScreen .field-shell > i {
+    left: 18px;
+    width: 20px;
+    text-align: center;
+    pointer-events: none;
+}
     </style>
 </head>
 <body>
     <div id="loginScreen" class="login-container">
-    <div class="login-header" style="text-align: center; margin-bottom: 35px;">
-        <img src="logo.png" alt="Wheel Tech" style="height: 60px; width: auto; display: block; margin: 0 auto 10px;">
-        <h1 style="margin: 0; font-size: 26px; font-weight: 600; color: #343a40;">
-            Sistema Wheel Tech
-        </h1>
+        <div class="auth-shell">
+            <aside class="auth-brand" aria-label="Wheel Tech">
+                <img src="logo.png" alt="Wheel Tech Bicycling" class="brand-logo">
+                <span class="brand-line"></span>
+                <p class="brand-message">Gerenciamento e automação.<br>Seu <strong>e-commerce</strong> como <strong>nunca.</strong></p>
+                <p class="brand-footer">Sistema interno<br>da <strong>Wheel Tech</strong><br><span>Desenvolvido pela ANDRA</span></p>
+            </aside>
+
+            <div id="authCard" class="auth-card-wrap">
+                <section class="auth-face auth-front" aria-label="Entrar no sistema">
+                    <div class="auth-mark auth-logo"><img src="favicon.png" alt="ANDRA"></div>
+                    <h1 class="auth-title">Bem-vindo</h1>
+                    <p class="auth-subtitle">Faça login para continuar</p>
+
+                    <form id="loginForm">
+                        <div class="form-group">
+                            <div class="field-shell">
+                                <i class="fas fa-user"></i>
+                                <input type="text" id="username" class="form-control" placeholder="Usuário" autocomplete="username" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="field-shell">
+                                <i class="fas fa-lock"></i>
+                                <input type="password" id="password" class="form-control" placeholder="Senha" autocomplete="current-password" required>
+                                <button class="password-toggle" type="button" data-password-target="password" aria-label="Mostrar senha"><i class="fas fa-eye"></i></button>
+                            </div>
+                        </div>
+                        <div class="auth-options">
+                            <label class="remember-me"><input type="checkbox" id="rememberLogin"> Lembrar de mim</label>
+                            <button type="button" class="auth-link">Esqueceu a senha?</button>
+                        </div>
+                        <button type="submit" class="btn auth-submit">Entrar</button>
+                    </form>
+
+                    <p class="auth-switch">Ainda não tem uma conta?<button type="button" class="auth-link" data-auth-flip="register">Cadastrar</button></p>
+                </section>
+
+                <section class="auth-face auth-back" aria-label="Criar cadastro">
+                    <div class="auth-mark auth-logo"><img src="favicon.png" alt="ANDRA"></div>
+                    <h2 class="auth-title">Criar cadastro</h2>
+                    <p class="auth-subtitle">Preencha seus dados para solicitar acesso</p>
+
+                    <form id="registerForm">
+                        <div class="form-group">
+                            <div class="field-shell"><i class="fas fa-user"></i><input type="text" id="registerName" class="form-control" placeholder="Nome completo" autocomplete="name" required></div>
+                        </div>
+                        <div class="form-group">
+                            <div class="field-shell"><i class="fas fa-at"></i><input type="text" id="registerUsername" class="form-control" placeholder="Usuário" autocomplete="username" required></div>
+                        </div>
+                        <div class="form-group">
+                            <div class="field-shell"><i class="fas fa-envelope"></i><input type="email" id="registerEmail" class="form-control" placeholder="E-mail" autocomplete="email" required></div>
+                        </div>
+                        <div class="form-group">
+                            <div class="field-shell">
+                                <i class="fas fa-lock"></i>
+                                <input type="password" id="registerPassword" class="form-control" placeholder="Crie uma senha" autocomplete="new-password" minlength="6" required>
+                                <button class="password-toggle" type="button" data-password-target="registerPassword" aria-label="Mostrar senha"><i class="fas fa-eye"></i></button>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn auth-submit">Cadastrar</button>
+                    </form>
+
+                    <p class="auth-switch">Já tenho cadastro<button type="button" class="auth-link" data-auth-flip="login">Voltar para entrar</button></p>
+                </section>
+            </div>
+        </div>
     </div>
-    <form id="loginForm">
-        <div class="form-group">
-            <label><i class="fas fa-user"></i> Usuário</label>
-            <input type="text" id="username" class="form-control" placeholder="Digite seu usuário" required>
-        </div>
-        <div class="form-group">
-            <label><i class="fas fa-lock"></i> Senha</label>
-            <input type="password" id="password" class="form-control" placeholder="Digite sua senha" required>
-        </div>
-        <button type="submit" class="btn btn-primary" style="width: 100%;">Entrar no Sistema</button>
-    </form>
-</div>
 
     <!-- MENU INICIAL -->
-    <div id="menuSystem" class="hidden">
-        <header class="main-header">
-            <div class="header-content">
-                <div class="header-title">
-                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto; vertical-align: middle;">
-                    <span>Wheel Tech - Menu Principal</span>
-                </div>
-                <div class="user-info">
+    <div id="menuSystem" class="hidden wt-dashboard">
+        <aside class="wt-sidebar">
+            <div class="wt-sidebar-brand"><img src="logo.png" alt="Wheel Tech"></div>
+            <nav class="wt-module-nav" aria-label="Módulos do sistema">
+                <button class="wt-nav-item active" type="button"><i class="fas fa-home"></i><span>Início</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="avaliacoes" type="button" onclick="abrirSistemaReviews()"><i class="fas fa-star"></i><span>Avaliações</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="calendario_de_folgas" type="button" onclick="abrirSistemaFolgas()"><i class="fas fa-calendar-alt"></i><span>Calendário de Folgas</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="chamados" type="button" onclick="abrirSistemaChamados()"><i class="fas fa-headset"></i><span>Chamados</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="conferencia_caixa" type="button" onclick="abrirSistemaCaixa()"><i class="fas fa-cash-register"></i><span>Conferência Caixa</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="emissao_nf_e" id="menuCardNFE" type="button" onclick="abrirSistemaNFE()"><i class="fas fa-boxes"></i><span>Emissão NF-e</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="entradas" type="button" onclick="abrirSistemaEntradas()"><i class="fas fa-right-to-bracket"></i><span>Entradas</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="feedback" type="button" onclick="abrirSistemaFeedback()"><i class="fas fa-face-smile"></i><span>Feedback</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="gerenciar_frete" type="button" onclick="abrirSistemaFrete()"><i class="fas fa-truck"></i><span>Gerenciar Frete</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="gerenciamento_de_anuncios" type="button" onclick="abrirSistemaGerenciamentoAnuncios()"><i class="fas fa-list-alt"></i><span>Gerenciamento de Anúncios</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="gestao_de_estoque" type="button" onclick="abrirGestaoEstoque()"><i class="fas fa-box"></i><span>Gestão de Estoque</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="historico_de_acessos" id="historicoMenuCard" type="button" onclick="abrirHistoricoAcessos()"><i class="fas fa-history"></i><span>Histórico de Acessos</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="meta_ronald" id="metaRonaldMenuCard" type="button" onclick="abrirPainelMetaRonald()"><i class="fas fa-user-shield"></i><span>Meta Ronald</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="ordem_de_servico" type="button" onclick="abrirSistemaOS()"><i class="fas fa-clipboard-list"></i><span>Ordem de Serviço</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="perguntas_ml" type="button" onclick="abrirSistemaPerguntas()"><i class="fas fa-comments"></i><span>Perguntas ML</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="precificacao" type="button" onclick="abrirSistemaPrecificacao()"><i class="fas fa-tags"></i><span>Precificação</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="promocoes_em_lote" type="button" onclick="abrirGestaoPromocoesLote()"><i class="fas fa-layer-group"></i><span>Promoções em Lote</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="reclamacoes" type="button" onclick="abrirSistemaReembolsos()"><i class="fas fa-comment-dots"></i><span>Reclamações</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="vendas_ml" type="button" onclick="abrirSistemaVendas()"><i class="fas fa-store"></i><span>Vendas ML</span></button>
+            </nav>
+            <div class="wt-sidebar-footer">
+                <div class="wt-user-row">
                     <div class="user-avatar" id="shippingUserAvatar">A</div>
-                    <div>
-                        <div style="font-weight: 600;" id="userName">Usuário</div>
-                        <div style="font-size: 12px; color: #6c757d;" id="userRole"></div>
-                        <div style="font-size: 12px; color: #6c757d;" id="menuUserRole"></div>
-                        <button class="btn btn-sm btn-secondary mt-2" onclick="handleLogout()">Sair</button>
-                    </div>
+                    <div class="wt-user-copy"><div id="userName">Usuário</div><div class="wt-user-role" id="userRole">Administrador</div><div id="menuUserRole" class="hidden"></div></div>
+                    <i class="fas fa-chevron-right wt-user-chevron"></i>
                 </div>
+                <button class="wt-logout" type="button" onclick="handleLogout()"><i class="fas fa-right-from-bracket"></i><span>Sair</span></button>
             </div>
-            
-        </header>
-        <!-- ===== CARROSSEL (agora no topo) ===== -->
-    <div class="carousel-container">
-        <div class="carousel-slides">
-            <!-- Missão (3 slides) -->
-            <div class="carousel-slide">
-                <h2><i class="fas fa-bullseye"></i> Missão</h2>
-                <p>A Wheel Tech é comprometida em gerar qualidade de vida e lazer às pessoas do mundo do ciclismo</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-bullseye"></i> Missão</h2>
-                <p>nos esforçamos em fazer isso de forma diferenciada, inovadora e sustentável</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-bullseye"></i> Missão</h2>
-                <p>Tornando a bike e a vida leve e alegre.</p>
+        </aside>
+
+        <main class="wt-main">
+            <header class="wt-topbar">
+                <div class="wt-welcome"><h1>Olá, <span id="wtGreetingName">Andressa</span>!</h1><p>Bem-vinda ao sistema Wheel Tech. Aqui você tem uma visão completa do que importa.</p></div>
+                <div class="wt-top-actions">
+                    <button class="wt-icon-button" id="wtMenuSettingsBtn" type="button" title="Gerenciar visualização" style="display:none" onclick="abrirGerenciarVisualizacaoMenu()"><i class="fas fa-gear"></i></button>
+                    <button class="wt-icon-button" id="wtMenuNotificationBtn" type="button" title="Notificações" onclick="if(window.toggleNotificacoesChamados) window.toggleNotificacoesChamados()"><i class="fas fa-bell"></i></button>
+                    <div class="wt-date"><strong id="wtCurrentDate">Hoje</strong><br><span>Vamos fazer um ótimo dia!</span></div>
+                </div>
+            </header>
+
+            <div class="carousel-container wt-values">
+                <div class="carousel-slides">
+                    <div class="carousel-slide"><span class="wt-value-kicker">Nossos valores</span><h2>Comprometimento</h2><p>Fazemos o nosso melhor todos os dias, com responsabilidade e foco em resultados.</p></div>
+                    <div class="carousel-slide"><span class="wt-value-kicker">Nossos valores</span><h2>Trabalho em equipe</h2><p>Pessoas que constroem resultados juntas e transformam desafios em movimento.</p></div>
+                    <div class="carousel-slide"><span class="wt-value-kicker">Nossa missão</span><h2>Qualidade de vida</h2><p>Geramos lazer e qualidade de vida para as pessoas do mundo do ciclismo.</p></div>
+                    <div class="carousel-slide"><span class="wt-value-kicker">Nossa visão</span><h2>Inovação</h2><p>Somos referência em soluções e produtos inovadores para o ciclismo.</p></div>
+                </div>
+                <button class="carousel-btn prev" type="button">&#10094;</button><button class="carousel-btn next" type="button">&#10095;</button><div class="carousel-indicators"></div>
             </div>
 
-            <!-- Visão (2 slides) -->
-            <div class="carousel-slide">
-                <h2><i class="fas fa-eye"></i> Visão</h2>
-                <p>Continuar sendo referência em soluções e produtos inovadores para o ciclismo</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-eye"></i> Visão</h2>
-                <p>expandindo os canais de atendimento e aumentando a conexão com os clientes e fornecedores.</p>
-            </div>
+            <section class="wt-summary-grid" aria-label="Resumo operacional">
+                <article class="wt-summary-card" data-menu-visual-depends="ordem_de_servico" onclick="abrirSistemaOS()"><div class="wt-summary-icon"><i class="fas fa-clipboard-list"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountOS">—</strong><span class="wt-summary-label">OS a fazer</span></div></article>
+                <article class="wt-summary-card" data-menu-visual-depends="emissao_nf_e" onclick="abrirSistemaNFE()"><div class="wt-summary-icon"><i class="fas fa-cart-shopping"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountSeparar">—</strong><span class="wt-summary-label">vendas a separar</span></div></article>
+                <article class="wt-summary-card" data-menu-visual-depends="perguntas_ml" onclick="abrirSistemaPerguntas()"><div class="wt-summary-icon"><i class="fas fa-message"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountPerguntas">—</strong><span class="wt-summary-label">perguntas não respondidas</span></div></article>
+                <article class="wt-summary-card" data-menu-visual-depends="gestao_de_estoque" onclick="abrirGestaoEstoque()"><div class="wt-summary-icon"><i class="fas fa-box"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountBaixa">—</strong><span class="wt-summary-label">vendas sem dar baixa no estoque</span></div></article>
+                <article class="wt-summary-card" data-menu-visual-depends="entradas" onclick="abrirSistemaEntradas()"><div class="wt-summary-icon"><i class="fas fa-right-to-bracket"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountEntradas">—</strong><span class="wt-summary-label">entradas em andamento</span></div></article>
+            </section>
 
-            <!-- Valores (9 slides) -->
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>🌱 Ser sustentável em relações sociais, econômicas e ambientais</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>⭐ Superar necessidades e expectativas</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>🔒 Integridade e transparência</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>🚀 Auto desafio constante</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>💬 Comunicação</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>🤝 Trabalho em equipe</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>🎯 Assumir responsabilidades</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>🔮 Atenção no presente para construção do futuro</p>
-            </div>
-            <div class="carousel-slide">
-                <h2><i class="fas fa-heart"></i> Valores</h2>
-                <p>😄 Ambiente descontraído com integração</p>
-            </div>
-        </div>
+            <section class="wt-wide-grid">
+                <article class="wt-wide-card" data-menu-visual-depends="emissao_nf_e" onclick="abrirSistemaNFE()"><div class="wt-summary-icon"><i class="fas fa-file-invoice"></i></div><div><strong class="wt-wide-number" id="wtCountNFE">—</strong><div class="wt-wide-label">emissões de NF-e pendentes</div></div><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div></article>
+                <article class="wt-wide-card purple" data-menu-visual-depends="conferencia_caixa" onclick="abrirSistemaCaixa()"><div class="wt-summary-icon"><i class="fas fa-cash-register"></i></div><div><strong class="wt-wide-number" id="wtCountCaixa">—</strong><div class="wt-wide-label">conferências de caixa pendentes</div></div><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div></article>
+            </section>
 
-        <button class="carousel-btn prev">&#10094;</button>
-        <button class="carousel-btn next">&#10095;</button>
-        <div class="carousel-indicators"></div>
-        </div>
-
-        <div class="menu-grid">
-            <div class="menu-card" onclick="abrirSistemaOS()">
-                <div class="menu-icon"><i class="fas fa-tools"></i></div>
-                <h3>Ordem de Serviço</h3>
-                <p>Gerenciar OS, fotos, edições</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaCaixa()">
-                <div class="menu-icon"><i class="fas fa-cash-register"></i></div>
-                <h3>Conferência Caixa</h3>
-                <p>Lançamentos, fechamento de caixa</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaVendas()">
-                <div class="menu-icon"><i class="fas fa-store"></i></div>
-                <h3>Vendas ML</h3>
-                <p>Vendas, estoque, conferência</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaReviews()">
-                <div class="menu-icon"><i class="fas fa-star"></i></div>
-                <h3>Avaliações</h3>
-                <p>Consultar avaliações ML</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaReembolsos()">
-                <div class="menu-icon"><i class="fas fa-comment-dots"></i></div>
-                <h3>Reclamações</h3>
-                <p>Controle de reclamações ML</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaFolgas()">
-                <div class="menu-icon"><i class="fas fa-calendar-alt"></i></div>
-                <h3>Calendário de Folgas</h3>
-                <p>Solicitações e aprovações</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaFrete()">
-                <div class="menu-icon"><i class="fas fa-truck"></i></div>
-                <h3>Gerenciar Frete</h3>
-                <p>Análise de custos de frete</p>
-            </div>
-            <div class="menu-card" id="menuCardNFE" onclick="abrirSistemaNFE()">
-                <div class="menu-icon"><i class="fas fa-boxes"></i></div>
-                <h3>Emissão NF-e</h3>
-                <p>Nota fiscal eletrônica</p>
-            </div>
-            <div class="menu-card" onclick="abrirGestaoEstoque()">
-                <div class="menu-icon"><i class="fas fa-box"></i></div>
-                <h3>Gestão de Estoque</h3>
-                <p>Produtos, entrada/saída</p>
-            </div>
-            <!-- Adicione no menu-grid dentro de #menuSystem -->
-            <div class="menu-card" onclick="abrirGestaoPromocoesLote()">
-                <div class="menu-icon"><i class="fas fa-layer-group"></i></div>
-                <h3>Promoções em Lote</h3>
-                <p>Ativar em massa com regras</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaPerguntas()">
-                <div class="menu-icon"><i class="fas fa-comments"></i></div>
-                <h3>Perguntas ML</h3>
-                <p>Responder perguntas dos clientes</p>
-            </div>
-            <div class="menu-card" id="historicoMenuCard" onclick="abrirHistoricoAcessos()">
-                <div class="menu-icon"><i class="fas fa-history"></i></div>
-                <h3>Histórico de Acessos</h3>
-                <p>IP, data e hora dos logins</p>
-            </div>
-            <div class="menu-card" id="metaRonaldMenuCard" onclick="abrirPainelMetaRonald()" >
-                <div class="menu-icon"><i class="fas fa-user-shield"></i></div>
-                <h3>Meta Ronald</h3>
-                <p>Conferências, pendências e desbloqueio</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaPrecificacao()">
-            <div class="menu-icon"><i class="fas fa-tags"></i></div>
-            <h3>Precificação Novos Anúncios</h3>
-            <p>Cadastrar produtos para precificação</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaFeedback()">
-            <div class="menu-icon"><i class="fas fa-smile"></i></div>
-            <h3>Feedback</h3>
-            <p>Avaliações, respostas e sugestões</p>
-            </div>
-            <div class="menu-card" onclick="abrirSistemaGerenciamentoAnuncios()">
-            <div class="menu-icon">
-            <i class="fas fa-list-alt"></i>
-            </div>
-            <h3>Gerenciamento de Anúncios</h3>
-            <p>Anúncios FULL, estoque e exposição</p>
-            </div>
-        </div>
+            <section class="wt-bottom-grid">
+                <article class="wt-panel" data-menu-visual-depends="chamados"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-headset"></i> Últimos chamados</div><a class="wt-panel-link" href="#" onclick="abrirSistemaChamados();return false">Ver todos</a></div><div id="wtRecentTickets"><div class="wt-empty">Carregando chamados...</div></div></article>
+                <article class="wt-panel" data-menu-visual-depends="calendario_de_folgas"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-calendar-days"></i> Próximas folgas</div><a class="wt-panel-link" href="#" onclick="abrirSistemaFolgas();return false">Ver todos</a></div><div id="wtUpcomingEvents"><div class="wt-empty">Carregando folgas...</div></div></article>
+                <div class="wt-side-stack"><article class="wt-panel" data-menu-visual-depends="meta_ronald"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-star"></i> Meta Ronald</div><a class="wt-panel-link" href="#" onclick="abrirPainelMetaRonald();return false">Ver detalhes</a></div><div class="wt-goal"><div class="wt-goal-ring" id="wtGoalRing"><span id="wtGoalPercent">—</span></div><div><div class="wt-goal-value" id="wtGoalValue">Carregando...</div><div class="wt-goal-total" id="wtGoalTotal">Meta diária de conferências</div><div class="wt-progress"><span id="wtGoalProgress"></span></div></div></div></article><article class="wt-help-card" data-menu-visual-depends="chamados" onclick="abrirSistemaChamados()"><i class="fas fa-rocket"></i><div><strong>Precisa de ajuda?</strong><span>Abra um chamado para nossa equipe de suporte.</span></div><div class="wt-help-arrow"><i class="fas fa-chevron-right"></i></div></article></div>
+            </section>
+        </main>
     </div>
 
     <!-- ===== SISTEMA PRINCIPAL (OS) ===== -->
@@ -6878,6 +7104,307 @@ body > * {
     <script src="notificacoes_chamados.js"></script>
 
     <script>
+    // ===== LOGIN / CADASTRO COM ROTACAO 3D =====
+    (function iniciarCartaoDeAcesso() {
+        const card = document.getElementById('authCard');
+        const registerForm = document.getElementById('registerForm');
+
+        document.querySelectorAll('[data-auth-flip]').forEach(button => {
+            button.addEventListener('click', () => {
+                const mostrarCadastro = button.dataset.authFlip === 'register';
+                card.classList.toggle('is-flipped', mostrarCadastro);
+                card.setAttribute('data-face', mostrarCadastro ? 'register' : 'login');
+
+                window.setTimeout(() => {
+                    const target = document.getElementById(mostrarCadastro ? 'registerName' : 'username');
+                    if (target) target.focus();
+                }, 420);
+            });
+        });
+
+        document.querySelectorAll('[data-password-target]').forEach(button => {
+            button.addEventListener('click', () => {
+                const input = document.getElementById(button.dataset.passwordTarget);
+                if (!input) return;
+                const mostrar = input.type === 'password';
+                input.type = mostrar ? 'text' : 'password';
+                button.innerHTML = `<i class="fas fa-${mostrar ? 'eye-slash' : 'eye'}"></i>`;
+                button.setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha');
+            });
+        });
+
+        if (registerForm) {
+            registerForm.addEventListener('submit', event => {
+                event.preventDefault();
+                const dados = {
+                    name: document.getElementById('registerName').value.trim(),
+                    username: document.getElementById('registerUsername').value.trim(),
+                    email: document.getElementById('registerEmail').value.trim(),
+                    password: document.getElementById('registerPassword').value
+                };
+
+                // Ponto de integracao: o modulo de usuarios pode ouvir este evento.
+                window.dispatchEvent(new CustomEvent('wheeltech:cadastro', { detail: dados }));
+                if (typeof window.handleRegister === 'function') window.handleRegister(dados, registerForm);
+            });
+        }
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && card && card.classList.contains('is-flipped')) {
+                card.classList.remove('is-flipped');
+                document.getElementById('username')?.focus();
+            }
+        });
+    })();
+
+    // ===== CABECALHO DINAMICO DO NOVO MENU =====
+    (function iniciarDashboardWheelTech() {
+        const atualizarCabecalho = () => {
+            const nomeCompleto = window.currentUser?.name || document.getElementById('userName')?.textContent || 'Andressa';
+            const primeiroNome = nomeCompleto.trim().split(/\s+/)[0];
+            const greeting = document.getElementById('wtGreetingName');
+            if (greeting && primeiroNome && primeiroNome !== 'Usuário') greeting.textContent = primeiroNome;
+
+            const date = document.getElementById('wtCurrentDate');
+            if (date) {
+                const texto = new Intl.DateTimeFormat('pt-BR', {
+                    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+                }).format(new Date());
+                date.textContent = texto.charAt(0).toUpperCase() + texto.slice(1);
+            }
+        };
+
+        atualizarCabecalho();
+        const nomeMenu = document.getElementById('userName');
+        if (nomeMenu) new MutationObserver(atualizarCabecalho).observe(nomeMenu, { childList: true, subtree: true, characterData: true });
+        window.addEventListener('load', () => setTimeout(atualizarCabecalho, 500));
+    })();
+
+    // ===== DADOS REAIS DO DASHBOARD =====
+    (function conectarDashboardWheelTech() {
+        const texto = (id, valor) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = valor;
+        };
+
+        const escapar = valor => String(valor ?? '')
+            .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+
+        const normalizar = valor => String(valor || '').trim().toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+        const obterSupabase = () => {
+            if (window.supabaseClient) return window.supabaseClient;
+            try { return typeof supabaseClient !== 'undefined' ? supabaseClient : null; }
+            catch (_) { return null; }
+        };
+
+        const aguardarSupabase = async () => {
+            for (let tentativa = 0; tentativa < 40; tentativa++) {
+                const sb = obterSupabase();
+                if (sb) return sb;
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
+            return null;
+        };
+
+        const aguardarUsuario = async () => {
+            for (let tentativa = 0; tentativa < 40; tentativa++) {
+                if (window.currentUser?.name || window.currentUser?.username) return window.currentUser;
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
+            return null;
+        };
+
+        const buscarTodasPaginas = async (sb, tabela, ordenarPor = 'id') => {
+            const resultado = [];
+            for (let inicio = 0; ; inicio += 1000) {
+                const { data, error } = await sb.from(tabela).select('*')
+                    .order(ordenarPor, { ascending: false }).range(inicio, inicio + 999);
+                if (error) throw error;
+                const pagina = data || [];
+                resultado.push(...pagina);
+                if (pagina.length < 1000) break;
+            }
+            return resultado;
+        };
+
+        const dataRelativa = valor => {
+            if (!valor) return '';
+            const data = new Date(valor);
+            if (Number.isNaN(data.getTime())) return '';
+            const hoje = new Date();
+            const mesmoDia = data.toDateString() === hoje.toDateString();
+            const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
+            const hora = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            if (mesmoDia) return `Hoje, ${hora}`;
+            if (data.toDateString() === ontem.toDateString()) return `Ontem, ${hora}`;
+            return data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        };
+
+        const usuarioPodeVer = registro => {
+            const user = window.currentUser || {};
+            const username = normalizar(user.username || user.login || user.usuario);
+            const role = normalizar(user.role || user.cargo);
+            if (role === 'administrador' || username === 'andressamiotto' || username === 'ronald') return true;
+            return [registro.criado_por_username, registro.responsavel, registro.criado_por_nome]
+                .some(valor => normalizar(valor).includes(username) && username);
+        };
+
+        async function carregarContadores(sb) {
+            const hojeLocal = (() => {
+                const d = new Date();
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const dia = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${dia}`;
+            })();
+
+            const resultados = await Promise.allSettled([
+                buscarTodasPaginas(sb, 'ordens_service', 'data_criacao'),
+                Array.isArray(window._vendasPainelNFEBase) && window._vendasPainelNFEBase.length
+                    ? Promise.resolve(window._vendasPainelNFEBase)
+                    : typeof carregarVendasCacheNFE === 'function'
+                    ? carregarVendasCacheNFE(null)
+                    : buscarTodasPaginas(sb, 'vendas_nfe_cache', 'data_venda'),
+                sb.from('perguntas_ml').select('id', { count: 'exact', head: true }).eq('status', 'pendente'),
+                sb.from('entradas_cards').select('id', { count: 'exact', head: true }).eq('status', 'pendente'),
+                sb.from('caixa').select('id', { count: 'exact', head: true })
+                    .eq('fechado_operador', true).eq('conferido_admin', false)
+            ]);
+
+            const valor = indice => resultados[indice].status === 'fulfilled' ? resultados[indice].value : null;
+
+            const ordens = valor(0);
+            if (Array.isArray(ordens)) {
+                const user = window.currentUser || {};
+                const admin = String(user.role || '').trim() === 'Administrador';
+                const nomes = [user.name, user.nome, user.username, user.login].map(normalizar).filter(Boolean);
+                const visiveis = admin ? ordens : ordens.filter(os => {
+                    const responsavel = normalizar(os.responsavel);
+                    const criador = normalizar(os.criado_por);
+                    const devolucaoLeticia = normalizar(user.username || user.login) === 'leticia' && normalizar(os.tipo_os) === 'devolucao';
+                    return devolucaoLeticia || nomes.some(nome => responsavel.includes(nome) || criador.includes(nome));
+                });
+                texto('wtCountOS', visiveis.filter(os =>
+                    os.status === 'pendente' &&
+                    os.tipo_foto !== 'fotos_para_atualizar' &&
+                    !String(os.motivo_rejeicao || '').trim()
+                ).length);
+            }
+
+            const vendas = valor(1);
+            if (Array.isArray(vendas)) {
+                const classificadas = vendas.filter(v => {
+                    if (typeof classificarVendaPainelNFE !== 'function') return true;
+                    return ['nfe_liberadas', 'nfe_nao_liberadas'].includes(classificarVendaPainelNFE(v));
+                });
+                const resumoSeparacao = typeof calcularAlertaProdutosSemSepararNFE === 'function'
+                    ? calcularAlertaProdutosSemSepararNFE(vendas)
+                    : { total: classificadas.filter(v => v.separado !== true).length };
+                texto('wtCountSeparar', resumoSeparacao.total);
+                texto('wtCountNFE', classificadas.filter(v =>
+                    v.tem_nfe !== true && v.nfe_emitida !== true && v._nfe_emitida !== true
+                ).length);
+                texto('wtCountBaixa', classificadas.filter(v =>
+                    v.estoque_baixado !== true && v._estoque_baixado !== true
+                ).length);
+            }
+
+            const perguntas = valor(2); if (perguntas && !perguntas.error) texto('wtCountPerguntas', perguntas.count ?? 0);
+            const entradas = valor(3); if (entradas && !entradas.error) texto('wtCountEntradas', entradas.count ?? 0);
+            const caixas = valor(4); if (caixas && !caixas.error) texto('wtCountCaixa', caixas.count ?? 0);
+        }
+
+        async function carregarChamados(sb) {
+            const alvo = document.getElementById('wtRecentTickets');
+            if (!alvo) return;
+            const { data, error } = await sb.from('chamados').select('*')
+                .order('atualizado_em', { ascending: false, nullsFirst: false }).limit(12);
+            if (error) { alvo.innerHTML = '<div class="wt-empty">Não foi possível carregar os chamados.</div>'; return; }
+            const chamados = (data || []).filter(usuarioPodeVer).slice(0, 4);
+            if (!chamados.length) { alvo.innerHTML = '<div class="wt-empty">Nenhum chamado para exibir.</div>'; return; }
+            const cfg = {
+                aberto: ['red', 'Aberto', 'open'],
+                em_andamento: ['', 'Em andamento', ''],
+                aguardando: ['', 'Aguardando', ''],
+                concluido: ['green', 'Concluído', 'done']
+            };
+            alvo.innerHTML = chamados.map(ch => {
+                const status = cfg[ch.status] || ['', ch.status || 'Sem status', ''];
+                return `<div class="wt-mini-row"><i class="wt-dot ${status[0]}"></i><b class="wt-ticket">#${escapar(ch.id)}</b><span>${escapar(ch.titulo || ch.assunto || 'Chamado')}</span><span class="wt-muted">${escapar(dataRelativa(ch.atualizado_em || ch.criado_em))}</span><span class="wt-status ${status[2]}">${escapar(status[1])}</span></div>`;
+            }).join('');
+        }
+
+        async function carregarFolgas(sb) {
+            const alvo = document.getElementById('wtUpcomingEvents');
+            if (!alvo) return;
+            const hoje = new Date().toISOString().slice(0, 10);
+            const { data, error } = await sb.from('folgas').select('*').eq('status', 'aprovado')
+                .gte('data_inicio', hoje).order('data_inicio', { ascending: true }).limit(3);
+            if (error) { alvo.innerHTML = '<div class="wt-empty">Não foi possível carregar as folgas.</div>'; return; }
+            if (!data?.length) { alvo.innerHTML = '<div class="wt-empty">Nenhuma folga aprovada nos próximos dias.</div>'; return; }
+            const tipos = { dia_inteiro: 'Dia todo', manha: 'Manhã', tarde: 'Tarde' };
+            alvo.innerHTML = data.map(f => {
+                const [ano, mes, dia] = String(f.data_inicio).split('-').map(Number);
+                const dataLocal = new Date(ano, mes - 1, dia);
+                const mesTxt = dataLocal.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
+                return `<div class="wt-event-row"><div class="wt-event-date">${String(dia).padStart(2, '0')}<span>${mesTxt}</span></div><div><div class="wt-event-title">Folga – ${escapar(f.user_name || f.nome_usuario || 'Colaborador')}</div><div class="wt-event-sub">${escapar(f.motivo || tipos[f.tipo] || 'Folga aprovada')}</div></div><span>${escapar(tipos[f.tipo] || 'Dia todo')}</span></div>`;
+            }).join('');
+        }
+
+        async function carregarMetaRonald() {
+            try {
+                if (typeof carregarStatusMetaRonald !== 'function') throw new Error('Módulo indisponível');
+                const meta = await carregarStatusMetaRonald();
+                if (!meta?.configurada) {
+                    texto('wtGoalPercent', '—'); texto('wtGoalValue', 'Meta não configurada');
+                    texto('wtGoalTotal', 'Configure no painel Meta Ronald'); return;
+                }
+                const feitas = Number(meta.conferidasHoje) || 0;
+                const exigidas = Number(meta.exigenciaTotalHoje) || Number(meta.metaDiaria) || 15;
+                const percentual = meta.pausada ? 0 : Math.min(100, Math.round((feitas / Math.max(1, exigidas)) * 100));
+                texto('wtGoalPercent', meta.pausada ? 'Pausa' : `${percentual}%`);
+                texto('wtGoalValue', `${feitas} conferência${feitas === 1 ? '' : 's'} hoje`);
+                texto('wtGoalTotal', meta.pausada ? 'Meta pausada' : `Meta exigida: ${exigidas} • faltam ${Number(meta.faltamHoje) || 0}`);
+                const ring = document.getElementById('wtGoalRing');
+                const barra = document.getElementById('wtGoalProgress');
+                ring?.style.setProperty('--wt-goal', `${percentual}%`);
+                barra?.style.setProperty('--wt-goal', `${percentual}%`);
+            } catch (_) {
+                texto('wtGoalPercent', '—'); texto('wtGoalValue', 'Dados indisponíveis');
+                texto('wtGoalTotal', 'Consulte o painel da meta');
+            }
+        }
+
+        let carregando = false;
+        window.carregarDashboardWheelTech = async function() {
+            if (carregando) return;
+            carregando = true;
+            try {
+                const usuario = await aguardarUsuario();
+                if (!usuario) throw new Error('Usuário ainda não inicializado');
+                const sb = await aguardarSupabase();
+                if (!sb) throw new Error('Supabase indisponível');
+                await Promise.allSettled([carregarContadores(sb), carregarChamados(sb), carregarFolgas(sb), carregarMetaRonald()]);
+            } catch (erro) {
+                console.error('Erro ao carregar dashboard Wheel Tech:', erro);
+            } finally { carregando = false; }
+        };
+
+        const menu = document.getElementById('menuSystem');
+        if (menu) new MutationObserver(() => {
+            if (!menu.classList.contains('hidden')) window.carregarDashboardWheelTech();
+        }).observe(menu, { attributes: true, attributeFilter: ['class'] });
+        window.addEventListener('load', () => setTimeout(() => {
+            if (!menu?.classList.contains('hidden')) window.carregarDashboardWheelTech();
+        }, 1200));
+        window.setInterval(() => {
+            if (!menu?.classList.contains('hidden')) window.carregarDashboardWheelTech();
+        }, 60000);
+    })();
     
     console.log('🚀 Inicializando fallback do sistema FULL');
 
@@ -7112,5 +7639,190 @@ document.addEventListener('click', function(e) {
             setTimeout(atualizarSidebarUsuario, 1000);
         });
     </script>
+
+    <style id="wheelTechUnifiedBlueTheme">
+        /* ===== PALETA AZUL UNIFICADA - TODAS AS ABAS ===== */
+        :root {
+            --primary: #076CF0 !important;
+            --secondary: #20B8FF !important;
+            --info: #20B8FF !important;
+            --dark: #071A42 !important;
+            --wt-navy: #001231;
+            --wt-deep-blue: #001A45;
+            --wt-blue: #076CF0;
+            --wt-blue-hover: #075FD8;
+            --wt-blue-light: #0878F6;
+            --wt-cyan: #20B8FF;
+            --wt-soft-blue: #EDF5FF;
+        }
+
+        /* Película azul sobre a imagem de fundo fora do login */
+        body:not(.login-active)::before {
+            background: linear-gradient(
+                135deg,
+                rgba(225, 239, 255, .82),
+                rgba(205, 228, 255, .76) 48%,
+                rgba(179, 215, 255, .68)
+            ) !important;
+        }
+
+        /* Cabeçalhos das abas e módulos */
+        body:not(.login-active) .main-header,
+        body:not(.login-active) .system-header,
+        body:not(.login-active) .module-header,
+        body:not(.login-active) .page-header,
+        body:not(.login-active) .header-gradient,
+        body:not(.login-active) .modal-header:not(.bg-danger):not(.bg-success):not(.bg-warning) {
+            background: linear-gradient(135deg, #FFFFFF, #EDF5FF) !important;
+            border-color: #D6E7FB !important;
+            border-left: 4px solid #076CF0 !important;
+            color: #071A42 !important;
+            box-shadow: 0 4px 16px rgba(0, 40, 105, .08) !important;
+        }
+
+        body:not(.login-active) .main-header *,
+        body:not(.login-active) .system-header *,
+        body:not(.login-active) .module-header *,
+        body:not(.login-active) .page-header * {
+            color: #071A42;
+        }
+
+        /* Botões principais */
+        body:not(.login-active) .btn-primary,
+        body:not(.login-active) .btn-info,
+        body:not(.login-active) button.active:not(.btn-danger):not(.btn-success):not(.btn-warning),
+        body:not(.login-active) .filter-btn.active,
+        body:not(.login-active) .filtro-btn.active,
+        body:not(.login-active) .tab-button.active,
+        body:not(.login-active) .nav-link.active,
+        body:not(.login-active) .pagination .active .page-link {
+            background: linear-gradient(135deg, #075FD8, #0878F6) !important;
+            border-color: #076CF0 !important;
+            color: #fff !important;
+            box-shadow: 0 5px 14px rgba(7, 108, 240, .22);
+        }
+
+        body:not(.login-active) .btn-primary:hover,
+        body:not(.login-active) .btn-info:hover {
+            background: linear-gradient(135deg, #001A45, #075FD8) !important;
+            border-color: #001A45 !important;
+        }
+
+        body:not(.login-active) .btn-outline-primary,
+        body:not(.login-active) .btn-outline-info,
+        body:not(.login-active) .page-link {
+            border-color: #076CF0 !important;
+            color: #076CF0 !important;
+        }
+
+        body:not(.login-active) .btn-outline-primary:hover,
+        body:not(.login-active) .btn-outline-info:hover,
+        body:not(.login-active) .page-link:hover {
+            background: #076CF0 !important;
+            color: #fff !important;
+        }
+
+        /* Abas, filtros e navegação interna */
+        body:not(.login-active) .nav-tabs {
+            border-bottom-color: #BDD9FF !important;
+        }
+
+        body:not(.login-active) .nav-tabs .nav-link,
+        body:not(.login-active) .tabs button,
+        body:not(.login-active) .filter-group button {
+            color: #071A42;
+        }
+
+        body:not(.login-active) .nav-tabs .nav-link.active {
+            border-color: #076CF0 #076CF0 #fff !important;
+        }
+
+        /* Ícones, links, títulos e focos */
+        body:not(.login-active) a:not(.btn):not(.wt-panel-link),
+        body:not(.login-active) .text-primary,
+        body:not(.login-active) .text-info,
+        body:not(.login-active) .card-title i,
+        body:not(.login-active) h3 > i,
+        body:not(.login-active) h4 > i {
+            color: #076CF0 !important;
+        }
+
+        body:not(.login-active) input:focus,
+        body:not(.login-active) select:focus,
+        body:not(.login-active) textarea:focus,
+        body:not(.login-active) .form-control:focus {
+            border-color: #076CF0 !important;
+            box-shadow: 0 0 0 3px rgba(7, 108, 240, .14) !important;
+        }
+
+        body:not(.login-active) .spinner,
+        body:not(.login-active) .loading-spinner {
+            border-top-color: #076CF0 !important;
+        }
+
+        /* Cartões e tabelas */
+        body:not(.login-active) .card:not(.bg-danger):not(.bg-success):not(.bg-warning),
+        body:not(.login-active) .content-card,
+        body:not(.login-active) .dashboard-card {
+            border-color: #D6E7FB;
+        }
+
+        body:not(.login-active) table thead,
+        body:not(.login-active) .table thead {
+            background: #EDF5FF !important;
+            color: #071A42 !important;
+        }
+
+        /* Substitui os antigos destaques roxos por azul */
+        body:not(.login-active) .btn-purple,
+        body:not(.login-active) .bg-purple,
+        body:not(.login-active) .badge-purple,
+        body:not(.login-active) [style*="background: #6f42c1"],
+        body:not(.login-active) [style*="background:#6f42c1"],
+        body:not(.login-active) [style*="background: #4B0082"],
+        body:not(.login-active) [style*="linear-gradient(135deg, #6f42c1"] {
+            background: linear-gradient(135deg, #075FD8, #0878F6) !important;
+            border-color: #076CF0 !important;
+            color: #fff !important;
+        }
+
+        body:not(.login-active) [style*="color: #6f42c1"],
+        body:not(.login-active) [style*="color:#6f42c1"],
+        body:not(.login-active) [style*="color: #4B0082"] {
+            color: #076CF0 !important;
+        }
+
+        body:not(.login-active) [style*="border-color: #6f42c1"],
+        body:not(.login-active) [style*="border: 1px solid #6f42c1"],
+        body:not(.login-active) [style*="border-top: 2px solid #6f42c1"] {
+            border-color: #076CF0 !important;
+        }
+
+        body:not(.login-active) [style*="background: #f8f0ff"],
+        body:not(.login-active) [style*="background:#f8f0ff"],
+        body:not(.login-active) [style*="background: #f5e6ff"],
+        body:not(.login-active) [style*="background: #e2d5f1"] {
+            background: #EDF5FF !important;
+        }
+
+        /* O card de caixa do menu também passa a ser azul */
+        #menuSystem .wt-wide-card.purple {
+            background: linear-gradient(110deg, #fff, #EDF5FF) !important;
+            border-color: #D6E7FB !important;
+        }
+
+        #menuSystem .wt-wide-card.purple .wt-summary-icon {
+            color: #076CF0 !important;
+            background: #EDF5FF !important;
+        }
+
+        /* Cores semânticas permanecem preservadas */
+        body:not(.login-active) .btn-success,
+        body:not(.login-active) .badge-success,
+        body:not(.login-active) .text-success { --status-color: #28a745; }
+        body:not(.login-active) .btn-danger,
+        body:not(.login-active) .badge-danger,
+        body:not(.login-active) .text-danger { --status-color: #dc3545; }
+    </style>
 </body>
 </html>

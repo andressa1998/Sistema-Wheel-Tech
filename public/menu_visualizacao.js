@@ -424,7 +424,7 @@
     function obterGridMenu() {
 
         return document.querySelector(
-            '#menuSystem .menu-grid'
+            '#menuSystem .wt-module-nav, #menuSystem .menu-grid'
         );
 
     }
@@ -446,10 +446,11 @@
         )
             .filter(
                 elemento =>
-                    elemento.classList
-                        ?.contains(
-                            'menu-card'
-                        )
+                    elemento.classList?.contains('menu-card') ||
+                    (
+                        elemento.classList?.contains('wt-nav-item') &&
+                        elemento.dataset.menuVisualKey
+                    )
             );
 
     }
@@ -1199,16 +1200,24 @@
                 'menuConfigVisualizacaoWrap'
             );
 
+        const botaoDashboard =
+            document.getElementById(
+                'wtMenuSettingsBtn'
+            );
 
-        if (!wrap) {
-            return;
+        if (wrap) {
+            wrap.style.display =
+                usuarioEhAdminMenu()
+                    ? 'inline-flex'
+                    : 'none';
         }
 
-
-        wrap.style.display =
-            usuarioEhAdminMenu()
-                ? 'inline-flex'
-                : 'none';
+        if (botaoDashboard) {
+            botaoDashboard.style.display =
+                usuarioEhAdminMenu()
+                    ? 'grid'
+                    : 'none';
+        }
 
     }
 
@@ -2638,7 +2647,9 @@
             !configUsuarioAtualExiste
         ) {
 
-            cards.forEach(
+            document.querySelectorAll(
+                '#menuSystem [data-menu-visual-key], #menuSystem [data-menu-visual-depends]'
+            ).forEach(
                 card => {
 
                     card.classList.remove(
@@ -2685,6 +2696,23 @@
                         .classeOculta,
 
                     !deveAparecer
+                );
+
+            }
+        );
+
+        document.querySelectorAll(
+            '#menuSystem [data-menu-visual-depends]'
+        ).forEach(
+            elemento => {
+
+                const dependencias = String(
+                    elemento.dataset.menuVisualDepends || ''
+                ).split(',').map(chave => chave.trim()).filter(Boolean);
+
+                elemento.classList.toggle(
+                    MENU_VIS_CONFIG.classeOculta,
+                    !dependencias.some(chave => visiveis.has(chave))
                 );
 
             }
@@ -2981,3 +3009,4 @@
 
 
 })();
+

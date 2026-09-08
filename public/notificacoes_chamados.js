@@ -1251,6 +1251,12 @@
         return (
 
             menuSystem.querySelector(
+                '.wt-top-actions'
+            )
+
+            ||
+
+            menuSystem.querySelector(
                 '.main-header .user-info'
             )
 
@@ -1308,6 +1314,16 @@
         }
 
 
+        // O dashboard novo já traz um sino somente visual.
+        // Remove esse placeholder antes de instalar o sino funcional,
+        // evitando dois botões no cabeçalho.
+        document
+            .getElementById(
+                'wtMenuNotificationBtn'
+            )
+            ?.remove();
+
+
         // ================================================
         // CRIA
         // ================================================
@@ -1346,6 +1362,7 @@
                 id="btnNotificacoesChamados"
 
                 class="
+                    wt-icon-button
                     btn
                     btn-sm
                     btn-secondary
@@ -1464,8 +1481,23 @@
                 'menuConfigVisualizacaoWrap'
             );
 
+        const engrenagemDashboard =
+            document.getElementById(
+                'wtMenuSettingsBtn'
+            );
+
 
         if (
+            engrenagemDashboard &&
+            engrenagemDashboard.parentElement === userInfo
+        ) {
+
+            userInfo.insertBefore(
+                wrap,
+                engrenagemDashboard.nextSibling
+            );
+
+        } else if (
             engrenagem &&
             engrenagem.parentElement ===
                 userInfo
