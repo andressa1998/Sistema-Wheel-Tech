@@ -1,5 +1,5 @@
 // ============================================
-// SALES DASHBOARD - VERSÃO FINAL CORRIGIDA
+// SALES DASHBOARD - VERSÃO OTIMIZADA SUPABASE 2026-09-09
 // ============================================
 
 let vendasML = [];
@@ -12,6 +12,57 @@ let periodoAtual = 'todas';
 let filtroConferencia = 'todos';
 let filtroTipoEnvio = 'todos';
 let fotosTemp = [];
+
+// ============================================
+// OTIMIZAÇÃO SUPABASE - CONSULTAS LEVES
+// ============================================
+// A listagem não precisa dos campos pesados `dados_completos`, `fotos`
+// e `informacoes_pagamento`. Dados completos continuam sendo buscados
+// apenas quando uma ação específica realmente precisa deles.
+const COLUNAS_VENDAS_DASHBOARD = [
+    'id_venda_ml',
+    'titulo',
+    'cliente',
+    'sku',
+    'sku_original',
+    'item_id',
+    'mlb_id',
+    'variacao_id',
+    'variacao_atributos',
+    'estoque_anuncio',
+    'estoque_fisico',
+    'ultima_verificacao_estoque',
+    'quantidade',
+    'valor_unitario',
+    'valor_total',
+    'created_at',
+    'data_venda',
+    'status_ml',
+    'status_sistema',
+    'tipo_envio',
+    'id_envio',
+    'informacoes_envio',
+    'link',
+    'status_conferencia',
+    'divergente',
+    'conferido_por_estoque',
+    'conferido_por_anuncio',
+    'data_conferencia_estoque',
+    'data_conferencia_anuncio',
+    'eh_kit',
+    'skus_kit',
+    'observacao',
+    'observacoes_gerais',
+    'qtd_fotos',
+    'data_liberacao',
+    'status_liberacao',
+    'mensagem_liberacao',
+    'precisa_aguardar',
+    'updated_at',
+    'fotos_anuncio'
+].join(',');
+
+let atualizacaoFotosAnuncioEmAndamento = null;
 
 // ============================================
 // INICIALIZAÇÃO
@@ -180,7 +231,7 @@ async function carregarVendasDoBanco() {
         
         const { data, error } = await supabaseClient
             .from('vendas_ml')
-            .select('*')
+            .select(COLUNAS_VENDAS_DASHBOARD)
             .order('created_at', { ascending: false });
         
         if (error) {
@@ -237,13 +288,13 @@ async function sincronizarVendasMLDashboard() {
         btn.disabled = false;
     }
 
-    // Após carregar vendas do banco
-await carregarVendasDoBanco();
+    // As vendas já foram recarregadas no bloco de sucesso acima.
+    // Evita uma segunda consulta completa desnecessária.
 
-// Dispara atualização de fotos em segundo plano (não bloqueante)
-setTimeout(() => {
-    atualizarFotosAnuncioEmLote().catch(console.error);
-}, 1000);
+    // Dispara atualização de fotos em segundo plano (não bloqueante)
+    setTimeout(() => {
+        atualizarFotosAnuncioEmLote().catch(console.error);
+    }, 1000);
 
 }
 
@@ -256,17 +307,55 @@ async function processarESalvarVendas(vendasML) {
         
         const vendasParaSalvar = [];
         const agora = new Date().toISOString();
+
+        // OTIMIZAÇÃO: antes existia 1 SELECT * por venda sincronizada.
+        // Agora buscamos todos os registros existentes em uma única consulta leve.
+        const idsParaConsultar = [...new Set(
+            vendasML
+                .map(v => v.id_venda_ml || v.id)
+                .filter(Boolean)
+                .map(String)
+        )];
+
+        let existentesPorId = new Map();
+        if (idsParaConsultar.length > 0) {
+            const { data: vendasExistentes, error: erroExistentes } = await supabaseClient
+                .from('vendas_ml')
+                .select(`
+                    id_venda_ml,
+                    estoque_fisico,
+                    status_sistema,
+                    status_conferencia,
+                    divergente,
+                    conferido_por_estoque,
+                    conferido_por_anuncio,
+                    data_conferencia_estoque,
+                    data_conferencia_anuncio,
+                    eh_kit,
+                    skus_kit,
+                    observacao,
+                    observacoes_gerais,
+                    qtd_fotos,
+                    data_liberacao,
+                    status_liberacao,
+                    mensagem_liberacao,
+                    precisa_aguardar
+                `)
+                .in('id_venda_ml', idsParaConsultar);
+
+            if (erroExistentes) {
+                console.warn('⚠️ Não foi possível carregar vendas existentes em lote:', erroExistentes);
+            } else {
+                existentesPorId = new Map(
+                    (vendasExistentes || []).map(v => [String(v.id_venda_ml), v])
+                );
+            }
+        }
         
         for (const venda of vendasML) {
             try {
-                const idVendaML = venda.id_venda_ml || venda.id || `ML${Date.now()}`;
-                
-                // Buscar venda existente para preservar status de conferência
-                const { data: vendaExistente } = await supabaseClient
-                    .from('vendas_ml')
-                    .select('*')
-                    .eq('id_venda_ml', idVendaML)
-                    .maybeSingle();
+                const idVendaML = venda.id_venda_ml || venda.id || `ML${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const vendaExistente = existentesPorId.get(String(idVendaML)) || null;
                 
                 const vendaProcessada = {
                     id_venda_ml: idVendaML,
@@ -324,8 +413,10 @@ async function processarESalvarVendas(vendasML) {
                     observacao: vendaExistente?.observacao || venda.observacao || null,
                     observacoes_gerais: vendaExistente?.observacoes_gerais || venda.observacoes_gerais || '',
                     
-                    fotos: vendaExistente?.fotos || venda.fotos || [],
-                    qtd_fotos: (vendaExistente?.fotos || venda.fotos || []).length,
+                    // Fotos manuais existentes não precisam ser baixadas durante a sincronização.
+                    // Em UPDATE elas não são alteradas; para INSERT usamos apenas as fotos recebidas.
+                    fotos: venda.fotos || [],
+                    qtd_fotos: vendaExistente?.qtd_fotos ?? (venda.fotos || []).length,
                     
                     // Campos de liberação
                     data_liberacao: venda.data_liberacao || vendaExistente?.data_liberacao || null,
@@ -1253,18 +1344,21 @@ function atualizarTabelaVendas() {
                     </div>
                 </div>
             `;
-        } else if (venda.fotos && venda.fotos.length > 0) {
+        } else if ((Number(venda.qtd_fotos) || 0) > 0) {
+            const qtdFotosManuais = Number(venda.qtd_fotos) || 0;
             fotoThumbnail = `
                 <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dee2e6;">
-                    <img src="${venda.fotos[0].data}" 
-                         style="width: 50px; height: 50px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid #dee2e6;"
-                         onclick="verFotosVenda('${venda.id_venda_ml || venda.id}')"
-                         title="Clique para ver as fotos (${venda.fotos.length})">
+                    <button type="button"
+                            onclick="verFotosVenda('${venda.id_venda_ml || venda.id}')"
+                            title="Clique para carregar e ver as fotos manuais"
+                            style="width: 50px; height: 50px; border: 1px solid #dee2e6; border-radius: 4px; background: #f8f9fa; cursor: pointer; color: #6c757d;">
+                        <i class="fas fa-camera" style="font-size: 18px;"></i>
+                    </button>
                     <div>
                         <span style="font-size: 11px; color: #666; display: block;">
-                            <i class="fas fa-camera"></i> ${venda.fotos.length} foto(s)
+                            <i class="fas fa-camera"></i> ${qtdFotosManuais} foto(s)
                         </span>
-                        <span style="font-size: 10px; color: #999;">manual</span>
+                        <span style="font-size: 10px; color: #999;">manual - carregar ao clicar</span>
                     </div>
                 </div>
             `;
@@ -1712,7 +1806,7 @@ async function carregarVendasDoBanco() {
         
         const { data, error } = await supabaseClient
             .from('vendas_ml')
-            .select('*')
+            .select(COLUNAS_VENDAS_DASHBOARD)
             .order('created_at', { ascending: false });
         
         if (error) {
@@ -2384,9 +2478,15 @@ async function salvarFotosVenda(idVenda) {
         if (error) throw error;
         
         mostrarToast(`✅ ${fotosTemp.length} foto(s) salva(s)!`, 'success');
+
+        const vendaLocal = vendasML.find(v => v.id_venda_ml === idVenda);
+        if (vendaLocal) {
+            vendaLocal.qtd_fotos = todasFotos.length;
+        }
+
         fotosTemp = [];
         fecharUploadFotos();
-        await carregarVendasDoBanco();
+        aplicarFiltroAtual();
         
     } catch (error) {
         console.error('Erro ao salvar fotos:', error);
@@ -2469,7 +2569,21 @@ async function gerarRelatorioConferencia() {
     try {
         let query = supabaseClient
             .from('vendas_ml')
-            .select('*')
+            .select(`
+                id_venda_ml,
+                created_at,
+                sku,
+                eh_kit,
+                skus_kit,
+                estoque_anuncio,
+                estoque_fisico,
+                divergente,
+                conferido_por_estoque,
+                data_conferencia_estoque,
+                conferido_por_anuncio,
+                data_conferencia_anuncio,
+                observacao
+            `)
             .eq('status_conferencia', 'conferido_anuncio')
             .order('data_conferencia_anuncio', { ascending: false });
         
@@ -2631,60 +2745,101 @@ function mostrarToast(mensagem, tipo = 'info') {
 // ATUALIZAR FOTOS DOS ANÚNCIOS EM LOTE
 // ============================================
 async function atualizarFotosAnuncioEmLote() {
-    console.log('🖼️ Verificando vendas sem fotos do anúncio...');
-    
-    // Busca vendas que têm mlb_id e fotos_anuncio vazio ou null
-    const { data: vendas, error } = await supabaseClient
-        .from('vendas_ml')
-        .select('id_venda_ml, mlb_id')
-        .not('mlb_id', 'is', null)
-        .or('fotos_anuncio.is.null,fotos_anuncio.eq.[]');
-    
-    if (error) {
-        console.error('Erro ao buscar vendas sem fotos:', error);
-        return;
+    // Evita duas rotinas concorrentes (ex.: inicialização + sincronização manual).
+    if (atualizacaoFotosAnuncioEmAndamento) {
+        return atualizacaoFotosAnuncioEmAndamento;
     }
-    
-    if (!vendas || vendas.length === 0) {
-        console.log('✅ Nenhuma venda precisa de atualização de fotos.');
-        return;
-    }
-    
-    console.log(`🔍 Encontradas ${vendas.length} vendas para atualizar fotos.`);
-    
-    let atualizadas = 0;
-    for (const venda of vendas) {
-        if (!venda.mlb_id) continue;
-        
-        // Aguarda um pouco para não sobrecarregar a API
-        await new Promise(resolve => setTimeout(resolve, 600));
-        
-        const fotos = await window.buscarFotosAnuncio(venda.mlb_id);
-        if (fotos.length > 0) {
-            const { error: updateError } = await supabaseClient
-                .from('vendas_ml')
-                .update({ fotos_anuncio: fotos })
-                .eq('id_venda_ml', venda.id_venda_ml);
-            
-            if (!updateError) {
-                atualizadas++;
-                console.log(`✅ Fotos salvas para ${venda.id_venda_ml}`);
-            } else {
-                console.error(`Erro ao salvar fotos para ${venda.id_venda_ml}:`, updateError);
-            }
-        } else {
-            // Se não há fotos, marca como array vazio para não tentar de novo
-            await supabaseClient
-                .from('vendas_ml')
-                .update({ fotos_anuncio: [] })
-                .eq('id_venda_ml', venda.id_venda_ml);
+
+    atualizacaoFotosAnuncioEmAndamento = (async () => {
+        console.log('🖼️ Verificando vendas ainda não processadas para fotos do anúncio...');
+
+        // IMPORTANTE:
+        // - NULL = ainda não processado.
+        // - []   = já processado e o anúncio não retornou fotos.
+        // A versão anterior consultava NULL OU [], então reprocessava os [] para sempre.
+        const { data: vendas, error } = await supabaseClient
+            .from('vendas_ml')
+            .select('id_venda_ml, mlb_id')
+            .not('mlb_id', 'is', null)
+            .is('fotos_anuncio', null)
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+        if (error) {
+            console.error('Erro ao buscar vendas sem fotos:', error);
+            return { processadas: 0, atualizadas: 0 };
         }
+
+        if (!vendas || vendas.length === 0) {
+            console.log('✅ Nenhuma venda precisa de atualização de fotos.');
+            return { processadas: 0, atualizadas: 0 };
+        }
+
+        // Muitas vendas podem apontar para o mesmo MLB.
+        // Buscamos as fotos apenas uma vez por anúncio e atualizamos todas as vendas daquele MLB.
+        const mlbsUnicos = [...new Set(
+            vendas.map(v => v.mlb_id).filter(Boolean)
+        )];
+
+        console.log(`🔍 ${vendas.length} venda(s), ${mlbsUnicos.length} anúncio(s) único(s) para processar.`);
+
+        let atualizadas = 0;
+        let processadas = 0;
+        let houveAlteracaoLocal = false;
+
+        for (const mlbId of mlbsUnicos) {
+            try {
+                // Mantém intervalo conservador para não pressionar a API do Mercado Livre.
+                await new Promise(resolve => setTimeout(resolve, 600));
+
+                let fotos = await window.buscarFotosAnuncio(mlbId);
+                if (!Array.isArray(fotos)) fotos = [];
+
+                const { error: updateError } = await supabaseClient
+                    .from('vendas_ml')
+                    .update({ fotos_anuncio: fotos })
+                    .eq('mlb_id', mlbId)
+                    .is('fotos_anuncio', null);
+
+                if (updateError) {
+                    console.error(`Erro ao salvar fotos do MLB ${mlbId}:`, updateError);
+                    continue;
+                }
+
+                processadas++;
+                if (fotos.length > 0) atualizadas++;
+
+                // Atualiza a tela em memória; não faz novo SELECT de todas as vendas.
+                for (const vendaLocal of vendasML) {
+                    if (vendaLocal.mlb_id === mlbId && vendaLocal.fotos_anuncio == null) {
+                        vendaLocal.fotos_anuncio = fotos;
+                        houveAlteracaoLocal = true;
+                    }
+                }
+
+                console.log(
+                    fotos.length > 0
+                        ? `✅ ${mlbId}: ${fotos.length} foto(s) salvas`
+                        : `ℹ️ ${mlbId}: processado sem fotos`
+                );
+            } catch (erroMlb) {
+                console.error(`Erro processando fotos do MLB ${mlbId}:`, erroMlb);
+            }
+        }
+
+        if (houveAlteracaoLocal) {
+            aplicarFiltroAtual();
+        }
+
+        console.log(`🏁 Fotos: ${processadas} anúncio(s) processado(s), ${atualizadas} com fotos.`);
+        return { processadas, atualizadas };
+    })();
+
+    try {
+        return await atualizacaoFotosAnuncioEmAndamento;
+    } finally {
+        atualizacaoFotosAnuncioEmAndamento = null;
     }
-    
-    console.log(`🏁 Atualização concluída: ${atualizadas} vendas com fotos salvas.`);
-    
-    // Recarrega as vendas na tela para exibir as novas miniaturas
-    await carregarVendasDoBanco();
 }
 
 // Exportar

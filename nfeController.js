@@ -1351,12 +1351,32 @@ async function emitirNFe(req, res) {
                         );
 
 
+                    let desconto =
+                        Number(
+                            produto.desconto ||
+                            0
+                        );
+
+
+                    if (
+                        !Number.isFinite(
+                            desconto
+                        ) ||
+                        desconto < 0
+                    ) {
+
+                        desconto =
+                            0;
+                    }
+
+
                     return (
                         sum +
                         (
                             quantidade *
                             valorUnitario
-                        )
+                        ) -
+                        desconto
                     );
                 },
                 0

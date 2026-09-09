@@ -495,6 +495,11 @@ function gerarXmlNfe(dados) {
         0;
 
 
+    // soma do desconto rateado por item -> vira <vDesc> na ICMSTot
+    let totalDesc =
+        0;
+
+
     let totalTrib =
         0;
 
@@ -518,8 +523,50 @@ function gerarXmlNfe(dados) {
                 vProd;
 
 
+            // desconto do item (nunca negativo, nunca maior que o próprio item)
+            let vDescItem =
+                Number(
+                    prod.desconto ||
+                    0
+                );
+
+
+            if (
+                !Number.isFinite(
+                    vDescItem
+                ) ||
+                vDescItem < 0
+            ) {
+
+                vDescItem =
+                    0;
+            }
+
+
+            if (
+                vDescItem > vProd
+            ) {
+
+                vDescItem =
+                    vProd;
+            }
+
+
+            vDescItem =
+                Number(
+                    vDescItem.toFixed(2)
+                );
+
+
+            totalDesc +=
+                vDescItem;
+
+
             const vTotTrib =
-                vProd *
+                (
+                    vProd -
+                    vDescItem
+                ) *
                 0.0402;
 
 
@@ -561,7 +608,8 @@ function gerarXmlNfe(dados) {
                 <cEANTrib>SEM GTIN</cEANTrib>
                 <uTrib>${prod.uTrib || 'PC'}</uTrib>
                 <qTrib>${prod.quantidade.toFixed(4)}</qTrib>
-                <vUnTrib>${prod.valor_unitario.toFixed(5)}</vUnTrib>
+                <vUnTrib>${prod.valor_unitario.toFixed(5)}</vUnTrib>${vDescItem > 0 ? `
+                <vDesc>${vDescItem.toFixed(2)}</vDesc>` : ''}
                 <indTot>1</indTot>
             </prod>
             <imposto>
@@ -779,8 +827,8 @@ function gerarXmlNfe(dados) {
             <fat>
                 <nFat>${escapeXml(fatura.nFat || '001')}</nFat>
                 <vOrig>${(fatura.vOrig || totalProd).toFixed(2)}</vOrig>
-                <vDesc>${(fatura.vDesc || 0).toFixed(2)}</vDesc>
-                <vLiq>${(fatura.vLiq || totalProd).toFixed(2)}</vLiq>
+                <vDesc>${(fatura.vDesc || totalDesc).toFixed(2)}</vDesc>
+                <vLiq>${(fatura.vLiq || (totalProd - totalDesc)).toFixed(2)}</vLiq>
             </fat>
         </cobr>`;
     }
@@ -795,7 +843,7 @@ function gerarXmlNfe(dados) {
             <detPag>
                 <indPag>0</indPag>
                 <tPag>01</tPag>
-                <vPag>${totalProd.toFixed(2)}</vPag>
+                <vPag>${(totalProd - totalDesc).toFixed(2)}</vPag>
             </detPag>
             <vTroco>0.00</vTroco>
         </pag>`;
@@ -961,14 +1009,14 @@ function gerarXmlNfe(dados) {
                 <vProd>${totalProd.toFixed(2)}</vProd>
                 <vFrete>0.00</vFrete>
                 <vSeg>0.00</vSeg>
-                <vDesc>0.00</vDesc>
+                <vDesc>${totalDesc.toFixed(2)}</vDesc>
                 <vII>0.00</vII>
                 <vIPI>0.00</vIPI>
                 <vIPIDevol>0.00</vIPIDevol>
                 <vPIS>0.00</vPIS>
                 <vCOFINS>0.00</vCOFINS>
                 <vOutro>0.00</vOutro>
-                <vNF>${totalProd.toFixed(2)}</vNF>
+                <vNF>${(totalProd - totalDesc).toFixed(2)}</vNF>
                 <vTotTrib>${totalTrib.toFixed(2)}</vTotTrib>
             </ICMSTot>
         </total>

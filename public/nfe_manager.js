@@ -1808,7 +1808,67 @@ async function buscarValorExatoPagamento(orderId) {
             0;
 
 
-        console.log(`💰 Valor da venda ML: R$ ${valorVenda.toFixed(2)}`);
+        // =====================================================
+        // CUPOM / DESCONTO NO NÍVEL DA ORDER
+        //
+        // Ex.: "Desconto para a sua contraparte" -> cupom que
+        // o Mercado Livre concede ao comprador.
+        // =====================================================
+
+        let descontoCupomOrder =
+            0;
+
+
+        const fontesCupomOrder = [
+            orderData?.coupon?.amount,
+            orderData?.coupon_amount,
+            orderData?.discounts,
+            Array.isArray(orderData?.discounts)
+                ? orderData.discounts.reduce(
+                    (
+                        total,
+                        desconto
+                    ) =>
+                        total +
+                        (
+                            parseFloat(
+                                desconto?.amount ??
+                                0
+                            ) ||
+                            0
+                        ),
+                    0
+                )
+                : 0
+        ];
+
+
+        for (
+            const fonte
+            of fontesCupomOrder
+        ) {
+
+            const valor =
+                parseFloat(
+                    fonte
+                ) ||
+                0;
+
+
+            if (
+                valor >
+                descontoCupomOrder
+            ) {
+
+                descontoCupomOrder =
+                    valor;
+            }
+        }
+
+
+        console.log(
+            `💰 Valor da venda ML: R$ ${valorVenda.toFixed(2)} | Cupom da order: R$ ${descontoCupomOrder.toFixed(2)}`
+        );
 
 
         // =====================================================
@@ -1913,13 +1973,15 @@ async function buscarValorExatoPagamento(orderId) {
             console.warn(`⚠️ Nenhum Payment ID encontrado para ${orderId}`);
 
             return {
-                valor_produto: valorVenda,
+                valor_produto: Math.max(valorVenda - descontoCupomOrder, 0),
                 valor_frete: 0,
                 total_pago: valorVenda,
                 payment_id: null,
                 payment_ids: [],
-                desconto_cupom: 0,
-                fonte: 'venda',
+                desconto_cupom: descontoCupomOrder,
+                desconto_cupom_pagamento: 0,
+                desconto_cupom_order: descontoCupomOrder,
+                fonte: descontoCupomOrder > 0 ? 'mercado_pago_cupom' : 'venda',
                 valor_venda: valorVenda,
                 valor_mp: null,
                 metodo_pagamento_id: null,
@@ -2152,6 +2214,8 @@ async function buscarValorExatoPagamento(orderId) {
                     0;
 
 
+                // cupom "clássico": campo separado, NÃO embutido no
+                // transaction_amount -> pode ser abatido do total pago
                 const descontoCupom =
                     parseFloat(
                         paymentData
@@ -2159,6 +2223,150 @@ async function buscarValorExatoPagamento(orderId) {
                         0
                     ) ||
                     0;
+
+
+                // =============================================
+                // DESCONTOS DENTRO DO PAGAMENTO
+                //
+                // O Mercado Livre lança cupons (ex.: "Desconto
+                // para a sua contraparte") dentro de
+                // charges_details / transaction_details.
+                //
+                // Estes NÃO são abatidos do total pago (podem já
+                // estar refletidos no transaction_amount); são
+                // usados apenas para identificar o desconto real.
+                // =============================================
+
+                let descontoChargeDetails =
+                    0;
+
+
+                if (
+                    Array.isArray(
+                        paymentData
+                            .charges_details
+                    )
+                ) {
+
+                    for (
+                        const charge
+                        of paymentData.charges_details
+                    ) {
+
+                        const tipoCharge =
+                            String(
+                                charge?.type ||
+                                ''
+                            )
+                                .toLowerCase();
+
+
+                        const nomeCharge =
+                            String(
+                                charge?.name ||
+                                ''
+                            )
+                                .toLowerCase();
+
+
+                        const ehDesconto =
+                            tipoCharge ===
+                                'discount' ||
+                            nomeCharge.includes(
+                                'discount'
+                            ) ||
+                            nomeCharge.includes(
+                                'coupon'
+                            ) ||
+                            nomeCharge.includes(
+                                'cupon'
+                            ) ||
+                            nomeCharge.includes(
+                                'contrapart'
+                            ) ||
+                            nomeCharge.includes(
+                                'counterpart'
+                            );
+
+
+                        if (
+                            !ehDesconto
+                        ) {
+
+                            continue;
+                        }
+
+
+                        const valorCharge =
+                            parseFloat(
+                                charge?.amounts
+                                    ?.original ??
+                                charge?.amount ??
+                                0
+                            ) ||
+                            0;
+
+
+                        const valorRefund =
+                            parseFloat(
+                                charge?.amounts
+                                    ?.refunded ??
+                                0
+                            ) ||
+                            0;
+
+
+                        descontoChargeDetails +=
+                            Math.max(
+                                valorCharge -
+                                valorRefund,
+                                0
+                            );
+                    }
+                }
+
+
+                const descontoTransactionDetails =
+                    parseFloat(
+                        paymentData
+                            .transaction_details
+                            ?.discount_amount ??
+                        paymentData
+                            .transaction_details
+                            ?.coupon_amount ??
+                        0
+                    ) ||
+                    0;
+
+
+                const descontoIdentificadoPagamento =
+                    Math.max(
+                        descontoCupom,
+                        descontoChargeDetails,
+                        descontoTransactionDetails
+                    );
+
+
+                if (
+                    descontoIdentificadoPagamento >
+                    0
+                ) {
+
+                    console.log(
+                        `🎟️ Desconto/cupom no pagamento ${paymentId}: R$ ${descontoIdentificadoPagamento.toFixed(2)}`,
+                        {
+                            coupon_amount:
+                                paymentData
+                                    .coupon_amount,
+
+                            charges_details:
+                                descontoChargeDetails,
+
+                            transaction_details:
+                                descontoTransactionDetails
+                        }
+                    );
+                }
 
 
                 // =============================================
@@ -2353,6 +2561,9 @@ async function buscarValorExatoPagamento(orderId) {
                     desconto_cupom:
                         descontoCupom,
 
+                    desconto_identificado:
+                        descontoIdentificadoPagamento,
+
                     parcelas,
 
                     valor_parcela:
@@ -2412,7 +2623,11 @@ async function buscarValorExatoPagamento(orderId) {
             return {
 
                 valor_produto:
-                    valorVenda,
+                    Math.max(
+                        valorVenda -
+                        descontoCupomOrder,
+                        0
+                    ),
 
                 valor_frete:
                     valorFrete,
@@ -2428,10 +2643,19 @@ async function buscarValorExatoPagamento(orderId) {
                     paymentIdsUnicos,
 
                 desconto_cupom:
+                    descontoCupomOrder,
+
+                desconto_cupom_pagamento:
                     0,
 
+                desconto_cupom_order:
+                    descontoCupomOrder,
+
                 fonte:
-                    'venda',
+                    descontoCupomOrder >
+                    0
+                        ? 'mercado_pago_cupom'
+                        : 'venda',
 
                 valor_venda:
                     valorVenda,
@@ -2497,6 +2721,31 @@ async function buscarValorExatoPagamento(orderId) {
             );
 
 
+        // desconto identificado dentro dos pagamentos (cupom,
+        // charges_details, "Desconto para a sua contraparte").
+        // NÃO é abatido do total pago, só serve de referência.
+        const descontoExtraPagamentos =
+            pagamentosDetalhes.reduce(
+                (
+                    total,
+                    pagamento
+                ) =>
+                    total +
+                    Math.max(
+                        Number(
+                            pagamento.desconto_identificado ||
+                            0
+                        ) -
+                        Number(
+                            pagamento.desconto_cupom ||
+                            0
+                        ),
+                        0
+                    ),
+                0
+            );
+
+
         console.log(
             `💰 SOMA DOS PAGAMENTOS: R$ ${totalPago.toFixed(2)}`
         );
@@ -2505,8 +2754,7 @@ async function buscarValorExatoPagamento(orderId) {
         // =====================================================
         // VALOR MP
         //
-        // MANTÉM SUA REGRA ATUAL:
-        // total dos pagamentos - cupom
+        // total dos pagamentos - cupom do pagamento
         //
         // FRETE NÃO É SUBTRAÍDO.
         // =====================================================
@@ -2530,6 +2778,54 @@ async function buscarValorExatoPagamento(orderId) {
 
 
         // =====================================================
+        // DESCONTO TOTAL IDENTIFICADO
+        //
+        // Considera:
+        // - cupom lançado no pagamento (charges_details, etc.)
+        // - cupom lançado na order ("Desconto para a sua
+        //   contraparte")
+        // - diferença implícita entre o valor da venda e o que
+        //   foi efetivamente pago
+        //
+        // Usa o MAIOR valor (não soma) para não descontar o
+        // mesmo cupom duas vezes.
+        // =====================================================
+
+        const descontoImplicito =
+            Math.max(
+                valorVenda -
+                valorProdutoMP,
+                0
+            );
+
+
+        const descontoIdentificado =
+            Math.max(
+                descontoImplicito,
+                descontoCupom,
+                descontoCupomOrder,
+                descontoExtraPagamentos
+            );
+
+
+        console.log(
+            '🎟️ Descontos identificados:',
+            {
+                descontoExtraPagamentos,
+
+                descontoCupomPagamento:
+                    descontoCupom,
+
+                descontoCupomOrder,
+
+                descontoImplicito,
+
+                descontoIdentificado
+            }
+        );
+
+
+        // =====================================================
         // VALOR FINAL
         // =====================================================
 
@@ -2542,25 +2838,22 @@ async function buscarValorExatoPagamento(orderId) {
 
 
         if (
-            valorProdutoMP >
-            0 &&
             valorVenda >
             0
         ) {
 
             valorProdutoFinal =
-                Math.min(
-                    valorProdutoMP,
-                    valorVenda
+                Math.max(
+                    valorVenda -
+                    descontoIdentificado,
+                    0
                 );
 
 
             fonte =
-                valorProdutoMP <=
-                valorVenda
-
-                    ? 'mercado_pago'
-
+                descontoIdentificado >
+                0
+                    ? 'mercado_pago_cupom'
                     : 'venda';
 
         } else if (
@@ -2738,7 +3031,13 @@ async function buscarValorExatoPagamento(orderId) {
                 totalPago,
 
             desconto_cupom:
+                descontoIdentificado,
+
+            desconto_cupom_pagamento:
                 descontoCupom,
+
+            desconto_cupom_order:
+                descontoCupomOrder,
 
             fonte,
 
@@ -4723,7 +5022,13 @@ async function abrirModalEdicaoProdutos(orderId) {
             [];
 
 
+        // valor CHEIO (bruto) somado de todos os produtos
         let valorTotalProduto =
+            0;
+
+
+        // desconto da compra que será lançado em vDesc na NF-e
+        let descontoTotalProduto =
             0;
 
 
@@ -4789,7 +5094,8 @@ async function abrirModalEdicaoProdutos(orderId) {
                 );
 
 
-            let valorOrder =
+            // valor LÍQUIDO efetivamente pago pelos produtos desta order
+            let valorLiquidoOrder =
                 Number(
                     dados.pagamento
                         ?.valor_produto ||
@@ -4798,11 +5104,11 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
             if (
-                valorOrder <=
+                valorLiquidoOrder <=
                 0
             ) {
 
-                valorOrder =
+                valorLiquidoOrder =
                     Number(
                         order.total_amount ||
                         totalOriginal ||
@@ -4811,8 +5117,32 @@ async function abrirModalEdicaoProdutos(orderId) {
             }
 
 
+            // valor CHEIO (bruto) da order = soma de preço x quantidade
+            const valorBrutoOrder =
+                totalOriginal >
+                0
+                    ? totalOriginal
+                    : Number(
+                        order.total_amount ||
+                        0
+                    );
+
+
+            // desconto da compra = bruto - líquido (nunca negativo)
+            const descontoOrder =
+                Math.max(
+                    valorBrutoOrder -
+                    valorLiquidoOrder,
+                    0
+                );
+
+
             valorTotalProduto +=
-                valorOrder;
+                valorBrutoOrder;
+
+
+            descontoTotalProduto +=
+                descontoOrder;
 
 
             for (
@@ -4835,15 +5165,21 @@ async function abrirModalEdicaoProdutos(orderId) {
                     quantidade;
 
 
-                let valorUnitarioCorrigido =
+                // valor unitário CHEIO do produto
+                const valorUnitarioCorrigido =
                     Number(
                         item.unit_price ||
                         0
                     );
 
 
+                // desconto rateado proporcionalmente para esta linha
+                let descontoLinha =
+                    0;
+
+
                 if (
-                    valorOrder >
+                    descontoOrder >
                     0
                 ) {
 
@@ -4852,21 +5188,11 @@ async function abrirModalEdicaoProdutos(orderId) {
                         0
                     ) {
 
-                        const proporcao =
-                            valorLinhaOriginal /
-                            totalOriginal;
-
-
-                        const valorLinhaCorrigido =
-                            valorOrder *
-                            proporcao;
-
-
-                        valorUnitarioCorrigido =
-                            valorLinhaCorrigido /
-                            Math.max(
-                                quantidade,
-                                1
+                        descontoLinha =
+                            descontoOrder *
+                            (
+                                valorLinhaOriginal /
+                                totalOriginal
                             );
 
 
@@ -4875,9 +5201,12 @@ async function abrirModalEdicaoProdutos(orderId) {
                         0
                     ) {
 
-                        valorUnitarioCorrigido =
-                            valorOrder /
-                            quantidadeOriginal;
+                        descontoLinha =
+                            descontoOrder *
+                            (
+                                quantidade /
+                                quantidadeOriginal
+                            );
                     }
                 }
 
@@ -4890,7 +5219,10 @@ async function abrirModalEdicaoProdutos(orderId) {
                         dados.id,
 
                     _valor_unitario_corrigido:
-                        valorUnitarioCorrigido
+                        valorUnitarioCorrigido,
+
+                    _desconto_linha:
+                        descontoLinha
                 });
             }
         }
@@ -5330,6 +5662,12 @@ async function abrirModalEdicaoProdutos(orderId) {
                                 0
                             ),
 
+                        desconto:
+                            Number(
+                                item._desconto_linha ||
+                                0
+                            ),
+
                         sku,
 
                         ncm:
@@ -5404,6 +5742,198 @@ async function abrirModalEdicaoProdutos(orderId) {
                     ),
                     1
                 );
+        }
+
+
+        // =====================================================
+        // NORMALIZAR DESCONTO RATEADO (vDesc)
+        //
+        // - arredonda o desconto de cada linha para 2 casas
+        // - o desconto de uma linha nunca pode passar do valor
+        //   cheio da própria linha
+        // - a sobra de centavos é jogada na linha de maior valor
+        //   para o total bater com o desconto real da compra
+        // =====================================================
+
+        let descontoArredondado =
+            0;
+
+
+        produtosEditados.forEach(
+            produto => {
+
+                const valorLinha =
+                    Number(
+                        produto.valor_unitario ||
+                        0
+                    ) *
+                    Number(
+                        produto.quantidade ||
+                        1
+                    );
+
+
+                let desconto =
+                    Math.round(
+                        Number(
+                            produto.desconto ||
+                            0
+                        ) *
+                        100
+                    ) /
+                    100;
+
+
+                if (
+                    desconto <
+                    0
+                ) {
+
+                    desconto =
+                        0;
+                }
+
+
+                if (
+                    desconto >
+                    valorLinha
+                ) {
+
+                    desconto =
+                        Math.round(
+                            valorLinha *
+                            100
+                        ) /
+                        100;
+                }
+
+
+                produto.desconto =
+                    desconto;
+
+
+                descontoArredondado +=
+                    desconto;
+            }
+        );
+
+
+        const descontoAlvo =
+            Math.round(
+                descontoTotalProduto *
+                100
+            ) /
+            100;
+
+
+        const diferencaDesconto =
+            Math.round(
+                (
+                    descontoAlvo -
+                    descontoArredondado
+                ) *
+                100
+            ) /
+            100;
+
+
+        if (
+            Math.abs(
+                diferencaDesconto
+            ) >=
+                0.01 &&
+            produtosEditados.length >
+                0
+        ) {
+
+            const linhaMaior =
+                produtosEditados.reduce(
+                    (
+                        maior,
+                        atual
+                    ) => {
+
+                        const totalMaior =
+                            Number(
+                                maior.valor_unitario ||
+                                0
+                            ) *
+                            Number(
+                                maior.quantidade ||
+                                1
+                            );
+
+
+                        const totalAtual =
+                            Number(
+                                atual.valor_unitario ||
+                                0
+                            ) *
+                            Number(
+                                atual.quantidade ||
+                                1
+                            );
+
+
+                        return totalAtual >
+                            totalMaior
+                            ? atual
+                            : maior;
+                    }
+                );
+
+
+            let descontoFinal =
+                Math.round(
+                    (
+                        Number(
+                            linhaMaior.desconto ||
+                            0
+                        ) +
+                        diferencaDesconto
+                    ) *
+                    100
+                ) /
+                100;
+
+
+            const totalLinhaMaior =
+                Number(
+                    linhaMaior.valor_unitario ||
+                    0
+                ) *
+                Number(
+                    linhaMaior.quantidade ||
+                    1
+                );
+
+
+            if (
+                descontoFinal <
+                0
+            ) {
+
+                descontoFinal =
+                    0;
+            }
+
+
+            if (
+                descontoFinal >
+                totalLinhaMaior
+            ) {
+
+                descontoFinal =
+                    Math.round(
+                        totalLinhaMaior *
+                        100
+                    ) /
+                    100;
+            }
+
+
+            linhaMaior.desconto =
+                descontoFinal;
         }
 
 
@@ -5551,6 +6081,33 @@ async function abrirModalEdicaoProdutos(orderId) {
                             <td>
 
                                 <input
+                                    type="number"
+                                    class="
+                                        form-control
+                                        form-control-sm
+                                        desconto-produto
+                                    "
+                                    data-index="${index}"
+                                    value="${
+                                        Number(
+                                            produto
+                                                .desconto ||
+                                            0
+                                        )
+                                            .toFixed(
+                                                2
+                                            )
+                                    }"
+                                    min="0"
+                                    step="0.01"
+                                >
+
+                            </td>
+
+
+                            <td>
+
+                                <input
                                     type="text"
                                     class="
                                         form-control
@@ -5615,6 +6172,29 @@ async function abrirModalEdicaoProdutos(orderId) {
                     ),
                 0
             );
+
+
+        const totalDesconto =
+            produtosEditados.reduce(
+                (
+                    total,
+                    produto
+                ) =>
+                    total +
+                    Math.max(
+                        Number(
+                            produto.desconto ||
+                            0
+                        ),
+                        0
+                    ),
+                0
+            );
+
+
+        const totalLiquido =
+            totalNota -
+            totalDesconto;
 
 
         // =====================================================
@@ -5833,6 +6413,10 @@ async function abrirModalEdicaoProdutos(orderId) {
                                     </th>
 
                                     <th>
+                                        Desconto
+                                    </th>
+
+                                    <th>
                                         NCM
                                     </th>
 
@@ -5856,13 +6440,69 @@ async function abrirModalEdicaoProdutos(orderId) {
 
                                 <tr
                                     style="
+                                        background:#f8f9fa;
+                                    "
+                                >
+
+                                    <td
+                                        colspan="6"
+                                        style="
+                                            text-align:right;
+                                        "
+                                    >
+                                        Total dos produtos (bruto):
+                                    </td>
+
+
+                                    <td
+                                        id="totalBrutoProdutos"
+                                    >
+                                        R$
+                                        ${totalNota.toFixed(
+                                            2
+                                        )}
+                                    </td>
+
+                                </tr>
+
+
+                                <tr
+                                    style="
+                                        background:#f8f9fa;
+                                    "
+                                >
+
+                                    <td
+                                        colspan="6"
+                                        style="
+                                            text-align:right;
+                                        "
+                                    >
+                                        Desconto:
+                                    </td>
+
+
+                                    <td
+                                        id="totalDescontoProdutos"
+                                    >
+                                        R$
+                                        ${totalDesconto.toFixed(
+                                            2
+                                        )}
+                                    </td>
+
+                                </tr>
+
+
+                                <tr
+                                    style="
                                         font-weight:bold;
                                         background:#f8f9fa;
                                     "
                                 >
 
                                     <td
-                                        colspan="5"
+                                        colspan="6"
                                         style="
                                             text-align:right;
                                         "
@@ -5875,7 +6515,7 @@ async function abrirModalEdicaoProdutos(orderId) {
                                         id="totalGeralProdutos"
                                     >
                                         R$
-                                        ${totalNota.toFixed(
+                                        ${totalLiquido.toFixed(
                                             2
                                         )}
                                     </td>
@@ -6615,14 +7255,18 @@ async function abrirModalEdicaoProdutos(orderId) {
         const recalcularTotalGeral =
             () => {
 
-                let total =
+                let totalBruto =
+                    0;
+
+
+                let totalDesc =
                     0;
 
 
                 produtosEditados.forEach(
                     produto => {
 
-                        total +=
+                        totalBruto +=
                             Number(
                                 produto.quantidade ||
                                 0
@@ -6631,8 +7275,48 @@ async function abrirModalEdicaoProdutos(orderId) {
                                 produto.valor_unitario ||
                                 0
                             );
+
+
+                        totalDesc +=
+                            Math.max(
+                                Number(
+                                    produto.desconto ||
+                                    0
+                                ),
+                                0
+                            );
                     }
                 );
+
+
+                const brutoCell =
+                    document.getElementById(
+                        'totalBrutoProdutos'
+                    );
+
+
+                if (
+                    brutoCell
+                ) {
+
+                    brutoCell.textContent =
+                        `R$ ${totalBruto.toFixed(2)}`;
+                }
+
+
+                const descCell =
+                    document.getElementById(
+                        'totalDescontoProdutos'
+                    );
+
+
+                if (
+                    descCell
+                ) {
+
+                    descCell.textContent =
+                        `R$ ${totalDesc.toFixed(2)}`;
+                }
 
 
                 const totalCell =
@@ -6646,7 +7330,7 @@ async function abrirModalEdicaoProdutos(orderId) {
                 ) {
 
                     totalCell.textContent =
-                        `R$ ${total.toFixed(2)}`;
+                        `R$ ${(totalBruto - totalDesc).toFixed(2)}`;
                 }
             };
 
@@ -6662,6 +7346,7 @@ async function abrirModalEdicaoProdutos(orderId) {
                     #modalEdicaoProdutos .sku-produto,
                     #modalEdicaoProdutos .qtd-produto,
                     #modalEdicaoProdutos .valor-produto,
+                    #modalEdicaoProdutos .desconto-produto,
                     #modalEdicaoProdutos .ncm-produto
                 `
             )
@@ -6735,6 +7420,19 @@ async function abrirModalEdicaoProdutos(orderId) {
                                         ?.value
                                 ) ||
                                 0;
+
+
+                            produto.desconto =
+                                Math.max(
+                                    parseFloat(
+                                        row.querySelector(
+                                            '.desconto-produto'
+                                        )
+                                            ?.value
+                                    ) ||
+                                    0,
+                                    0
+                                );
 
 
                             produto.ncm =
@@ -21452,6 +22150,29 @@ async function confirmarProdutosEditados() {
                         0;
 
 
+                    const inputDesconto =
+                        row.querySelector(
+                            '.desconto-produto'
+                        );
+
+
+                    if (
+                        inputDesconto
+                    ) {
+
+                        produtosEditados[
+                            index
+                        ].desconto =
+                            Math.max(
+                                parseFloat(
+                                    inputDesconto.value
+                                ) ||
+                                0,
+                                0
+                            );
+                    }
+
+
                     produtosEditados[
                         index
                     ].ncm =
@@ -21561,29 +22282,112 @@ async function confirmarProdutosEditados() {
 
         window.produtosParaEmissao =
             produtosEditados.map(
-                p => ({
+                p => {
 
-                    nome:
-                        p.nome ||
-                        'Produto',
+                    const quantidade =
+                        Number(
+                            p.quantidade ||
+                            1
+                        );
 
-                    quantidade:
-                        p.quantidade ||
-                        1,
 
-                    valor_unitario:
-                        p.valor_unitario ||
-                        0,
+                    const valorUnitario =
+                        Number(
+                            p.valor_unitario ||
+                            0
+                        );
 
-                    sku:
-                        p.sku ||
-                        'SEM_SKU',
 
-                    ncm:
-                        p.ncm ||
-                        '87149990'
-                })
+                    const valorLinha =
+                        quantidade *
+                        valorUnitario;
+
+
+                    // desconto rateado da linha, limitado ao valor cheio dela
+                    let desconto =
+                        Math.round(
+                            Number(
+                                p.desconto ||
+                                0
+                            ) *
+                            100
+                        ) /
+                        100;
+
+
+                    if (
+                        !Number.isFinite(
+                            desconto
+                        ) ||
+                        desconto <
+                        0
+                    ) {
+
+                        desconto =
+                            0;
+                    }
+
+
+                    if (
+                        desconto >
+                        valorLinha
+                    ) {
+
+                        desconto =
+                            Math.round(
+                                valorLinha *
+                                100
+                            ) /
+                            100;
+                    }
+
+
+                    return {
+
+                        nome:
+                            p.nome ||
+                            'Produto',
+
+                        quantidade:
+                            quantidade ||
+                            1,
+
+                        valor_unitario:
+                            valorUnitario ||
+                            0,
+
+                        desconto,
+
+                        sku:
+                            p.sku ||
+                            'SEM_SKU',
+
+                        ncm:
+                            p.ncm ||
+                            '87149990'
+                    };
+                }
             );
+
+
+        // desconto total da compra que irá para vDesc na NF-e
+        window.descontoNFE =
+            Math.round(
+                window.produtosParaEmissao.reduce(
+                    (
+                        total,
+                        p
+                    ) =>
+                        total +
+                        Number(
+                            p.desconto ||
+                            0
+                        ),
+                    0
+                ) *
+                100
+            ) /
+            100;
 
 
         pendingEmitOrderId =
@@ -63079,6 +63883,27 @@ if (resultadoCliente.success) {
 
             produtos:
                 produtosFinal,
+
+            // desconto total da compra (soma do vDesc rateado por item)
+            desconto_total:
+                Math.round(
+                    produtosFinal.reduce(
+                        (
+                            total,
+                            produto
+                        ) =>
+                            total +
+                            (
+                                Number(
+                                    produto.desconto
+                                ) ||
+                                0
+                            ),
+                        0
+                    ) *
+                    100
+                ) /
+                100,
 
             cfop,
 
