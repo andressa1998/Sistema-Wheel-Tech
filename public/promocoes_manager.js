@@ -19,6 +19,7 @@
     let modalAvisoAgendamentoAberto = false;
     let timerAvisosAgendamento = null;
     let itensAgendamentoEmMassa = [];
+    let proximoAvisoAgendamentoPermitidoEm = 0;
 
     // ============================================================
     // FUNÇÃO DE LOG
@@ -6115,10 +6116,23 @@ async function aguardarConfirmacaoDesativacaoML(
         await carregarAgendamentosPromocoes();
     };
 
-    function fecharModalAvisosPromocoes() {
+        function fecharModalAvisosPromocoes() {
         document.getElementById('modalAvisosPromocoesAgendadas')?.remove();
         modalAvisoAgendamentoAberto = false;
     }
+    window.fecharModalAvisosPromocoes = fecharModalAvisosPromocoes;
+
+    window.adiarAvisoPromocoesAgendadas = function() {
+        const UMA_HORA_MS = 60 * 60 * 1000;
+        proximoAvisoAgendamentoPermitidoEm = Date.now() + UMA_HORA_MS;
+
+        log(
+            `⏰ Aviso de promoções adiado até ${new Date(proximoAvisoAgendamentoPermitidoEm).toLocaleTimeString()}`,
+            'info'
+        );
+
+        fecharModalAvisosPromocoes();
+    };
     window.fecharModalAvisosPromocoes = fecharModalAvisosPromocoes;
 
     async function verificarAvisosPromocoesAgendadas() {
@@ -6140,6 +6154,14 @@ async function aguardarConfirmacaoDesativacaoML(
         modalAvisoAgendamentoAberto ||
         modalExistente
     ) {
+        return;
+    }
+
+    /*
+     * Se o usuário clicou em "Lembrar depois", respeita o
+     * prazo de 1 hora antes de mostrar o aviso novamente.
+     */
+    if (Date.now() < proximoAvisoAgendamentoPermitidoEm) {
         return;
     }
 
@@ -6327,7 +6349,7 @@ async function aguardarConfirmacaoDesativacaoML(
                 <button
                     type="button"
                     class="btn btn-sm btn-secondary"
-                    onclick="fecharModalAvisosPromocoes()"
+                    onclick="adiarAvisoPromocoesAgendadas()"
                 >
                     Lembrar depois
                 </button>
