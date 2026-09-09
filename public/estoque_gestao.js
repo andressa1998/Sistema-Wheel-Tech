@@ -2928,6 +2928,14 @@ function moverBotoesParaMenuAcessibilidadeEstoque() {
 
     }
 
+    const btnHistoricoBaixasFull = document.getElementById('btnHistoricoBaixasFull');
+    if (btnHistoricoBaixasFull) {
+        candidatos.push({
+            botao: btnHistoricoBaixasFull,
+            ordem: 36
+        });
+    }
+
 
     // =====================================================
     // IMPORTAR PRODUTOS
@@ -3383,6 +3391,10 @@ function toggleMenuAcessibilidadeEstoque() {
 
             adicionarBotaoImportarXmlFull();
 
+        }
+
+        if (typeof adicionarBotaoHistoricoBaixasFull === 'function') {
+            adicionarBotaoHistoricoBaixasFull();
         }
 
     }
@@ -29967,11 +29979,14 @@ document.addEventListener(
 );
 
 // =========================================================
-// IMPORTAR XML DE REMESSA PARA O FULL
+// IMPORTAR PDF DO PLANO/DANFE DE REMESSA PARA O FULL
 // =========================================================
 
 let importacaoXmlFullAtual = null;
 let importacaoXmlFullEmAndamento = false;
+let processamentoFullPromise = null;
+const CHAVE_HISTORICO_BAIXAS_FULL = 'wheeltech_historico_baixas_full_v1';
+const CHAVE_PROCESSAMENTO_BAIXA_FULL = 'wheeltech_processamento_baixa_full_v1';
 
 
 function normalizarSkuXmlFull(valor) {
@@ -30220,6 +30235,182 @@ function escaparHtmlXmlFull(valor) {
 }
 
 
+function lerHistoricoBaixasFull() {
+    try {
+        const dados = JSON.parse(localStorage.getItem(CHAVE_HISTORICO_BAIXAS_FULL) || '[]');
+        return Array.isArray(dados) ? dados : [];
+    } catch (erro) {
+        console.warn('Não foi possível ler o histórico de baixas FULL:', erro);
+        return [];
+    }
+}
+
+
+function salvarRegistroHistoricoFull(registro) {
+    const historico = lerHistoricoBaixasFull();
+    const indice = historico.findIndex(item => item.documentoMovimentacao === registro.documentoMovimentacao);
+    const novoRegistro = { ...registro, atualizadoEm: new Date().toISOString() };
+
+    if (indice >= 0) historico[indice] = { ...historico[indice], ...novoRegistro };
+    else historico.unshift(novoRegistro);
+
+    historico.sort((a, b) => new Date(b.criadoEm || b.atualizadoEm) - new Date(a.criadoEm || a.atualizadoEm));
+    localStorage.setItem(CHAVE_HISTORICO_BAIXAS_FULL, JSON.stringify(historico.slice(0, 100)));
+    return novoRegistro;
+}
+
+
+function obterRegistroHistoricoFull(documentoMovimentacao) {
+    return lerHistoricoBaixasFull().find(item => item.documentoMovimentacao === documentoMovimentacao) || null;
+}
+
+
+function obterRotuloStatusFull(status) {
+    const rotulos = {
+        aguardando: 'Aguardando',
+        processando: 'Processando',
+        concluido: 'Concluído',
+        concluido_com_pendencias: 'Concluído com pendências',
+        erro: 'Erro'
+    };
+    return rotulos[status] || status || 'Aguardando';
+}
+
+
+function renderizarAndamentoBaixaFull() {
+    const tela = document.getElementById('estoqueGestaoSystem');
+    if (!tela) return;
+
+    let painel = document.getElementById('andamentoBaixaFullEstoque');
+    const atual = (() => {
+        try { return JSON.parse(localStorage.getItem(CHAVE_PROCESSAMENTO_BAIXA_FULL) || 'null'); }
+        catch (_) { return null; }
+    })();
+
+    if (!atual || atual.status !== 'processando') {
+        painel?.remove();
+        return;
+    }
+
+    if (!painel) {
+        painel = document.createElement('div');
+        painel.id = 'andamentoBaixaFullEstoque';
+        const cabecalho = tela.querySelector('.card-header');
+        if (cabecalho) cabecalho.insertAdjacentElement('afterend', painel);
+        else tela.prepend(painel);
+    }
+
+    const total = Math.max(0, Number(atual.total || 0));
+    const processados = Math.min(total, Math.max(0, Number(atual.processados || 0)));
+    const percentual = total ? Math.round(processados * 100 / total) : 0;
+    painel.style.cssText = 'margin:14px 16px; padding:14px 16px; border:1px solid #9eeaf9; border-radius:9px; background:#e7f8fd; color:#055160;';
+    painel.innerHTML = `
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:8px;">
+            <strong><i class="fas fa-spinner fa-spin"></i> Baixa FULL em processamento</strong>
+            <strong>${processados}/${total} processados</strong>
+        </div>
+        <div style="font-size:12px; margin-bottom:8px;">${escaparHtmlXmlFull(atual.identificadorExibicao || '')}${atual.skuAtual ? ` — ${escaparHtmlXmlFull(atual.skuAtual)}` : ''}</div>
+        <div style="height:9px; overflow:hidden; border-radius:20px; background:#cfeef6;">
+            <div style="height:100%; width:${percentual}%; background:#00ADEE; transition:width .25s;"></div>
+        </div>
+        <small style="display:block; margin-top:7px;">Você pode sair desta aba. O processamento continuará em segundo plano.</small>
+    `;
+}
+
+
+function atualizarAndamentoBaixaFull(registro, skuAtual = '') {
+    const estado = {
+        documentoMovimentacao: registro.documentoMovimentacao,
+        identificadorExibicao: registro.identificadorExibicao,
+        status: registro.status,
+        total: registro.total,
+        processados: registro.processados,
+        skuAtual
+    };
+    localStorage.setItem(CHAVE_PROCESSAMENTO_BAIXA_FULL, JSON.stringify(estado));
+    salvarRegistroHistoricoFull(registro);
+    renderizarAndamentoBaixaFull();
+}
+
+
+function garantirModalHistoricoBaixasFull() {
+    let modal = document.getElementById('modalHistoricoBaixasFull');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'modalHistoricoBaixasFull';
+    modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100001; padding:24px; overflow:auto;';
+    modal.innerHTML = `
+        <div style="background:#fff; width:min(1050px,96vw); margin:20px auto; border-radius:12px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:18px 22px; background:#00ADEE; color:#fff;">
+                <h3 style="margin:0; font-size:19px;"><i class="fas fa-history"></i> Histórico de baixas FULL</h3>
+                <button type="button" onclick="fecharHistoricoBaixasFull()" style="border:0; background:transparent; color:#fff; font-size:25px; cursor:pointer;">&times;</button>
+            </div>
+            <div id="conteudoHistoricoBaixasFull" style="padding:18px 22px;"></div>
+        </div>`;
+    document.body.appendChild(modal);
+    return modal;
+}
+
+
+function abrirHistoricoBaixasFull() {
+    const modal = garantirModalHistoricoBaixasFull();
+    const conteudo = modal.querySelector('#conteudoHistoricoBaixasFull');
+    const historico = lerHistoricoBaixasFull();
+
+    conteudo.innerHTML = historico.length ? historico.map((registro, indice) => `
+        <button type="button" onclick="verDetalhesBaixaFull('${escaparHtmlXmlFull(registro.documentoMovimentacao)}')" style="width:100%; display:grid; grid-template-columns:minmax(180px,1fr) 160px 130px 28px; gap:12px; align-items:center; padding:13px 14px; margin-bottom:8px; border:1px solid #dee2e6; border-radius:8px; background:#fff; text-align:left; cursor:pointer;">
+            <span><strong>${escaparHtmlXmlFull(registro.identificadorExibicao || registro.numeroNfe)}</strong><br><small>${escaparHtmlXmlFull(registro.nomeArquivo || '')}</small></span>
+            <span>${new Date(registro.criadoEm || registro.atualizadoEm).toLocaleString('pt-BR')}</span>
+            <span style="font-weight:700; color:${registro.status === 'concluido' ? '#198754' : registro.status === 'processando' ? '#0d6efd' : '#b58100'};">${obterRotuloStatusFull(registro.status)}</span>
+            <i class="fas fa-chevron-right"></i>
+        </button>`).join('') : '<div style="padding:25px; text-align:center; color:#6c757d;">Nenhuma baixa FULL registrada ainda.</div>';
+
+    modal.style.display = 'block';
+}
+
+
+function fecharHistoricoBaixasFull() {
+    const modal = document.getElementById('modalHistoricoBaixasFull');
+    if (modal) modal.style.display = 'none';
+}
+
+
+function verDetalhesBaixaFull(documentoMovimentacao) {
+    const registro = obterRegistroHistoricoFull(documentoMovimentacao);
+    if (!registro) return;
+    const conteudo = document.getElementById('conteudoHistoricoBaixasFull');
+    const linhas = [];
+
+    (registro.baixados || []).forEach(item => linhas.push({ ...item, situacao: 'Baixado', cor: '#198754' }));
+    (registro.naoCadastrados || []).forEach(item => linhas.push({ sku: item.skuXml, nome: item.descricao, quantidade: item.quantidade, situacao: 'Não cadastrado', detalhe: item.motivo, cor: '#dc3545' }));
+    (registro.erros || []).forEach(item => linhas.push({ sku: item.sku, nome: item.nome, quantidade: item.quantidade, situacao: 'Erro na baixa', detalhe: item.error, cor: '#dc3545' }));
+    (registro.errosSync || []).forEach(item => linhas.push({ sku: item.sku, nome: item.nome, quantidade: item.quantidade, situacao: 'Erro na sincronização', detalhe: item.error, cor: '#b58100' }));
+
+    conteudo.innerHTML = `
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:14px;">
+            <div><button class="btn btn-secondary" onclick="abrirHistoricoBaixasFull()"><i class="fas fa-arrow-left"></i> Voltar</button> <strong style="margin-left:10px;">${escaparHtmlXmlFull(registro.identificadorExibicao)}</strong></div>
+            ${(registro.naoCadastrados || []).length ? `<button class="btn btn-warning" onclick="baixarNaoCadastradosHistoricoFull('${escaparHtmlXmlFull(documentoMovimentacao)}')"><i class="fas fa-file-excel"></i> Baixar não cadastrados</button>` : ''}
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+            <span style="padding:7px 10px; border-radius:7px; background:#d1e7dd; color:#0f5132;">${(registro.baixados || []).length} baixado(s)</span>
+            <span style="padding:7px 10px; border-radius:7px; background:#fff3cd; color:#664d03;">${(registro.naoCadastrados || []).length} não cadastrado(s)</span>
+            <span style="padding:7px 10px; border-radius:7px; background:#f8d7da; color:#842029;">${(registro.erros || []).length + (registro.errosSync || []).length} erro(s)</span>
+        </div>
+        <div style="overflow:auto; max-height:58vh; border:1px solid #dee2e6; border-radius:8px;">
+            <table style="width:100%; border-collapse:collapse; font-size:13px;"><thead style="position:sticky; top:0; background:#f1f3f5;"><tr><th style="padding:10px;text-align:left;">SKU</th><th style="padding:10px;text-align:left;">Produto</th><th style="padding:10px;text-align:right;">Quantidade</th><th style="padding:10px;text-align:left;">Situação</th></tr></thead>
+            <tbody>${linhas.map(item => `<tr style="border-top:1px solid #e9ecef;"><td style="padding:10px;"><strong>${escaparHtmlXmlFull(item.sku || '')}</strong></td><td style="padding:10px;">${escaparHtmlXmlFull(item.nome || '')}${item.detalhe ? `<br><small>${escaparHtmlXmlFull(item.detalhe)}</small>` : ''}</td><td style="padding:10px;text-align:right;">${Number(item.quantidade || 0)}</td><td style="padding:10px;color:${item.cor};font-weight:700;">${item.situacao}</td></tr>`).join('')}</tbody></table>
+        </div>`;
+}
+
+
+function baixarNaoCadastradosHistoricoFull(documentoMovimentacao) {
+    const registro = obterRegistroHistoricoFull(documentoMovimentacao);
+    if (!registro) return;
+    exportarNaoCadastradosFull(registro);
+}
+
+
 function garantirModalImportacaoXmlFull() {
     let modal = document.getElementById('modalImportacaoXmlFull');
 
@@ -30233,7 +30424,7 @@ function garantirModalImportacaoXmlFull() {
         <div style="background:#fff; width:min(1100px,96vw); margin:20px auto; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.25); overflow:hidden;">
             <div style="display:flex; align-items:center; justify-content:space-between; padding:18px 22px; background:#00ADEE; color:#fff;">
                 <div>
-                    <h3 style="margin:0; font-size:19px;">Importar XML de envio para o FULL</h3>
+                    <h3 style="margin:0; font-size:19px;">Importar PDF da nota de envio para o FULL</h3>
                     <small id="xmlFullResumoNota"></small>
                 </div>
                 <button type="button" onclick="fecharModalImportacaoXmlFull()" style="border:0; background:transparent; color:#fff; font-size:25px; cursor:pointer;">&times;</button>
@@ -30245,7 +30436,7 @@ function garantirModalImportacaoXmlFull() {
                         <thead style="position:sticky; top:0; background:#f1f3f5; z-index:1;">
                             <tr>
                                 <th style="padding:10px; text-align:left;">Item</th>
-                                <th style="padding:10px; text-align:left;">SKU no XML</th>
+                                <th style="padding:10px; text-align:left;">SKU na nota</th>
                                 <th style="padding:10px; text-align:left;">Produto cadastrado</th>
                                 <th style="padding:10px; text-align:right;">Estoque atual</th>
                                 <th style="padding:10px; text-align:right;">Baixa</th>
@@ -30282,7 +30473,7 @@ function renderizarPreviaXmlFull(resultado) {
     const btnPendencias = modal.querySelector('#btnBaixarNaoCadastradosXmlFull');
     const btnConfirmar = modal.querySelector('#btnConfirmarImportacaoXmlFull');
 
-    resumo.textContent = `NF-e ${resultado.numeroNfe} | ${resultado.natureza || 'Remessa'} | ${resultado.baixas.length} produto(s) localizado(s)`;
+    resumo.textContent = `${resultado.identificadorExibicao || `NF-e ${resultado.numeroNfe}`} | ${resultado.natureza || 'Remessa'} | ${resultado.baixas.length} produto(s) localizado(s)`;
 
     const insuficientes = resultado.baixas.filter(
         baixa => Number(baixa.produto.quantidade || 0) < baixa.quantidade
@@ -30292,7 +30483,7 @@ function renderizarPreviaXmlFull(resultado) {
         <div style="padding:12px 14px; margin-bottom:14px; border-radius:8px; background:${resultado.naoCadastrados.length ? '#fff3cd' : '#e8f7ee'}; color:${resultado.naoCadastrados.length ? '#664d03' : '#146c43'};">
             ${resultado.naoCadastrados.length
                 ? `<strong>${resultado.naoCadastrados.length} item(ns) não serão baixados.</strong> Baixe a lista e cadastre/corrija esses produtos.`
-                : '<strong>Todos os itens do XML foram localizados no cadastro.</strong>'}
+                : '<strong>Todos os itens do PDF foram localizados no cadastro.</strong>'}
             ${insuficientes.length
                 ? `<br><strong>${insuficientes.length} produto(s) têm estoque insuficiente e não serão baixados.</strong>`
                 : ''}
@@ -30321,14 +30512,19 @@ function renderizarPreviaXmlFull(resultado) {
     }).join('');
 
     btnPendencias.style.display = resultado.naoCadastrados.length ? 'inline-flex' : 'none';
-    btnConfirmar.disabled = resultado.baixas.length === 0;
+    const registroAnterior = obterRegistroHistoricoFull(resultado.documentoMovimentacao);
+    const planoBloqueado = Boolean(resultado._planoJaConcluido || registroAnterior?.status === 'concluido' || registroAnterior?.status === 'concluido_com_pendencias' || registroAnterior?.status === 'processando');
+    btnConfirmar.disabled = resultado.baixas.length === 0 || planoBloqueado;
+    btnConfirmar.innerHTML = planoBloqueado
+        ? '<i class="fas fa-lock"></i> Plano já processado'
+        : '<i class="fas fa-check"></i> Confirmar baixa e sincronizar';
     modal.classList.remove('hidden');
     modal.style.display = 'block';
 }
 
 
-function fecharModalImportacaoXmlFull() {
-    if (importacaoXmlFullEmAndamento) {
+function fecharModalImportacaoXmlFull(forcar = false) {
+    if (importacaoXmlFullEmAndamento && !forcar) {
         showToast('Aguarde o término da baixa e da sincronização.', 'warning');
         return;
     }
@@ -30341,6 +30537,370 @@ function fecharModalImportacaoXmlFull() {
 }
 
 
+async function carregarLeitorPdfFull() {
+    if (window.pdfjsLib) return window.pdfjsLib;
+
+    const fontes = [
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
+    ];
+
+    let ultimoErro = null;
+
+    for (const fonte of fontes) {
+        try {
+            await new Promise((resolve, reject) => {
+                const scriptExistente = document.querySelector(`script[data-pdf-full-src="${fonte}"]`);
+
+                if (scriptExistente) {
+                    if (window.pdfjsLib) resolve();
+                    else {
+                        scriptExistente.addEventListener('load', resolve, { once: true });
+                        scriptExistente.addEventListener('error', reject, { once: true });
+                    }
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = fonte;
+                script.async = true;
+                script.dataset.pdfFullSrc = fonte;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error(`Falha ao carregar ${fonte}`));
+                document.head.appendChild(script);
+            });
+
+            if (window.pdfjsLib) {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = fonte.replace('pdf.min.js', 'pdf.worker.min.js');
+                return window.pdfjsLib;
+            }
+        } catch (erro) {
+            ultimoErro = erro;
+        }
+    }
+
+    throw new Error(
+        `Não foi possível carregar o leitor de PDF. Verifique a internet e tente novamente.${ultimoErro ? ` ${ultimoErro.message}` : ''}`
+    );
+}
+
+
+function montarResultadoItensPdfFull(dadosNota, produtosPdf, nomeArquivo) {
+    const itens = [];
+    const baixasPorProduto = new Map();
+    const naoCadastrados = [];
+
+    produtosPdf.forEach((produtoPdf, indice) => {
+        const skuPdf = normalizarSkuXmlFull(produtoPdf.sku);
+        const quantidadeNota = Number(produtoPdf.quantidade || 0);
+        const partes = skuPdf
+            .split('.')
+            .map(parte => parte.trim())
+            .filter(Boolean);
+
+        if (!skuPdf || !quantidadeNota || partes.length === 0) {
+            naoCadastrados.push({
+                item: indice + 1,
+                skuXml: skuPdf || '(sem SKU)',
+                descricao: produtoPdf.descricao || '',
+                quantidade: quantidadeNota,
+                motivo: 'Item sem SKU ou com quantidade inválida no PDF'
+            });
+            return;
+        }
+
+        partes.forEach(parte => {
+            const interpretado = interpretarParteSkuXmlFull(parte);
+            const quantidadeBaixa = quantidadeNota * interpretado.multiplicador;
+            const itemAnalisado = {
+                item: indice + 1,
+                skuXml: skuPdf,
+                parteSku: parte,
+                descricao: produtoPdf.descricao || '',
+                quantidadeNota,
+                quantidadeBaixa,
+                produto: interpretado.produto,
+                motivo: interpretado.motivo,
+                candidatos: interpretado.candidatos || []
+            };
+
+            itens.push(itemAnalisado);
+
+            if (!interpretado.produto) {
+                naoCadastrados.push({
+                    item: indice + 1,
+                    skuXml: skuPdf,
+                    descricao: produtoPdf.descricao || '',
+                    quantidade: quantidadeBaixa,
+                    motivo: interpretado.motivo === 'sku_ambiguo'
+                        ? `SKU ambíguo. Possíveis cadastros: ${(interpretado.candidatos || []).map(p => p.sku).join(', ')}`
+                        : 'Produto não cadastrado'
+                });
+                return;
+            }
+
+            const chaveProduto = String(interpretado.produto.id);
+            const acumulado = baixasPorProduto.get(chaveProduto);
+
+            if (acumulado) {
+                acumulado.quantidade += quantidadeBaixa;
+                acumulado.origens.push(itemAnalisado);
+            } else {
+                baixasPorProduto.set(chaveProduto, {
+                    produto: interpretado.produto,
+                    quantidade: quantidadeBaixa,
+                    origens: [itemAnalisado]
+                });
+            }
+        });
+    });
+
+    return {
+        nomeArquivo,
+        numeroNfe: dadosNota.numeroNfe,
+        chaveNfe: dadosNota.chaveNfe,
+        statusSefaz: '',
+        natureza: dadosNota.natureza,
+        dataEmissao: dadosNota.dataEmissao || '',
+        tipoDocumento: dadosNota.tipoDocumento || 'danfe',
+        identificadorExibicao: dadosNota.identificadorExibicao || `NF-e ${dadosNota.numeroNfe}`,
+        documentoMovimentacao: dadosNota.documentoMovimentacao || `FULL-NFE-${dadosNota.numeroNfe}-${dadosNota.chaveNfe}`,
+        itens,
+        baixas: Array.from(baixasPorProduto.values()),
+        naoCadastrados
+    };
+}
+
+
+function analisarPlanoEnvioFull(paginasTextos, textoCompleto, nomeArquivo) {
+    const freteMatch = textoCompleto.match(/Frete\s*#\s*(\d+)/i);
+    const totaisMatch = textoCompleto.match(/Produtos do envio:\s*(\d+)\s*\|\s*Total de unidades:\s*(\d+)/i);
+
+    if (!freteMatch) {
+        throw new Error('Não foi possível identificar o número do frete no Plano do FULL.');
+    }
+
+    const produtosPdf = [];
+
+    paginasTextos.forEach((textos, indicePagina) => {
+        // O PDF.js pode devolver "SKU:" sozinho ou toda a linha
+        // "Código ML ... SKU: CODIGO" em um único item de texto.
+        const marcadoresSku = textos.filter(item => /\bSKU\s*:/i.test(item.texto));
+
+        marcadoresSku.forEach(marcador => {
+            const skuDentroDoMarcador = marcador.texto.match(/\bSKU\s*:\s*(\S+)/i);
+
+            const itensMesmaLinha = textos
+                .filter(item =>
+                    item !== marcador &&
+                    item.x > marcador.x + 10 &&
+                    item.x < 355 &&
+                    Math.abs(item.y - marcador.y) <= 2.8
+                )
+                .sort((a, b) => a.x - b.x)
+                .map(item => item.texto.replace(/\s+/g, ''));
+
+            const itensLinhaAbaixo = textos
+                .filter(item =>
+                    item.x >= 30 &&
+                    item.x < 355 &&
+                    item.y < marcador.y - 4 &&
+                    item.y >= marcador.y - 11
+                )
+                .sort((a, b) => a.x - b.x)
+                .map(item => item.texto.replace(/\s+/g, ''));
+
+            const sku = skuDentroDoMarcador?.[1]
+                ? skuDentroDoMarcador[1].replace(/\s+/g, '')
+                : (itensMesmaLinha.length ? itensMesmaLinha : itensLinhaAbaixo).join('');
+
+            const quantidadeItem = textos
+                .filter(item =>
+                    item.x >= 350 &&
+                    item.x <= 390 &&
+                    /^\d+(?:[.,]\d+)?$/.test(item.texto) &&
+                    Math.abs(item.y - marcador.y) <= 5
+                )
+                .sort((a, b) => Math.abs(a.y - marcador.y) - Math.abs(b.y - marcador.y))[0];
+
+            const descricao = textos
+                .filter(item =>
+                    item.x >= 30 &&
+                    item.x < 350 &&
+                    item.y <= marcador.y - 10 &&
+                    item.y >= marcador.y - 31
+                )
+                .sort((a, b) => b.y - a.y || a.x - b.x)
+                .map(item => item.texto)
+                .join(' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            const quantidade = Number(String(quantidadeItem?.texto || '0').replace(',', '.'));
+
+            produtosPdf.push({
+                sku,
+                descricao,
+                quantidade,
+                pagina: indicePagina + 1
+            });
+        });
+    });
+
+    const produtosEsperados = totaisMatch ? Number(totaisMatch[1]) : null;
+    const unidadesEsperadas = totaisMatch ? Number(totaisMatch[2]) : null;
+    const unidadesLidas = produtosPdf.reduce((total, item) => total + Number(item.quantidade || 0), 0);
+
+    if (produtosEsperados !== null && produtosPdf.length !== produtosEsperados) {
+        throw new Error(
+            `Leitura incompleta do Plano do FULL: esperados ${produtosEsperados} produtos, mas foram lidos ${produtosPdf.length}. Nenhuma baixa foi realizada.`
+        );
+    }
+
+    if (unidadesEsperadas !== null && unidadesLidas !== unidadesEsperadas) {
+        throw new Error(
+            `Leitura incompleta do Plano do FULL: esperadas ${unidadesEsperadas} unidades, mas foram lidas ${unidadesLidas}. Nenhuma baixa foi realizada.`
+        );
+    }
+
+    const freteId = freteMatch[1];
+
+    return montarResultadoItensPdfFull(
+        {
+            numeroNfe: freteId,
+            chaveNfe: `FRETE-${freteId}`,
+            natureza: 'Plano de envio para o FULL',
+            dataEmissao: '',
+            tipoDocumento: 'plano_full',
+            identificadorExibicao: `Frete FULL #${freteId}`,
+            documentoMovimentacao: `FULL-PLANO-${freteId}`
+        },
+        produtosPdf,
+        nomeArquivo
+    );
+}
+
+
+async function analisarPdfRemessaFull(arrayBuffer, nomeArquivo = '') {
+    const pdfjs = await carregarLeitorPdfFull();
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+    const produtosPdf = [];
+    const textosGerais = [];
+    const paginasTextos = [];
+
+    for (let numeroPagina = 1; numeroPagina <= pdf.numPages; numeroPagina++) {
+        const pagina = await pdf.getPage(numeroPagina);
+        const conteudo = await pagina.getTextContent();
+        const textos = (conteudo.items || [])
+            .filter(item => String(item.str || '').trim())
+            .map(item => ({
+                texto: String(item.str || '').trim(),
+                x: Number(item.transform?.[4] || 0),
+                y: Number(item.transform?.[5] || 0),
+                largura: Number(item.width || 0)
+            }));
+
+        paginasTextos.push(textos);
+        textosGerais.push(...textos.map(item => item.texto));
+
+        const linhasProduto = textos
+            .filter(item => item.x >= 195 && item.x <= 240 && /^\d{8}$/.test(item.texto))
+            .map(item => ({ ncm: item.texto, y: item.y }))
+            .sort((a, b) => b.y - a.y);
+
+        linhasProduto.forEach(linha => {
+            const quantidadeItem = textos
+                .filter(item =>
+                    item.x >= 305 &&
+                    item.x <= 340 &&
+                    /^\d+(?:[.,]\d+)?$/.test(item.texto) &&
+                    Math.abs(item.y - linha.y) <= 4.8
+                )
+                .sort((a, b) => Math.abs(a.y - linha.y) - Math.abs(b.y - linha.y))[0];
+
+            const partesSku = textos
+                .filter(item =>
+                    item.x >= 18 &&
+                    item.x < 60 &&
+                    Math.abs(item.y - linha.y) <= 9
+                )
+                .filter(item => !/^(SKU:?|PRODUTO|C[ÓO]DIGO)$/i.test(item.texto))
+                .sort((a, b) => b.y - a.y || a.x - b.x)
+                .map(item => item.texto.replace(/\s+/g, ''));
+
+            const descricao = textos
+                .filter(item =>
+                    item.x >= 60 &&
+                    item.x < 200 &&
+                    Math.abs(item.y - linha.y) <= 9
+                )
+                .sort((a, b) => b.y - a.y || a.x - b.x)
+                .map(item => item.texto)
+                .join(' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            const sku = partesSku.join('');
+            const quantidade = Number(String(quantidadeItem?.texto || '0').replace(',', '.'));
+
+            if (sku || quantidade) {
+                produtosPdf.push({
+                    sku,
+                    descricao,
+                    quantidade,
+                    ncm: linha.ncm,
+                    pagina: numeroPagina
+                });
+            }
+        });
+    }
+
+    const textoCompleto = textosGerais.join(' ').replace(/\s+/g, ' ');
+
+    // O Plano do FULL é a fonte preferencial porque informa SKU, unidades e
+    // totais de conferência. A DANFE continua aceita como alternativa.
+    if (/Produtos do envio:/i.test(textoCompleto) && /Frete\s*#/i.test(textoCompleto)) {
+        return analisarPlanoEnvioFull(paginasTextos, textoCompleto, nomeArquivo);
+    }
+
+    if (!produtosPdf.length) {
+        throw new Error('O PDF não foi reconhecido como Plano do FULL nem como DANFE com tabela de produtos.');
+    }
+    const numeroEncontrado = textosGerais.find(texto => /^\d{3}\.\d{3}$/.test(texto));
+    const numeroArquivo = String(nomeArquivo).match(/(\d{3})[.\s_-]?(\d{3})/);
+    const numeroNfe = numeroEncontrado
+        ? numeroEncontrado.replace(/\D/g, '')
+        : (numeroArquivo ? `${numeroArquivo[1]}${numeroArquivo[2]}` : '');
+    const chaveMatch = textoCompleto.match(/(?:\d{4}\s+){10}\d{4}/);
+    const chaveNfe = chaveMatch ? chaveMatch[0].replace(/\D/g, '') : '';
+    const natureza = /Remessa para Deposito Temporario/i.test(textoCompleto)
+        ? 'Outras Saídas - Remessa para Depósito Temporário'
+        : 'Remessa para o FULL';
+    const dataMatch = textoCompleto.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
+
+    if (!numeroNfe) {
+        throw new Error('Não foi possível identificar o número da NF-e no PDF.');
+    }
+
+    if (!chaveNfe || chaveNfe.length !== 44) {
+        throw new Error('Não foi possível identificar a chave de acesso da NF-e no PDF.');
+    }
+
+    return montarResultadoItensPdfFull(
+        {
+            numeroNfe,
+            chaveNfe,
+            natureza,
+            dataEmissao: dataMatch?.[0] || '',
+            tipoDocumento: 'danfe',
+            identificadorExibicao: `NF-e ${numeroNfe}`
+        },
+        produtosPdf,
+        nomeArquivo
+    );
+}
+
+
 async function processarArquivoXmlFull(input) {
     const arquivo = input?.files?.[0];
     if (!arquivo) return;
@@ -30350,12 +30910,47 @@ async function processarArquivoXmlFull(input) {
             await carregarProdutosEstoque();
         }
 
-        const conteudo = await arquivo.text();
-        importacaoXmlFullAtual = analisarXmlRemessaFull(conteudo, arquivo.name);
+        const conteudo = await arquivo.arrayBuffer();
+        importacaoXmlFullAtual = await analisarPdfRemessaFull(conteudo, arquivo.name);
+        let registroAnterior = obterRegistroHistoricoFull(importacaoXmlFullAtual.documentoMovimentacao);
+        if (!registroAnterior && importacaoXmlFullAtual.baixas.length) {
+            const movimentosExistentes = await obterBaixasExistentesXmlFull(importacaoXmlFullAtual.documentoMovimentacao);
+            const planoJaBaixado = importacaoXmlFullAtual.baixas.every(baixa =>
+                (movimentosExistentes.get(String(baixa.produto.id)) || 0) >= baixa.quantidade
+            );
+            if (planoJaBaixado) {
+                registroAnterior = salvarRegistroHistoricoFull({
+                    documentoMovimentacao: importacaoXmlFullAtual.documentoMovimentacao,
+                    numeroNfe: importacaoXmlFullAtual.numeroNfe,
+                    identificadorExibicao: importacaoXmlFullAtual.identificadorExibicao,
+                    chaveNfe: importacaoXmlFullAtual.chaveNfe || '',
+                    nomeArquivo: importacaoXmlFullAtual.nomeArquivo || arquivo.name,
+                    tipoDocumento: importacaoXmlFullAtual.tipoDocumento || '',
+                    criadoEm: new Date().toISOString(),
+                    status: 'concluido',
+                    total: importacaoXmlFullAtual.baixas.length,
+                    processados: importacaoXmlFullAtual.baixas.length,
+                    baixados: importacaoXmlFullAtual.baixas.map(baixa => ({
+                        produtoId: baixa.produto.id,
+                        sku: baixa.produto.sku,
+                        nome: baixa.produto.nome,
+                        quantidade: baixa.quantidade
+                    })),
+                    ignorados: [],
+                    naoCadastrados: importacaoXmlFullAtual.naoCadastrados || [],
+                    erros: [],
+                    errosSync: []
+                });
+            }
+        }
+        if (registroAnterior && ['processando', 'concluido', 'concluido_com_pendencias'].includes(registroAnterior.status)) {
+            importacaoXmlFullAtual._planoJaConcluido = true;
+            showToast(`${importacaoXmlFullAtual.identificadorExibicao}: este plano já foi processado e não poderá receber uma segunda baixa.`, 'warning');
+        }
         renderizarPreviaXmlFull(importacaoXmlFullAtual);
     } catch (erro) {
-        console.error('Erro ao analisar XML de remessa FULL:', erro);
-        showToast(`Erro ao importar XML: ${erro.message}`, 'error');
+        console.error('Erro ao analisar PDF da nota de remessa FULL:', erro);
+        showToast(`Erro ao importar PDF: ${erro.message}`, 'error');
     } finally {
         input.value = '';
     }
@@ -30377,7 +30972,7 @@ function abrirImportacaoXmlFull() {
         input = document.createElement('input');
         input.id = 'inputImportacaoXmlFull';
         input.type = 'file';
-        input.accept = '.xml,text/xml,application/xml';
+        input.accept = '.pdf,application/pdf';
         input.style.display = 'none';
         input.onchange = function() {
             processarArquivoXmlFull(this);
@@ -30415,9 +31010,43 @@ function adicionarBotaoImportarXmlFull() {
     const botao = document.createElement('button');
     botao.id = 'btnImportarXmlFull';
     botao.type = 'button';
-    botao.title = 'Importar a NF-e dos produtos enviados ao FULL';
-    botao.innerHTML = '<i class="fas fa-file-code"></i> Importar XML envio FULL';
+    botao.title = 'Importar o PDF da NF-e dos produtos enviados ao FULL';
+    botao.innerHTML = '<i class="fas fa-file-pdf"></i> Importar PDF envio FULL';
     botao.onclick = abrirImportacaoXmlFull;
+    estilizarItemMenuAcessibilidadeEstoque(botao);
+    menu.appendChild(botao);
+    moverBotoesParaMenuAcessibilidadeEstoque();
+}
+
+
+function adicionarBotaoHistoricoBaixasFull() {
+    const username = currentUser?.username?.toLowerCase()?.trim() || '';
+    const autorizado = usuariosAutorizadosSync.includes(username) || usuariosAdmin.includes(username);
+    const existente = document.getElementById('btnHistoricoBaixasFull');
+
+    if (!autorizado) {
+        existente?.remove();
+        return;
+    }
+
+    const menu = garantirMenuAcessibilidadeEstoque();
+    if (!menu) {
+        setTimeout(adicionarBotaoHistoricoBaixasFull, 400);
+        return;
+    }
+
+    if (existente) {
+        if (existente.parentElement !== menu) menu.appendChild(existente);
+        estilizarItemMenuAcessibilidadeEstoque(existente);
+        return;
+    }
+
+    const botao = document.createElement('button');
+    botao.id = 'btnHistoricoBaixasFull';
+    botao.type = 'button';
+    botao.title = 'Consultar os planos FULL já processados';
+    botao.innerHTML = '<i class="fas fa-history"></i> Histórico de baixas FULL';
+    botao.onclick = abrirHistoricoBaixasFull;
     estilizarItemMenuAcessibilidadeEstoque(botao);
     menu.appendChild(botao);
     moverBotoesParaMenuAcessibilidadeEstoque();
@@ -30514,8 +31143,16 @@ async function confirmarImportacaoXmlFull() {
     if (!importacaoXmlFullAtual || importacaoXmlFullEmAndamento) return;
 
     const resultado = importacaoXmlFullAtual;
+    const registroAnterior = obterRegistroHistoricoFull(resultado.documentoMovimentacao);
+
+    if (resultado._planoJaConcluido || registroAnterior?.status === 'processando' || registroAnterior?.status === 'concluido' || registroAnterior?.status === 'concluido_com_pendencias') {
+        showToast('Este plano FULL já foi processado e não pode receber a baixa novamente.', 'warning');
+        renderizarPreviaXmlFull(resultado);
+        return;
+    }
+
     const confirmar = window.confirm(
-        `Confirmar a baixa da NF-e ${resultado.numeroNfe}?\n\n` +
+        `Confirmar a baixa de ${resultado.identificadorExibicao || `NF-e ${resultado.numeroNfe}`}?\n\n` +
         `${resultado.baixas.length} produto(s) cadastrado(s) serão analisados.\n` +
         `${resultado.naoCadastrados.length} item(ns) não cadastrado(s) serão ignorados.\n\n` +
         'Depois da baixa, os estoques serão sincronizados com o Mercado Livre.'
@@ -30523,90 +31160,100 @@ async function confirmarImportacaoXmlFull() {
 
     if (!confirmar) return;
 
-    const botao = document.getElementById('btnConfirmarImportacaoXmlFull');
     importacaoXmlFullEmAndamento = true;
-    if (botao) {
-        botao.disabled = true;
-        botao.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando...';
-    }
 
-    const baixados = [];
-    const ignorados = [];
-    const erros = [];
-    const errosSync = [];
+    const registro = salvarRegistroHistoricoFull({
+        documentoMovimentacao: resultado.documentoMovimentacao,
+        numeroNfe: resultado.numeroNfe,
+        identificadorExibicao: resultado.identificadorExibicao || `NF-e ${resultado.numeroNfe}`,
+        chaveNfe: resultado.chaveNfe || '',
+        nomeArquivo: resultado.nomeArquivo || '',
+        tipoDocumento: resultado.tipoDocumento || '',
+        criadoEm: new Date().toISOString(),
+        status: 'processando',
+        total: resultado.baixas.length,
+        processados: 0,
+        baixados: [],
+        ignorados: [],
+        naoCadastrados: resultado.naoCadastrados || [],
+        erros: [],
+        errosSync: []
+    });
 
+    resultado._planoJaConcluido = true;
+    atualizarAndamentoBaixaFull(registro);
+    fecharModalImportacaoXmlFull(true);
+    showToast(`${registro.identificadorExibicao}: processamento iniciado em segundo plano.`, 'info');
+
+    processamentoFullPromise = executarProcessamentoBaixaFull(resultado, registro);
+}
+
+
+async function executarProcessamentoBaixaFull(resultado, registro) {
     try {
         const jaBaixado = await obterBaixasExistentesXmlFull(resultado.documentoMovimentacao);
 
         for (const baixa of resultado.baixas) {
+            const produtoResumo = {
+                produtoId: baixa.produto.id,
+                sku: baixa.produto.sku,
+                nome: baixa.produto.nome,
+                quantidade: baixa.quantidade
+            };
+            atualizarAndamentoBaixaFull(registro, baixa.produto.sku);
+
             const quantidadeExistente = jaBaixado.get(String(baixa.produto.id)) || 0;
             const quantidadeRestante = Math.max(0, baixa.quantidade - quantidadeExistente);
 
             if (quantidadeRestante === 0) {
-                ignorados.push({ produto: baixa.produto, motivo: 'já baixado nesta NF-e' });
-                continue;
-            }
-
-            try {
-                const retorno = await registrarBaixaXmlFull(
-                    baixa,
-                    quantidadeRestante,
-                    resultado.documentoMovimentacao
-                );
-
-                if (retorno.success) baixados.push(retorno);
-                else erros.push(retorno);
-            } catch (erro) {
-                erros.push({ produto: baixa.produto, error: erro.message });
-            }
-        }
-
-        for (const baixa of baixados) {
-            try {
-                const retornoSync = await sincronizarEstoqueML(baixa.produto);
-                if (retornoSync?.success === false) {
-                    errosSync.push({ produto: baixa.produto, error: retornoSync.error || 'Falha na sincronização' });
+                registro.ignorados.push({ ...produtoResumo, motivo: 'já baixado neste plano' });
+            } else {
+                try {
+                    const retorno = await registrarBaixaXmlFull(baixa, quantidadeRestante, resultado.documentoMovimentacao);
+                    if (retorno.success) {
+                        registro.baixados.push({ ...produtoResumo, quantidade: quantidadeRestante, novoSaldo: retorno.novoSaldo });
+                        try {
+                            const retornoSync = await sincronizarEstoqueML(retorno.produto);
+                            if (retornoSync?.success === false) {
+                                registro.errosSync.push({ ...produtoResumo, error: retornoSync.error || 'Falha na sincronização' });
+                            }
+                        } catch (erroSync) {
+                            registro.errosSync.push({ ...produtoResumo, error: erroSync.message });
+                        }
+                    } else {
+                        registro.erros.push({ ...produtoResumo, error: retorno.error || 'Falha na baixa' });
+                    }
+                } catch (erro) {
+                    registro.erros.push({ ...produtoResumo, error: erro.message });
                 }
-            } catch (erro) {
-                errosSync.push({ produto: baixa.produto, error: erro.message });
             }
+
+            registro.processados += 1;
+            atualizarAndamentoBaixaFull(registro);
         }
 
-        await carregarProdutosEstoque();
+        const houvePendencia = registro.naoCadastrados.length || registro.erros.length || registro.errosSync.length;
+        registro.status = houvePendencia ? 'concluido_com_pendencias' : 'concluido';
+        salvarRegistroHistoricoFull(registro);
+        localStorage.removeItem(CHAVE_PROCESSAMENTO_BAIXA_FULL);
+        renderizarAndamentoBaixaFull();
 
-        const partesMensagem = [
-            `${baixados.length} produto(s) baixado(s)`,
-            `${ignorados.length} já processado(s)`,
-            `${resultado.naoCadastrados.length} não cadastrado(s)`,
-            `${erros.length} erro(s) de baixa`,
-            `${errosSync.length} erro(s) de sincronização`
-        ];
-
-        const houveProblema = resultado.naoCadastrados.length || erros.length || errosSync.length;
-        showToast(`NF-e ${resultado.numeroNfe}: ${partesMensagem.join(', ')}.`, houveProblema ? 'warning' : 'success');
-
-        if (erros.length || errosSync.length) {
-            console.warn('Pendências na importação XML FULL:', { erros, errosSync });
+        if (document.getElementById('estoqueGestaoSystem')) {
+            await carregarProdutosEstoque();
         }
 
-        if (!houveProblema) {
-            const modal = document.getElementById('modalImportacaoXmlFull');
-            if (modal) {
-                modal.classList.add('hidden');
-                modal.style.display = 'none';
-            }
-        } else {
-            renderizarPreviaXmlFull(resultado);
-        }
+        showToast(`${registro.identificadorExibicao}: ${registro.baixados.length} produto(s) baixado(s), ${registro.naoCadastrados.length} não cadastrado(s), ${registro.erros.length + registro.errosSync.length} erro(s).`, houvePendencia ? 'warning' : 'success');
     } catch (erro) {
-        console.error('Erro geral na baixa do XML FULL:', erro);
-        showToast(`Erro ao processar a NF-e: ${erro.message}`, 'error');
+        registro.status = 'erro';
+        registro.erros.push({ sku: '', nome: 'Processamento geral', quantidade: 0, error: erro.message });
+        salvarRegistroHistoricoFull(registro);
+        localStorage.removeItem(CHAVE_PROCESSAMENTO_BAIXA_FULL);
+        renderizarAndamentoBaixaFull();
+        console.error('Erro geral na baixa do PDF FULL:', erro);
+        showToast(`Erro ao processar o plano FULL: ${erro.message}`, 'error');
     } finally {
         importacaoXmlFullEmAndamento = false;
-        if (botao) {
-            botao.disabled = false;
-            botao.innerHTML = '<i class="fas fa-check"></i> Confirmar baixa e sincronizar';
-        }
+        processamentoFullPromise = null;
     }
 }
 
@@ -30619,16 +31266,26 @@ function baixarNaoCadastradosXmlFull() {
         return;
     }
 
+    exportarNaoCadastradosFull(resultado);
+}
+
+
+function exportarNaoCadastradosFull(resultado) {
+    if (!resultado?.naoCadastrados?.length) {
+        showToast('Não existem produtos não cadastrados neste plano.', 'info');
+        return;
+    }
+
     if (typeof XLSX === 'undefined') {
         showToast('Biblioteca XLSX não está carregada no sistema.', 'error');
         return;
     }
 
     const linhas = resultado.naoCadastrados.map(item => ({
-        'NF-e': resultado.numeroNfe,
-        'Chave de acesso': resultado.chaveNfe,
+        'Documento': resultado.identificadorExibicao || resultado.numeroNfe,
+        'Identificador': resultado.chaveNfe,
         'Item': item.item,
-        'SKU no XML': item.skuXml,
+        'SKU na nota': item.skuXml,
         'Descrição': item.descricao,
         'Quantidade': item.quantidade,
         'Motivo': item.motivo
@@ -30641,7 +31298,8 @@ function baixarNaoCadastradosXmlFull() {
         { wch: 58 }, { wch: 12 }, { wch: 55 }
     ];
     XLSX.utils.book_append_sheet(workbook, planilha, 'Não cadastrados');
-    XLSX.writeFile(workbook, `produtos_nao_cadastrados_nfe_${resultado.numeroNfe}.xlsx`);
+    const numero = String(resultado.identificadorExibicao || resultado.numeroNfe || 'full').replace(/[^a-z0-9_-]+/gi, '_');
+    XLSX.writeFile(workbook, `produtos_nao_cadastrados_${numero}.xlsx`);
 }
 
 
@@ -30684,7 +31342,23 @@ window.confirmarImportacaoXmlFull = confirmarImportacaoXmlFull;
 window.fecharModalImportacaoXmlFull = fecharModalImportacaoXmlFull;
 window.baixarNaoCadastradosXmlFull = baixarNaoCadastradosXmlFull;
 window.adicionarBotaoImportarXmlFull = adicionarBotaoImportarXmlFull;
+window.adicionarBotaoHistoricoBaixasFull = adicionarBotaoHistoricoBaixasFull;
+window.abrirHistoricoBaixasFull = abrirHistoricoBaixasFull;
+window.fecharHistoricoBaixasFull = fecharHistoricoBaixasFull;
+window.verDetalhesBaixaFull = verDetalhesBaixaFull;
+window.baixarNaoCadastradosHistoricoFull = baixarNaoCadastradosHistoricoFull;
+window.renderizarAndamentoBaixaFull = renderizarAndamentoBaixaFull;
 window.garantirMenuAcessibilidadeEstoque = garantirMenuAcessibilidadeEstoque;
+
+if (!window._monitorVisualBaixaFullEstoque) {
+    window._monitorVisualBaixaFullEstoque = setInterval(() => {
+        renderizarAndamentoBaixaFull();
+        if (document.getElementById('estoqueGestaoSystem')) {
+            adicionarBotaoImportarXmlFull();
+            adicionarBotaoHistoricoBaixasFull();
+        }
+    }, 1000);
+}
 window.toggleMenuAcessibilidadeEstoque = toggleMenuAcessibilidadeEstoque;
 window.fecharMenuAcessibilidadeEstoque = fecharMenuAcessibilidadeEstoque;
 window.abrirModalInformarRastreioCompra = abrirModalInformarRastreioCompra;

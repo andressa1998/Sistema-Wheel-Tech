@@ -28893,3 +28893,141 @@ window.exportarVendas = exportarVendas;
 window.fecharDetalhesVenda = fecharDetalhesVenda;
 window.imprimirDetalhesVenda = imprimirDetalhesVenda;
 window.verificarVendaAtual = verificarVendaAtual;
+// ============================================
+// BARRA LATERAL GLOBAL NAS TELAS INTERNAS
+// Recolhida por padrão; expande ao passar o mouse.
+// ============================================
+(function instalarBarraLateralGlobalWheelTech() {
+    function instalarEstilos() {
+        if (document.getElementById('wtGlobalSidebarStylesRuntime')) return;
+        const style = document.createElement('style');
+        style.id = 'wtGlobalSidebarStylesRuntime';
+        style.textContent = `
+            body.wt-global-sidebar-active { padding-left:68px !important; transition:padding-left .22s ease; }
+            #wtGlobalSidebar {
+                position:fixed !important; inset:0 auto 0 0 !important; z-index:2147483000 !important;
+                width:68px !important; height:100vh !important; padding:14px 8px !important;
+                display:none; flex-direction:column !important; color:#fff !important;
+                background:linear-gradient(180deg,#001a45,#001231) !important;
+                box-shadow:8px 0 25px rgba(0,25,72,.22) !important; overflow:hidden !important;
+                transition:width .22s ease !important;
+            }
+            body.wt-global-sidebar-active #wtGlobalSidebar { display:flex !important; }
+            #wtGlobalSidebar:hover, #wtGlobalSidebar:focus-within { width:270px !important; }
+            #wtGlobalSidebar .wt-sidebar-brand { min-height:68px !important; padding:3px 8px 13px !important; display:flex !important; align-items:center !important; justify-content:center !important; }
+            #wtGlobalSidebar .wt-sidebar-brand img { width:46px !important; max-height:52px !important; object-fit:contain !important; filter:brightness(0) invert(1); transition:width .22s ease !important; }
+            #wtGlobalSidebar:hover .wt-sidebar-brand img, #wtGlobalSidebar:focus-within .wt-sidebar-brand img { width:145px !important; }
+            #wtGlobalSidebar .wt-module-nav { flex:1 !important; display:flex !important; flex-direction:column !important; gap:3px !important; overflow-y:auto !important; overflow-x:hidden !important; }
+            #wtGlobalSidebar .wt-nav-item { min-width:252px !important; min-height:42px !important; padding:9px 14px !important; display:flex !important; align-items:center !important; gap:0 !important; color:rgba(255,255,255,.84) !important; background:transparent !important; border:0 !important; border-radius:10px !important; font-size:.82rem !important; text-align:left !important; cursor:pointer !important; white-space:nowrap !important; }
+            #wtGlobalSidebar .wt-nav-item:hover, #wtGlobalSidebar .wt-nav-item.active { color:#fff !important; background:linear-gradient(90deg,#075fd8,#0878f6) !important; }
+            #wtGlobalSidebar .wt-nav-item.wt-menu-hidden { display:none !important; }
+            #wtGlobalSidebar .wt-nav-item i { width:24px !important; min-width:24px !important; margin-right:12px !important; color:#d8e8ff !important; text-align:center !important; font-size:1rem !important; }
+            #wtGlobalSidebar .wt-nav-item span { display:inline !important; opacity:0 !important; visibility:hidden !important; transition:opacity .14s ease !important; }
+            #wtGlobalSidebar:hover .wt-nav-item span, #wtGlobalSidebar:focus-within .wt-nav-item span { opacity:1 !important; visibility:visible !important; }
+            #wtGlobalSidebar .wt-sidebar-footer { min-width:252px !important; padding:12px 10px 0 !important; border-top:1px solid rgba(255,255,255,.11) !important; }
+            #wtGlobalSidebar .wt-user-row { display:grid !important; grid-template-columns:40px 1fr 18px !important; gap:12px !important; align-items:center !important; }
+            #wtGlobalSidebar .user-avatar { width:40px !important; height:40px !important; border-radius:50% !important; display:flex !important; align-items:center !important; justify-content:center !important; color:#fff !important; background:linear-gradient(145deg,#12b9ff,#2178f4) !important; }
+            #wtGlobalSidebar .wt-user-copy, #wtGlobalSidebar .wt-user-chevron, #wtGlobalSidebar .wt-logout span { opacity:0 !important; visibility:hidden !important; transition:opacity .14s ease !important; }
+            #wtGlobalSidebar:hover .wt-user-copy, #wtGlobalSidebar:hover .wt-user-chevron, #wtGlobalSidebar:hover .wt-logout span, #wtGlobalSidebar:focus-within .wt-user-copy, #wtGlobalSidebar:focus-within .wt-user-chevron, #wtGlobalSidebar:focus-within .wt-logout span { opacity:1 !important; visibility:visible !important; }
+            #wtGlobalSidebar .wt-user-copy > div:first-child { color:#fff !important; font-size:.84rem !important; font-weight:700 !important; }
+            #wtGlobalSidebar .wt-user-role { color:rgba(255,255,255,.55) !important; font-size:.7rem !important; }
+            #wtGlobalSidebar .wt-logout { min-width:230px !important; margin-top:10px !important; padding:9px 4px !important; display:flex !important; align-items:center !important; gap:14px !important; color:#fff !important; background:none !important; border:0 !important; cursor:pointer !important; }
+            @media(max-width:700px) { body.wt-global-sidebar-active { padding-left:58px !important; } #wtGlobalSidebar { width:58px !important; padding-inline:5px !important; } #wtGlobalSidebar:hover, #wtGlobalSidebar:focus-within { width:245px !important; } }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function criarBarra() {
+        instalarEstilos();
+        if (document.getElementById('wtGlobalSidebar')) return document.getElementById('wtGlobalSidebar');
+        const original = document.querySelector('#menuSystem > .wt-sidebar');
+        if (!original) return null;
+
+        const barra = original.cloneNode(true);
+        barra.id = 'wtGlobalSidebar';
+        barra.setAttribute('aria-label', 'Menu rápido dos módulos');
+
+        // Impede IDs duplicados e mantém os dados do usuário sincronizados manualmente.
+        barra.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+        const inicio = barra.querySelector('.wt-nav-item');
+        if (inicio) inicio.onclick = () => window.voltarParaMenu?.();
+
+        document.body.appendChild(barra);
+        return barra;
+    }
+
+    const TELAS_INTERNAS = [
+        'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem',
+        'precificacaoSystem', 'feedbackSystem', 'reviewsSystem', 'folgasSystem',
+        'shippingSystem', 'perguntasSystem', 'nfeSystem', 'entradasSystem',
+        'fullSystem', 'estoqueGestaoSystem', 'gerenciamentoAnunciosSystem',
+        'promocoesSystem', 'chamadosSystem', 'reclamacoesSystem',
+        'historicoAcessosScreen', 'metaRonaldSystem', 'devolucoesSystem'
+    ];
+
+    function elementoVisivel(el) {
+        if (!el || el.classList.contains('hidden')) return false;
+        const estilo = window.getComputedStyle(el);
+        return estilo.display !== 'none' && estilo.visibility !== 'hidden';
+    }
+
+    function existeTelaInternaAberta() {
+        return TELAS_INTERNAS.some(id => elementoVisivel(document.getElementById(id)));
+    }
+
+    function sincronizarConteudo(barra) {
+        const original = document.querySelector('#menuSystem > .wt-sidebar');
+        if (!barra || !original) return;
+        const botoesOriginais = [...original.querySelectorAll('.wt-nav-item')];
+        const botoesGlobais = [...barra.querySelectorAll('.wt-nav-item')];
+        botoesGlobais.forEach((botao, i) => {
+            const fonte = botoesOriginais[i];
+            if (!fonte) return;
+            const oculto = fonte.style.display === 'none' || fonte.classList.contains('hidden');
+            botao.classList.toggle('wt-menu-hidden', oculto);
+            botao.classList.toggle('active', fonte.classList.contains('active'));
+        });
+
+        const avatar = barra.querySelector('.user-avatar');
+        const nome = barra.querySelector('.wt-user-copy > div:first-child');
+        const cargo = barra.querySelector('.wt-user-role');
+        if (avatar) avatar.textContent = window.currentUser?.avatar || window.currentUser?.name?.charAt(0) || 'U';
+        if (nome) nome.textContent = window.currentUser?.name || 'Usuário';
+        if (cargo) cargo.textContent = window.currentUser?.role || '';
+    }
+
+    function atualizarBarra() {
+        const menu = document.getElementById('menuSystem');
+        const barra = criarBarra();
+        if (!menu || !barra) return;
+        const login = document.getElementById('loginScreen');
+        const loginOculto = !login || !elementoVisivel(login);
+        // Detecta o módulo realmente aberto. O estado do menu fica apenas como
+        // segurança para módulos carregados dinamicamente por outros arquivos.
+        const telaInternaAberta = loginOculto && (
+            existeTelaInternaAberta() || menu.classList.contains('hidden')
+        );
+        document.body.classList.toggle('wt-global-sidebar-active', telaInternaAberta);
+        barra.style.display = telaInternaAberta ? 'flex' : 'none';
+        if (telaInternaAberta) sincronizarConteudo(barra);
+    }
+
+    function iniciar() {
+        instalarEstilos();
+        criarBarra();
+        atualizarBarra();
+        new MutationObserver(atualizarBarra).observe(document.body, {
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class']
+        });
+        window.addEventListener('wheeltech:user-ready', atualizarBarra);
+        window.addEventListener('resize', atualizarBarra);
+        // Alguns módulos são abertos por arquivos JS separados e alteram estilos
+        // sem trocar classes. Esta verificação garante a barra em todos eles.
+        window.setInterval(atualizarBarra, 700);
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
+    else iniciar();
+})();

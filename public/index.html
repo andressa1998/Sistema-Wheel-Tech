@@ -28,7 +28,33 @@
     #wtGoalRing{background:conic-gradient(#16aaf8 0 var(--wt-goal,0%),#e4edf6 var(--wt-goal,0%))}
     #wtGoalProgress{width:var(--wt-goal,0%)}
     .wt-event-type{padding:4px 7px;border-radius:999px;color:#fff;font-size:.56rem;font-weight:800;white-space:nowrap}
+    .wt-notices{display:none;margin:0 0 16px;gap:10px}.wt-notices.visible{display:grid}.wt-notice{position:relative;padding:13px 16px 13px 46px;color:#13284c;background:#fff;border:1px solid #dce7f3;border-left:5px solid var(--notice-color,#0875ee);border-radius:11px;box-shadow:0 6px 18px rgba(8,43,91,.06)}.wt-notice>i{position:absolute;left:16px;top:16px;color:var(--notice-color,#0875ee);font-size:1rem!important}.wt-notice strong{display:block;font-size:.8rem}.wt-notice p{margin:3px 0 0;color:#5f6f89;font-size:.72rem;line-height:1.4}.wt-notice-meta{margin-top:5px;color:#7e8ba1;font-size:.63rem}.wt-notice.highlight{background:#fffbea;box-shadow:0 8px 22px rgba(245,158,11,.13)}
     .agenda-toolbar{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}.agenda-week-nav{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.agenda-week-label{min-width:210px;text-align:center;font-weight:700;color:#17305b}.agenda-week-grid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:10px;overflow-x:auto;padding-bottom:4px}.agenda-day{min-height:180px;border:1px solid #dce7f3;border-radius:12px;background:#f8fbff;overflow:hidden}.agenda-day.today{border:2px solid #0875ee}.agenda-day-head{padding:10px;text-align:center;background:#edf5ff;color:#17305b;font-size:.78rem;font-weight:800}.agenda-day-head span{display:block;margin-top:2px;color:#71809a;font-size:.68rem;font-weight:600}.agenda-items{padding:8px;display:flex;flex-direction:column;gap:7px}.agenda-item{padding:9px;border-left:4px solid var(--agenda-cor,#0875ee);border-radius:7px;background:#fff;box-shadow:0 2px 8px rgba(10,45,95,.07);cursor:pointer}.agenda-item strong{display:block;color:#102449;font-size:.75rem}.agenda-item small{display:block;margin-top:3px;color:#6d7b92;font-size:.65rem}.agenda-empty{padding:20px 6px;color:#8b98aa;font-size:.68rem;text-align:center}.agenda-admin-only.hidden{display:none!important}.agenda-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.agenda-form-grid .full{grid-column:1/-1}.agenda-checks{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.agenda-checks label{display:flex;align-items:center;gap:7px;font-weight:600}.agenda-color{height:44px;padding:4px}.agenda-details p{margin:7px 0}.agenda-item-actions{display:flex;gap:8px;margin-top:18px}@media(max-width:800px){.agenda-form-grid{grid-template-columns:1fr}.agenda-form-grid .full{grid-column:auto}}
+
+    /* Barra lateral global das telas internas */
+    #wtGlobalSidebar{position:fixed;inset:0 auto 0 0;z-index:10000;width:68px;padding:14px 8px;display:none;flex-direction:column;color:#fff;background:linear-gradient(180deg,#001a45,#001231);box-shadow:8px 0 25px rgba(0,25,72,.18);overflow:hidden;transition:width .22s ease}
+    body.wt-global-sidebar-active{padding-left:68px;transition:padding-left .22s ease}
+    body.wt-global-sidebar-active #wtGlobalSidebar{display:flex}
+    #wtGlobalSidebar:hover,#wtGlobalSidebar:focus-within{width:270px}
+    #wtGlobalSidebar .wt-sidebar-brand{min-height:68px;padding:3px 8px 13px}
+    #wtGlobalSidebar .wt-sidebar-brand img{width:46px;max-height:52px;transition:width .22s ease}
+    #wtGlobalSidebar:hover .wt-sidebar-brand img,#wtGlobalSidebar:focus-within .wt-sidebar-brand img{width:145px}
+    #wtGlobalSidebar .wt-module-nav{gap:3px;overflow-x:hidden}
+    #wtGlobalSidebar .wt-nav-item{min-width:252px;min-height:42px;padding:9px 14px;white-space:nowrap}
+    #wtGlobalSidebar .wt-nav-item i{flex:0 0 24px;margin-right:12px}
+    #wtGlobalSidebar .wt-nav-item span{opacity:0;visibility:hidden;transition:opacity .14s ease}
+    #wtGlobalSidebar:hover .wt-nav-item span,#wtGlobalSidebar:focus-within .wt-nav-item span{opacity:1;visibility:visible}
+    #wtGlobalSidebar .wt-sidebar-footer{min-width:252px;padding:12px 10px 0}
+    #wtGlobalSidebar .wt-user-row{grid-template-columns:40px 1fr 18px}
+    #wtGlobalSidebar .user-avatar{width:40px;height:40px;flex:0 0 40px}
+    #wtGlobalSidebar .wt-user-copy,#wtGlobalSidebar .wt-user-chevron,#wtGlobalSidebar .wt-logout span{opacity:0;visibility:hidden;transition:opacity .14s ease}
+    #wtGlobalSidebar:hover .wt-user-copy,#wtGlobalSidebar:hover .wt-user-chevron,#wtGlobalSidebar:hover .wt-logout span,#wtGlobalSidebar:focus-within .wt-user-copy,#wtGlobalSidebar:focus-within .wt-user-chevron,#wtGlobalSidebar:focus-within .wt-logout span{opacity:1;visibility:visible}
+    #wtGlobalSidebar .wt-logout{min-width:230px}
+    @media(max-width:700px){#wtGlobalSidebar{width:58px;padding-inline:5px}body.wt-global-sidebar-active{padding-left:58px}#wtGlobalSidebar:hover,#wtGlobalSidebar:focus-within{width:245px}}
+    /* Funciona mesmo antes ou sem a inicialização do JavaScript */
+    body:has(#loginScreen.hidden):has(#menuSystem.hidden) #wtGlobalSidebar{display:flex!important}
+    body:has(#loginScreen.hidden):has(#menuSystem.hidden){padding-left:68px!important}
+    @media(max-width:700px){body:has(#loginScreen.hidden):has(#menuSystem.hidden){padding-left:58px!important}}
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
@@ -1639,6 +1665,36 @@ body:has(#loginScreen:not(.hidden)) {
         </div>
     </div>
 
+    <!-- MENU LATERAL FIXO DAS TELAS INTERNAS -->
+    <aside id="wtGlobalSidebar" class="wt-sidebar" aria-label="Menu rápido dos módulos">
+        <div class="wt-sidebar-brand"><img src="logo.png" alt="Wheel Tech"></div>
+        <nav class="wt-module-nav" aria-label="Módulos do sistema">
+            <button class="wt-nav-item active" type="button" onclick="voltarParaMenu()"><i class="fas fa-home"></i><span>Início</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="avaliacoes" type="button" onclick="abrirSistemaReviews()"><i class="fas fa-star"></i><span>Avaliações</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="calendario_de_folgas" type="button" onclick="abrirSistemaFolgas()"><i class="fas fa-calendar-alt"></i><span>Calendário de Folgas</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="chamados" type="button" onclick="abrirSistemaChamados()"><i class="fas fa-headset"></i><span>Chamados</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="conferencia_caixa" type="button" onclick="abrirSistemaCaixa()"><i class="fas fa-cash-register"></i><span>Conferência Caixa</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="emissao_nf_e" type="button" onclick="abrirSistemaNFE()"><i class="fas fa-boxes"></i><span>Emissão NF-e</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="entradas" type="button" onclick="abrirSistemaEntradas()"><i class="fas fa-right-to-bracket"></i><span>Entradas</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="feedback" type="button" onclick="abrirSistemaFeedback()"><i class="fas fa-face-smile"></i><span>Feedback</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="gerenciar_frete" type="button" onclick="abrirSistemaFrete()"><i class="fas fa-truck"></i><span>Gerenciar Frete</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="gerenciamento_de_anuncios" type="button" onclick="abrirSistemaGerenciamentoAnuncios()"><i class="fas fa-list-alt"></i><span>Gerenciamento de Anúncios</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="gestao_de_estoque" type="button" onclick="abrirGestaoEstoque()"><i class="fas fa-box"></i><span>Gestão de Estoque</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="historico_de_acessos" type="button" onclick="abrirHistoricoAcessos()"><i class="fas fa-history"></i><span>Histórico de Acessos</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="meta_ronald" type="button" onclick="abrirPainelMetaRonald()"><i class="fas fa-user-shield"></i><span>Meta Ronald</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="ordem_de_servico" type="button" onclick="abrirSistemaOS()"><i class="fas fa-clipboard-list"></i><span>Ordem de Serviço</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="perguntas_ml" type="button" onclick="abrirSistemaPerguntas()"><i class="fas fa-comments"></i><span>Perguntas ML</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="precificacao" type="button" onclick="abrirSistemaPrecificacao()"><i class="fas fa-tags"></i><span>Precificação</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="promocoes_em_lote" type="button" onclick="abrirGestaoPromocoesLote()"><i class="fas fa-layer-group"></i><span>Promoções em Lote</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="reclamacoes" type="button" onclick="abrirSistemaReembolsos()"><i class="fas fa-comment-dots"></i><span>Reclamações</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="vendas_ml" type="button" onclick="abrirSistemaVendas()"><i class="fas fa-store"></i><span>Vendas ML</span></button>
+        </nav>
+        <div class="wt-sidebar-footer">
+            <div class="wt-user-row"><div class="user-avatar">U</div><div class="wt-user-copy"><div>Usuário</div><div class="wt-user-role"></div></div><i class="fas fa-chevron-right wt-user-chevron"></i></div>
+            <button class="wt-logout" type="button" onclick="handleLogout()"><i class="fas fa-right-from-bracket"></i><span>Sair</span></button>
+        </div>
+    </aside>
+
     <!-- MENU INICIAL -->
     <div id="menuSystem" class="hidden wt-dashboard">
         <aside class="wt-sidebar">
@@ -1683,6 +1739,8 @@ body:has(#loginScreen:not(.hidden)) {
                     <div class="wt-date"><strong id="wtCurrentDate">Hoje</strong><br><span>Vamos fazer um ótimo dia!</span></div>
                 </div>
             </header>
+
+            <section id="wtNoticesToday" class="wt-notices" aria-label="Recados de hoje"></section>
 
             <div class="carousel-container wt-values">
                 <div class="carousel-slides">
@@ -7382,7 +7440,7 @@ body:has(#loginScreen:not(.hidden)) {
             const hoje = iso(agora);
             const ehSabado = agora.getDay() === 6;
             const [resAgenda, resFolgas, resSabado] = await Promise.all([
-                sb.from('agenda_eventos').select('*').lte('data_inicio', hoje).gte('data_fim', hoje).order('hora_inicio', { ascending: true }),
+                sb.from('agenda_eventos').select('*').neq('tipo', 'recado').lte('data_inicio', hoje).gte('data_fim', hoje).order('hora_inicio', { ascending: true }),
                 sb.from('folgas').select('*').eq('status', 'aprovado').lte('data_inicio', hoje).gte('data_fim', hoje).order('user_name', { ascending: true }),
                 ehSabado
                     ? sb.from('escala_sabados').select('colaborador').eq('data_sabado', hoje).order('colaborador', { ascending: true })
@@ -7403,6 +7461,27 @@ body:has(#loginScreen:not(.hidden)) {
                 const mesTxt = dataLocal.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
                 return `<div class="wt-event-row"><div class="wt-event-date">${String(dia).padStart(2, '0')}<span>${mesTxt}</span></div><div><div class="wt-event-title">${escapar(f.titulo)}</div><div class="wt-event-sub">${escapar(f.sub || '')}</div></div><span class="wt-event-type" style="background:${escapar(f.cor)}">${escapar(f.hora || f.tipo)}</span></div>`;
             }).join('');
+        }
+
+        async function carregarRecadosHoje(sb) {
+            const alvo = document.getElementById('wtNoticesToday');
+            if (!alvo) return;
+            const agora = new Date();
+            const hoje = `${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,'0')}-${String(agora.getDate()).padStart(2,'0')}`;
+            const { data, error } = await sb.from('agenda_eventos').select('*')
+                .eq('tipo', 'recado').lte('data_inicio', hoje).gte('data_fim', hoje)
+                .order('destaque', { ascending: false }).order('hora_inicio', { ascending: true });
+            if (error || !data?.length) {
+                alvo.innerHTML = '';
+                alvo.classList.remove('visible');
+                return;
+            }
+            alvo.innerHTML = data.map(recado => {
+                const horario = recado.dia_inteiro ? 'Dia inteiro' : recado.hora_inicio?.slice(0,5) || '';
+                const meta = [horario, recado.responsavel ? `Responsável: ${recado.responsavel}` : '', recado.participantes ? `Para: ${recado.participantes}` : ''].filter(Boolean).join(' • ');
+                return `<article class="wt-notice ${recado.destaque ? 'highlight' : ''}" style="--notice-color:${escapar(recado.cor || '#0875ee')}"><i class="fas fa-bullhorn"></i><strong>${escapar(recado.titulo)}</strong>${recado.descricao ? `<p>${escapar(recado.descricao)}</p>` : ''}${meta ? `<div class="wt-notice-meta">${escapar(meta)}</div>` : ''}</article>`;
+            }).join('');
+            alvo.classList.add('visible');
         }
 
         async function carregarMetaRonald() {
@@ -7438,7 +7517,7 @@ body:has(#loginScreen:not(.hidden)) {
                 if (!usuario) throw new Error('Usuário ainda não inicializado');
                 const sb = await aguardarSupabase();
                 if (!sb) throw new Error('Supabase indisponível');
-                await Promise.allSettled([carregarContadores(sb), carregarChamados(sb), carregarFolgas(sb), carregarMetaRonald()]);
+                await Promise.allSettled([carregarContadores(sb), carregarChamados(sb), carregarFolgas(sb), carregarRecadosHoje(sb), carregarMetaRonald()]);
             } catch (erro) {
                 console.error('Erro ao carregar dashboard Wheel Tech:', erro);
             } finally { carregando = false; }
