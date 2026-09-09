@@ -21,6 +21,14 @@ let paginaAtualOS = 1;
 let itensPorPaginaOS = 20;
 let todasOSFiltradas = [];
 
+// ===== OTIMIZAÇÃO DE PERFORMANCE - ABA OS =====
+// Evita baixar toda a tabela de OS repetidamente ao entrar/sair da aba.
+const OS_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
+let osDadosCarregados = false;
+let osUltimaCargaEm = 0;
+let osCarregamentoEmAndamento = null;
+window.__OS_PERFORMANCE_VERSION = '2026-09-09-v1';
+
 async function handleLogin(e) {
     e.preventDefault();
     
@@ -5566,7 +5574,10 @@ function setupEventListeners() {
     }
     
     if (reloadBtn) {
-        reloadBtn.addEventListener('click', loadOrders);
+        reloadBtn.addEventListener(
+            'click',
+            () => loadOrders(true)
+        );
     }
     
     // Formulário OS
@@ -7515,14 +7526,11 @@ async function updateNotificationBadge() {
         if (
             currentUser &&
             supabaseClient &&
-            typeof obterOSNaoLidasUsuarioAtual ===
+            typeof contarOSNaoLidasUsuarioAtual ===
                 'function'
         ) {
-            const osNaoLidas =
-                await obterOSNaoLidasUsuarioAtual();
-
             quantidadeOS =
-                osNaoLidas.length;
+                await contarOSNaoLidasUsuarioAtual();
         }
 
     } catch (error) {
@@ -8380,6 +8388,11 @@ function handleLogout() {
     }
 
 
+    // Limpa o cache da aba OS para a próxima sessão.
+    osDadosCarregados = false;
+    osUltimaCargaEm = 0;
+    osCarregamentoEmAndamento = null;
+
     showToast(
         '👋 Até logo!',
         'info'
@@ -8486,10 +8499,11 @@ async function testSupabaseConnection() {
 
 
         // ====================================================
-        // CARREGAR OS
+        // NÃO CARREGAR TODAS AS OS AQUI
+        //
+        // O teste de conexão deve ser leve. As ordens serão
+        // carregadas somente quando o usuário abrir a aba OS.
         // ====================================================
-
-        await loadOrders();
 
 
         // ====================================================
@@ -8583,308 +8597,559 @@ async function testSupabaseConnection() {
     }
 }
 
-async function loadOrders() {
+async function loadOrders(forcarAtualizacao = false) {
 
     if (!currentUser) {
-
         showToast(
             '⚠️ Faça login primeiro',
             'warning'
         );
-
-        return;
+        return [];
     }
 
+    const forcar =
+        forcarAtualizacao === true;
 
-    showToast(
-        '🔄 Carregando ordens...',
-        'info'
-    );
+    const cacheValido =
+        !forcar &&
+        osDadosCarregados &&
+        Array.isArray(orders) &&
+        (
+            Date.now() -
+            osUltimaCargaEm
+        ) < OS_CACHE_TTL_MS;
 
+    /*
+     * Se as OS já foram carregadas recentemente, apenas
+     * redesenha a tela com o que já está na memória.
+     */
+    if (cacheValido) {
+        console.log(
+            '⚡ [OS] Usando cache em memória. Nenhuma consulta completa ao banco.'
+        );
 
-    if (reloadBtn) {
+        updateCounters();
+        renderOrdersTable();
 
-        reloadBtn.innerHTML =
-            '<span class="spinner"></span> Carregando...';
-
-        reloadBtn.disabled = true;
+        return orders;
     }
 
+    /*
+     * Evita duas cargas completas simultâneas caso mais de
+     * uma rotina tente abrir/recarregar a aba ao mesmo tempo.
+     */
+    if (osCarregamentoEmAndamento) {
+        console.log(
+            '⏳ [OS] Carga já em andamento. Reaproveitando a mesma requisição.'
+        );
 
-    try {
+        return osCarregamentoEmAndamento;
+    }
 
-        if (!supabaseClient) {
-
-            throw new Error(
-                'Supabase não conectado'
-            );
-        }
-
-
-        const {
-            data,
-            error
-        } =
-            await supabaseClient
-                .from('ordens_service')
-                .select('*')
-                .order(
-                    'data_criacao',
-                    {
-                        ascending: false
-                    }
-                );
-
-
-        if (error) {
-            throw error;
-        }
-
-
-        if (
-            data &&
-            data.length > 0
-        ) {
-
-            orders =
-                data.map(order => ({
-
-                    id:
-                        order.id,
-
-                    user_notified:
-                        order.user_notified || false,
-
-                    code:
-                        order.codigo ||
-                        `OS-${order.id
-                            .toString()
-                            .padStart(4, '0')}`,
-
-                    productName:
-                        order.produto_nome ||
-                        'Sem nome',
-
-                    linkAnuncio:
-                        order.link_anuncio || '',
-
-                    responsibleName:
-                        order.responsavel ||
-                        currentUser.name,
-
-                    urgency:
-                        order.urgencia ||
-                        'normal',
-
-                    transferenciaPendente:
-                        order.transferencia_pendente || false,
-
-                    instrucaoTransferencia:
-                        order.instrucao_transferencia || '',
-
-                    responsavelAnterior:
-                        order.responsavel_anterior || null,
-
-                    transferidoPor:
-                        order.transferido_por || null,
-
-                    dataTransferencia:
-                        order.data_transferencia || null,
-
-                    statusAnteriorTransferencia:
-                        order.status_anterior_transferencia || null,
-
-                    osType:
-                        order.tipo_os ||
-                        'normal',
-
-                    status:
-                        order.status ||
-                        'pendente',
-
-                    photoType:
-                        order.tipo_foto ||
-                        'edicao',
-
-                    localFoto:
-                        order.local_foto ||
-                        'sem_foto',
-
-                    video:
-                        (
-                            order.tem_video === true ||
-                            String(order.tem_video || '').toLowerCase() === 'sim' ||
-                            String(order.tem_video || '').toLowerCase() === 'true'
-                        )
-                            ? 'sim'
-                            : 'nao',
-
-                    skus:
-                        order.skus || [],
-
-                    observations:
-                        order.observacoes || '',
-
-                    photos:
-                        order.fotos || [],
-
-                    photosTaken:
-                        Number(
-                            order.qtd_fotos
-                        ) || 0,
-
-                    editsMade:
-                        Number(
-                            order.qtd_edicoes
-                        ) || 0,
-
-                    createdBy:
-                        order.criado_por ||
-                        'Sistema',
-
-                    createdAt:
-                        order.data_criacao,
-
-                    startedAt:
-                        order.data_inicio ||
-                        null,
-
-                    completionDate:
-                        order.data_conclusao ||
-                        null,
-
-                    updatedAt:
-                        order.ultima_atualizacao ||
-                        order.data_criacao,
-
-                    conferido:
-                        order.conferido ||
-                        false,
-
-                    conferidoPor:
-                        order.conferido_por ||
-                        null,
-
-                    dataConferencia:
-                        order.data_conferencia ||
-                        null,
-
-                    valorAnuncio:
-                        order.valor_anuncio ||
-                        0,
-
-                    descricaoAnuncio:
-                        order.descricao_anuncio ||
-                        '',
-
-                    linkNovoAnuncio:
-                        order.link_novo_anuncio ||
-                        '',
-
-                    precisaFoto:
-                        order.precisa_foto ||
-                        'nao',
-
-                    prazo_horas:
-                        order.prazo_horas ||
-                        null,
-
-                    motivo_rejeicao:
-                        order.motivo_rejeicao ||
-                        null,
-
-                    rejeitado_por:
-                        order.rejeitado_por ||
-                        null,
-
-                    data_rejeicao:
-                        order.data_rejeicao ||
-                        null,
-
-                    prazo_esperado:
-                        order.prazo_esperado ||
-                        null,
-
-                    anuncio_criado:
-                        order.anuncio_criado ||
-                        false,
-
-                    anuncio_criado_por:
-                        order.anuncio_criado_por ||
-                        null,
-
-                    anuncio_criado_data:
-                        order.anuncio_criado_data ||
-                        null
-
-                }));
-
-
-            orderCounter =
-                orders.length > 0
-                    ? Math.max(
-                        ...orders.map(
-                            o => parseInt(o.id)
-                        )
-                    ) + 1
-                    : 1;
-
-
-            updateOSNotificationBell();
-
+    osCarregamentoEmAndamento =
+        (async () => {
 
             showToast(
-                `✅ ${orders.length} ordens carregadas`,
-                'success'
-            );
-
-        } else {
-
-            orders = [];
-
-            showToast(
-                '📭 Nenhuma ordem encontrada',
+                '🔄 Carregando ordens...',
                 'info'
             );
-        }
 
+            if (reloadBtn) {
+                reloadBtn.innerHTML =
+                    '<span class="spinner"></span> Carregando...';
 
-        updateCounters();
+                reloadBtn.disabled =
+                    true;
+            }
 
-        renderOrdersTable();
+            try {
+                if (!supabaseClient) {
+                    initSupabase();
+                }
 
+                if (!supabaseClient) {
+                    throw new Error(
+                        'Supabase não conectado'
+                    );
+                }
 
-    } catch (error) {
+                /*
+                 * IMPORTANTE:
+                 * Não usa mais SELECT *.
+                 *
+                 * Carrega somente as colunas realmente utilizadas
+                 * pela aba OS e já inclui os campos do fluxo de
+                 * Renovação de anúncio, eliminando uma segunda
+                 * leitura completa da tabela.
+                 */
+                const {
+                    data,
+                    error
+                } =
+                    await supabaseClient
+                        .from(
+                            'ordens_service'
+                        )
+                        .select(`
+                            id,
+                            user_notified,
+                            codigo,
+                            produto_nome,
+                            link_anuncio,
+                            responsavel,
+                            urgencia,
+                            transferencia_pendente,
+                            instrucao_transferencia,
+                            responsavel_anterior,
+                            transferido_por,
+                            data_transferencia,
+                            status_anterior_transferencia,
+                            tipo_os,
+                            status,
+                            tipo_foto,
+                            local_foto,
+                            tem_video,
+                            skus,
+                            observacoes,
+                            tem_fotos,
+                            quantidade_fotos,
+                            qtd_fotos,
+                            qtd_edicoes,
+                            criado_por,
+                            data_criacao,
+                            data_inicio,
+                            data_conclusao,
+                            ultima_atualizacao,
+                            conferido,
+                            conferido_por,
+                            data_conferencia,
+                            valor_anuncio,
+                            descricao_anuncio,
+                            link_novo_anuncio,
+                            precisa_foto,
+                            prazo_horas,
+                            motivo_rejeicao,
+                            rejeitado_por,
+                            data_rejeicao,
+                            prazo_esperado,
+                            anuncio_criado,
+                            anuncio_criado_por,
+                            anuncio_criado_data,
+                            fluxo_renovacao,
+                            etapa_fluxo,
+                            destinatario_final,
+                            etapa_atualizada_em,
+                            etapa_atualizada_por,
+                            renovacao_etapa,
+                            renovacao_etapa_retorno,
+                            renovacao_motivo_reprovacao,
+                            renovacao_historico,
+                            renovacao_destinatario_final,
+                            renovacao_aprovado_leticia_por,
+                            renovacao_aprovado_leticia_em,
+                            renovacao_aprovado_ronald_por,
+                            renovacao_aprovado_ronald_em
+                        `)
+                        .order(
+                            'data_criacao',
+                            {
+                                ascending:
+                                    false
+                            }
+                        );
 
-        console.error(
-            '❌ Erro ao carregar ordens:',
-            error
-        );
+                if (error) {
+                    throw error;
+                }
 
-        showToast(
-            '❌ Erro ao carregar ordens',
-            'error'
-        );
+                const registros =
+                    Array.isArray(data)
+                        ? data
+                        : [];
 
+                orders =
+                    registros.map(
+                        order => {
 
-        orders = [];
+                            let renovacaoEtapa =
+                                order.renovacao_etapa ||
+                                null;
 
+                            if (
+                                !renovacaoEtapa &&
+                                typeof obterEtapaRenovacaoCorrecao ===
+                                    'function'
+                            ) {
+                                try {
+                                    renovacaoEtapa =
+                                        obterEtapaRenovacaoCorrecao(
+                                            {
+                                                etapaFluxo:
+                                                    order.etapa_fluxo
+                                            }
+                                        );
+                                } catch (_) {
+                                    renovacaoEtapa =
+                                        order.etapa_fluxo ||
+                                        null;
+                                }
+                            }
 
-        updateCounters();
+                            return {
+                                id:
+                                    order.id,
 
-        renderOrdersTable();
+                                user_notified:
+                                    order.user_notified === true,
 
+                                code:
+                                    order.codigo ||
+                                    `OS-${String(
+                                        order.id
+                                    ).padStart(
+                                        4,
+                                        '0'
+                                    )}`,
+
+                                productName:
+                                    order.produto_nome ||
+                                    'Sem nome',
+
+                                linkAnuncio:
+                                    order.link_anuncio ||
+                                    '',
+
+                                responsibleName:
+                                    order.responsavel ||
+                                    currentUser.name,
+
+                                urgency:
+                                    order.urgencia ||
+                                    'normal',
+
+                                transferenciaPendente:
+                                    order.transferencia_pendente ===
+                                    true,
+
+                                instrucaoTransferencia:
+                                    order.instrucao_transferencia ||
+                                    '',
+
+                                responsavelAnterior:
+                                    order.responsavel_anterior ||
+                                    null,
+
+                                transferidoPor:
+                                    order.transferido_por ||
+                                    null,
+
+                                dataTransferencia:
+                                    order.data_transferencia ||
+                                    null,
+
+                                statusAnteriorTransferencia:
+                                    order.status_anterior_transferencia ||
+                                    null,
+
+                                osType:
+                                    order.tipo_os ||
+                                    'normal',
+
+                                status:
+                                    order.status ||
+                                    'pendente',
+
+                                photoType:
+                                    order.tipo_foto ||
+                                    'edicao',
+
+                                localFoto:
+                                    order.local_foto ||
+                                    'sem_foto',
+
+                                video:
+                                    (
+                                        order.tem_video ===
+                                            true ||
+                                        String(
+                                            order.tem_video ||
+                                            ''
+                                        ).toLowerCase() ===
+                                            'sim' ||
+                                        String(
+                                            order.tem_video ||
+                                            ''
+                                        ).toLowerCase() ===
+                                            'true'
+                                    )
+                                        ? 'sim'
+                                        : 'nao',
+
+                                skus:
+                                    order.skus ||
+                                    [],
+
+                                observations:
+                                    order.observacoes ||
+                                    '',
+
+                                // Fotos de referência agora são carregadas
+                                // SOMENTE quando o usuário realmente precisa vê-las.
+                                photos:
+                                    [],
+
+                                temFotos:
+                                    order.tem_fotos === true ||
+                                    Number(
+                                        order.quantidade_fotos
+                                    ) > 0,
+
+                                quantidadeFotos:
+                                    Number(
+                                        order.quantidade_fotos
+                                    ) ||
+                                    0,
+
+                                _fotosCarregadas:
+                                    false,
+
+                                photosTaken:
+                                    Number(
+                                        order.qtd_fotos
+                                    ) ||
+                                    0,
+
+                                editsMade:
+                                    Number(
+                                        order.qtd_edicoes
+                                    ) ||
+                                    0,
+
+                                createdBy:
+                                    order.criado_por ||
+                                    'Sistema',
+
+                                createdAt:
+                                    order.data_criacao,
+
+                                startedAt:
+                                    order.data_inicio ||
+                                    null,
+
+                                completionDate:
+                                    order.data_conclusao ||
+                                    null,
+
+                                updatedAt:
+                                    order.ultima_atualizacao ||
+                                    order.data_criacao,
+
+                                conferido:
+                                    order.conferido ===
+                                    true,
+
+                                conferidoPor:
+                                    order.conferido_por ||
+                                    null,
+
+                                dataConferencia:
+                                    order.data_conferencia ||
+                                    null,
+
+                                valorAnuncio:
+                                    order.valor_anuncio ||
+                                    0,
+
+                                descricaoAnuncio:
+                                    order.descricao_anuncio ||
+                                    '',
+
+                                linkNovoAnuncio:
+                                    order.link_novo_anuncio ||
+                                    '',
+
+                                precisaFoto:
+                                    order.precisa_foto ||
+                                    'nao',
+
+                                prazo_horas:
+                                    order.prazo_horas ||
+                                    null,
+
+                                motivo_rejeicao:
+                                    order.motivo_rejeicao ||
+                                    null,
+
+                                rejeitado_por:
+                                    order.rejeitado_por ||
+                                    null,
+
+                                data_rejeicao:
+                                    order.data_rejeicao ||
+                                    null,
+
+                                prazo_esperado:
+                                    order.prazo_esperado ||
+                                    null,
+
+                                anuncio_criado:
+                                    order.anuncio_criado ===
+                                    true,
+
+                                anuncio_criado_por:
+                                    order.anuncio_criado_por ||
+                                    null,
+
+                                anuncio_criado_data:
+                                    order.anuncio_criado_data ||
+                                    null,
+
+                                // Fluxo de Renovação de anúncio
+                                fluxoRenovacao:
+                                    order.fluxo_renovacao ===
+                                    true,
+
+                                etapaFluxo:
+                                    order.etapa_fluxo ||
+                                    null,
+
+                                destinatarioFinal:
+                                    order.destinatario_final ||
+                                    'Elaine',
+
+                                etapaAtualizadaEm:
+                                    order.etapa_atualizada_em ||
+                                    null,
+
+                                etapaAtualizadaPor:
+                                    order.etapa_atualizada_por ||
+                                    null,
+
+                                renovacaoEtapa,
+
+                                renovacaoEtapaRetorno:
+                                    order.renovacao_etapa_retorno ||
+                                    null,
+
+                                renovacaoMotivoReprovacao:
+                                    order.renovacao_motivo_reprovacao ||
+                                    null,
+
+                                renovacaoHistorico:
+                                    order.renovacao_historico ||
+                                    [],
+
+                                renovacaoDestinatarioFinal:
+                                    order.renovacao_destinatario_final ||
+                                    order.destinatario_final ||
+                                    'Elaine',
+
+                                renovacaoAprovadoLeticiaPor:
+                                    order.renovacao_aprovado_leticia_por ||
+                                    null,
+
+                                renovacaoAprovadoLeticiaEm:
+                                    order.renovacao_aprovado_leticia_em ||
+                                    null,
+
+                                renovacaoAprovadoRonaldPor:
+                                    order.renovacao_aprovado_ronald_por ||
+                                    null,
+
+                                renovacaoAprovadoRonaldEm:
+                                    order.renovacao_aprovado_ronald_em ||
+                                    null
+                            };
+                        }
+                    );
+
+                orderCounter =
+                    orders.length > 0
+                        ? Math.max(
+                            ...orders.map(
+                                o =>
+                                    parseInt(
+                                        o.id,
+                                        10
+                                    ) ||
+                                    0
+                            )
+                        ) + 1
+                        : 1;
+
+                osDadosCarregados =
+                    true;
+
+                osUltimaCargaEm =
+                    Date.now();
+
+                updateCounters();
+                renderOrdersTable();
+
+                /*
+                 * Atualiza o sino com COUNT leve.
+                 */
+                updateOSNotificationBell();
+
+                showToast(
+                    orders.length
+                        ? `✅ ${orders.length} ordens carregadas`
+                        : '📭 Nenhuma ordem encontrada',
+                    orders.length
+                        ? 'success'
+                        : 'info'
+                );
+
+                console.log(
+                    `✅ [OS] ${orders.length} ordens carregadas do Supabase.`
+                );
+
+                return orders;
+
+            } catch (error) {
+                console.error(
+                    '❌ Erro ao carregar ordens:',
+                    error
+                );
+
+                showToast(
+                    '❌ Erro ao carregar ordens',
+                    'error'
+                );
+
+                /*
+                 * Se já havia dados em memória, não apaga a tela
+                 * por causa de uma falha temporária do banco.
+                 */
+                if (
+                    !osDadosCarregados
+                ) {
+                    orders =
+                        [];
+
+                    updateCounters();
+                    renderOrdersTable();
+                }
+
+                return orders;
+
+            } finally {
+                if (reloadBtn) {
+                    reloadBtn.innerHTML =
+                        '<i class="fas fa-sync-alt"></i> Recarregar';
+
+                    reloadBtn.disabled =
+                        false;
+                }
+            }
+        })();
+
+    try {
+        return await osCarregamentoEmAndamento;
 
     } finally {
-
-        if (reloadBtn) {
-
-            reloadBtn.innerHTML =
-                '<i class="fas fa-sync-alt"></i> Recarregar';
-
-            reloadBtn.disabled =
-                false;
-        }
+        osCarregamentoEmAndamento =
+            null;
     }
 }
 
@@ -10015,6 +10280,32 @@ async function saveOrderToSupabase(order) {
 
         let fotosParaSalvar = [];
 
+        /*
+         * Se algum fluxo antigo editar uma OS carregada pela
+         * listagem leve, preserva as fotos existentes antes de
+         * salvar para nunca apagar anexos por engano.
+         */
+        if (
+            editingOrderId &&
+            order._fotosCarregadas !== true &&
+            (
+                !Array.isArray(order.photos) ||
+                order.photos.length === 0
+            )
+        ) {
+            const fotosExistentes =
+                await carregarFotosOSPorId(
+                    editingOrderId,
+                    { silencioso: true }
+                );
+
+            order.photos =
+                fotosExistentes;
+
+            order._fotosCarregadas =
+                true;
+        }
+
 
         if (
             order.photos &&
@@ -10043,6 +10334,16 @@ async function saveOrderToSupabase(order) {
                     })
                 );
         }
+
+
+        order.temFotos =
+            fotosParaSalvar.length > 0;
+
+        order.quantidadeFotos =
+            fotosParaSalvar.length;
+
+        order._fotosCarregadas =
+            true;
 
 
         const orderData = {
@@ -10097,6 +10398,12 @@ async function saveOrderToSupabase(order) {
 
             fotos:
                 fotosParaSalvar,
+
+            tem_fotos:
+                fotosParaSalvar.length > 0,
+
+            quantidade_fotos:
+                fotosParaSalvar.length,
 
             qtd_fotos:
                 Number(
@@ -13651,14 +13958,36 @@ if (
 
 
             if (
-                order.photos &&
-                order.photos.length >
-                    0 &&
+                (
+                    order.temFotos === true ||
+                    Number(
+                        order.quantidadeFotos
+                    ) > 0 ||
+                    (
+                        order._fotosCarregadas === true &&
+                        Array.isArray(
+                            order.photos
+                        ) &&
+                        order.photos.length > 0
+                    )
+                ) &&
                 (
                     hasPermission ||
                     isAdmin
                 )
             ) {
+
+                const quantidadeFotosExibida =
+                    order._fotosCarregadas === true
+                        ? (
+                            Array.isArray(order.photos)
+                                ? order.photos.length
+                                : 0
+                        )
+                        : (
+                            Number(order.quantidadeFotos) ||
+                            ''
+                        );
 
                 actionButtons += `
                     <button
@@ -13667,7 +13996,7 @@ if (
                         title="Ver Fotos"
                     >
                         <i class="fas fa-images"></i>
-                        ${order.photos.length}
+                        ${quantidadeFotosExibida}
                     </button>
                 `;
             }
@@ -14082,14 +14411,213 @@ window.editOrder = function(orderId) {
     abrirModalEdicaoOS(orderId);
 };
 
-window.viewOrderPhotos = function(orderId) {
-    const order = orders.find(o => o.id == orderId);
-    if (order && order.photos && order.photos.length > 0) {
-        openPhotoViewer(order.photos, order.productName);
-    } else {
-        showToast('Nenhuma foto disponível para esta OS', 'info');
+// ============================================================
+// FOTOS DA OS SOB DEMANDA
+//
+// A listagem principal NÃO baixa mais o JSON/base64 de fotos.
+// Cada OS consulta suas fotos somente no primeiro acesso e
+// depois reutiliza o conteúdo em memória durante a sessão.
+// ============================================================
+const carregamentosFotosOSEmAndamento =
+    new Map();
+
+async function carregarFotosOSPorId(
+    orderId,
+    { silencioso = false } = {}
+) {
+    const order =
+        orders.find(
+            item =>
+                String(item.id) ===
+                String(orderId)
+        ) ||
+        (
+            currentViewingOS &&
+            String(currentViewingOS.id) ===
+                String(orderId)
+                ? currentViewingOS
+                : null
+        );
+
+    if (!order) {
+        if (!silencioso) {
+            showToast(
+                'OS não encontrada',
+                'error'
+            );
+        }
+        return [];
     }
-};
+
+    if (
+        order._fotosCarregadas === true
+    ) {
+        return Array.isArray(order.photos)
+            ? order.photos
+            : [];
+    }
+
+    const chave =
+        String(orderId);
+
+    if (
+        carregamentosFotosOSEmAndamento
+            .has(chave)
+    ) {
+        return carregamentosFotosOSEmAndamento
+            .get(chave);
+    }
+
+    const promessa =
+        (async () => {
+            try {
+                if (!supabaseClient) {
+                    initSupabase();
+                }
+
+                if (!supabaseClient) {
+                    throw new Error(
+                        'Supabase não conectado'
+                    );
+                }
+
+                if (!silencioso) {
+                    showToast(
+                        '🖼️ Carregando fotos da OS...',
+                        'info'
+                    );
+                }
+
+                const {
+                    data,
+                    error
+                } =
+                    await supabaseClient
+                        .from(
+                            'ordens_service'
+                        )
+                        .select(
+                            'fotos, tem_fotos, quantidade_fotos'
+                        )
+                        .eq(
+                            'id',
+                            orderId
+                        )
+                        .maybeSingle();
+
+                if (error) {
+                    throw error;
+                }
+
+                const fotos =
+                    Array.isArray(
+                        data?.fotos
+                    )
+                        ? data.fotos
+                        : [];
+
+                order.photos =
+                    fotos;
+
+                order._fotosCarregadas =
+                    true;
+
+                order.quantidadeFotos =
+                    fotos.length;
+
+                order.temFotos =
+                    fotos.length > 0;
+
+                if (
+                    currentViewingOS &&
+                    String(currentViewingOS.id) ===
+                        String(orderId)
+                ) {
+                    currentViewingOS =
+                        order;
+                }
+
+                const contador =
+                    document.getElementById(
+                        'viewPhotosCount'
+                    );
+
+                if (
+                    contador &&
+                    currentViewingOS &&
+                    String(currentViewingOS.id) ===
+                        String(orderId)
+                ) {
+                    contador.textContent =
+                        String(fotos.length);
+                }
+
+                return fotos;
+
+            } catch (error) {
+                console.error(
+                    '❌ Erro carregando fotos da OS:',
+                    error
+                );
+
+                if (!silencioso) {
+                    showToast(
+                        '❌ Não foi possível carregar as fotos da OS',
+                        'error'
+                    );
+                }
+
+                return [];
+
+            } finally {
+                carregamentosFotosOSEmAndamento
+                    .delete(chave);
+            }
+        })();
+
+    carregamentosFotosOSEmAndamento
+        .set(
+            chave,
+            promessa
+        );
+
+    return promessa;
+}
+
+window.viewOrderPhotos =
+    async function(orderId) {
+        const order =
+            orders.find(
+                o =>
+                    String(o.id) ===
+                    String(orderId)
+            );
+
+        if (!order) {
+            showToast(
+                'OS não encontrada',
+                'error'
+            );
+            return;
+        }
+
+        const fotos =
+            await carregarFotosOSPorId(
+                orderId
+            );
+
+        if (fotos.length > 0) {
+            openPhotoViewer(
+                fotos,
+                order.productName
+            );
+        } else {
+            showToast(
+                'Nenhuma foto disponível para esta OS',
+                'info'
+            );
+        }
+    };
 
 window.abrirSistemaOS = function() {
     if (!currentUser) {
@@ -14119,8 +14647,12 @@ window.abrirSistemaOS = function() {
     document.getElementById('userAvatar').textContent = currentUser.avatar;
     document.getElementById('userRole').textContent = currentUser.role;
     
-    // Carregar ordens se necessário
-    if (typeof loadOrders === 'function') loadOrders();
+    // Carrega somente ao entrar na aba OS.
+    // Se a carga for recente, loadOrders usa o cache em memória.
+    if (typeof loadOrders === 'function') {
+        loadOrders(false);
+    }
+
     showToast('Sistema de Ordem de Serviço', 'info');
 };
 
@@ -14861,8 +15393,24 @@ window.deleteOrderPrompt = async function(orderId) {
 // ============================================
 // FUNÇÕES DE IMPRESSÃO MELHORADAS (COM FOTOS)
 // ============================================
-window.openPrintModal = function(osData) {
+window.openPrintModal = async function(osData) {
     currentOSForPrint = osData;
+
+    // A impressão pode conter as fotos de referência.
+    // Busca o JSON pesado somente quando a impressão for aberta.
+    if (
+        osData &&
+        osData._fotosCarregadas !== true &&
+        (
+            osData.temFotos === true ||
+            Number(osData.quantidadeFotos) > 0
+        )
+    ) {
+        await carregarFotosOSPorId(
+            osData.id,
+            { silencioso: true }
+        );
+    }
     
     // Mapear valores para texto
     const statusMap = {
@@ -15621,9 +16169,23 @@ function openViewOSModal(order) {
     // Atualizar cabeçalho
     document.getElementById('viewOSCode').textContent = order.code;
     
-    // Atualizar contador de fotos
-    const photoCount = order.photos ? order.photos.length : 0;
-    document.getElementById('viewPhotosCount').textContent = photoCount;
+    // Atualizar contador sem baixar as fotos pesadas.
+    const photoCount =
+        order._fotosCarregadas === true
+            ? (
+                Array.isArray(order.photos)
+                    ? order.photos.length
+                    : 0
+            )
+            : (
+                Number(order.quantidadeFotos) ||
+                0
+            );
+
+    document.getElementById(
+        'viewPhotosCount'
+    ).textContent =
+        photoCount;
     
     // Atualizar data de criação
     const createdDate = new Date(order.createdAt);
@@ -15666,7 +16228,18 @@ async function switchViewOSTab(tabName) {
             contentContainer.innerHTML = generateDetailsTab();
             break;
         case 'photos':
-            contentContainer.innerHTML = generatePhotosTab();
+            contentContainer.innerHTML =
+                '<div class="text-center" style="padding:40px;"><div class="spinner"></div> Carregando fotos...</div>';
+
+            if (currentViewingOS) {
+                await carregarFotosOSPorId(
+                    currentViewingOS.id,
+                    { silencioso: true }
+                );
+            }
+
+            contentContainer.innerHTML =
+                generatePhotosTab();
             break;
         case 'timeline':
     contentContainer.innerHTML = '<div class="text-center"><div class="spinner"></div> Carregando histórico...</div>';
@@ -16369,7 +16942,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     generateOSCode();
     initSupabase();
-    loadOrders();
+
+    // Não baixa a tabela inteira de OS ao carregar a página.
+    // As ordens são buscadas somente quando a aba OS for aberta.
     setupEventListeners();
     setupPhotoUpload();
     setupReembolsoEventListeners();
@@ -18217,6 +18792,86 @@ function normalizarNomeNotificacaoOS(valor) {
         .replace(/[\u0300-\u036f]/g, '');
 }
 
+function obterResponsavelNotificacaoOSAtual() {
+    return String(
+        currentUser?.name ||
+        ''
+    ).trim();
+}
+
+
+/*
+ * Conta notificações de OS sem baixar as linhas.
+ *
+ * Essa função é usada pelo sino e pelo monitor periódico.
+ * Antes o sistema baixava todas as OS não notificadas e
+ * filtrava o responsável no JavaScript.
+ */
+async function contarOSNaoLidasUsuarioAtual() {
+    if (
+        !currentUser ||
+        !supabaseClient
+    ) {
+        return 0;
+    }
+
+    const responsavel =
+        obterResponsavelNotificacaoOSAtual();
+
+    if (!responsavel) {
+        return 0;
+    }
+
+    try {
+        const {
+            count,
+            error
+        } =
+            await supabaseClient
+                .from(
+                    'ordens_service'
+                )
+                .select(
+                    'id',
+                    {
+                        count:
+                            'exact',
+
+                        head:
+                            true
+                    }
+                )
+                .eq(
+                    'responsavel',
+                    responsavel
+                )
+                .or(
+                    'user_notified.eq.false,user_notified.is.null'
+                );
+
+        if (error) {
+            throw error;
+        }
+
+        return Number(
+            count
+        ) || 0;
+
+    } catch (error) {
+        console.error(
+            '❌ Erro contando notificações de OS:',
+            error
+        );
+
+        return 0;
+    }
+}
+
+
+/*
+ * Busca os dados das notificações somente quando realmente
+ * precisamos dos IDs/linhas, por exemplo para marcar como lidas.
+ */
 async function obterOSNaoLidasUsuarioAtual() {
     if (
         !currentUser ||
@@ -18225,17 +18880,10 @@ async function obterOSNaoLidasUsuarioAtual() {
         return [];
     }
 
-    const nomesUsuario = [
-        currentUser.name,
-        currentUser.nome,
-        currentUser.username,
-        currentUser.login,
-        currentUser.usuario
-    ]
-        .map(normalizarNomeNotificacaoOS)
-        .filter(Boolean);
+    const responsavel =
+        obterResponsavelNotificacaoOSAtual();
 
-    if (!nomesUsuario.length) {
+    if (!responsavel) {
         return [];
     }
 
@@ -18243,43 +18891,41 @@ async function obterOSNaoLidasUsuarioAtual() {
         const {
             data,
             error
-        } = await supabaseClient
-            .from('ordens_service')
-            .select(`
-                id,
-                codigo,
-                produto_nome,
-                responsavel,
-                user_notified,
-                data_criacao
-            `)
-            .or(
-                'user_notified.eq.false,user_notified.is.null'
-            )
-            .order(
-                'data_criacao',
-                {
-                    ascending: false
-                }
-            );
+        } =
+            await supabaseClient
+                .from(
+                    'ordens_service'
+                )
+                .select(`
+                    id,
+                    codigo,
+                    produto_nome,
+                    responsavel,
+                    user_notified,
+                    data_criacao
+                `)
+                .eq(
+                    'responsavel',
+                    responsavel
+                )
+                .or(
+                    'user_notified.eq.false,user_notified.is.null'
+                )
+                .order(
+                    'data_criacao',
+                    {
+                        ascending:
+                            false
+                    }
+                );
 
         if (error) {
             throw error;
         }
 
-        return (data || []).filter(os => {
-            const responsavel =
-                normalizarNomeNotificacaoOS(
-                    os.responsavel
-                );
-
-            return nomesUsuario.some(nome => {
-                return (
-                    responsavel === nome ||
-                    responsavel.includes(nome)
-                );
-            });
-        });
+        return Array.isArray(data)
+            ? data
+            : [];
 
     } catch (error) {
         console.error(
@@ -18290,6 +18936,7 @@ async function obterOSNaoLidasUsuarioAtual() {
         return [];
     }
 }
+
 
 async function updateOSNotificationBell() {
     try {
@@ -18302,6 +18949,7 @@ async function updateOSNotificationBell() {
         );
     }
 }
+
 
 async function marcarOSComoLidas() {
     if (
@@ -18317,7 +18965,10 @@ async function marcarOSComoLidas() {
 
         const ids =
             osNaoLidas
-                .map(os => os.id)
+                .map(
+                    os =>
+                        os.id
+                )
                 .filter(Boolean);
 
         if (!ids.length) {
@@ -18327,33 +18978,49 @@ async function marcarOSComoLidas() {
 
         const {
             error
-        } = await supabaseClient
-            .from('ordens_service')
-            .update({
-                user_notified: true
-            })
-            .in(
-                'id',
-                ids
-            );
+        } =
+            await supabaseClient
+                .from(
+                    'ordens_service'
+                )
+                .update({
+                    user_notified:
+                        true
+                })
+                .in(
+                    'id',
+                    ids
+                );
 
         if (error) {
             throw error;
         }
 
-        if (Array.isArray(orders)) {
-            orders.forEach(order => {
-                if (
-                    ids.some(
+        if (
+            Array.isArray(orders)
+        ) {
+            const idsLidos =
+                new Set(
+                    ids.map(
                         id =>
-                            String(id) ===
-                            String(order.id)
+                            String(id)
                     )
-                ) {
-                    order.user_notified =
-                        true;
+                );
+
+            orders.forEach(
+                order => {
+                    if (
+                        idsLidos.has(
+                            String(
+                                order.id
+                            )
+                        )
+                    ) {
+                        order.user_notified =
+                            true;
+                    }
                 }
-            });
+            );
         }
 
         await updateOSNotificationBell();
@@ -18372,6 +19039,7 @@ async function marcarOSComoLidas() {
         );
     }
 }
+
 
 function iniciarMonitorNotificacoesOS() {
     if (
@@ -18393,6 +19061,17 @@ function iniciarMonitorNotificacoesOS() {
                 return;
             }
 
+            /*
+             * Não consulta o banco enquanto esta guia está oculta.
+             */
+            if (
+                document.visibilityState &&
+                document.visibilityState !==
+                    'visible'
+            ) {
+                return;
+            }
+
             try {
                 await updateNotificationBadge();
 
@@ -18409,10 +19088,14 @@ function iniciarMonitorNotificacoesOS() {
         1000
     );
 
+    /*
+     * Antes: 10 segundos.
+     * Agora: 30 segundos.
+     */
     window.__monitorNotificacoesOS =
         setInterval(
             atualizarSino,
-            10000
+            30000
         );
 }
 
@@ -28396,147 +29079,21 @@ Anúncio: ${order.linkAnuncio}`
     const carregarOrdensOriginalRenovacao =
         loadOrders;
 
+    /*
+     * Os campos de Renovação de anúncio agora já são carregados
+     * na consulta principal de loadOrders.
+     *
+     * Mantemos este wrapper apenas para compatibilidade com o
+     * restante do módulo, sem realizar uma segunda consulta em
+     * ordens_service.
+     */
     loadOrders =
-        async function() {
-            await carregarOrdensOriginalRenovacao();
-
-            if (
-                !supabaseClient ||
-                !Array.isArray(orders) ||
-                !orders.length
-            ) {
-                return;
-            }
-
-            try {
-                const {
-                    data,
-                    error
-                } = await supabaseClient
-                    .from(
-                        'ordens_service'
-                    )
-                    .select(`
-                        id,
-                        fluxo_renovacao,
-                        etapa_fluxo,
-                        destinatario_final,
-                        etapa_atualizada_em,
-                        etapa_atualizada_por,
-                        renovacao_etapa,
-                        renovacao_etapa_retorno,
-                        renovacao_motivo_reprovacao,
-                        renovacao_historico,
-                        renovacao_destinatario_final,
-                        renovacao_aprovado_leticia_por,
-                        renovacao_aprovado_leticia_em,
-                        renovacao_aprovado_ronald_por,
-                        renovacao_aprovado_ronald_em
-                    `);
-
-                if (error) {
-                    throw error;
-                }
-
-                const dadosPorId =
-                    new Map(
-                        (data || []).map(
-                            item => [
-                                String(item.id),
-                                item
-                            ]
-                        )
-                    );
-
-                orders.forEach(order => {
-                    const banco =
-                        dadosPorId.get(
-                            String(order.id)
-                        );
-
-                    if (!banco) {
-                        return;
-                    }
-
-                    order.fluxoRenovacao =
-                        banco.fluxo_renovacao ===
-                        true;
-
-                    order.etapaFluxo =
-                        banco.etapa_fluxo ||
-                        null;
-
-                    order.destinatarioFinal =
-                        banco.destinatario_final ||
-                        'Elaine';
-
-                    order.etapaAtualizadaEm =
-                        banco.etapa_atualizada_em ||
-                        null;
-
-                    order.etapaAtualizadaPor =
-                        banco.etapa_atualizada_por ||
-                        null;
-
-                    order.renovacaoEtapa =
-                        banco.renovacao_etapa ||
-                        obterEtapaRenovacaoCorrecao(
-                            {
-                                etapaFluxo:
-                                    banco.etapa_fluxo
-                            }
-                        );
-
-                    order.renovacaoEtapaRetorno =
-                        banco
-                            .renovacao_etapa_retorno ||
-                        null;
-
-                    order.renovacaoMotivoReprovacao =
-                        banco
-                            .renovacao_motivo_reprovacao ||
-                        null;
-
-                    order.renovacaoHistorico =
-                        banco
-                            .renovacao_historico ||
-                        [];
-
-                    order.renovacaoDestinatarioFinal =
-                        banco
-                            .renovacao_destinatario_final ||
-                        banco.destinatario_final ||
-                        'Elaine';
-
-                    order.renovacaoAprovadoLeticiaPor =
-                        banco
-                            .renovacao_aprovado_leticia_por ||
-                        null;
-
-                    order.renovacaoAprovadoLeticiaEm =
-                        banco
-                            .renovacao_aprovado_leticia_em ||
-                        null;
-
-                    order.renovacaoAprovadoRonaldPor =
-                        banco
-                            .renovacao_aprovado_ronald_por ||
-                        null;
-
-                    order.renovacaoAprovadoRonaldEm =
-                        banco
-                            .renovacao_aprovado_ronald_em ||
-                        null;
-                });
-
-                renderOrdersTable();
-
-            } catch (error) {
-                console.error(
-                    'Erro carregando campos da renovação:',
-                    error
-                );
-            }
+        async function(
+            forcarAtualizacao = false
+        ) {
+            return await carregarOrdensOriginalRenovacao(
+                forcarAtualizacao
+            );
         };
 
     // ========================================================
