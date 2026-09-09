@@ -30683,45 +30683,107 @@ function analisarPlanoEnvioFull(paginasTextos, textoCompleto, nomeArquivo) {
     const produtosPdf = [];
 
     paginasTextos.forEach((textos, indicePagina) => {
+        const cabecalhoQuantidade = textos.find(item =>
+            /^(?:unidades?|quantidade|qtd\.?|qtde\.?)$/i.test(item.texto.trim())
+        );
+
         // O PDF.js pode devolver "SKU:" sozinho ou toda a linha
         // "Código ML ... SKU: CODIGO" em um único item de texto.
         const marcadoresSku = textos.filter(item => /\bSKU\s*:/i.test(item.texto));
 
         marcadoresSku.forEach(marcador => {
-            const skuDentroDoMarcador = marcador.texto.match(/\bSKU\s*:\s*(\S+)/i);
+            const limiteColunaProduto = cabecalhoQuantidade
+                ? cabecalhoQuantidade.x - 10
+                : 340;
+            const inicioDepoisMarcador = marcador.x + Number(marcador.largura || 0) - 2;
+            const skuNoMarcador = (marcador.texto.match(/\bSKU\s*:\s*(.*?)\s*$/i)?.[1] || '')
+                .replace(/\s+/g, '');
+            const pareceTrechoSku = texto => {
+                const valor = String(texto || '').trim();
+                return Boolean(
+                    valor &&
+                    !/\s/.test(valor) &&
+                    /\d/.test(valor) &&
+                    !/^\d+(?:[.,]\d+)?$/.test(valor) &&
+                    !/^(?:etiquetagem|obrigat[oó]ria|produto|unidades?|identifica[cç][aã]o)$/i.test(valor)
+                );
+            };
 
-            const itensMesmaLinha = textos
+            // Dependendo do gerador do PDF, o SKU pode vir:
+            // 1) dentro do marcador; 2) separado na mesma linha; ou
+            // 3) na linha abaixo. Códigos longos também podem quebrar em 2 linhas.
+            const trechosMesmaLinha = textos
                 .filter(item =>
                     item !== marcador &&
-                    item.x > marcador.x + 10 &&
-                    item.x < 355 &&
-                    Math.abs(item.y - marcador.y) <= 2.8
+                    item.x >= inicioDepoisMarcador &&
+                    item.x < limiteColunaProduto &&
+                    Math.abs(item.y - marcador.y) <= 3.5 &&
+                    pareceTrechoSku(item.texto)
                 )
                 .sort((a, b) => a.x - b.x)
                 .map(item => item.texto.replace(/\s+/g, ''));
 
-            const itensLinhaAbaixo = textos
+            const trechosLinhaAbaixo = textos
                 .filter(item =>
-                    item.x >= 30 &&
-                    item.x < 355 &&
-                    item.y < marcador.y - 4 &&
-                    item.y >= marcador.y - 11
+                    item.x >= marcador.x - 5 &&
+                    item.x < limiteColunaProduto &&
+                    item.y < marcador.y - 2 &&
+                    item.y >= marcador.y - 10.5 &&
+                    pareceTrechoSku(item.texto)
                 )
-                .sort((a, b) => a.x - b.x)
+                .sort((a, b) => b.y - a.y || a.x - b.x)
                 .map(item => item.texto.replace(/\s+/g, ''));
 
-            const sku = skuDentroDoMarcador?.[1]
-                ? skuDentroDoMarcador[1].replace(/\s+/g, '')
-                : (itensMesmaLinha.length ? itensMesmaLinha : itensLinhaAbaixo).join('');
+            const sku = [skuNoMarcador, ...trechosMesmaLinha, ...trechosLinhaAbaixo]
+                .filter(Boolean)
+                .join('');
 
-            const quantidadeItem = textos
+            const extrairQuantidadeTexto = texto => {
+                const match = String(texto || '').trim().match(
+                    /^(\d+(?:[.,]\d+)?)\s*(?:un(?:id(?:ades?)?)?\.?|pçs?\.?)?$/i
+                );
+                return match ? Number(match[1].replace(',', '.')) : null;
+            };
+
+            // A posição da coluna muda conforme a escala/versão do Plano FULL.
+            // Primeiro usa o cabeçalho da própria página; depois, uma busca
+            // relativa ao SKU. Assim não dependemos mais do intervalo 350–390.
+            const candidatosQuantidade = textos
+                .map(item => ({ ...item, quantidadeLida: extrairQuantidadeTexto(item.texto) }))
                 .filter(item =>
-                    item.x >= 350 &&
-                    item.x <= 390 &&
-                    /^\d+(?:[.,]\d+)?$/.test(item.texto) &&
-                    Math.abs(item.y - marcador.y) <= 5
+                    item.quantidadeLida !== null &&
+                    item.quantidadeLida > 0 &&
+                    Math.abs(item.y - marcador.y) <= 18 &&
+                    item.x > marcador.x + 45 &&
+                    (
+                        !cabecalhoQuantidade ||
+                        Math.abs(item.x - cabecalhoQuantidade.x) <= 70
+                    )
                 )
-                .sort((a, b) => Math.abs(a.y - marcador.y) - Math.abs(b.y - marcador.y))[0];
+                .sort((a, b) => {
+                    const distanciaColunaA = cabecalhoQuantidade ? Math.abs(a.x - cabecalhoQuantidade.x) : 0;
+                    const distanciaColunaB = cabecalhoQuantidade ? Math.abs(b.x - cabecalhoQuantidade.x) : 0;
+                    return distanciaColunaA - distanciaColunaB ||
+                        Math.abs(a.y - marcador.y) - Math.abs(b.y - marcador.y) ||
+                        b.x - a.x;
+                });
+
+            let quantidadeItem = candidatosQuantidade[0];
+
+            // Fallback para PDFs cujo cabeçalho veio agrupado em outro item.
+            if (!quantidadeItem) {
+                quantidadeItem = textos
+                    .map(item => ({ ...item, quantidadeLida: extrairQuantidadeTexto(item.texto) }))
+                    .filter(item =>
+                        item.quantidadeLida !== null &&
+                        item.quantidadeLida > 0 &&
+                        Math.abs(item.y - marcador.y) <= 18 &&
+                        item.x > marcador.x + 80
+                    )
+                    .sort((a, b) =>
+                        Math.abs(a.y - marcador.y) - Math.abs(b.y - marcador.y) || b.x - a.x
+                    )[0];
+            }
 
             const descricao = textos
                 .filter(item =>
@@ -30736,7 +30798,7 @@ function analisarPlanoEnvioFull(paginasTextos, textoCompleto, nomeArquivo) {
                 .replace(/\s+/g, ' ')
                 .trim();
 
-            const quantidade = Number(String(quantidadeItem?.texto || '0').replace(',', '.'));
+            const quantidade = Number(quantidadeItem?.quantidadeLida || 0);
 
             produtosPdf.push({
                 sku,
