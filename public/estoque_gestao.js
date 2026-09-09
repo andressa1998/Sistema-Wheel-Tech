@@ -2908,6 +2908,28 @@ function moverBotoesParaMenuAcessibilidadeEstoque() {
 
 
     // =====================================================
+    // IMPORTAR XML DE REMESSA PARA O FULL
+    // =====================================================
+
+    const btnImportarXmlFull =
+        document.getElementById(
+            'btnImportarXmlFull'
+        );
+
+
+    if (btnImportarXmlFull) {
+
+        candidatos.push({
+            botao:
+                btnImportarXmlFull,
+            ordem:
+                35
+        });
+
+    }
+
+
+    // =====================================================
     // IMPORTAR PRODUTOS
     // =====================================================
 
@@ -3350,6 +3372,16 @@ function toggleMenuAcessibilidadeEstoque() {
         ) {
 
             adicionarBotaoInformarRastreioCompra();
+
+        }
+
+
+        if (
+            typeof adicionarBotaoImportarXmlFull ===
+            'function'
+        ) {
+
+            adicionarBotaoImportarXmlFull();
 
         }
 
@@ -19406,11 +19438,11 @@ function configurarBulkModeEvents() {
 // AJUSTAR TIPO DO ANÚNCIO PELO ESTOQUE
 //
 // REGRA:
-// - Se QUALQUER produto do MLB estiver com estoque = 1
-//   → CLÁSSICO (gold_special)
-//
-// - Se nenhum estiver com 1 e houver estoque > 1
+// - Se QUALQUER produto/variação do MLB estiver com estoque > 1
 //   → PREMIUM (gold_pro)
+//
+// - Se nenhum estiver acima de 1 e houver estoque = 1
+//   → CLÁSSICO (gold_special)
 //
 // - Se todos estiverem com estoque 0
 //   → não altera o tipo
@@ -20165,30 +20197,30 @@ if (
 
 
         // =========================================
-        // QUALQUER PRODUTO COM 1
-        // → CLÁSSICO
-        // =========================================
-
-        if (
-            existeProdutoComUmaUnidade
-        ) {
-
-            tipoDesejado =
-                'gold_special';
-
-        }
-
-        // =========================================
-        // NENHUM COM 1 E EXISTE ESTOQUE > 1
+        // QUALQUER PRODUTO/VARIAÇÃO COM MAIS DE 1
         // → PREMIUM
         // =========================================
 
-        else if (
+        if (
             existeProdutoComMaisDeUma
         ) {
 
             tipoDesejado =
                 'gold_pro';
+
+        }
+
+        // =========================================
+        // NENHUM ACIMA DE 1 E EXISTE ESTOQUE = 1
+        // → CLÁSSICO
+        // =========================================
+
+        else if (
+            existeProdutoComUmaUnidade
+        ) {
+
+            tipoDesejado =
+                'gold_special';
 
         }
 
@@ -29845,6 +29877,12 @@ document.addEventListener(
 
 
         setTimeout(
+            adicionarBotaoImportarXmlFull,
+            500
+        );
+
+
+        setTimeout(
             adicionarBotaoNoModalCategorias,
             1000
         );
@@ -29929,6 +29967,685 @@ document.addEventListener(
 );
 
 // =========================================================
+// IMPORTAR XML DE REMESSA PARA O FULL
+// =========================================================
+
+let importacaoXmlFullAtual = null;
+let importacaoXmlFullEmAndamento = false;
+
+
+function normalizarSkuXmlFull(valor) {
+    return String(valor || '').trim().toUpperCase();
+}
+
+
+function obterTextoXmlFull(elemento, nomeTag) {
+    if (!elemento) return '';
+    const lista = elemento.getElementsByTagNameNS('*', nomeTag);
+    return lista?.[0]?.textContent?.trim() || '';
+}
+
+
+function obterProdutoXmlFullPorSku(skuInformado) {
+    const sku = normalizarSkuXmlFull(skuInformado);
+
+    if (!sku || !Array.isArray(produtosEstoque)) {
+        return {
+            produto: null,
+            motivo: 'nao_cadastrado',
+            candidatos: []
+        };
+    }
+
+    const exato = produtosEstoque.find(
+        produto => normalizarSkuXmlFull(produto.sku) === sku
+    );
+
+    if (exato) {
+        return {
+            produto: exato,
+            motivo: 'sku_exato',
+            candidatos: [exato]
+        };
+    }
+
+    const base = sku.substring(0, 8);
+    const candidatos = produtosEstoque.filter(
+        produto => normalizarSkuXmlFull(produto.sku).substring(0, 8) === base
+    );
+
+    if (candidatos.length === 1) {
+        return {
+            produto: candidatos[0],
+            motivo: 'base_8',
+            candidatos
+        };
+    }
+
+    return {
+        produto: null,
+        motivo: candidatos.length > 1 ? 'sku_ambiguo' : 'nao_cadastrado',
+        candidatos
+    };
+}
+
+
+function interpretarParteSkuXmlFull(parteSku) {
+    const original = normalizarSkuXmlFull(parteSku);
+
+    if (!original) {
+        return {
+            original,
+            skuBusca: '',
+            multiplicador: 1,
+            produto: null,
+            motivo: 'nao_cadastrado',
+            candidatos: []
+        };
+    }
+
+    // Primeiro respeita SKUs reais que começam com três dígitos.
+    const direto = obterProdutoXmlFullPorSku(original);
+
+    if (direto.produto || direto.motivo === 'sku_ambiguo') {
+        return {
+            original,
+            skuBusca: original,
+            multiplicador: 1,
+            ...direto
+        };
+    }
+
+    // Somente se o código inteiro não existir, interpreta 001/002/... como
+    // quantidade por kit, seguindo a regra já usada na sincronização ML.
+    const prefixo = original.match(/^(\d{3})(.+)$/);
+
+    if (prefixo) {
+        const skuSemPrefixo = normalizarSkuXmlFull(prefixo[2]);
+        const semPrefixo = obterProdutoXmlFullPorSku(skuSemPrefixo);
+
+        if (semPrefixo.produto || semPrefixo.motivo === 'sku_ambiguo') {
+            return {
+                original,
+                skuBusca: skuSemPrefixo,
+                multiplicador: Math.max(1, parseInt(prefixo[1], 10) || 1),
+                ...semPrefixo
+            };
+        }
+    }
+
+    return {
+        original,
+        skuBusca: original,
+        multiplicador: 1,
+        produto: null,
+        motivo: 'nao_cadastrado',
+        candidatos: []
+    };
+}
+
+
+function analisarXmlRemessaFull(conteudoXml, nomeArquivo = '') {
+    const documento = new DOMParser().parseFromString(conteudoXml, 'application/xml');
+    const erroParser = documento.getElementsByTagName('parsererror')[0];
+
+    if (erroParser) {
+        throw new Error('O arquivo selecionado não é um XML de NF-e válido.');
+    }
+
+    const infNFe = documento.getElementsByTagNameNS('*', 'infNFe')[0];
+    const protocolo = documento.getElementsByTagNameNS('*', 'infProt')[0];
+
+    if (!infNFe) {
+        throw new Error('Não foi encontrada uma NF-e dentro do XML.');
+    }
+
+    const numeroNfe = obterTextoXmlFull(infNFe, 'nNF');
+    const chaveNfe = String(infNFe.getAttribute('Id') || '')
+        .replace(/^NFe/i, '') || obterTextoXmlFull(protocolo, 'chNFe');
+    const statusSefaz = obterTextoXmlFull(protocolo, 'cStat');
+    const natureza = obterTextoXmlFull(infNFe, 'natOp');
+    const dataEmissao = obterTextoXmlFull(infNFe, 'dhEmi');
+
+    if (!numeroNfe || !chaveNfe) {
+        throw new Error('O XML não possui número ou chave de acesso da NF-e.');
+    }
+
+    if (statusSefaz && statusSefaz !== '100') {
+        throw new Error(`A NF-e não está autorizada pela SEFAZ (cStat ${statusSefaz}).`);
+    }
+
+    const itens = [];
+    const baixasPorProduto = new Map();
+    const naoCadastrados = [];
+    const detalhes = Array.from(documento.getElementsByTagNameNS('*', 'det'));
+
+    detalhes.forEach((det, indice) => {
+        const produtoXml = det.getElementsByTagNameNS('*', 'prod')[0];
+        const skuXml = obterTextoXmlFull(produtoXml, 'cProd');
+        const descricao = obterTextoXmlFull(produtoXml, 'xProd');
+        const quantidadeXml = Number(obterTextoXmlFull(produtoXml, 'qCom'));
+        const quantidadeNota = Number.isFinite(quantidadeXml) && quantidadeXml > 0
+            ? quantidadeXml
+            : 0;
+        const partes = normalizarSkuXmlFull(skuXml)
+            .split('.')
+            .map(parte => parte.trim())
+            .filter(Boolean);
+
+        if (!skuXml || !quantidadeNota || partes.length === 0) {
+            naoCadastrados.push({
+                item: indice + 1,
+                skuXml: skuXml || '(sem SKU)',
+                descricao,
+                quantidade: quantidadeNota,
+                motivo: 'Item sem SKU ou com quantidade inválida'
+            });
+            return;
+        }
+
+        partes.forEach(parte => {
+            const interpretado = interpretarParteSkuXmlFull(parte);
+            const quantidadeBaixa = quantidadeNota * interpretado.multiplicador;
+
+            const itemAnalisado = {
+                item: indice + 1,
+                skuXml,
+                parteSku: parte,
+                descricao,
+                quantidadeNota,
+                quantidadeBaixa,
+                produto: interpretado.produto,
+                motivo: interpretado.motivo,
+                candidatos: interpretado.candidatos || []
+            };
+
+            itens.push(itemAnalisado);
+
+            if (!interpretado.produto) {
+                naoCadastrados.push({
+                    item: indice + 1,
+                    skuXml,
+                    descricao,
+                    quantidade: quantidadeBaixa,
+                    motivo: interpretado.motivo === 'sku_ambiguo'
+                        ? `SKU ambíguo. Possíveis cadastros: ${(interpretado.candidatos || []).map(p => p.sku).join(', ')}`
+                        : 'Produto não cadastrado'
+                });
+                return;
+            }
+
+            const chaveProduto = String(interpretado.produto.id);
+            const acumulado = baixasPorProduto.get(chaveProduto);
+
+            if (acumulado) {
+                acumulado.quantidade += quantidadeBaixa;
+                acumulado.origens.push(itemAnalisado);
+            } else {
+                baixasPorProduto.set(chaveProduto, {
+                    produto: interpretado.produto,
+                    quantidade: quantidadeBaixa,
+                    origens: [itemAnalisado]
+                });
+            }
+        });
+    });
+
+    if (detalhes.length === 0) {
+        throw new Error('A NF-e não possui produtos para importar.');
+    }
+
+    return {
+        nomeArquivo,
+        numeroNfe,
+        chaveNfe,
+        statusSefaz,
+        natureza,
+        dataEmissao,
+        documentoMovimentacao: `FULL-NFE-${numeroNfe}-${chaveNfe}`,
+        itens,
+        baixas: Array.from(baixasPorProduto.values()),
+        naoCadastrados
+    };
+}
+
+
+function escaparHtmlXmlFull(valor) {
+    return String(valor ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+
+function garantirModalImportacaoXmlFull() {
+    let modal = document.getElementById('modalImportacaoXmlFull');
+
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'modalImportacaoXmlFull';
+    modal.className = 'modal hidden';
+    modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100000; padding:24px; overflow:auto;';
+    modal.innerHTML = `
+        <div style="background:#fff; width:min(1100px,96vw); margin:20px auto; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.25); overflow:hidden;">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:18px 22px; background:#00ADEE; color:#fff;">
+                <div>
+                    <h3 style="margin:0; font-size:19px;">Importar XML de envio para o FULL</h3>
+                    <small id="xmlFullResumoNota"></small>
+                </div>
+                <button type="button" onclick="fecharModalImportacaoXmlFull()" style="border:0; background:transparent; color:#fff; font-size:25px; cursor:pointer;">&times;</button>
+            </div>
+            <div style="padding:20px 22px;">
+                <div id="xmlFullAvisos"></div>
+                <div style="overflow:auto; max-height:52vh; border:1px solid #dee2e6; border-radius:8px;">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead style="position:sticky; top:0; background:#f1f3f5; z-index:1;">
+                            <tr>
+                                <th style="padding:10px; text-align:left;">Item</th>
+                                <th style="padding:10px; text-align:left;">SKU no XML</th>
+                                <th style="padding:10px; text-align:left;">Produto cadastrado</th>
+                                <th style="padding:10px; text-align:right;">Estoque atual</th>
+                                <th style="padding:10px; text-align:right;">Baixa</th>
+                                <th style="padding:10px; text-align:left;">Situação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="xmlFullTabelaItens"></tbody>
+                    </table>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; margin-top:18px;">
+                    <button type="button" id="btnBaixarNaoCadastradosXmlFull" onclick="baixarNaoCadastradosXmlFull()" class="btn btn-warning" style="display:none;">
+                        <i class="fas fa-file-excel"></i> Baixar não cadastrados
+                    </button>
+                    <div style="display:flex; gap:10px; margin-left:auto;">
+                        <button type="button" class="btn btn-secondary" onclick="fecharModalImportacaoXmlFull()">Cancelar</button>
+                        <button type="button" id="btnConfirmarImportacaoXmlFull" class="btn btn-success" onclick="confirmarImportacaoXmlFull()">
+                            <i class="fas fa-check"></i> Confirmar baixa e sincronizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    return modal;
+}
+
+
+function renderizarPreviaXmlFull(resultado) {
+    const modal = garantirModalImportacaoXmlFull();
+    const resumo = modal.querySelector('#xmlFullResumoNota');
+    const avisos = modal.querySelector('#xmlFullAvisos');
+    const tbody = modal.querySelector('#xmlFullTabelaItens');
+    const btnPendencias = modal.querySelector('#btnBaixarNaoCadastradosXmlFull');
+    const btnConfirmar = modal.querySelector('#btnConfirmarImportacaoXmlFull');
+
+    resumo.textContent = `NF-e ${resultado.numeroNfe} | ${resultado.natureza || 'Remessa'} | ${resultado.baixas.length} produto(s) localizado(s)`;
+
+    const insuficientes = resultado.baixas.filter(
+        baixa => Number(baixa.produto.quantidade || 0) < baixa.quantidade
+    );
+
+    avisos.innerHTML = `
+        <div style="padding:12px 14px; margin-bottom:14px; border-radius:8px; background:${resultado.naoCadastrados.length ? '#fff3cd' : '#e8f7ee'}; color:${resultado.naoCadastrados.length ? '#664d03' : '#146c43'};">
+            ${resultado.naoCadastrados.length
+                ? `<strong>${resultado.naoCadastrados.length} item(ns) não serão baixados.</strong> Baixe a lista e cadastre/corrija esses produtos.`
+                : '<strong>Todos os itens do XML foram localizados no cadastro.</strong>'}
+            ${insuficientes.length
+                ? `<br><strong>${insuficientes.length} produto(s) têm estoque insuficiente e não serão baixados.</strong>`
+                : ''}
+        </div>
+    `;
+
+    tbody.innerHTML = resultado.itens.map(item => {
+        const localizado = Boolean(item.produto);
+        const estoqueAtual = localizado ? Number(item.produto.quantidade || 0) : null;
+        const suficiente = localizado && estoqueAtual >= item.quantidadeBaixa;
+        const situacao = !localizado
+            ? (item.motivo === 'sku_ambiguo' ? 'SKU ambíguo' : 'Não cadastrado')
+            : (suficiente ? 'Pronto para baixar' : 'Estoque insuficiente');
+        const cor = suficiente ? '#198754' : '#dc3545';
+
+        return `
+            <tr style="border-top:1px solid #e9ecef;">
+                <td style="padding:10px;">${item.item}</td>
+                <td style="padding:10px;"><strong>${escaparHtmlXmlFull(item.parteSku)}</strong><br><small>${escaparHtmlXmlFull(item.descricao)}</small></td>
+                <td style="padding:10px;">${localizado ? `${escaparHtmlXmlFull(item.produto.sku)} - ${escaparHtmlXmlFull(item.produto.nome)}` : '-'}</td>
+                <td style="padding:10px; text-align:right;">${localizado ? estoqueAtual : '-'}</td>
+                <td style="padding:10px; text-align:right;">${item.quantidadeBaixa}</td>
+                <td style="padding:10px; color:${cor}; font-weight:600;">${situacao}</td>
+            </tr>
+        `;
+    }).join('');
+
+    btnPendencias.style.display = resultado.naoCadastrados.length ? 'inline-flex' : 'none';
+    btnConfirmar.disabled = resultado.baixas.length === 0;
+    modal.classList.remove('hidden');
+    modal.style.display = 'block';
+}
+
+
+function fecharModalImportacaoXmlFull() {
+    if (importacaoXmlFullEmAndamento) {
+        showToast('Aguarde o término da baixa e da sincronização.', 'warning');
+        return;
+    }
+
+    const modal = document.getElementById('modalImportacaoXmlFull');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+}
+
+
+async function processarArquivoXmlFull(input) {
+    const arquivo = input?.files?.[0];
+    if (!arquivo) return;
+
+    try {
+        if (typeof carregarProdutosEstoque === 'function') {
+            await carregarProdutosEstoque();
+        }
+
+        const conteudo = await arquivo.text();
+        importacaoXmlFullAtual = analisarXmlRemessaFull(conteudo, arquivo.name);
+        renderizarPreviaXmlFull(importacaoXmlFullAtual);
+    } catch (erro) {
+        console.error('Erro ao analisar XML de remessa FULL:', erro);
+        showToast(`Erro ao importar XML: ${erro.message}`, 'error');
+    } finally {
+        input.value = '';
+    }
+}
+
+
+function abrirImportacaoXmlFull() {
+    const username = currentUser?.username?.toLowerCase()?.trim() || '';
+    const autorizado = usuariosAutorizadosSync.includes(username) || usuariosAdmin.includes(username);
+
+    if (!autorizado) {
+        showToast('Você não tem permissão para baixar e sincronizar estoques.', 'warning');
+        return;
+    }
+
+    let input = document.getElementById('inputImportacaoXmlFull');
+
+    if (!input) {
+        input = document.createElement('input');
+        input.id = 'inputImportacaoXmlFull';
+        input.type = 'file';
+        input.accept = '.xml,text/xml,application/xml';
+        input.style.display = 'none';
+        input.onchange = function() {
+            processarArquivoXmlFull(this);
+        };
+        document.body.appendChild(input);
+    }
+
+    input.click();
+}
+
+
+function adicionarBotaoImportarXmlFull() {
+    const username = currentUser?.username?.toLowerCase()?.trim() || '';
+    const autorizado = usuariosAutorizadosSync.includes(username) || usuariosAdmin.includes(username);
+    const existente = document.getElementById('btnImportarXmlFull');
+
+    if (!autorizado) {
+        existente?.remove();
+        return;
+    }
+
+    const menu = garantirMenuAcessibilidadeEstoque();
+    if (!menu) {
+        setTimeout(adicionarBotaoImportarXmlFull, 400);
+        return;
+    }
+
+    if (existente) {
+        if (existente.parentElement !== menu) menu.appendChild(existente);
+        estilizarItemMenuAcessibilidadeEstoque(existente);
+        moverBotoesParaMenuAcessibilidadeEstoque();
+        return;
+    }
+
+    const botao = document.createElement('button');
+    botao.id = 'btnImportarXmlFull';
+    botao.type = 'button';
+    botao.title = 'Importar a NF-e dos produtos enviados ao FULL';
+    botao.innerHTML = '<i class="fas fa-file-code"></i> Importar XML envio FULL';
+    botao.onclick = abrirImportacaoXmlFull;
+    estilizarItemMenuAcessibilidadeEstoque(botao);
+    menu.appendChild(botao);
+    moverBotoesParaMenuAcessibilidadeEstoque();
+}
+
+
+async function obterBaixasExistentesXmlFull(documentoMovimentacao) {
+    const { data, error } = await window.supabaseClient
+        .from('estoque_movimentacoes')
+        .select('produto_id,quantidade')
+        .eq('numero_documento', documentoMovimentacao)
+        .eq('tipo', 'saida');
+
+    if (error) throw error;
+
+    const totais = new Map();
+    (data || []).forEach(mov => {
+        const chave = String(mov.produto_id);
+        totais.set(chave, (totais.get(chave) || 0) + Number(mov.quantidade || 0));
+    });
+    return totais;
+}
+
+
+async function registrarBaixaXmlFull(baixa, quantidade, documentoMovimentacao) {
+    const produtoId = baixa.produto.id;
+    const { data: produtoBanco, error: erroLeitura } = await window.supabaseClient
+        .from('produtos_estoque')
+        .select('id,sku,nome,quantidade')
+        .eq('id', produtoId)
+        .single();
+
+    if (erroLeitura) throw erroLeitura;
+
+    const saldoAtual = Number(produtoBanco?.quantidade || 0);
+    if (saldoAtual < quantidade) {
+        return {
+            success: false,
+            produto: baixa.produto,
+            error: `Estoque insuficiente. Disponível: ${saldoAtual}; baixa: ${quantidade}`
+        };
+    }
+
+    const novoSaldo = saldoAtual - quantidade;
+    const { data: produtoAtualizado, error: erroUpdate } = await window.supabaseClient
+        .from('produtos_estoque')
+        .update({ quantidade: novoSaldo })
+        .eq('id', produtoId)
+        .eq('quantidade', saldoAtual)
+        .select('id')
+        .maybeSingle();
+
+    if (erroUpdate) throw erroUpdate;
+
+    if (!produtoAtualizado) {
+        return {
+            success: false,
+            produto: baixa.produto,
+            error: 'O estoque foi alterado por outro processo. Importe novamente para recalcular.'
+        };
+    }
+
+    const numeroMovimentacao = await gerarNumeroMovimentacao();
+    const usuario = currentUser?.name || currentUser?.username || localStorage.getItem('userName') || 'sistema';
+    const { error: erroMovimento } = await window.supabaseClient
+        .from('estoque_movimentacoes')
+        .insert([{
+            produto_id: produtoId,
+            tipo: 'saida',
+            quantidade,
+            usuario,
+            numero_movimentacao: numeroMovimentacao,
+            numero_documento: documentoMovimentacao,
+            tipo_entrada: 'envio_full',
+            data_hora: new Date().toISOString(),
+            saldo_apos: novoSaldo
+        }]);
+
+    if (erroMovimento) {
+        await window.supabaseClient
+            .from('produtos_estoque')
+            .update({ quantidade: saldoAtual })
+            .eq('id', produtoId)
+            .eq('quantidade', novoSaldo);
+        throw erroMovimento;
+    }
+
+    baixa.produto.quantidade = novoSaldo;
+    return { success: true, produto: baixa.produto, quantidade, novoSaldo };
+}
+
+
+async function confirmarImportacaoXmlFull() {
+    if (!importacaoXmlFullAtual || importacaoXmlFullEmAndamento) return;
+
+    const resultado = importacaoXmlFullAtual;
+    const confirmar = window.confirm(
+        `Confirmar a baixa da NF-e ${resultado.numeroNfe}?\n\n` +
+        `${resultado.baixas.length} produto(s) cadastrado(s) serão analisados.\n` +
+        `${resultado.naoCadastrados.length} item(ns) não cadastrado(s) serão ignorados.\n\n` +
+        'Depois da baixa, os estoques serão sincronizados com o Mercado Livre.'
+    );
+
+    if (!confirmar) return;
+
+    const botao = document.getElementById('btnConfirmarImportacaoXmlFull');
+    importacaoXmlFullEmAndamento = true;
+    if (botao) {
+        botao.disabled = true;
+        botao.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando...';
+    }
+
+    const baixados = [];
+    const ignorados = [];
+    const erros = [];
+    const errosSync = [];
+
+    try {
+        const jaBaixado = await obterBaixasExistentesXmlFull(resultado.documentoMovimentacao);
+
+        for (const baixa of resultado.baixas) {
+            const quantidadeExistente = jaBaixado.get(String(baixa.produto.id)) || 0;
+            const quantidadeRestante = Math.max(0, baixa.quantidade - quantidadeExistente);
+
+            if (quantidadeRestante === 0) {
+                ignorados.push({ produto: baixa.produto, motivo: 'já baixado nesta NF-e' });
+                continue;
+            }
+
+            try {
+                const retorno = await registrarBaixaXmlFull(
+                    baixa,
+                    quantidadeRestante,
+                    resultado.documentoMovimentacao
+                );
+
+                if (retorno.success) baixados.push(retorno);
+                else erros.push(retorno);
+            } catch (erro) {
+                erros.push({ produto: baixa.produto, error: erro.message });
+            }
+        }
+
+        for (const baixa of baixados) {
+            try {
+                const retornoSync = await sincronizarEstoqueML(baixa.produto);
+                if (retornoSync?.success === false) {
+                    errosSync.push({ produto: baixa.produto, error: retornoSync.error || 'Falha na sincronização' });
+                }
+            } catch (erro) {
+                errosSync.push({ produto: baixa.produto, error: erro.message });
+            }
+        }
+
+        await carregarProdutosEstoque();
+
+        const partesMensagem = [
+            `${baixados.length} produto(s) baixado(s)`,
+            `${ignorados.length} já processado(s)`,
+            `${resultado.naoCadastrados.length} não cadastrado(s)`,
+            `${erros.length} erro(s) de baixa`,
+            `${errosSync.length} erro(s) de sincronização`
+        ];
+
+        const houveProblema = resultado.naoCadastrados.length || erros.length || errosSync.length;
+        showToast(`NF-e ${resultado.numeroNfe}: ${partesMensagem.join(', ')}.`, houveProblema ? 'warning' : 'success');
+
+        if (erros.length || errosSync.length) {
+            console.warn('Pendências na importação XML FULL:', { erros, errosSync });
+        }
+
+        if (!houveProblema) {
+            const modal = document.getElementById('modalImportacaoXmlFull');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+            }
+        } else {
+            renderizarPreviaXmlFull(resultado);
+        }
+    } catch (erro) {
+        console.error('Erro geral na baixa do XML FULL:', erro);
+        showToast(`Erro ao processar a NF-e: ${erro.message}`, 'error');
+    } finally {
+        importacaoXmlFullEmAndamento = false;
+        if (botao) {
+            botao.disabled = false;
+            botao.innerHTML = '<i class="fas fa-check"></i> Confirmar baixa e sincronizar';
+        }
+    }
+}
+
+
+function baixarNaoCadastradosXmlFull() {
+    const resultado = importacaoXmlFullAtual;
+
+    if (!resultado?.naoCadastrados?.length) {
+        showToast('Não existem produtos não cadastrados nesta NF-e.', 'info');
+        return;
+    }
+
+    if (typeof XLSX === 'undefined') {
+        showToast('Biblioteca XLSX não está carregada no sistema.', 'error');
+        return;
+    }
+
+    const linhas = resultado.naoCadastrados.map(item => ({
+        'NF-e': resultado.numeroNfe,
+        'Chave de acesso': resultado.chaveNfe,
+        'Item': item.item,
+        'SKU no XML': item.skuXml,
+        'Descrição': item.descricao,
+        'Quantidade': item.quantidade,
+        'Motivo': item.motivo
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const planilha = XLSX.utils.json_to_sheet(linhas);
+    planilha['!cols'] = [
+        { wch: 12 }, { wch: 46 }, { wch: 8 }, { wch: 24 },
+        { wch: 58 }, { wch: 12 }, { wch: 55 }
+    ];
+    XLSX.utils.book_append_sheet(workbook, planilha, 'Não cadastrados');
+    XLSX.writeFile(workbook, `produtos_nao_cadastrados_nfe_${resultado.numeroNfe}.xlsx`);
+}
+
+
+// =========================================================
 // EXPORTAR FUNÇÕES PARA USO GLOBAL
 // =========================================================
 
@@ -29961,6 +30678,12 @@ window.abrirImportacaoPlanilhaML = abrirImportacaoPlanilhaML;
 window.processarArquivoImportacaoML = processarArquivoImportacaoML;
 window.baixarRelatorioImportacaoML = baixarRelatorioImportacaoML;
 window.fecharRelatorioImportacaoML = fecharRelatorioImportacaoML;
+window.abrirImportacaoXmlFull = abrirImportacaoXmlFull;
+window.processarArquivoXmlFull = processarArquivoXmlFull;
+window.confirmarImportacaoXmlFull = confirmarImportacaoXmlFull;
+window.fecharModalImportacaoXmlFull = fecharModalImportacaoXmlFull;
+window.baixarNaoCadastradosXmlFull = baixarNaoCadastradosXmlFull;
+window.adicionarBotaoImportarXmlFull = adicionarBotaoImportarXmlFull;
 window.garantirMenuAcessibilidadeEstoque = garantirMenuAcessibilidadeEstoque;
 window.toggleMenuAcessibilidadeEstoque = toggleMenuAcessibilidadeEstoque;
 window.fecharMenuAcessibilidadeEstoque = fecharMenuAcessibilidadeEstoque;

@@ -235,7 +235,7 @@ const META_RONALD_CONFIG = {
         'andressamiotto',
 
     metaDiariaPadrao:
-        15,
+        1,
 
     maxIgnoradasDia:
         3,

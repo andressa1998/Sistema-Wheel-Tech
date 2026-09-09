@@ -27,6 +27,8 @@
     .wt-empty{padding:28px 8px;color:#7e8aa1;font-size:.72rem;text-align:center}
     #wtGoalRing{background:conic-gradient(#16aaf8 0 var(--wt-goal,0%),#e4edf6 var(--wt-goal,0%))}
     #wtGoalProgress{width:var(--wt-goal,0%)}
+    .wt-event-type{padding:4px 7px;border-radius:999px;color:#fff;font-size:.56rem;font-weight:800;white-space:nowrap}
+    .agenda-toolbar{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}.agenda-week-nav{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.agenda-week-label{min-width:210px;text-align:center;font-weight:700;color:#17305b}.agenda-week-grid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:10px;overflow-x:auto;padding-bottom:4px}.agenda-day{min-height:180px;border:1px solid #dce7f3;border-radius:12px;background:#f8fbff;overflow:hidden}.agenda-day.today{border:2px solid #0875ee}.agenda-day-head{padding:10px;text-align:center;background:#edf5ff;color:#17305b;font-size:.78rem;font-weight:800}.agenda-day-head span{display:block;margin-top:2px;color:#71809a;font-size:.68rem;font-weight:600}.agenda-items{padding:8px;display:flex;flex-direction:column;gap:7px}.agenda-item{padding:9px;border-left:4px solid var(--agenda-cor,#0875ee);border-radius:7px;background:#fff;box-shadow:0 2px 8px rgba(10,45,95,.07);cursor:pointer}.agenda-item strong{display:block;color:#102449;font-size:.75rem}.agenda-item small{display:block;margin-top:3px;color:#6d7b92;font-size:.65rem}.agenda-empty{padding:20px 6px;color:#8b98aa;font-size:.68rem;text-align:center}.agenda-admin-only.hidden{display:none!important}.agenda-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.agenda-form-grid .full{grid-column:1/-1}.agenda-checks{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.agenda-checks label{display:flex;align-items:center;gap:7px;font-weight:600}.agenda-color{height:44px;padding:4px}.agenda-details p{margin:7px 0}.agenda-item-actions{display:flex;gap:8px;margin-top:18px}@media(max-width:800px){.agenda-form-grid{grid-template-columns:1fr}.agenda-form-grid .full{grid-column:auto}}
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
@@ -1719,7 +1721,7 @@ body:has(#loginScreen:not(.hidden)) {
 
             <section class="wt-bottom-grid">
                 <article class="wt-panel" data-menu-visual-depends="chamados"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-headset"></i> Últimos chamados</div><a class="wt-panel-link" href="#" onclick="abrirSistemaChamados();return false">Ver todos</a></div><div id="wtRecentTickets"><div class="wt-empty">Carregando chamados...</div></div></article>
-                <article class="wt-panel" data-menu-visual-depends="calendario_de_folgas"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-calendar-days"></i> Próximas folgas</div><a class="wt-panel-link" href="#" onclick="abrirSistemaFolgas();return false">Ver todos</a></div><div id="wtUpcomingEvents"><div class="wt-empty">Carregando folgas...</div></div></article>
+                <article class="wt-panel" data-menu-visual-depends="calendario_de_folgas"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-calendar-day"></i> Tarefas de hoje</div><a class="wt-panel-link" href="#" onclick="abrirSistemaFolgas();return false">Ver agenda</a></div><div id="wtUpcomingEvents"><div class="wt-empty">Carregando tarefas de hoje...</div></div></article>
                 <div class="wt-side-stack"><article class="wt-panel" data-menu-visual-depends="meta_ronald"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-star"></i> Meta Ronald</div><a class="wt-panel-link" href="#" onclick="abrirPainelMetaRonald();return false">Ver detalhes</a></div><div class="wt-goal"><div class="wt-goal-ring" id="wtGoalRing"><span id="wtGoalPercent">—</span></div><div><div class="wt-goal-value" id="wtGoalValue">Carregando...</div><div class="wt-goal-total" id="wtGoalTotal">Meta diária de conferências</div><div class="wt-progress"><span id="wtGoalProgress"></span></div></div></div></article><article class="wt-help-card" data-menu-visual-depends="chamados" onclick="abrirSistemaChamados()"><i class="fas fa-rocket"></i><div><strong>Precisa de ajuda?</strong><span>Abra um chamado para nossa equipe de suporte.</span></div><div class="wt-help-arrow"><i class="fas fa-chevron-right"></i></div></article></div>
             </section>
         </main>
@@ -5104,7 +5106,7 @@ body:has(#loginScreen:not(.hidden)) {
                 <div class="header-title">
                     <h1 style="display: flex; align-items: center; gap: 10px;">
                         <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
-                        <span id="caixaDateTitle">Calendário de Folgas</span>
+                        <span id="caixaDateTitle">Folgas e Agenda Semanal</span>
                     </h1>
                 </div>
             </div>
@@ -5123,6 +5125,13 @@ body:has(#loginScreen:not(.hidden)) {
     </header>
 
     <div class="container">
+        <div class="card mb-4" id="agendaSemanalCard">
+            <div class="agenda-toolbar">
+                <div><h2 class="card-title" style="margin:0 0 4px"><i class="fas fa-calendar-week"></i> Agenda semanal</h2><small class="text-muted">Reuniões, tarefas, responsáveis, recados e compromissos da equipe.</small></div>
+                <div class="agenda-week-nav"><button type="button" class="btn btn-secondary btn-sm" onclick="mudarSemanaAgenda(-1)" title="Semana anterior"><i class="fas fa-chevron-left"></i></button><span id="agendaSemanaLabel" class="agenda-week-label">Carregando...</span><button type="button" class="btn btn-secondary btn-sm" onclick="mudarSemanaAgenda(1)" title="Próxima semana"><i class="fas fa-chevron-right"></i></button><button type="button" class="btn btn-primary btn-sm" onclick="irSemanaAtualAgenda()">Hoje</button><button type="button" id="btnNovoEventoAgenda" class="btn btn-success btn-sm agenda-admin-only" onclick="abrirModalAgenda()"><i class="fas fa-plus"></i> Novo item</button></div>
+            </div>
+            <div id="agendaSemanalGrid" class="agenda-week-grid mt-3"><div class="agenda-empty">Carregando agenda...</div></div>
+        </div>
         <!-- Cabeçalho com botões de ação -->
         <div class="card mb-4">
             <div class="d-flex justify-content-between align-items-center">
@@ -5212,6 +5221,22 @@ body:has(#loginScreen:not(.hidden)) {
         </div>
     </div>
 </div>
+
+<!-- Modal de compromisso/recado da agenda (somente administradores editam) -->
+<div id="modalAgenda" class="modal hidden"><div class="modal-content" style="max-width:720px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;"><h3 id="agendaModalTitulo"><i class="fas fa-calendar-plus"></i> Novo item da agenda</h3><button type="button" onclick="fecharModalAgenda()" style="background:none;border:0;font-size:24px;cursor:pointer">&times;</button></div>
+    <form id="formAgenda"><input type="hidden" id="agendaId"><div class="agenda-form-grid">
+        <div class="form-group full"><label for="agendaTitulo">Título *</label><input id="agendaTitulo" class="form-control" maxlength="120" placeholder="Ex.: Reunião pós-venda" required></div>
+        <div class="form-group"><label for="agendaTipo">Tipo *</label><select id="agendaTipo" class="form-control" required><option value="reuniao">Reunião</option><option value="tarefa">Tarefa / responsabilidade</option><option value="recado">Recado</option><option value="evento">Evento</option><option value="feriado">Feriado</option><option value="outro">Outro</option></select></div>
+        <div class="form-group"><label for="agendaResponsavel">Responsável</label><input id="agendaResponsavel" class="form-control" maxlength="120" placeholder="Ex.: Arthur"></div>
+        <div class="form-group"><label for="agendaDataInicio">Data inicial *</label><input type="date" id="agendaDataInicio" class="form-control" required></div><div class="form-group"><label for="agendaDataFim">Data final</label><input type="date" id="agendaDataFim" class="form-control"></div>
+        <div class="form-group agenda-time-field"><label for="agendaHoraInicio">Hora inicial</label><input type="time" id="agendaHoraInicio" class="form-control"></div><div class="form-group agenda-time-field"><label for="agendaHoraFim">Hora final</label><input type="time" id="agendaHoraFim" class="form-control"></div>
+        <div class="form-group full"><label for="agendaParticipantes">Participantes / equipe</label><input id="agendaParticipantes" class="form-control" maxlength="250" placeholder="Ex.: Mirella, Thalyta e Letícia"></div>
+        <div class="form-group full"><label for="agendaDescricao">Descrição / observações</label><textarea id="agendaDescricao" class="form-control" rows="3" maxlength="1000" placeholder="Informações importantes para a equipe..."></textarea></div>
+        <div class="form-group"><label for="agendaCor">Cor</label><input type="color" id="agendaCor" class="form-control agenda-color" value="#0875ee"></div><div class="form-group agenda-checks"><label><input type="checkbox" id="agendaDiaInteiro"> Dia inteiro</label><label><input type="checkbox" id="agendaDestaque"> Destacar</label></div>
+    </div><div class="d-flex justify-content-end gap-2"><button type="button" class="btn btn-secondary" onclick="fecharModalAgenda()">Cancelar</button><button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Salvar</button></div></form>
+</div></div>
+<div id="modalDetalhesAgenda" class="modal hidden"><div class="modal-content" style="max-width:540px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><h3><i class="fas fa-calendar-day"></i> Detalhes da agenda</h3><button type="button" onclick="fecharDetalhesAgenda()" style="background:none;border:0;font-size:24px;cursor:pointer">&times;</button></div><div id="agendaDetalhesConteudo" class="agenda-details"></div><div id="agendaDetalhesAcoes" class="agenda-item-actions agenda-admin-only"><button type="button" class="btn btn-primary" onclick="editarEventoAgendaAtual()"><i class="fas fa-edit"></i> Editar</button><button type="button" class="btn btn-danger" onclick="excluirEventoAgendaAtual()"><i class="fas fa-trash"></i> Excluir</button></div></div></div>
 
 <!-- Modal para nova folga -->
 <div id="modalNovaFolga" class="modal hidden">
@@ -7352,17 +7377,31 @@ body:has(#loginScreen:not(.hidden)) {
         async function carregarFolgas(sb) {
             const alvo = document.getElementById('wtUpcomingEvents');
             if (!alvo) return;
-            const hoje = new Date().toISOString().slice(0, 10);
-            const { data, error } = await sb.from('folgas').select('*').eq('status', 'aprovado')
-                .gte('data_inicio', hoje).order('data_inicio', { ascending: true }).limit(3);
-            if (error) { alvo.innerHTML = '<div class="wt-empty">Não foi possível carregar as folgas.</div>'; return; }
-            if (!data?.length) { alvo.innerHTML = '<div class="wt-empty">Nenhuma folga aprovada nos próximos dias.</div>'; return; }
+            const agora = new Date();
+            const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const hoje = iso(agora);
+            const ehSabado = agora.getDay() === 6;
+            const [resAgenda, resFolgas, resSabado] = await Promise.all([
+                sb.from('agenda_eventos').select('*').lte('data_inicio', hoje).gte('data_fim', hoje).order('hora_inicio', { ascending: true }),
+                sb.from('folgas').select('*').eq('status', 'aprovado').lte('data_inicio', hoje).gte('data_fim', hoje).order('user_name', { ascending: true }),
+                ehSabado
+                    ? sb.from('escala_sabados').select('colaborador').eq('data_sabado', hoje).order('colaborador', { ascending: true })
+                    : Promise.resolve({ data: [], error: null })
+            ]);
+            if (resAgenda.error && resFolgas.error) { alvo.innerHTML = '<div class="wt-empty">Não foi possível carregar a agenda.</div>'; return; }
             const tipos = { dia_inteiro: 'Dia todo', manha: 'Manhã', tarde: 'Tarde' };
-            alvo.innerHTML = data.map(f => {
+            const tiposAgenda = { reuniao: 'Reunião', tarefa: 'Tarefa', recado: 'Recado', evento: 'Evento', feriado: 'Feriado', outro: 'Outro' };
+            const itensAgenda = (resAgenda.data || []).map(e => ({ data_inicio:hoje, titulo:e.titulo, sub:[tiposAgenda[e.tipo], e.responsavel].filter(Boolean).join(' • ') || e.descricao || 'Agenda', tipo:tiposAgenda[e.tipo] || 'Agenda', cor:e.cor || '#0875ee', hora:e.dia_inteiro ? 'Dia todo' : e.hora_inicio?.slice(0,5) || tiposAgenda[e.tipo] || 'Agenda', ordem:e.hora_inicio || '00:00' }));
+            const itensFolga = (resFolgas.data || []).map(f => ({ data_inicio:hoje, titulo:`Folga – ${f.user_name || f.nome_usuario || 'Colaborador'}`, sub:f.motivo || tipos[f.tipo] || 'Folga aprovada', tipo:'Folga', cor:'#dc3545', hora:tipos[f.tipo] || 'Folga', ordem:'23:58' }));
+            const equipeSabado = [...new Set((resSabado.data || []).map(r => r.colaborador).filter(Boolean))];
+            const itensSabado = ehSabado && equipeSabado.length ? [{ data_inicio:hoje, titulo:'Equipe trabalhando neste sábado', sub:equipeSabado.join(', '), tipo:'Escala', cor:'#f59e0b', hora:'Sábado', ordem:'23:59' }] : [];
+            const itens = [...itensAgenda, ...itensFolga, ...itensSabado].sort((a,b) => a.ordem.localeCompare(b.ordem));
+            if (!itens.length) { alvo.innerHTML = '<div class="wt-empty">Nenhuma tarefa, folga ou compromisso para hoje.</div>'; return; }
+            alvo.innerHTML = itens.map(f => {
                 const [ano, mes, dia] = String(f.data_inicio).split('-').map(Number);
                 const dataLocal = new Date(ano, mes - 1, dia);
                 const mesTxt = dataLocal.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
-                return `<div class="wt-event-row"><div class="wt-event-date">${String(dia).padStart(2, '0')}<span>${mesTxt}</span></div><div><div class="wt-event-title">Folga – ${escapar(f.user_name || f.nome_usuario || 'Colaborador')}</div><div class="wt-event-sub">${escapar(f.motivo || tipos[f.tipo] || 'Folga aprovada')}</div></div><span>${escapar(tipos[f.tipo] || 'Dia todo')}</span></div>`;
+                return `<div class="wt-event-row"><div class="wt-event-date">${String(dia).padStart(2, '0')}<span>${mesTxt}</span></div><div><div class="wt-event-title">${escapar(f.titulo)}</div><div class="wt-event-sub">${escapar(f.sub || '')}</div></div><span class="wt-event-type" style="background:${escapar(f.cor)}">${escapar(f.hora || f.tipo)}</span></div>`;
             }).join('');
         }
 

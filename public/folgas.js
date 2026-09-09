@@ -68,7 +68,9 @@ function initCalendario() {
         },
         events: [],
         eventClick: function(info) {
-            if (currentUser && currentUser.role === 'Administrador') {
+            if (info.event.extendedProps?.origem === 'agenda') {
+                abrirDetalhesAgenda(String(info.event.id).replace('agenda-', ''));
+            } else if (currentUser && currentUser.role === 'Administrador') {
                 showToast(`Folga de ${info.event.title}`, 'info');
             }
         }
@@ -108,6 +110,7 @@ window.abrirSistemaFolgas = function() {
     carregarFullCalendar(() => {
         if (!calendario) initCalendario();
         carregarFolgas();
+        carregarAgendaSemanal();
     });
 
     // ===== INICIALIZAR ESCALA DE SÁBADOS =====
@@ -608,6 +611,57 @@ async function salvarEscalaMensal() {
 // 5. EXPOR FUNÇÕES PARA USO NO HTML
 window.carregarEscalaMensal = carregarEscalaMensal;
 window.salvarEscalaMensal = salvarEscalaMensal;
+
+// ===== AGENDA SEMANAL: REUNIÕES, RECADOS E TAREFAS =====
+let agendaEventos = [], agendaSemanaBase = new Date(), agendaEventoAtualId = null;
+const AGENDA_TIPOS = { reuniao:'Reunião', tarefa:'Tarefa', recado:'Recado', evento:'Evento', feriado:'Feriado', outro:'Outro' };
+const agendaEhAdmin = () => !!currentUser && currentUser.role === 'Administrador';
+const agendaEscape = v => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+const agendaDataISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+function agendaInicioSemana(d=new Date()){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()), dia=x.getDay(); x.setDate(x.getDate()-(dia===0?6:dia-1)); return x; }
+function agendaFimSemana(i){ const x=new Date(i); x.setDate(x.getDate()+5); return x; }
+
+async function carregarAgendaSemanal(){
+    const grid=document.getElementById('agendaSemanalGrid'); if(!grid)return;
+    document.querySelectorAll('.agenda-admin-only').forEach(el=>el.classList.toggle('hidden',!agendaEhAdmin()));
+    const ini=agendaInicioSemana(agendaSemanaBase), fim=agendaFimSemana(ini);
+    try{
+        const {data,error}=await supabaseClient.from('agenda_eventos').select('*').lte('data_inicio',agendaDataISO(fim)).gte('data_fim',agendaDataISO(ini)).order('data_inicio',{ascending:true}).order('hora_inicio',{ascending:true});
+        if(error)throw error; agendaEventos=data||[]; renderizarAgendaSemanal(); atualizarCalendario();
+    }catch(error){ console.error('Erro ao carregar agenda:',error); grid.innerHTML='<div class="agenda-empty">Não foi possível carregar a agenda. Execute primeiro o arquivo SQL enviado.</div>'; }
+}
+function renderizarAgendaSemanal(){
+    const grid=document.getElementById('agendaSemanalGrid'), label=document.getElementById('agendaSemanaLabel'); if(!grid)return;
+    const ini=agendaInicioSemana(agendaSemanaBase), fim=agendaFimSemana(ini), hoje=agendaDataISO(new Date()); if(label)label.textContent=`${ini.toLocaleDateString('pt-BR')} a ${fim.toLocaleDateString('pt-BR')}`;
+    let html=''; for(let i=0;i<6;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const iso=agendaDataISO(d), itens=agendaEventos.filter(e=>e.data_inicio<=iso&&(e.data_fim||e.data_inicio)>=iso);
+        html+=`<section class="agenda-day ${iso===hoje?'today':''}"><div class="agenda-day-head">${d.toLocaleDateString('pt-BR',{weekday:'long'})}<span>${d.toLocaleDateString('pt-BR')}</span></div><div class="agenda-items">`;
+        html+=itens.length?itens.map(e=>{ const hora=e.dia_inteiro?'Dia inteiro':([e.hora_inicio?.slice(0,5),e.hora_fim?.slice(0,5)].filter(Boolean).join(' às ')||'Sem horário'), extra=[hora,e.responsavel].filter(Boolean).join(' • '); return `<div class="agenda-item" style="--agenda-cor:${agendaEscape(e.cor||'#0875ee')};${e.destaque?'background:#fff8dc;':''}" onclick="abrirDetalhesAgenda('${e.id}')"><strong>${agendaEscape(e.titulo)}</strong><small>${agendaEscape(AGENDA_TIPOS[e.tipo]||e.tipo)} • ${agendaEscape(extra)}</small></div>`;}).join(''):'<div class="agenda-empty">Sem itens</div>'; html+='</div></section>';
+    } grid.innerHTML=html;
+}
+window.mudarSemanaAgenda=d=>{agendaSemanaBase.setDate(agendaSemanaBase.getDate()+Number(d)*7);carregarAgendaSemanal();};
+window.irSemanaAtualAgenda=()=>{agendaSemanaBase=new Date();carregarAgendaSemanal();};
+window.abrirModalAgenda=function(ev=null){
+    if(!agendaEhAdmin()){showToast('Somente administradores podem editar a agenda.','warning');return;} const x=ev||{}, hoje=agendaDataISO(new Date());
+    const campos={agendaId:x.id||'',agendaTitulo:x.titulo||'',agendaTipo:x.tipo||'reuniao',agendaResponsavel:x.responsavel||'',agendaDataInicio:x.data_inicio||hoje,agendaDataFim:x.data_fim||x.data_inicio||hoje,agendaHoraInicio:x.hora_inicio?.slice(0,5)||'',agendaHoraFim:x.hora_fim?.slice(0,5)||'',agendaParticipantes:x.participantes||'',agendaDescricao:x.descricao||'',agendaCor:x.cor||'#0875ee'};
+    Object.entries(campos).forEach(([id,v])=>document.getElementById(id).value=v); document.getElementById('agendaDiaInteiro').checked=!!x.dia_inteiro; document.getElementById('agendaDestaque').checked=!!x.destaque;
+    document.getElementById('agendaModalTitulo').innerHTML=`<i class="fas fa-calendar-plus"></i> ${x.id?'Editar item da agenda':'Novo item da agenda'}`; document.getElementById('modalAgenda').classList.remove('hidden');
+};
+window.fecharModalAgenda=()=>document.getElementById('modalAgenda')?.classList.add('hidden');
+document.getElementById('agendaDiaInteiro')?.addEventListener('change',e=>document.querySelectorAll('.agenda-time-field').forEach(el=>el.style.opacity=e.target.checked?'.45':'1'));
+document.getElementById('formAgenda')?.addEventListener('submit',async e=>{
+    e.preventDefault(); if(!agendaEhAdmin())return; const id=document.getElementById('agendaId').value, inicio=document.getElementById('agendaDataInicio').value, fim=document.getElementById('agendaDataFim').value||inicio;
+    if(fim<inicio){showToast('A data final não pode ser anterior à inicial.','warning');return;} const inteiro=document.getElementById('agendaDiaInteiro').checked;
+    const r={titulo:document.getElementById('agendaTitulo').value.trim(),tipo:document.getElementById('agendaTipo').value,responsavel:document.getElementById('agendaResponsavel').value.trim()||null,data_inicio:inicio,data_fim:fim,hora_inicio:inteiro?null:document.getElementById('agendaHoraInicio').value||null,hora_fim:inteiro?null:document.getElementById('agendaHoraFim').value||null,participantes:document.getElementById('agendaParticipantes').value.trim()||null,descricao:document.getElementById('agendaDescricao').value.trim()||null,cor:document.getElementById('agendaCor').value,dia_inteiro:inteiro,destaque:document.getElementById('agendaDestaque').checked,criado_por:currentUser.username||currentUser.name,atualizado_em:new Date().toISOString()};
+    const btn=e.target.querySelector('button[type="submit"]');btn.disabled=true; try{const q=id?supabaseClient.from('agenda_eventos').update(r).eq('id',id):supabaseClient.from('agenda_eventos').insert([{...r,criado_em:new Date().toISOString()}]);const {error}=await q;if(error)throw error;showToast(id?'Item atualizado!':'Item adicionado à agenda!','success');fecharModalAgenda();await carregarAgendaSemanal();window.carregarDashboardWheelTech?.();}catch(error){showToast('Erro ao salvar agenda: '+error.message,'error');}finally{btn.disabled=false;}
+});
+window.abrirDetalhesAgenda=function(id){agendaEventoAtualId=id;const e=agendaEventos.find(x=>String(x.id)===String(id));if(!e)return;const h=e.dia_inteiro?'Dia inteiro':([e.hora_inicio?.slice(0,5),e.hora_fim?.slice(0,5)].filter(Boolean).join(' às ')||'Sem horário');document.getElementById('agendaDetalhesConteudo').innerHTML=`<h3 style="color:${agendaEscape(e.cor||'#0875ee')}">${agendaEscape(e.titulo)}</h3><p><strong>Tipo:</strong> ${agendaEscape(AGENDA_TIPOS[e.tipo]||e.tipo)}</p><p><strong>Data:</strong> ${formatarDataLocal(e.data_inicio)}${e.data_fim!==e.data_inicio?' até '+formatarDataLocal(e.data_fim):''}</p><p><strong>Horário:</strong> ${agendaEscape(h)}</p><p><strong>Responsável:</strong> ${agendaEscape(e.responsavel||'-')}</p><p><strong>Participantes:</strong> ${agendaEscape(e.participantes||'-')}</p><p><strong>Descrição:</strong> ${agendaEscape(e.descricao||'-')}</p>`;document.getElementById('agendaDetalhesAcoes')?.classList.toggle('hidden',!agendaEhAdmin());document.getElementById('modalDetalhesAgenda').classList.remove('hidden');};
+window.fecharDetalhesAgenda=()=>{document.getElementById('modalDetalhesAgenda')?.classList.add('hidden');agendaEventoAtualId=null;};
+window.editarEventoAgendaAtual=()=>{const x=agendaEventos.find(e=>String(e.id)===String(agendaEventoAtualId));if(x){fecharDetalhesAgenda();abrirModalAgenda(x);}};
+window.excluirEventoAgendaAtual=async()=>{if(!agendaEhAdmin()||!agendaEventoAtualId||!confirm('Excluir este item da agenda?'))return;const {error}=await supabaseClient.from('agenda_eventos').delete().eq('id',agendaEventoAtualId);if(error){showToast('Erro ao excluir: '+error.message,'error');return;}fecharDetalhesAgenda();showToast('Item excluído.','success');await carregarAgendaSemanal();window.carregarDashboardWheelTech?.();};
+
+const atualizarCalendarioFolgas=atualizarCalendario;
+atualizarCalendario=function(){atualizarCalendarioFolgas();if(!calendario)return;calendario.addEventSource(agendaEventos.map(e=>({id:`agenda-${e.id}`,title:`${AGENDA_TIPOS[e.tipo]||'Agenda'}: ${e.titulo}`,start:e.data_inicio+(e.hora_inicio&&!e.dia_inteiro?`T${e.hora_inicio}`:''),end:e.data_fim||e.data_inicio,allDay:!!e.dia_inteiro,color:e.cor||'#0875ee',extendedProps:{...e,origem:'agenda'}})));};
+window.carregarAgendaSemanal=carregarAgendaSemanal;
 
 // ============================================
 // FIM DO ARQUIVO folgas.js
