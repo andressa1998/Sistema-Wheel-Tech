@@ -11866,7 +11866,8 @@ async function carregarVendasCachePeriodoNFE(
 
     let vendas =
         await carregarVendasCacheNFE(
-            null
+            inicio,
+            fim
         );
 
 
@@ -17115,24 +17116,43 @@ async function sincronizarPainelOperacionalNFE(
         // =====================================================
         // CARREGAR CACHE
         //
-        // Se falhar:
-        // mantém a base que já está na memória.
+        // Quando a função é chamada logo depois de
+        // carregarVendasPendentes(), a base já acabou de ser
+        // carregada do Supabase. Nesse caso NÃO buscamos tudo
+        // novamente.
+        //
+        // Se for atualização manual ou não houver base válida,
+        // mantém o carregamento completo.
         // =====================================================
+
+        const podeUsarBaseAtual =
+            opcoes.usarBaseAtual ===
+                true &&
+            Array.isArray(
+                window._vendasPainelNFEBase
+            );
+
 
         if (statusTela) {
 
             statusTela.textContent =
-                'Carregando vendas salvas...';
+                podeUsarBaseAtual
+                    ? 'Usando vendas já carregadas...'
+                    : 'Carregando vendas salvas...';
         }
 
 
         try {
 
             const carregadas =
-                await carregarVendasCachePeriodoNFE(
-                    null,
-                    null
-                );
+                podeUsarBaseAtual
+
+                    ? window._vendasPainelNFEBase
+
+                    : await carregarVendasCachePeriodoNFE(
+                        null,
+                        null
+                    );
 
 
             if (
@@ -17178,7 +17198,12 @@ async function sincronizarPainelOperacionalNFE(
 
 
         console.log(
-            `📦 [NFE] Base: ${vendas.length} venda(s)`
+            `📦 [NFE] Base: ${vendas.length} venda(s)` +
+            (
+                podeUsarBaseAtual
+                    ? ' (memória)'
+                    : ' (Supabase)'
+            )
         );
 
 
@@ -51774,7 +51799,8 @@ async function salvarVendasCacheNFE(
 }
 
 async function carregarVendasCacheNFE(
-    dataEnvio = null
+    dataEnvio = null,
+    dataEnvioFim = null
 ) {
 
     try {
@@ -51788,94 +51814,404 @@ async function carregarVendasCacheNFE(
 
 
         // =====================================================
-        // CARREGAR TODAS AS PÁGINAS DO SUPABASE
+        // CARREGAMENTO PAGINADO
+        //
+        // IMPORTANTE:
+        //
+        // - Sem período: mantém o comportamento antigo e carrega
+        //   todo o cache.
+        //
+        // - Com data/período: filtra NO SUPABASE antes de baixar
+        //   os registros. Isso evita carregar a tabela inteira
+        //   para depois descartar quase tudo no navegador.
         // =====================================================
 
-        for (
-            let inicio = 0;
-            ;
-            inicio += POR_PAGINA
-        ) {
+        const carregarConsultaPaginada =
+            async (
+                montarConsulta,
+                rotulo
+            ) => {
 
-            const fim =
-                inicio +
-                POR_PAGINA -
-                1;
+                for (
+                    let inicioPagina = 0;
+                    ;
+                    inicioPagina += POR_PAGINA
+                ) {
+
+                    const fimPagina =
+                        inicioPagina +
+                        POR_PAGINA -
+                        1;
 
 
-            const {
-                data,
-                error
-            } =
-                await window
-                    .supabaseClient
-                    .from(
-                        'vendas_nfe_cache'
-                    )
-                    .select('*')
-                    .order(
-                        'data_venda',
-                        {
-                            ascending:
-                                false
-                        }
-                    )
-                    .order(
-                        'id_venda_ml',
-                        {
-                            ascending:
-                                false
-                        }
-                    )
-                    .range(
-                        inicio,
-                        fim
+                    const {
+                        data,
+                        error
+                    } =
+                        await montarConsulta()
+                            .range(
+                                inicioPagina,
+                                fimPagina
+                            );
+
+
+                    if (
+                        error
+                    ) {
+
+                        throw error;
+                    }
+
+
+                    const pagina =
+                        Array.isArray(
+                            data
+                        )
+                            ? data
+                            : [];
+
+
+                    if (
+                        pagina.length ===
+                        0
+                    ) {
+
+                        break;
+                    }
+
+
+                    todosRegistros.push(
+                        ...pagina
                     );
 
 
-            if (
-                error
-            ) {
-
-                throw error;
-            }
+                    console.log(
+                        `📚 [NFE CACHE] ${rotulo}: ${todosRegistros.length} registro(s) carregado(s)...`
+                    );
 
 
-            const pagina =
-                Array.isArray(
-                    data
-                )
-                    ? data
-                    : [];
+                    if (
+                        pagina.length <
+                        POR_PAGINA
+                    ) {
+
+                        break;
+                    }
+                }
+            };
 
 
-            if (
-                pagina.length ===
-                0
-            ) {
+        const inicioPeriodo =
+            dataEnvio
+                ? String(
+                    dataEnvio
+                ).trim()
+                : null;
 
-                break;
-            }
+
+        const fimPeriodo =
+            inicioPeriodo
+                ? String(
+                    dataEnvioFim ||
+                    dataEnvio
+                ).trim()
+                : null;
 
 
-            todosRegistros.push(
-                ...pagina
+        const converterInicioDiaSaoPauloParaISO =
+            data => {
+
+                const partes =
+                    String(
+                        data ||
+                        ''
+                    )
+                        .split('-')
+                        .map(
+                            Number
+                        );
+
+
+                if (
+                    partes.length !==
+                        3 ||
+                    !partes.every(
+                        Number.isFinite
+                    )
+                ) {
+
+                    return null;
+                }
+
+
+                const [
+                    ano,
+                    mes,
+                    dia
+                ] =
+                    partes;
+
+
+                return new Date(
+                    Date.UTC(
+                        ano,
+                        mes - 1,
+                        dia,
+                        3,
+                        0,
+                        0,
+                        0
+                    )
+                ).toISOString();
+            };
+
+
+        const converterFimExclusivoDiaSaoPauloParaISO =
+            data => {
+
+                const partes =
+                    String(
+                        data ||
+                        ''
+                    )
+                        .split('-')
+                        .map(
+                            Number
+                        );
+
+
+                if (
+                    partes.length !==
+                        3 ||
+                    !partes.every(
+                        Number.isFinite
+                    )
+                ) {
+
+                    return null;
+                }
+
+
+                const [
+                    ano,
+                    mes,
+                    dia
+                ] =
+                    partes;
+
+
+                return new Date(
+                    Date.UTC(
+                        ano,
+                        mes - 1,
+                        dia + 1,
+                        3,
+                        0,
+                        0,
+                        0
+                    )
+                ).toISOString();
+            };
+
+
+        if (
+            inicioPeriodo &&
+            fimPeriodo
+        ) {
+
+            const inicioFullISO =
+                converterInicioDiaSaoPauloParaISO(
+                    inicioPeriodo
+                );
+
+
+            const fimFullExclusivoISO =
+                converterFimExclusivoDiaSaoPauloParaISO(
+                    fimPeriodo
+                );
+
+
+            // =================================================
+            // VENDAS NORMAIS
+            //
+            // Usa data_envio, que já possui índice no banco.
+            // Inclui registros antigos onde is_full esteja NULL.
+            // =================================================
+
+            await carregarConsultaPaginada(
+                () =>
+                    window
+                        .supabaseClient
+                        .from(
+                            'vendas_nfe_cache'
+                        )
+                        .select('*')
+                        .gte(
+                            'data_envio',
+                            inicioPeriodo
+                        )
+                        .lte(
+                            'data_envio',
+                            fimPeriodo
+                        )
+                        .or(
+                            'is_full.eq.false,is_full.is.null'
+                        )
+                        .order(
+                            'data_venda',
+                            {
+                                ascending:
+                                    false
+                            }
+                        )
+                        .order(
+                            'id_venda_ml',
+                            {
+                                ascending:
+                                    false
+                            }
+                        ),
+                'período normal'
             );
 
 
-            console.log(
-                `📚 [NFE CACHE] ${todosRegistros.length} registro(s) carregado(s)...`
+            // =================================================
+            // VENDAS FULL
+            //
+            // Mantém a sua regra atual:
+            // FULL usa data_venda como referência.
+            // =================================================
+
+            if (
+                inicioFullISO &&
+                fimFullExclusivoISO
+            ) {
+
+                await carregarConsultaPaginada(
+                    () =>
+                        window
+                            .supabaseClient
+                            .from(
+                                'vendas_nfe_cache'
+                            )
+                            .select('*')
+                            .eq(
+                                'is_full',
+                                true
+                            )
+                            .gte(
+                                'data_venda',
+                                inicioFullISO
+                            )
+                            .lt(
+                                'data_venda',
+                                fimFullExclusivoISO
+                            )
+                            .order(
+                                'data_venda',
+                                {
+                                    ascending:
+                                        false
+                                }
+                            )
+                            .order(
+                                'id_venda_ml',
+                                {
+                                    ascending:
+                                        false
+                                }
+                            ),
+                    'período FULL'
+                );
+            }
+
+
+            // =================================================
+            // COMO AS FONTES FORAM BUSCADAS EM DUAS CONSULTAS,
+            // RESTAURA A ORDENAÇÃO GLOBAL DA LISTA.
+            // =================================================
+
+            todosRegistros.sort(
+                (
+                    a,
+                    b
+                ) => {
+
+                    const dataA =
+                        new Date(
+                            a?.data_venda ||
+                            0
+                        ).getTime() ||
+                        0;
+
+
+                    const dataB =
+                        new Date(
+                            b?.data_venda ||
+                            0
+                        ).getTime() ||
+                        0;
+
+
+                    if (
+                        dataA !==
+                        dataB
+                    ) {
+
+                        return (
+                            dataB -
+                            dataA
+                        );
+                    }
+
+
+                    return String(
+                        b?.id_venda_ml ||
+                        ''
+                    ).localeCompare(
+                        String(
+                            a?.id_venda_ml ||
+                            ''
+                        )
+                    );
+                }
             );
 
 
-            if (
-                pagina.length <
-                POR_PAGINA
-            ) {
+        } else {
 
-                break;
-            }
+            // =================================================
+            // SEM DATA:
+            // CARREGAMENTO COMPLETO, NECESSÁRIO PARA "TODOS"
+            // E PARA A BASE OPERACIONAL COMPLETA.
+            // =================================================
+
+            await carregarConsultaPaginada(
+                () =>
+                    window
+                        .supabaseClient
+                        .from(
+                            'vendas_nfe_cache'
+                        )
+                        .select('*')
+                        .order(
+                            'data_venda',
+                            {
+                                ascending:
+                                    false
+                            }
+                        )
+                        .order(
+                            'id_venda_ml',
+                            {
+                                ascending:
+                                    false
+                            }
+                        ),
+                'cache completo'
+            );
         }
+
 
 
         // =====================================================
@@ -51921,44 +52257,53 @@ async function carregarVendasCacheNFE(
 
 
         // =====================================================
-        // FILTRO POR DATA
+        // FILTRO POR DATA / PERÍODO
         //
-        // Mantido por compatibilidade com funções antigas.
+        // Mantido como proteção adicional. O filtro principal
+        // já aconteceu no Supabase quando uma data foi informada.
         // =====================================================
 
         if (
-            dataEnvio
+            inicioPeriodo
         ) {
 
             registros =
                 registros.filter(
                     registro => {
 
-                        if (
+                        const dataReferencia =
                             registro
                                 .is_full
-                        ) {
 
-                            return (
-                                normalizarDataEnvioML(
+                                ? normalizarDataEnvioML(
                                     registro
                                         .data_venda
-                                ) ===
-                                dataEnvio
-                            );
+                                )
+
+                                : normalizarDataEnvioML(
+                                    registro
+                                        .data_envio
+                                );
+
+
+                        if (
+                            !dataReferencia
+                        ) {
+
+                            return false;
                         }
 
 
                         return (
-                            normalizarDataEnvioML(
-                                registro
-                                    .data_envio
-                            ) ===
-                            dataEnvio
+                            dataReferencia >=
+                                inicioPeriodo &&
+                            dataReferencia <=
+                                fimPeriodo
                         );
                     }
                 );
         }
+
 
 
         // =====================================================
@@ -57467,7 +57812,13 @@ async function carregarVendasPendentes(
                     true,
 
                 origem:
-                    'entrada_aba'
+                    'entrada_aba',
+
+                // O cache acabou de ser carregado acima.
+                // Evita uma segunda leitura completa da tabela.
+                usarBaseAtual:
+                    cacheCarregado ===
+                    true
             });
         }
 
