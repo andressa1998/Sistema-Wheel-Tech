@@ -24635,6 +24635,45 @@ function criarModalRegrasEstoque() {
 
 
             <!-- ========================================== -->
+            <!-- CONSTRUTOR DE REGRAS DE ALERTA (TELA DEDICADA) -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    border: 2px solid #1a9c4a;
+                    border-radius: 10px;
+                    padding: 16px 20px;
+                    margin-bottom: 20px;
+                    background: #f2fbf5;
+                    display: flex;
+                    align-items: center;
+                    gap: 14px;
+                "
+            >
+                <div style="flex:1">
+                    <strong style="color:#186c39;font-size:15px">
+                        <i class="fas fa-sliders-h"></i>
+                        Construtor de regras de alerta (Clássico × Premium)
+                    </strong>
+                    <div style="font-size:13px;color:#42505f;margin-top:3px">
+                        Monte suas próprias regras de estoque por variação, FULL, local etc.
+                        Também no menu lateral em "Regras de Alerta de Estoque".
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    onclick="window.RegrasAlertasEstoque && window.RegrasAlertasEstoque.abrirTela()"
+                    style="
+                        background:#1a9c4a;color:#fff;border:0;border-radius:8px;
+                        padding:10px 18px;font-weight:600;cursor:pointer;white-space:nowrap;
+                    "
+                >
+                    Abrir construtor
+                </button>
+            </div>
+
+
+            <!-- ========================================== -->
             <!-- REGRAS FIXAS CLÁSSICO / PREMIUM -->
             <!-- ========================================== -->
 

@@ -1680,6 +1680,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="wt-nav-item" data-menu-visual-key="gerenciar_frete" type="button" onclick="abrirSistemaFrete()"><i class="fas fa-truck"></i><span>Gerenciar Frete</span></button>
             <button class="wt-nav-item" data-menu-visual-key="gerenciamento_de_anuncios" type="button" onclick="abrirSistemaGerenciamentoAnuncios()"><i class="fas fa-list-alt"></i><span>Gerenciamento de Anúncios</span></button>
             <button class="wt-nav-item" data-menu-visual-key="gestao_de_estoque" type="button" onclick="abrirGestaoEstoque()"><i class="fas fa-box"></i><span>Gestão de Estoque</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="regras_alerta_estoque" type="button" onclick="window.RegrasAlertasEstoque && window.RegrasAlertasEstoque.abrirTela()"><i class="fas fa-sliders-h"></i><span>Regras de Alerta de Estoque</span></button>
             <button class="wt-nav-item" data-menu-visual-key="historico_de_acessos" type="button" onclick="abrirHistoricoAcessos()"><i class="fas fa-history"></i><span>Histórico de Acessos</span></button>
             <button class="wt-nav-item" data-menu-visual-key="meta_ronald" type="button" onclick="abrirPainelMetaRonald()"><i class="fas fa-user-shield"></i><span>Meta Ronald</span></button>
             <button class="wt-nav-item" data-menu-visual-key="ordem_de_servico" type="button" onclick="abrirSistemaOS()"><i class="fas fa-clipboard-list"></i><span>Ordem de Serviço</span></button>
@@ -1711,6 +1712,7 @@ body:has(#loginScreen:not(.hidden)) {
                 <button class="wt-nav-item" data-menu-visual-key="gerenciar_frete" type="button" onclick="abrirSistemaFrete()"><i class="fas fa-truck"></i><span>Gerenciar Frete</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="gerenciamento_de_anuncios" type="button" onclick="abrirSistemaGerenciamentoAnuncios()"><i class="fas fa-list-alt"></i><span>Gerenciamento de Anúncios</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="gestao_de_estoque" type="button" onclick="abrirGestaoEstoque()"><i class="fas fa-box"></i><span>Gestão de Estoque</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="regras_alerta_estoque" type="button" onclick="window.RegrasAlertasEstoque && window.RegrasAlertasEstoque.abrirTela()"><i class="fas fa-sliders-h"></i><span>Regras de Alerta de Estoque</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="historico_de_acessos" id="historicoMenuCard" type="button" onclick="abrirHistoricoAcessos()"><i class="fas fa-history"></i><span>Histórico de Acessos</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="meta_ronald" id="metaRonaldMenuCard" type="button" onclick="abrirPainelMetaRonald()"><i class="fas fa-user-shield"></i><span>Meta Ronald</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="ordem_de_servico" type="button" onclick="abrirSistemaOS()"><i class="fas fa-clipboard-list"></i><span>Ordem de Serviço</span></button>
@@ -7185,7 +7187,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
-    <script src="nfe_manager.js?v=20260910-8"></script>
+    <script src="nfe_manager.js?v=20260910-9"></script>
     <script src="estoque_gestao.js"></script>
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
@@ -7197,6 +7199,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="menu_visualizacao.js"></script>
     <script src="notificacoes_chamados.js"></script>
     <script src="coleta_ampulheta.js?v=20260910-3"></script>
+    <script src="regras_alertas_estoque.js?v=20260910-1"></script>
 
     <script>
     // ===== LOGIN / CADASTRO COM ROTACAO 3D =====

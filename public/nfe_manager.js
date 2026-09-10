@@ -33897,7 +33897,87 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                     ? itemML.tags
                     : [];
 
+            // =============================================
+            // ESTOQUE DE TODAS AS VARIAÇÕES DO ANÚNCIO
+            //
+            // Usado pelas Regras de Alerta de Estoque
+            // (regras_alertas_estoque.js) para condições do
+            // tipo "todas as variações ficaram com 1".
+            // =============================================
+
+            const variacoesAnuncioML =
+                Array.isArray(itemML?.variations)
+                    ? itemML.variations
+                    : [];
+
+            const variacoesEstoqueSnapshot =
+                variacoesAnuncioML.map(v => {
+
+                    const det =
+                        detalhes.find(d =>
+                            String(d?.variation_id) ===
+                            String(v?.id)
+                        ) ||
+                        null;
+
+                    const estAnuncio =
+                        Number(v?.available_quantity);
+
+                    const estFull =
+                        Number(det?.estoque_full);
+
+                    return {
+                        id:
+                            v?.id ??
+                            null,
+
+                        sku:
+                            extrairSellerSkuObjetoFullNFE(v) ||
+                            null,
+
+                        estoque:
+                            Number.isFinite(estAnuncio)
+                                ? Math.max(0, estAnuncio)
+                                : null,
+
+                        estoque_full:
+                            (det?.tem_meli_facility === true &&
+                                Number.isFinite(estFull))
+                                ? Math.max(0, estFull)
+                                : null
+                    };
+                });
+
+            const somaVariacoesAnuncio =
+                variacoesEstoqueSnapshot.length > 0
+                    ? variacoesEstoqueSnapshot.reduce(
+                        (t, v) =>
+                            t +
+                            (Number.isFinite(Number(v.estoque))
+                                ? Number(v.estoque)
+                                : 0),
+                        0
+                    )
+                    : null;
+
             const snapshotBase = {
+
+                tem_variacoes_anuncio:
+                    variacoesAnuncioML.length > 0,
+
+                total_variacoes_anuncio:
+                    variacoesAnuncioML.length,
+
+                variacoes_estoque_anuncio:
+                    variacoesEstoqueSnapshot,
+
+                estoque_anuncio_total_todas_variacoes:
+                    variacoesEstoqueSnapshot.length > 0
+                        ? somaVariacoesAnuncio
+                        : (Number.isFinite(Number(itemML?.available_quantity))
+                            ? Number(itemML.available_quantity)
+                            : null),
+
                 item_id:
                     candidato.item_id,
 
@@ -40491,6 +40571,119 @@ function garantirEstiloAlertaExposicaoFullNFE() {
     );
 }
 
+// =========================================================
+// FATOS DO ANÚNCIO PARA AS REGRAS DE ALERTA DE ESTOQUE
+//
+// Alimenta window.RegrasAlertasEstoque.avaliar().
+// Ver regras_alertas_estoque.js
+// =========================================================
+
+function montarFatosRegrasEstoqueNFE(dados) {
+
+    const num = (v) => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
+
+    const listingParaNome = (lt) => {
+        lt = String(lt || '').trim().toLowerCase();
+        if (lt === 'gold_special') return 'classico';
+        if (lt === 'gold_pro' || lt === 'gold_premium') return 'premium';
+        return 'nenhuma';
+    };
+
+    const snapshot =
+        dados.snapshot || {};
+
+    const variacoes =
+        Array.isArray(snapshot.variacoes_estoque_anuncio)
+            ? snapshot.variacoes_estoque_anuncio.map(v => ({
+                estoque: num(v?.estoque),
+                estoque_full: num(v?.estoque_full),
+                estoque_local: num(v?.estoque_local)
+            }))
+            : [];
+
+    const numerosVar =
+        variacoes
+            .map(v => v.estoque)
+            .filter(v => v !== null);
+
+    const temVariacoes =
+        snapshot.tem_variacoes_anuncio === true ||
+        variacoes.length > 0 ||
+        Number(snapshot.total_variacoes_anuncio || 0) > 0;
+
+    const estoqueFull =
+        num(dados.estoqueTotalFull);
+
+    const estoqueLocal =
+        num(dados.estoqueTotalLocal) !== null
+            ? num(dados.estoqueTotalLocal)
+            : (snapshot.oferecendo_full === true
+                ? null
+                : num(snapshot.quantidade_anuncio_restante));
+
+    const estoqueTotal =
+        num(dados.quantidadeBaseExposicao) !== null
+            ? num(dados.quantidadeBaseExposicao)
+            : (num(dados.estoqueTotalAnuncio) !== null
+                ? num(dados.estoqueTotalAnuncio)
+                : num(snapshot.estoque_anuncio_total_todas_variacoes));
+
+    const fullAtivo =
+        snapshot.oferecendo_full === true ||
+        (estoqueFull !== null && estoqueFull > 0);
+
+    const localAtivo =
+        snapshot.oferecendo_full !== true ||
+        (estoqueLocal !== null && estoqueLocal > 0);
+
+    return {
+        mlb: dados.mlb || null,
+
+        exposicao_atual:
+            listingParaNome(dados.listingTypeAtual),
+
+        lista_fixa:
+            dados.regraFixa && dados.regraFixa.tipo
+                ? listingParaNome(dados.regraFixa.tipo)
+                : 'nenhuma',
+
+        tem_variacoes: temVariacoes,
+
+        num_variacoes:
+            Number(snapshot.total_variacoes_anuncio || variacoes.length || 0),
+
+        full_ativo: fullAtivo,
+
+        local_ativo: localAtivo,
+
+        estoque_full: estoqueFull,
+
+        estoque_local: estoqueLocal,
+
+        estoque_total: estoqueTotal,
+
+        estoque_variacao_vendida:
+            num(dados.estoqueVariacaoAnuncio),
+
+        soma_variacoes:
+            numerosVar.length > 0
+                ? numerosVar.reduce((a, b) => a + b, 0)
+                : num(snapshot.estoque_anuncio_total_todas_variacoes),
+
+        min_variacoes:
+            numerosVar.length > 0 ? Math.min(...numerosVar) : null,
+
+        max_variacoes:
+            numerosVar.length > 0 ? Math.max(...numerosVar) : null,
+
+        variacoes
+    };
+}
+
 function obterAlertasExposicaoVendaNFE(
     venda
 ) {
@@ -41141,6 +41334,88 @@ function obterAlertasExposicaoVendaNFE(
 
 
             } else if (
+                window.RegrasAlertasEstoque &&
+                typeof window.RegrasAlertasEstoque.estaAtivo === 'function' &&
+                window.RegrasAlertasEstoque.estaAtivo()
+            ) {
+
+                // =============================================
+                // MOTOR DE REGRAS CONFIGURÁVEIS
+                //
+                // Quando o usuário liga "Usar minhas regras",
+                // a decisão Clássico/Premium sai daqui e a
+                // regra fixa antiga (1 = Clássico / 2+ = Premium)
+                // NÃO é mais aplicada. Se nenhuma regra casar ou
+                // a regra disser "não alertar", listingTypeEsperado
+                // fica null e nenhum alerta de exposição é gerado.
+                // =============================================
+
+                let veredito =
+                    { casou: false, resultado: null };
+
+                try {
+
+                    const fatos =
+                        montarFatosRegrasEstoqueNFE({
+                            mlb,
+                            snapshot,
+                            listingTypeAtual,
+                            regraFixa,
+                            estoqueTotalFull,
+                            estoqueTotalLocal,
+                            estoqueTotalAnuncio,
+                            quantidadeBaseExposicao,
+                            estoqueVariacaoAnuncio
+                        });
+
+                    veredito =
+                        window.RegrasAlertasEstoque.avaliar(fatos);
+
+                } catch (error) {
+
+                    console.warn(
+                        '⚠️ [REGRAS ESTOQUE] Falha avaliando venda:',
+                        error
+                    );
+                }
+
+
+                if (
+                    veredito.casou &&
+                    veredito.resultado === 'classico'
+                ) {
+
+                    listingTypeEsperado =
+                        'gold_special';
+
+                    exposicaoEsperadaNome =
+                        'Clássico';
+
+                    origemRegra =
+                        'regra_custom:' +
+                        (veredito.regra_nome || '');
+
+                } else if (
+                    veredito.casou &&
+                    veredito.resultado === 'premium'
+                ) {
+
+                    listingTypeEsperado =
+                        'gold_pro';
+
+                    exposicaoEsperadaNome =
+                        'Premium';
+
+                    origemRegra =
+                        'regra_custom:' +
+                        (veredito.regra_nome || '');
+                }
+
+                // 'nao_alertar' ou nenhuma regra:
+                // listingTypeEsperado continua null -> sem alerta.
+
+
+            } else if (
                 quantidadeBaseExposicao !==
                     null &&
                 quantidadeBaseExposicao >
@@ -41148,7 +41423,7 @@ function obterAlertasExposicaoVendaNFE(
             ) {
 
                 // =============================================
-                // REGRA DEFINIDA:
+                // REGRA DEFINIDA (PADRÃO, motor desligado):
                 //
                 // 1       = CLÁSSICO
                 // 2 OU +  = PREMIUM
