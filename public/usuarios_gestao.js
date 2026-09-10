@@ -308,6 +308,12 @@
             #wtUsuariosModal .u-av{width:44px;height:44px;border-radius:50%;background:#7c3aed;color:#fff;
                 display:flex;align-items:center;justify-content:center;font-weight:700;overflow:hidden;flex-shrink:0}
             #wtUsuariosModal .u-av img{width:100%;height:100%;object-fit:cover}
+            #wtUsuariosModal .u-av-click{position:relative;cursor:pointer;overflow:visible}
+            #wtUsuariosModal .u-av-click img{border-radius:50%}
+            #wtUsuariosModal .u-av-click:hover{filter:brightness(.92)}
+            #wtUsuariosModal .u-av-cam{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;
+                background:#7c3aed;color:#fff;border:2px solid #fff;border-radius:50%;
+                display:flex;align-items:center;justify-content:center;font-size:8px}
             #wtUsuariosModal .u-info{flex:1;min-width:0}
             #wtUsuariosModal .u-nome{font-weight:600}
             #wtUsuariosModal .u-sub{color:#64748b;font-size:12px;margin-top:2px}
@@ -417,6 +423,7 @@
             const av = u.avatar_foto
                 ? `<img src="${esc(u.avatar_foto)}" alt="">`
                 : esc((u.avatar || (u.nome || 'U').charAt(0)).toUpperCase());
+            const avTitulo = 'Clique para trocar a foto de ' + esc(u.nome);
             const sub = statusAlvo === 'pendente'
                 ? `${esc(u.email || 'sem e-mail')} · solicitado ${formatarData(u.criado_em)}`
                 : `@${esc(u.username)} · ${esc(u.role || '—')}` +
@@ -444,7 +451,8 @@
 
             return `
                 <div class="u-item" data-id="${u.id}">
-                    <div class="u-av">${av}</div>
+                    <div class="u-av u-av-click" data-acao="foto" role="button" tabindex="0"
+                         title="${avTitulo}">${av}<span class="u-av-cam"><i class="fas fa-camera"></i></span></div>
                     <div class="u-info">
                         <div class="u-nome">${esc(u.nome)}</div>
                         <div class="u-sub">${sub}</div>
@@ -455,6 +463,13 @@
 
         corpo.querySelectorAll('.u-item').forEach(item => {
             const id = item.dataset.id;
+            const avEl = item.querySelector('.u-av-click');
+            if (avEl) {
+                avEl.addEventListener('click', () => escolherFoto(id));
+                avEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); escolherFoto(id); }
+                });
+            }
             item.querySelectorAll('button[data-acao]').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const a = btn.dataset.acao;
