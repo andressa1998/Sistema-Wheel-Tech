@@ -1823,41 +1823,27 @@ async function buscarCustosReaisShipmentFrete(
         `https://api.mercadolibre.com/shipments/` +
         `${shipmentId}/costs`;
 
+    /*
+     * IMPORTANTE:
+     *
+     * O "novo formato" do ML vai como parâmetro `headers`
+     * na URL do Worker (ele repassa para a API do ML).
+     *
+     * NÃO enviar como header real do fetch: isso dispara
+     * preflight CORS que o Worker não libera em
+     * Access-Control-Allow-Headers e a requisição falha.
+     */
     const proxy =
         `${window.WORKER_URL}/api/ml/proxy` +
         `?url=${encodeURIComponent(url)}` +
-        `&token=${encodeURIComponent(token)}`;
+        `&token=${encodeURIComponent(token)}` +
+        `&headers=${encodeURIComponent(
+            '{"x-format-new":"true","X-Costs-New":"true"}'
+        )}`;
 
     let response;
 
     try {
-        /*
-         * O ML recomenda o novo formato
-         * para os recursos de shipment.
-         */
-        response =
-            await fetch(
-                proxy,
-                {
-                    cache:
-                        'no-store',
-
-                    headers: {
-                        'x-format-new':
-                            'true',
-
-                        'X-Costs-New':
-                            'true'
-                    }
-                }
-            );
-
-    } catch (error) {
-        /*
-         * Caso o Worker não aceite
-         * esses headers, tenta novamente
-         * normalmente.
-         */
         response =
             await fetch(
                 proxy,
@@ -1866,6 +1852,14 @@ async function buscarCustosReaisShipmentFrete(
                         'no-store'
                 }
             );
+
+    } catch (error) {
+        console.warn(
+            `⚠️ Falha ao consultar custos do shipment ${shipmentId}:`,
+            error.message
+        );
+
+        return null;
     }
 
     if (
