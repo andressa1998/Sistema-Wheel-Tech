@@ -615,6 +615,7 @@
         <div class="card mb-4">
             <div class="wtra-barra">
                 <h3>Minhas regras (a 1ª que casar vence — use as setas para ordenar)</h3>
+                <button class="btn btn-sm btn-secondary" id="wtraRestaurar" title="Recarrega as 6 regras de exemplo da Wheel Tech"><i class="fas fa-rotate-left"></i> Restaurar exemplos</button>
                 <button class="btn btn-primary" id="wtraNova"><i class="fas fa-plus"></i> Nova regra</button>
             </div>
             <div id="wtraLista">
@@ -632,6 +633,12 @@
 
         conteudo.querySelector('#wtraSalvarTudo').onclick = salvarTudo;
         conteudo.querySelector('#wtraMaster').onchange = (e) => { rascunho.ativo = e.target.checked; };
+        conteudo.querySelector('#wtraRestaurar').onclick = () => {
+            if (rascunho.regras.length && !confirm('Substituir as regras atuais pelas 6 de exemplo?')) return;
+            const seed = JSON.parse(JSON.stringify(normalizar(SEED)));
+            rascunho.regras = seed.regras;
+            renderTela();
+        };
         conteudo.querySelector('#wtraNova').onclick = () => {
             rascunho.regras.push({
                 id: 'r_' + Date.now().toString(36),
