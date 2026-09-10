@@ -57989,10 +57989,25 @@ function obterPendenciasVendaNFE(venda) {
     }
 
 
+    // Vale tanto para NF-e liberada quanto não liberada:
+    // a data/prazo de envio precisa aparecer nos dois casos.
+    // Só não cobra quando a venda já saiu ou é FULL.
+    const statusEnvioSemPrazo = [
+        'shipped',
+        'delivered',
+        'not_delivered',
+        'returned',
+        'cancelled',
+        'canceled'
+    ];
+
     if (
-        shipmentStatus ===
-            'ready_to_ship' &&
-        !dataEnvio
+        !dataEnvio &&
+        !statusEnvioSemPrazo.includes(shipmentStatus) &&
+        !(
+            venda._is_full === true ||
+            venda.is_full === true
+        )
     ) {
 
         pendencias.push(
@@ -61561,6 +61576,12 @@ async function corrigirVendaIncompletaNFE(
             ) ||
             pendencias.includes(
                 'data_despacho'
+            ) ||
+            // A data de envio (prazo de manuseio) vem do
+            // lead_time do shipment. Sem re-consultar o
+            // shipment ela nunca aparece.
+            pendencias.includes(
+                'data_envio'
             );
 
 
