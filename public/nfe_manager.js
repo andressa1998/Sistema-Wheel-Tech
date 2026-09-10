@@ -898,6 +898,59 @@ function preservarEstadoOperacionalVendaNFE(
     }
 
 
+    // ---- DADOS DE ENRIQUECIMENTO (CAROS DE BUSCAR) ----
+    //
+    // Data de envio, estoque do anúncio, modalidade, estoque
+    // interno e pagamento custam requisições ao ML.
+    //
+    // Uma atualização "leve" (recarga parcial, incremental,
+    // carregarVendasPendentes) frequentemente traz esses campos
+    // vazios — isso NÃO significa que o dado sumiu, só que a
+    // recarga não os buscou. Se a base já tem o valor e a nova
+    // não, mantemos o da base para as informações não
+    // "piscarem" / sumirem da tabela.
+
+    const valorPreenchido = (v) =>
+        v !== undefined &&
+        v !== null &&
+        v !== '' &&
+        !(Array.isArray(v) && v.length === 0) &&
+        String(v).toLowerCase() !== 'nao_verificado' &&
+        String(v).toLowerCase() !== 'não verificado';
+
+    const preservarCampoEnriquecido = (chave) => {
+        if (
+            !valorPreenchido(resultado[chave]) &&
+            valorPreenchido(baseVenda[chave])
+        ) {
+            resultado[chave] = baseVenda[chave];
+        }
+    };
+
+    [
+        '_data_envio',
+        'data_envio',
+        'data_despacho',
+        '_estoque_anuncio_pos_venda',
+        'estoque_anuncio_pos_venda',
+        '_estoque_status',
+        'estoque_status',
+        '_estoque_detalhes',
+        '_shipment_logistic_type',
+        'shipment_logistic_type',
+        'logistic_type',
+        '_shipping_mode',
+        '_shipment_mode',
+        'shipment_mode',
+        'shipping_mode',
+        '_valor_produto',
+        '_valor_pago_real',
+        '_pagamentos_detalhes',
+        '_shipment_status',
+        'shipment_status'
+    ].forEach(preservarCampoEnriquecido);
+
+
     return resultado;
 }
 
@@ -53730,16 +53783,28 @@ async function salvarVendasCacheNFE(
 
             venda.estoque_detalhes ??
 
+            venda._estoque_detalhes ??
+
             anterior.estoque_detalhes ??
+
+            anterior._estoque_detalhes ??
 
             null;
 
 
+        // Lê também a variante com "_": o enriquecimento
+        // (completarSomenteDadosFaltantesVendasNFE) grava só
+        // venda._estoque_anuncio_pos_venda. Sem isto o save
+        // persistia null e o dado "sumia" no próximo reload.
         const estoqueAnuncioPosVenda =
 
             venda.estoque_anuncio_pos_venda ??
 
+            venda._estoque_anuncio_pos_venda ??
+
             anterior.estoque_anuncio_pos_venda ??
+
+            anterior._estoque_anuncio_pos_venda ??
 
             null;
 
