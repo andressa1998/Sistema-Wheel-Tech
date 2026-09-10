@@ -8411,6 +8411,143 @@ function extrairPrazoEnvioCompletoML(
 }
 
 // =========================================================
+// PRÓXIMA COLETA (para a ampulheta no topo do sistema)
+//
+// Menor prazo de manuseio (estimated_handling_limit) entre
+// as vendas ainda pendentes de envio. Guarda em localStorage
+// para o widget global exibir em qualquer aba.
+// =========================================================
+
+function atualizarProximaColetaNFE() {
+
+    try {
+
+        const base =
+            Array.isArray(
+                window._vendasPainelNFEBase
+            )
+                ? window._vendasPainelNFEBase
+                : [];
+
+
+        const agora =
+            Date.now();
+
+
+        let menorPrazo =
+            null;
+
+
+        for (const venda of base) {
+
+            if (!venda) {
+                continue;
+            }
+
+
+            // Só vendas que ainda precisam ser despachadas.
+            let classe =
+                '';
+
+            try {
+                classe =
+                    classificarVendaPainelNFE(venda);
+            } catch (error) {
+                classe = '';
+            }
+
+
+            if (
+                classe !== 'nfe_liberadas' &&
+                classe !== 'nfe_nao_liberadas'
+            ) {
+                continue;
+            }
+
+
+            let prazoBruto =
+                null;
+
+            try {
+                prazoBruto =
+                    extrairPrazoEnvioCompletoML(venda);
+            } catch (error) {
+                prazoBruto = null;
+            }
+
+
+            if (!prazoBruto) {
+                continue;
+            }
+
+
+            const t =
+                new Date(prazoBruto).getTime();
+
+
+            if (
+                !Number.isFinite(t) ||
+                t <= agora
+            ) {
+                continue;
+            }
+
+
+            if (
+                menorPrazo === null ||
+                t < menorPrazo
+            ) {
+                menorPrazo = t;
+            }
+        }
+
+
+        const payload = {
+            prazo:
+                menorPrazo
+                    ? new Date(menorPrazo).toISOString()
+                    : null,
+
+            calculado_em:
+                new Date().toISOString()
+        };
+
+
+        try {
+            localStorage.setItem(
+                'wt_proxima_coleta',
+                JSON.stringify(payload)
+            );
+        } catch (error) {}
+
+
+        try {
+            window.dispatchEvent(
+                new CustomEvent(
+                    'wt-proxima-coleta',
+                    { detail: payload }
+                )
+            );
+        } catch (error) {}
+
+
+        return payload;
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ [NFE] Próxima coleta:',
+            error
+        );
+
+        return null;
+    }
+}
+
+window.atualizarProximaColetaNFE =
+    atualizarProximaColetaNFE;
+
+// =========================================================
 // VENDA PERTENCE À DATA SELECIONADA?
 // =========================================================
 
@@ -56547,7 +56684,7 @@ async function completarSomenteDadosFaltantesVendasNFE(
     // =====================================================
 
     const TAMANHO_LOTE =
-        3;
+        6;
 
 
     for (
@@ -56659,11 +56796,56 @@ async function completarSomenteDadosFaltantesVendasNFE(
             );
 
 
-        processadas.push(
-            ...resultados.filter(
+        const desteLote =
+            resultados.filter(
                 Boolean
-            )
+            );
+
+
+        processadas.push(
+            ...desteLote
         );
+
+
+        // =================================================
+        // MOSTRAR JÁ NA TELA O QUE ACABOU DE ser enriquecido
+        //
+        // Antes, data de envio / estoque do anúncio só
+        // apareciam depois de TODOS os lotes + o save.
+        // Agora cada lote atualiza as linhas na hora.
+        // =================================================
+
+        try {
+
+            if (
+                Array.isArray(
+                    window._vendasPainelNFEBase
+                ) &&
+                desteLote.length > 0
+            ) {
+
+                window._vendasPainelNFEBase =
+                    mesclarVendasPainelNFE(
+                        window._vendasPainelNFEBase,
+                        desteLote
+                    );
+
+
+                if (
+                    typeof refrescarPainelNFEPreservandoFiltro ===
+                    'function'
+                ) {
+                    refrescarPainelNFEPreservandoFiltro();
+                }
+            }
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ [NFE DADOS] Atualização incremental do lote:',
+                error.message
+            );
+        }
 
 
         const statusTela =
@@ -60820,6 +61002,23 @@ async function carregarVendasPendentes(
 
                 verificarCancelamentosAutomaticosNFE()
                     .catch(() => {});
+            }
+
+        } catch (error) {}
+
+
+        // =================================================
+        // PRÓXIMA COLETA (ampulheta no topo)
+        // =================================================
+
+        try {
+
+            if (
+                typeof atualizarProximaColetaNFE ===
+                'function'
+            ) {
+
+                atualizarProximaColetaNFE();
             }
 
         } catch (error) {}
