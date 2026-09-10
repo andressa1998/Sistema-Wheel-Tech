@@ -179,7 +179,7 @@ function renderizarFeedbacks() {
           ${fb.texto ? `<p class="card-text">${escapeHtml(fb.texto)}</p>` : ''}
           ${fb.pontos_positivos ? `<div><strong>✅ Positivos:</strong> ${escapeHtml(fb.pontos_positivos)}</div>` : ''}
           ${fb.pontos_negativos ? `<div><strong>❌ Negativos:</strong> ${escapeHtml(fb.pontos_negativos)}</div>` : ''}
-          ${fb.pontos_melhorar ? `<div><strong>📈 A melhorar:</strong> ${escapeHtml(fb.pontos_melhorar)}</div>` : ''}
+          ${fb.pontos_melhorar ? `<div><strong>📈 Metas:</strong> ${escapeHtml(fb.pontos_melhorar)}</div>` : ''}
           ${topicosHtml}
           ${fb.respondido ? `<div class="alert alert-success mt-2"><i class="fas fa-check-circle"></i> Usuário respondeu a este feedback.</div>` : ''}
           <div id="respostas-${fb.id}" class="mt-2"></div>
