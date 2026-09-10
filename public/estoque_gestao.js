@@ -27453,216 +27453,20 @@ function adicionarCampoSubcategoria(
     existente = null
 ) {
 
+    // Usa exatamente o mesmo editor de campos da categoria
+    // (com o bloco "Usar regras condicionais neste campo").
     const container =
         document.getElementById(
             'camposNovaSubcategoria'
         );
 
-
     if (!container) {
         return;
     }
 
-
-    const div =
-        document.createElement(
-            'div'
-        );
-
-
-    div.className =
-        'campo-subcategoria-editor';
-
-
-    div.style.cssText = `
-
-        border:1px solid #dee2e6;
-        border-radius:8px;
-        padding:12px;
-        margin-bottom:10px;
-        background:#f8f9fa;
-
-    `;
-
-
-    div.innerHTML = `
-
-        <div
-            style="
-                display:grid;
-                grid-template-columns:
-                    1fr 1fr;
-                gap:10px;
-            "
-        >
-
-            <div>
-                <label>Identificador *</label>
-
-                <input
-                    class="form-control subcampo-nome"
-                    value="${escapeHtml(existente?.nome || '')}"
-                    placeholder="Ex: material"
-                >
-            </div>
-
-
-            <div>
-                <label>Nome exibido *</label>
-
-                <input
-                    class="form-control subcampo-label"
-                    value="${escapeHtml(existente?.label || '')}"
-                    placeholder="Ex: Material"
-                >
-            </div>
-
-
-            <div>
-                <label>Tipo *</label>
-
-                <select
-                    class="form-control subcampo-tipo"
-                    onchange="
-                        const opcoes =
-                            this.closest('.campo-subcategoria-editor')
-                                .querySelector('.subcampo-opcoes-wrap');
-
-                        opcoes.style.display =
-                            this.value === 'select'
-                                ? 'block'
-                                : 'none';
-                    "
-                >
-
-                    <option
-                        value="text"
-                        ${existente?.tipo === 'text' ? 'selected' : ''}
-                    >
-                        Texto
-                    </option>
-
-                    <option
-                        value="number"
-                        ${existente?.tipo === 'number' ? 'selected' : ''}
-                    >
-                        Número
-                    </option>
-
-                    <option
-                        value="select"
-                        ${existente?.tipo === 'select' ? 'selected' : ''}
-                    >
-                        Seleção
-                    </option>
-
-                    <option
-                        value="textarea"
-                        ${existente?.tipo === 'textarea' ? 'selected' : ''}
-                    >
-                        Texto Longo
-                    </option>
-
-                    <option
-                        value="checkbox"
-                        ${existente?.tipo === 'checkbox' ? 'selected' : ''}
-                    >
-                        Sim / Não
-                    </option>
-
-                </select>
-            </div>
-
-
-            <div>
-                <label>Obrigatório</label>
-
-                <select
-                    class="form-control subcampo-obrigatorio"
-                >
-
-                    <option
-                        value="false"
-                        ${!existente?.obrigatorio ? 'selected' : ''}
-                    >
-                        Não
-                    </option>
-
-                    <option
-                        value="true"
-                        ${existente?.obrigatorio ? 'selected' : ''}
-                    >
-                        Sim
-                    </option>
-
-                </select>
-            </div>
-
-
-            <div>
-                <label>Placeholder</label>
-
-                <input
-                    class="form-control subcampo-placeholder"
-                    value="${escapeHtml(existente?.placeholder || '')}"
-                >
-            </div>
-
-
-            <div
-                class="subcampo-opcoes-wrap"
-                style="
-                    ${
-                        existente?.tipo ===
-                        'select'
-
-                            ? ''
-
-                            : 'display:none;'
-                    }
-                "
-            >
-
-                <label>
-                    Opções separadas por vírgula
-                </label>
-
-                <input
-                    class="form-control subcampo-opcoes"
-                    value="${escapeHtml(
-                        existente?.opcoes?.join(', ') || ''
-                    )}"
-                >
-
-            </div>
-
-        </div>
-
-
-        <div
-            style="
-                text-align:right;
-                margin-top:8px;
-            "
-        >
-
-            <button
-                class="btn btn-sm btn-danger"
-                onclick="
-                    this.closest('.campo-subcategoria-editor').remove()
-                "
-            >
-                <i class="fas fa-trash"></i>
-                Remover
-            </button>
-
-        </div>
-
-    `;
-
-
-    container.appendChild(
-        div
+    return adicionarCampoDinamico(
+        existente,
+        container
     );
 }
 
@@ -27714,197 +27518,17 @@ async function salvarNovaSubcategoria() {
     }
 
 
-    const campos = [];
+    const _coletaSub = coletarCamposCategoriaDoModal(
+        'camposNovaSubcategoria',
+        { incluirMlbCodes: true, permitirVazio: true }
+    );
 
-
-    const linhas =
-        document.querySelectorAll(
-            '#camposNovaSubcategoria .campo-subcategoria-editor'
-        );
-
-
-    for (
-        const linha
-        of linhas
-    ) {
-
-        const nomeCampo =
-            linha.querySelector(
-                '.subcampo-nome'
-            )?.value
-                ?.trim();
-
-
-        const label =
-            linha.querySelector(
-                '.subcampo-label'
-            )?.value
-                ?.trim();
-
-
-        const tipo =
-            linha.querySelector(
-                '.subcampo-tipo'
-            )?.value ||
-            'text';
-
-
-        const obrigatorio =
-            linha.querySelector(
-                '.subcampo-obrigatorio'
-            )?.value ===
-            'true';
-
-
-        const placeholder =
-            linha.querySelector(
-                '.subcampo-placeholder'
-            )?.value
-                ?.trim() ||
-            '';
-
-
-        if (
-            !nomeCampo ||
-            !label
-        ) {
-
-            showToast(
-                'Todos os atributos precisam de identificador e nome.',
-                'warning'
-            );
-
-            return;
-        }
-
-
-        if (
-            !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(
-                nomeCampo
-            )
-        ) {
-
-            showToast(
-                `Identificador inválido: ${nomeCampo}`,
-                'warning'
-            );
-
-            return;
-        }
-
-
-        const campo = {
-
-            nome:
-                nomeCampo,
-
-            label,
-
-            tipo,
-
-            obrigatorio,
-
-            placeholder
-
-        };
-
-
-        if (
-            tipo ===
-            'select'
-        ) {
-
-            const opcoes =
-                linha.querySelector(
-                    '.subcampo-opcoes'
-                )?.value
-                    ?.split(',')
-                    .map(
-                        v =>
-                            v.trim()
-                    )
-                    .filter(Boolean) ||
-                [];
-
-
-            if (
-                opcoes.length ===
-                0
-            ) {
-
-                showToast(
-                    `Informe as opções de "${label}".`,
-                    'warning'
-                );
-
-                return;
-            }
-
-
-            campo.opcoes =
-                opcoes;
-
-        }
-
-
-        if (
-            tipo ===
-            'textarea'
-        ) {
-
-            campo.rows =
-                2;
-
-        }
-
-
-        if (
-            tipo ===
-            'number'
-        ) {
-
-            campo.step =
-                '0.01';
-
-
-            campo.min =
-                '0';
-
-        }
-
-
-        campos.push(
-            campo
-        );
-
+    if (!_coletaSub.success) {
+        showToast(_coletaSub.error, 'warning');
+        return;
     }
 
-
-    // =====================================================
-    // MLB CODES AUTOMÁTICO
-    // =====================================================
-
-    campos.push({
-
-        nome:
-            'mlb_codes',
-
-        label:
-            'Códigos MLB',
-
-        tipo:
-            'textarea',
-
-        placeholder:
-            'MLB separados por vírgula',
-
-        rows:
-            2,
-
-        obrigatorio:
-            false
-
-    });
+    const campos = _coletaSub.campos;
 
 
     if (
@@ -28827,231 +28451,17 @@ async function atualizarSubcategoriaExistente() {
     // COLETAR CAMPOS
     // =====================================================
 
-    const campos =
-        [];
+    const _coletaSubEdit = coletarCamposCategoriaDoModal(
+        'camposNovaSubcategoria',
+        { incluirMlbCodes: true, permitirVazio: true }
+    );
 
-
-    const linhas =
-        document.querySelectorAll(
-            '#camposNovaSubcategoria .campo-subcategoria-editor'
-        );
-
-
-    for (
-        const linha
-        of linhas
-    ) {
-
-        const nomeCampo =
-            linha.querySelector(
-                '.subcampo-nome'
-            )?.value
-                ?.trim();
-
-
-        const label =
-            linha.querySelector(
-                '.subcampo-label'
-            )?.value
-                ?.trim();
-
-
-        const tipo =
-            linha.querySelector(
-                '.subcampo-tipo'
-            )?.value ||
-            'text';
-
-
-        const obrigatorio =
-            linha.querySelector(
-                '.subcampo-obrigatorio'
-            )?.value ===
-            'true';
-
-
-        const placeholder =
-            linha.querySelector(
-                '.subcampo-placeholder'
-            )?.value
-                ?.trim() ||
-            '';
-
-
-        // =============================================
-        // VALIDAÇÃO
-        // =============================================
-
-        if (
-            !nomeCampo ||
-            !label
-        ) {
-
-            showToast(
-                '⚠️ Todos os atributos precisam de identificador e nome.',
-                'warning'
-            );
-
-            return;
-        }
-
-
-        if (
-            !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(
-                nomeCampo
-            )
-        ) {
-
-            showToast(
-                `⚠️ Identificador inválido: ${nomeCampo}`,
-                'warning'
-            );
-
-            return;
-        }
-
-
-        if (
-            campos.some(
-                campo =>
-                    campo.nome ===
-                    nomeCampo
-            )
-        ) {
-
-            showToast(
-                `⚠️ O atributo "${nomeCampo}" está duplicado.`,
-                'warning'
-            );
-
-            return;
-        }
-
-
-        const campo = {
-
-            nome:
-                nomeCampo,
-
-            label,
-
-            tipo,
-
-            obrigatorio,
-
-            placeholder
-
-        };
-
-
-        // =============================================
-        // SELECT
-        // =============================================
-
-        if (
-            tipo ===
-            'select'
-        ) {
-
-            const opcoes =
-                linha.querySelector(
-                    '.subcampo-opcoes'
-                )?.value
-                    ?.split(',')
-                    .map(
-                        valor =>
-                            valor.trim()
-                    )
-                    .filter(Boolean) ||
-                [];
-
-
-            if (
-                opcoes.length ===
-                0
-            ) {
-
-                showToast(
-                    `⚠️ Informe as opções de "${label}".`,
-                    'warning'
-                );
-
-                return;
-            }
-
-
-            campo.opcoes =
-                opcoes;
-
-        }
-
-
-        // =============================================
-        // TEXTAREA
-        // =============================================
-
-        if (
-            tipo ===
-            'textarea'
-        ) {
-
-            campo.rows =
-                2;
-
-        }
-
-
-        // =============================================
-        // NUMBER
-        // =============================================
-
-        if (
-            tipo ===
-            'number'
-        ) {
-
-            campo.step =
-                '0.01';
-
-
-            campo.min =
-                '0';
-
-        }
-
-
-        campos.push(
-            campo
-        );
-
+    if (!_coletaSubEdit.success) {
+        showToast(_coletaSubEdit.error, 'warning');
+        return;
     }
 
-
-    // =====================================================
-    // MLB AUTOMÁTICO
-    // =====================================================
-
-    campos.push({
-
-        nome:
-            'mlb_codes',
-
-        label:
-            'Códigos MLB',
-
-        tipo:
-            'textarea',
-
-        placeholder:
-            'MLB separados por vírgula',
-
-        rows:
-            2,
-
-        obrigatorio:
-            false
-
-    });
+    const campos = _coletaSubEdit.campos;
 
 
     // =====================================================
@@ -31774,8 +31184,40 @@ function escaparHtmlCampoCondicional(valor) {
 }
 
 
+// Descobre qual editor de campos está ativo agora: o de
+// categoria (#novaCategoriaCampos) ou o de subcategoria
+// (#camposNovaSubcategoria). Assim as regras condicionais
+// funcionam nos dois modais sem duplicar o código.
+function obterContainerEditorCamposAtivo() {
+    const ids = ['camposNovaSubcategoria', 'novaCategoriaCampos'];
+    const els = ids
+        .map(id => document.getElementById(id))
+        .filter(Boolean);
+
+    if (els.length === 0) return null;
+
+    // 1) o que contém o elemento em foco
+    const foco = els.find(
+        el => document.activeElement && el.contains(document.activeElement)
+    );
+    if (foco) return foco;
+
+    // 2) o que está visível e já tem campos
+    const visivelComCampos = els.find(
+        el => el.offsetParent !== null && el.querySelector('.campo-dinamico')
+    );
+    if (visivelComCampos) return visivelComCampos;
+
+    // 3) qualquer um com campos
+    const comCampos = els.find(el => el.querySelector('.campo-dinamico'));
+    if (comCampos) return comCampos;
+
+    // 4) o visível
+    return els.find(el => el.offsetParent !== null) || els[els.length - 1];
+}
+
 function obterCamposEditorCategoria() {
-    const container = document.getElementById('novaCategoriaCampos');
+    const container = obterContainerEditorCamposAtivo();
 
     if (!container) {
         return [];
@@ -32237,9 +31679,14 @@ function toggleCondicaoCampo(
 }
 
 
-function coletarCamposCategoriaDoModal() {
+function coletarCamposCategoriaDoModal(
+    containerId = 'novaCategoriaCampos',
+    opcoes = {}
+) {
+    const incluirMlbCodes = opcoes.incluirMlbCodes !== false;
+
     const container = document.getElementById(
-        'novaCategoriaCampos'
+        containerId
     );
 
     if (!container) {
@@ -32255,7 +31702,7 @@ function coletarCamposCategoriaDoModal() {
         )
     );
 
-    if (divsCampos.length === 0) {
+    if (divsCampos.length === 0 && opcoes.permitirVazio !== true) {
         return {
             success: false,
             error: 'Adicione pelo menos um campo personalizado.'
@@ -32544,14 +31991,16 @@ function coletarCamposCategoriaDoModal() {
         campos.push(campo);
     }
 
-    campos.push({
-        nome: 'mlb_codes',
-        label: 'Códigos MLB',
-        tipo: 'textarea',
-        placeholder: 'MLB separados por vírgula',
-        obrigatorio: false,
-        rows: 2
-    });
+    if (incluirMlbCodes) {
+        campos.push({
+            nome: 'mlb_codes',
+            label: 'Códigos MLB',
+            tipo: 'textarea',
+            placeholder: 'MLB separados por vírgula',
+            obrigatorio: false,
+            rows: 2
+        });
+    }
 
     return {
         success: true,
@@ -32559,10 +32008,11 @@ function coletarCamposCategoriaDoModal() {
     };
 }
 
-function adicionarCampoDinamico(campoExistente = null) {
-    const container = document.getElementById(
-        'novaCategoriaCampos'
-    );
+function adicionarCampoDinamico(campoExistente = null, containerAlvo = null) {
+    const container =
+        (containerAlvo instanceof HTMLElement)
+            ? containerAlvo
+            : document.getElementById('novaCategoriaCampos');
 
     if (!container) {
         return;
