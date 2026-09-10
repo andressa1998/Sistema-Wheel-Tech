@@ -20589,21 +20589,25 @@ async function sincronizarPainelOperacionalNFE(
 
 
         // =====================================================
-        // 3/3 - COMPLETAR DADOS SOMENTE DAS LIBERADAS
+        // 3/3 - COMPLETAR DADOS DAS VENDAS ATIVAS
         //
-        // Não liberadas não ficam sendo enriquecidas em loop.
-        // Quando liberarem, entram aqui.
+        // Liberadas E não liberadas: a data de envio e o
+        // estoque do anúncio pós-venda são necessários para as
+        // regras de ajuste nos dois filtros.
         // =====================================================
 
         const liberadasIncompletas =
             vendas.filter(
                 venda => {
 
-                    if (
+                    const classe =
                         classificarVendaPainelNFE(
                             venda
-                        ) !==
-                        'nfe_liberadas'
+                        );
+
+                    if (
+                        classe !== 'nfe_liberadas' &&
+                        classe !== 'nfe_nao_liberadas'
                     ) {
 
                         return false;
