@@ -1212,11 +1212,11 @@
                     : 'none';
         }
 
+        // A engrenagem do dashboard agora aparece para TODO MUNDO.
+        // O menu dela (usuarios_gestao.js) é que mostra itens diferentes
+        // conforme o cargo (ex.: "Alterar senha" para todos).
         if (botaoDashboard) {
-            botaoDashboard.style.display =
-                usuarioEhAdminMenu()
-                    ? 'grid'
-                    : 'none';
+            botaoDashboard.style.display = 'grid';
         }
 
     }

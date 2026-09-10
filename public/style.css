@@ -1124,6 +1124,21 @@ h4 {
 .filter-group .btn:hover .badge {
     background: rgba(255,255,255,0.4);
 }
+
+/* O filtro de OS selecionado fica branco, com texto preto. */
+.filter-group button.os-filter-active,
+.filter-group button.active[onclick*="filterOS("] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    border-color: #adb5bd !important;
+    color: #111111 !important;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, .12) !important;
+}
+.filter-group button.os-filter-active .badge,
+.filter-group button.active[onclick*="filterOS("] .badge {
+    color: #111111 !important;
+    background: rgba(0, 0, 0, .10) !important;
+}
 /* Cards da precificação */
 #precListaPendentes .card, #precListaFinalizados .card {
     transition: transform 0.2s;

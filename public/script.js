@@ -55,14 +55,37 @@ async function handleLogin(e) {
         return;
     }
     
-    const foundUser = SYSTEM_USERS.find(user => 
-        user.username === username && user.password === password
-    );
-    
+    let foundUser = null;
+    try {
+        foundUser = await autenticarUsuarioWheelTech(username, password);
+    } catch (err) {
+        console.error('❌ Erro ao autenticar:', err);
+        showToast('❌ Não foi possível verificar o login. Verifique a internet e tente de novo.', 'error');
+        if (submitBtn) {
+            submitBtn.innerHTML = originalBtnText;
+            submitBtn.disabled = false;
+        }
+        return;
+    }
+
+    // Usuário/senha corretos, mas cadastro ainda não liberado
+    if (foundUser && foundUser.status === 'pendente') {
+        showToast('⏳ Seu cadastro ainda está aguardando a aprovação de um administrador.', 'warning');
+        if (submitBtn) { submitBtn.innerHTML = originalBtnText; submitBtn.disabled = false; }
+        passwordInput.value = '';
+        return;
+    }
+    if (foundUser && foundUser.status === 'recusado') {
+        showToast('❌ Seu cadastro foi recusado. Fale com um administrador.', 'error');
+        if (submitBtn) { submitBtn.innerHTML = originalBtnText; submitBtn.disabled = false; }
+        passwordInput.value = '';
+        return;
+    }
+
     // Executa diretamente, sem setTimeout
     if (foundUser) {
-        // 🔒 BLOQUEIO: verifica se o usuário está na lista negra
-    if (BLOCKED_USERS.includes(foundUser.username)) {
+        // 🔒 BLOQUEIO: lista negra (fallback) OU status 'bloqueado' no banco
+    if (BLOCKED_USERS.includes(foundUser.username) || foundUser.status === 'bloqueado') {
         // Registra tentativa bloqueada no histórico
         const ip = await getClientIP();
         const userAgent = navigator.userAgent;
@@ -118,7 +141,8 @@ async function handleLogin(e) {
         if (userRole) userRole.textContent = foundUser.role;
         if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo(a), ${foundUser.name}!`;
         if (createdByInput) createdByInput.value = foundUser.name;
-        
+        atualizarTodosAvatares();
+
         if (loginScreen) loginScreen.classList.add('hidden');
         const menuSystem = document.getElementById('menuSystem');
         if (menuSystem) menuSystem.classList.remove('hidden');
@@ -4105,21 +4129,199 @@ const countTotal = document.getElementById('countTotal');
 const syncStatus = document.getElementById('syncStatus');
 
 // ===== USUÁRIOS DO SISTEMA =====
+// As SENHAS NÃO FICAM MAIS AQUI. Elas ficam na tabela `usuarios` do
+// Supabase (hash SHA-256). Esta lista é só um "fallback" de nomes/cargos
+// usado pela interface enquanto o banco ainda não respondeu.
+// O carregamento real acontece em carregarUsuariosDoBanco() e o login
+// passa por autenticarUsuarioWheelTech() -> RPC verificar_login.
 const SYSTEM_USERS = [
-    { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E', role: 'Fotógrafa' },
-    { username: 'arthur', password: '040869', name: 'Arthur', avatar: 'A', role: 'Comercial' },
-    { username: 'laura', password: '123456', name: 'Laura', avatar: 'L', role: 'Midia' },
-    { username: 'ronald', password: '210188', name: 'Ronald', avatar: 'R', role: 'Administrador' },
-    { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' },
-    { username: 'mirella', password: '220922', name: 'Mirella', avatar: 'M', role: 'Assistente 2' },
-    { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
-    { username: 'suelen', password: '148596', name: 'Suelen', avatar: 'S', role: 'Assistente 4' },
-    { username: 'leticia', password: '181094', name: 'Leticia', avatar: 'L', role: 'Administrador' },
-    { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
+    { username: 'elaine', name: 'Elaine', avatar: 'E', role: 'Fotógrafa', status: 'ativo' },
+    { username: 'arthur', name: 'Arthur', avatar: 'A', role: 'Comercial', status: 'ativo' },
+    { username: 'laura', name: 'Laura', avatar: 'L', role: 'Midia', status: 'ativo' },
+    { username: 'ronald', name: 'Ronald', avatar: 'R', role: 'Administrador', status: 'ativo' },
+    { username: 'bruna', name: 'Bruna', avatar: 'B', role: 'Assistente', status: 'ativo' },
+    { username: 'mirella', name: 'Mirella', avatar: 'M', role: 'Assistente 2', status: 'ativo' },
+    { username: 'thalyta', name: 'Thalyta', avatar: 'T', role: 'Assistente 3', status: 'ativo' },
+    { username: 'suelen', name: 'Suelen', avatar: 'S', role: 'Assistente 4', status: 'ativo' },
+    { username: 'leticia', name: 'Leticia', avatar: 'L', role: 'Administrador', status: 'ativo' },
+    { username: 'andressamiotto', name: 'Andressa', avatar: 'A', role: 'Administrador', status: 'ativo' }
 ];
 
-// USUÁRIOS BLOQUEADOS (não podem acessar o sistema)
+// USUÁRIOS BLOQUEADOS (fallback — a fonte real é o status 'bloqueado' no banco)
 const BLOCKED_USERS = ['hosama', 'andressa'];
+
+// ============================================================
+// AUTENTICAÇÃO VIA BANCO DE DADOS (tabela `usuarios` no Supabase)
+// ============================================================
+const WT_SENHA_SALT = 'wheeltech-2026';
+
+// Hash SHA-256 salgado da senha (o mesmo cálculo roda no cadastro e no login)
+async function wtHashSenha(username, senha) {
+    const texto = String(username || '').trim().toLowerCase() + ':' + String(senha || '') + ':' + WT_SENHA_SALT;
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
+    return Array.from(new Uint8Array(buf))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
+window.wtHashSenha = wtHashSenha;
+
+// Substitui o conteúdo de SYSTEM_USERS pelos usuários ATIVOS do banco
+// (sem trazer nenhum hash de senha). Mantém a MESMA referência do array
+// para não quebrar quem já leu a variável.
+async function carregarUsuariosDoBanco() {
+    try {
+        if (!supabaseClient && typeof initSupabase === 'function') initSupabase();
+        if (!supabaseClient) return false;
+
+        const { data, error } = await supabaseClient
+            .from('usuarios')
+            .select('username, nome, avatar, avatar_foto, role, status')
+            .eq('status', 'ativo');
+
+        if (error) {
+            console.warn('⚠️ Não foi possível carregar usuários do banco:', error.message);
+            return false;
+        }
+        if (!Array.isArray(data) || !data.length) return false;
+
+        const novos = data.map(u => ({
+            username: String(u.username || '').toLowerCase(),
+            name: u.nome || u.username,
+            avatar: u.avatar || (u.nome || u.username || 'U').charAt(0).toUpperCase(),
+            avatarFoto: u.avatar_foto || null,
+            role: u.role || 'Assistente',
+            status: u.status || 'ativo'
+        }));
+
+        SYSTEM_USERS.length = 0;
+        novos.forEach(u => SYSTEM_USERS.push(u));
+        window.SYSTEM_USERS = SYSTEM_USERS;
+
+        // atualiza avatar/cargo da pessoa logada se algo mudou
+        if (currentUser) {
+            const eu = SYSTEM_USERS.find(u => u.username === currentUser.username);
+            if (eu) {
+                currentUser.role = eu.role;
+                currentUser.avatar = eu.avatar;
+                currentUser.avatarFoto = eu.avatarFoto;
+                window.currentUser = currentUser;
+                if (userRole) userRole.textContent = eu.role;
+                if (typeof atualizarTodosAvatares === 'function') atualizarTodosAvatares();
+                if (typeof atualizarVisibilidadeMenu === 'function') atualizarVisibilidadeMenu();
+            }
+        }
+
+        console.log(`✅ ${SYSTEM_USERS.length} usuários carregados do banco.`);
+        return true;
+    } catch (e) {
+        console.warn('⚠️ carregarUsuariosDoBanco falhou:', e);
+        return false;
+    }
+}
+window.carregarUsuariosDoBanco = carregarUsuariosDoBanco;
+
+// Verifica usuário + senha contra o banco. Retorna o objeto do usuário
+// (com status) ou null se não bater. NÃO decide bloqueio/pendência —
+// quem faz isso é o handleLogin.
+async function autenticarUsuarioWheelTech(username, senha) {
+    if (!supabaseClient && typeof initSupabase === 'function') initSupabase();
+    if (!supabaseClient) throw new Error('Sem conexão com o banco de dados.');
+
+    const hash = await wtHashSenha(username, senha);
+    const { data, error } = await supabaseClient.rpc('verificar_login', {
+        p_username: String(username || '').trim().toLowerCase(),
+        p_senha_hash: hash
+    });
+    if (error) throw error;
+
+    const linha = Array.isArray(data) ? data[0] : data;
+    if (!linha) return null;
+
+    return {
+        id: linha.id,
+        username: String(linha.username || '').toLowerCase(),
+        name: linha.nome || linha.username,
+        avatar: linha.avatar || (linha.nome || 'U').charAt(0).toUpperCase(),
+        avatarFoto: linha.avatar_foto || null,
+        role: linha.role || 'Assistente',
+        status: linha.status || 'ativo'
+    };
+}
+window.autenticarUsuarioWheelTech = autenticarUsuarioWheelTech;
+
+// Cadastro pela tela de login -> cria uma solicitação "pendente"
+async function handleRegister(dados, form) {
+    try {
+        const nome = String(dados && dados.name || '').trim();
+        const username = String(dados && dados.username || '').trim().toLowerCase();
+        const email = String(dados && dados.email || '').trim();
+        const senha = String(dados && dados.password || '');
+
+        if (!nome || !username || !senha) {
+            showToast('Preencha nome, usuário e senha.', 'warning');
+            return;
+        }
+        if (senha.length < 6) {
+            showToast('A senha precisa ter pelo menos 6 caracteres.', 'warning');
+            return;
+        }
+        if (!supabaseClient && typeof initSupabase === 'function') initSupabase();
+        if (!supabaseClient) {
+            showToast('Sem conexão com o banco. Tente novamente em instantes.', 'error');
+            return;
+        }
+
+        const { data: existentes, error: erroBusca } = await supabaseClient
+            .from('usuarios')
+            .select('username, status')
+            .eq('username', username);
+        if (erroBusca) throw erroBusca;
+
+        const jaExiste = (existentes || [])[0];
+        const hash = await wtHashSenha(username, senha);
+
+        if (jaExiste) {
+            if (jaExiste.status === 'recusado') {
+                const { error } = await supabaseClient
+                    .from('usuarios')
+                    .update({ nome, email, senha_hash: hash, status: 'pendente', atualizado_em: new Date().toISOString() })
+                    .eq('username', username);
+                if (error) throw error;
+            } else {
+                showToast('⚠️ Esse usuário já existe (ou já foi solicitado). Fale com um administrador.', 'warning');
+                return;
+            }
+        } else {
+            const { error } = await supabaseClient
+                .from('usuarios')
+                .insert([{
+                    username,
+                    nome,
+                    email,
+                    senha_hash: hash,
+                    avatar: nome.charAt(0).toUpperCase(),
+                    status: 'pendente'
+                }]);
+            if (error) throw error;
+        }
+
+        showToast('✅ Solicitação enviada! Aguarde a aprovação de um administrador.', 'success');
+        if (form && typeof form.reset === 'function') form.reset();
+
+        const card = document.getElementById('authCard');
+        if (card) {
+            card.classList.remove('is-flipped');
+            card.setAttribute('data-face', 'login');
+        }
+        if (window.WTUsuarios && typeof window.WTUsuarios.atualizarSino === 'function') {
+            window.WTUsuarios.atualizarSino();
+        }
+    } catch (e) {
+        console.error('❌ Erro no cadastro:', e);
+        showToast('Não foi possível enviar o cadastro. ' + (e.message || ''), 'error');
+    }
+}
+window.handleRegister = handleRegister;
 
 function contarCaracteres() {
     const campo = document.getElementById('productName');
@@ -4883,15 +5085,36 @@ Foto da bike: ${order.linkFotoBikeRenovacao}`
 
 function highlightActiveFilterButton() {
     const buttons = document.querySelectorAll('.filter-group .btn');
+    const coresFiltrosOS = {
+        pendente: '#f59e0b',
+        andamento: '#0d6efd',
+        nao_conferidas: '#dc3545',
+        aguardando_estoque: '#6c757d',
+        concluida: '#198754',
+        todos: '#212529',
+        renovacao_anuncio: '#6f42c1'
+    };
     buttons.forEach(btn => {
         btn.classList.remove('active', 'os-filter-active');
-        btn.style.boxShadow = '';
+        const filtro = btn.getAttribute('onclick')?.match(/filterOS\('([^']+)'\)/)?.[1];
+        const corOriginal = coresFiltrosOS[filtro];
+        if (corOriginal) {
+            btn.style.setProperty('background', corOriginal, 'important');
+            btn.style.setProperty('background-color', corOriginal, 'important');
+            btn.style.setProperty('border-color', corOriginal, 'important');
+            btn.style.setProperty('color', '#ffffff', 'important');
+        }
+        btn.style.removeProperty('box-shadow');
         btn.style.transform = '';
     });
     const activeBtn = document.querySelector(`.filter-group .btn[onclick*="'${currentFilter}'"]`);
     if (activeBtn) {
         activeBtn.classList.add('active', 'os-filter-active');
-        activeBtn.style.boxShadow = '0 0 0 3px rgba(0, 173, 238, .28)';
+        activeBtn.style.setProperty('background', '#ffffff', 'important');
+        activeBtn.style.setProperty('background-color', '#ffffff', 'important');
+        activeBtn.style.setProperty('border-color', '#adb5bd', 'important');
+        activeBtn.style.setProperty('color', '#111111', 'important');
+        activeBtn.style.setProperty('box-shadow', '0 0 0 2px rgba(0, 0, 0, .12)', 'important');
         activeBtn.style.transform = 'translateY(-1px)';
     }
 }
@@ -4915,7 +5138,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (userRole) userRole.textContent = currentUser.role;
         if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo(a) de volta, ${currentUser.name}!`;
         if (createdByInput) createdByInput.value = currentUser.name;
-        
+        atualizarTodosAvatares();
+
         // Mostrar sistema, esconder login
         if (loginScreen) loginScreen.classList.add('hidden');
         const menuSystem = document.getElementById('menuSystem');
@@ -5059,6 +5283,9 @@ function initSupabase() {
             supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
             window.supabaseClient = supabaseClient;
             console.log('✅ Supabase inicializado');
+            if (typeof carregarUsuariosDoBanco === 'function') {
+                carregarUsuariosDoBanco().catch(() => {});
+            }
         } else {
             console.error('❌ Biblioteca Supabase não carregada');
         }
@@ -5091,17 +5318,25 @@ function atualizarAvatar(elementId, avatar) {
 // No login, após definir currentUser, atualize todos os avatares possíveis
 function atualizarTodosAvatares() {
     if (!currentUser) return;
-    const avatar = currentUser.avatar;
-    atualizarAvatar('menuUserAvatar', avatar);
-    atualizarAvatar('userAvatar', avatar);
-    atualizarAvatar('caixaUserAvatar', avatar);
-    atualizarAvatar('salesUserAvatar', avatar);
-    atualizarAvatar('reembolsoUserAvatar', avatar);
-    atualizarAvatar('reviewsUserAvatar', avatar);
-    atualizarAvatar('folgasUserAvatar', avatar);
-    atualizarAvatar('shippingUserAvatar', avatar);
-    atualizarAvatar('estoqueUserAvatar', avatar);
-    atualizarAvatar('estoqueGestaoAvatar', avatar);
+    const ids = [
+        'menuUserAvatar', 'userAvatar', 'caixaUserAvatar', 'salesUserAvatar',
+        'reembolsoUserAvatar', 'reviewsUserAvatar', 'folgasUserAvatar',
+        'shippingUserAvatar', 'estoqueUserAvatar', 'estoqueGestaoAvatar'
+    ];
+    const foto = currentUser.avatarFoto || currentUser.avatar_foto || null;
+    const letra = currentUser.avatar || (currentUser.name || 'U').charAt(0).toUpperCase();
+
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (foto) {
+            el.innerHTML = `<img src="${foto}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block;">`;
+            el.style.overflow = 'hidden';
+        } else {
+            el.textContent = letra;
+            el.style.removeProperty('overflow');
+        }
+    });
 }
 
 // ============================================
@@ -5252,6 +5487,47 @@ function saveSessionToStorage() {
     console.log('✅ Sessão salva no localStorage');
 }
 
+// Confere no banco se o usuário da sessão continua liberado.
+// Se um admin bloqueou/recusou/demitiu a pessoa, derruba a sessão.
+async function revalidarSessaoContraBanco() {
+    try {
+        if (!currentUser) return;
+        if (!supabaseClient && typeof initSupabase === 'function') initSupabase();
+        if (!supabaseClient) return;
+
+        const { data, error } = await supabaseClient
+            .from('usuarios')
+            .select('nome, avatar, avatar_foto, role, status')
+            .eq('username', currentUser.username)
+            .maybeSingle();
+
+        if (error || !data) return;
+
+        if (data.status && data.status !== 'ativo') {
+            clearSessionStorage();
+            const menuSystem = document.getElementById('menuSystem');
+            if (loginScreen) loginScreen.classList.remove('hidden');
+            if (menuSystem) menuSystem.classList.add('hidden');
+            try { clearTimeout(sessionTimer); } catch (e) {}
+            showToast('⛔ Seu acesso foi encerrado por um administrador.', 'error');
+            setTimeout(() => location.reload(), 1500);
+            return;
+        }
+
+        // mantém cargo/avatar em dia
+        currentUser.role = data.role || currentUser.role;
+        currentUser.avatar = data.avatar || currentUser.avatar;
+        currentUser.avatarFoto = data.avatar_foto || null;
+        window.currentUser = currentUser;
+        if (userRole) userRole.textContent = currentUser.role;
+        if (typeof atualizarTodosAvatares === 'function') atualizarTodosAvatares();
+        if (typeof atualizarVisibilidadeMenu === 'function') atualizarVisibilidadeMenu();
+    } catch (e) {
+        /* silencioso — offline não deve deslogar ninguém */
+    }
+}
+window.revalidarSessaoContraBanco = revalidarSessaoContraBanco;
+
 function loadSessionFromStorage() {
     try {
         const sessionData = localStorage.getItem('wheeltech_session');
@@ -5291,7 +5567,10 @@ function loadSessionFromStorage() {
             showToast('⛔ Seu usuário foi bloqueado. Contate o administrador.', 'error');
             return false;
         }
-        
+
+        // 🔒 Revalida o status no banco (bloqueio/demissão feito por um admin)
+        revalidarSessaoContraBanco();
+
         const timeLeft = session.expiresAt - now;
         console.log(`🕒 Sessão válida por mais ${Math.round(timeLeft / 1000 / 60)} minutos`);
         return true;
@@ -13902,7 +14181,6 @@ if (
 
             if (
                 (hasPermission || isAdmin) &&
-                order.photoType === 'fotos_para_atualizar' &&
                 ['pendente', 'andamento'].includes(order.status)
             ) {
                 actionButtons += `
@@ -28113,9 +28391,6 @@ function obterSkusDaOS(order) {
 window.marcarOSProdutoSemEstoque = async function(orderId) {
     const order = orders.find(item => String(item.id) === String(orderId));
     if (!order) return showToast('❌ OS não encontrada', 'error');
-    if (order.photoType !== 'fotos_para_atualizar') {
-        return showToast('⚠️ Esta ação é exclusiva do serviço Fotos a atualizar.', 'warning');
-    }
 
     const skus = obterSkusDaOS(order);
     if (!skus.length) return showToast('⚠️ Esta OS não possui SKU para acompanhar.', 'warning');
