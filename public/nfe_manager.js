@@ -34365,6 +34365,102 @@ async function consultarGETMLFullNFE(
 
 
 // =========================================================
+// LEAD TIME DO SHIPMENT (PRAZO DE MANUSEIO / DESPACHO)
+//
+// /shipments/{id} NÃO devolve lead_time nem sla.
+// É preciso bater em /shipments/{id}/lead_time, que só
+// responde no formato novo com o header x-format-new.
+//
+// Passamos o header pelo parâmetro &headers= do worker
+// (não como header do fetch) para não disparar preflight
+// CORS que o worker não libera.
+// =========================================================
+
+async function buscarLeadTimeShipmentNFE(
+    shipmentId,
+    token = null
+) {
+
+    shipmentId =
+        String(
+            shipmentId ||
+            ''
+        ).trim();
+
+
+    if (!shipmentId) {
+        return null;
+    }
+
+
+    token =
+        token ||
+        await obterTokenMLNFE();
+
+
+    if (!token) {
+        return null;
+    }
+
+
+    try {
+
+        const alvo =
+            `https://api.mercadolibre.com/shipments/${encodeURIComponent(
+                shipmentId
+            )}/lead_time`;
+
+
+        const proxyUrl =
+            `${window.WORKER_URL}/api/ml/proxy?url=` +
+            `${encodeURIComponent(alvo)}` +
+            `&token=${encodeURIComponent(token)}` +
+            `&headers=${encodeURIComponent(
+                '{"x-format-new":"true"}'
+            )}`;
+
+
+        const response =
+            await fetch(
+                proxyUrl,
+                {
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        if (!response.ok) {
+            return null;
+        }
+
+
+        const data =
+            await response.json();
+
+
+        return (
+            data &&
+            typeof data === 'object'
+        )
+            ? data
+            : null;
+
+
+    } catch (error) {
+
+        console.warn(
+            `⚠️ [NFE] lead_time do shipment ${shipmentId}:`,
+            error?.message ||
+            error
+        );
+
+        return null;
+    }
+}
+
+
+// =========================================================
 // BUSCAR DETALHES DE UMA VARIAÇÃO
 // =========================================================
 
@@ -61881,6 +61977,123 @@ async function corrigirVendaIncompletaNFE(
             obterPendenciasVendaNFE(
                 atualizada
             );
+
+
+        // =====================================================
+        // DATA DE ENVIO / PRAZO DE MANUSEIO
+        //
+        // O /shipments/{id} acima não traz lead_time nem sla,
+        // então extrairDataEnvioML() continua sem data. Aqui
+        // buscamos /shipments/{id}/lead_time (formato novo) e
+        // guardamos em informacoes_envio para a coluna "Envio"
+        // e para a ampulheta da coleta.
+        // =====================================================
+
+        if (
+            pendencias.includes(
+                'data_envio'
+            ) &&
+            shipmentId
+        ) {
+
+            try {
+
+                const leadTime =
+                    await buscarLeadTimeShipmentNFE(
+                        shipmentId,
+                        token
+                    );
+
+
+                if (
+                    leadTime &&
+                    typeof leadTime === 'object'
+                ) {
+
+                    const infoAtual =
+                        (
+                            atualizada.informacoes_envio &&
+                            typeof atualizada.informacoes_envio ===
+                                'object'
+                        )
+                            ? atualizada.informacoes_envio
+                            : {};
+
+
+                    atualizada.informacoes_envio = {
+
+                        ...infoAtual,
+
+                        lead_time:
+                            leadTime,
+
+                        estimated_handling_limit:
+                            leadTime.estimated_handling_limit ||
+                            infoAtual.estimated_handling_limit ||
+                            null,
+
+                        sla:
+                            infoAtual.sla ||
+                            (
+                                leadTime.estimated_handling_limit
+                                    ? {
+                                        expected_date:
+                                            leadTime
+                                                .estimated_handling_limit
+                                                .date
+                                    }
+                                    : null
+                            )
+                    };
+
+
+                    const dataLead =
+                        (typeof extrairDataEnvioML === 'function')
+                            ? extrairDataEnvioML(atualizada)
+                            : (
+                                leadTime
+                                    .estimated_handling_limit
+                                    ?.date ||
+                                null
+                            );
+
+
+                    if (dataLead) {
+
+                        atualizada._data_envio =
+                            dataLead;
+
+                        atualizada.data_envio =
+                            dataLead;
+
+                        atualizada._prazo_envio =
+                            leadTime
+                                .estimated_handling_limit
+                                ?.date ||
+                            dataLead;
+
+                        houveAlteracao =
+                            true;
+                    }
+                }
+
+            } catch (error) {
+
+                console.warn(
+                    `⚠️ [NFE] data de envio ${idVenda}:`,
+                    error?.message ||
+                    error
+                );
+            }
+
+
+            normalizarLocalmente();
+
+            pendencias =
+                obterPendenciasVendaNFE(
+                    atualizada
+                );
+        }
 
 
         // =====================================================
