@@ -394,10 +394,6 @@ function classificarVendaPainelNFE(venda) {
     // =====================================================
 
 
-    // =====================================================
-    // CANCELADA
-    // =====================================================
-
     const statusOrder =
         String(
             venda._ml_status ||
@@ -420,6 +416,48 @@ function classificarVendaPainelNFE(venda) {
             .trim()
             .toLowerCase();
 
+
+    // =====================================================
+    // FULL
+    //
+    // FULL é separado do fluxo normal e não é reconsultado.
+    //
+    // IMPORTANTE: FULL vence o cancelamento. Uma venda FULL
+    // cancelada continua no filtro "full" (o cancelamento
+    // do FULL é tratado dentro desse filtro).
+    // =====================================================
+
+    let isFull =
+        venda._is_full === true ||
+        venda.is_full === true;
+
+
+    try {
+
+        if (
+            typeof detectarVendaFullNFE ===
+            'function'
+        ) {
+
+            isFull =
+                isFull ||
+                detectarVendaFullNFE(
+                    venda
+                );
+        }
+
+    } catch (error) {}
+
+
+    if (isFull) {
+
+        return 'full';
+    }
+
+
+    // =====================================================
+    // CANCELADA (somente NÃO-FULL)
+    // =====================================================
 
     if (
         venda._venda_cancelada === true ||
@@ -454,40 +492,6 @@ function classificarVendaPainelNFE(venda) {
         }
 
     } catch (error) {}
-
-
-    // =====================================================
-    // FULL
-    //
-    // FULL é separado do fluxo normal e não é reconsultado.
-    // =====================================================
-
-    let isFull =
-        venda._is_full === true ||
-        venda.is_full === true;
-
-
-    try {
-
-        if (
-            typeof detectarVendaFullNFE ===
-            'function'
-        ) {
-
-            isFull =
-                isFull ||
-                detectarVendaFullNFE(
-                    venda
-                );
-        }
-
-    } catch (error) {}
-
-
-    if (isFull) {
-
-        return 'full';
-    }
 
 
     // =====================================================
@@ -1103,10 +1107,45 @@ async function selecionarFiltroPainelNFE(
         filtro;
 
 
+    // =====================================================
+    // TOKEN DE GERAÇÃO
+    //
+    // O usuário pode clicar rápido entre os filtros. Sem
+    // isto, uma chamada antiga que ainda estava carregando
+    // o banco termina depois e renderiza o filtro errado
+    // (a tela "trava" ou "some tudo"). Cada clique invalida
+    // os anteriores.
+    // =====================================================
+
+    const geracao =
+        (window._geracaoFiltroPainelNFE || 0) + 1;
+
+    window._geracaoFiltroPainelNFE =
+        geracao;
+
+
+    const aindaAtual =
+        () =>
+            window._geracaoFiltroPainelNFE === geracao;
+
+
     const statusTela =
         document.getElementById(
             'statusAtualizacaoNFE'
         );
+
+
+    // Render imediato do que já está em memória, para a
+    // troca de aba parecer instantânea.
+    try {
+        aplicarFiltroPainelNFE(
+            filtro,
+            {
+                atualizarStatus:
+                    false
+            }
+        );
+    } catch (error) {}
 
 
     // =====================================================
@@ -1150,6 +1189,9 @@ async function selecionarFiltroPainelNFE(
                 );
 
 
+            // A base pode ser mesclada mesmo se o filtro
+            // mudou (dado é sempre bem-vindo), mas só
+            // re-renderiza se este clique ainda é o atual.
             window._vendasPainelNFEBase =
                 mesclarVendasPainelNFE(
                     window._vendasPainelNFEBase,
@@ -1171,11 +1213,21 @@ async function selecionarFiltroPainelNFE(
             );
 
 
-            if (statusTela) {
+            if (
+                aindaAtual() &&
+                statusTela
+            ) {
                 statusTela.textContent =
                     `Erro carregando filtro: ${error.message}`;
             }
         }
+    }
+
+
+    if (!aindaAtual()) {
+
+        // O usuário já trocou de filtro; não renderiza por cima.
+        return;
     }
 
 
@@ -1699,6 +1751,49 @@ function aplicarFiltroPainelNFE(
     atualizarEstadoVisualFiltroPainelNFE(
         filtro
     );
+
+
+    // =====================================================
+    // NÃO ESVAZIAR A TABELA ENQUANTO O FILTRO AINDA CARREGA
+    //
+    // Filtros de estado final (enviadas/canceladas/full) são
+    // buscados sob demanda. Se ainda não chegaram, mostrar 0
+    // vendas faz parecer que "sumiu tudo". Mantém as linhas
+    // atuais até o filtro terminar de carregar.
+    // =====================================================
+
+    const filtroFinalPendente =
+        [
+            'enviadas',
+            'canceladas',
+            'full'
+        ].includes(filtro) &&
+        window._statusCarregadosPainelNFE instanceof Set &&
+        !window._statusCarregadosPainelNFE.has(filtro);
+
+
+    if (
+        filtradas.length === 0 &&
+        filtroFinalPendente
+    ) {
+
+        const status =
+            document.getElementById(
+                'statusAtualizacaoNFE'
+            );
+
+        if (status) {
+            status.textContent =
+                `Carregando ${filtro.replaceAll('_', ' ')}...`;
+        }
+
+
+        vendasPendentes =
+            filtradas;
+
+
+        return filtradas;
+    }
 
 
     // =====================================================
@@ -4444,6 +4539,437 @@ async function cancelarNFEporVendaSistema(vendaId) {
 }
 
 // =========================================================
+// CANCELAMENTO AUTOMÁTICO DE NF-e
+//
+// Regra: venda cancelada no Mercado Livre há MAIS DE 1 HORA
+// e que ainda possui NF-e autorizada (não cancelada) ->
+// o sistema cancela a nota automaticamente, sem confirmar.
+//
+// Respeita a janela da SEFAZ: não tenta se a NF-e foi
+// emitida há mais de ~23h.
+// =========================================================
+
+const NFE_AUTO_CANCEL_JUSTIFICATIVA =
+    'Cancelamento automatico pelo sistema: venda cancelada no Mercado Livre ha mais de uma hora.';
+
+async function cancelarNFEAutomaticoSistema(
+    chaveAcesso,
+    vendaId
+) {
+
+    chaveAcesso =
+        String(chaveAcesso || '')
+            .replace(/\D/g, '')
+            .trim();
+
+
+    if (chaveAcesso.length !== 44) {
+        return {
+            success: false,
+            error: 'chave inválida'
+        };
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/cancelar`,
+                {
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+
+                    body: JSON.stringify({
+                        chaveAcesso,
+
+                        justificativa:
+                            NFE_AUTO_CANCEL_JUSTIFICATIVA
+                    })
+                }
+            );
+
+
+        const texto =
+            await response.text();
+
+
+        let result = {};
+
+        try {
+            result = texto
+                ? JSON.parse(texto)
+                : {};
+        } catch {
+            result = {
+                success: false,
+                error: texto || `HTTP ${response.status}`
+            };
+        }
+
+
+        if (
+            !response.ok ||
+            !result.success
+        ) {
+            return {
+                success: false,
+                error:
+                    result.error ||
+                    result.message ||
+                    `HTTP ${response.status}`
+            };
+        }
+
+
+        // Espelha o pós-cancelamento manual.
+        try {
+            await removerNFESistema(chaveAcesso);
+        } catch (error) {
+            console.warn(
+                '⚠️ [NFE AUTO-CANCEL] removerNFESistema:',
+                error.message
+            );
+        }
+
+
+        if (vendaId && vendaId !== 'N/A') {
+            try {
+                await restaurarEstoqueSistema(vendaId);
+            } catch (error) {
+                console.warn(
+                    '⚠️ [NFE AUTO-CANCEL] restaurarEstoque:',
+                    error.message
+                );
+            }
+        }
+
+
+        try {
+            await registrarHistoricoSistema(
+                vendaId,
+                chaveAcesso,
+                NFE_AUTO_CANCEL_JUSTIFICATIVA
+            );
+        } catch (error) {}
+
+
+        return {
+            success: true
+        };
+
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+async function verificarCancelamentosAutomaticosNFE() {
+
+    // Throttle: no máximo 1 verificação a cada 10 minutos.
+    const agora =
+        Date.now();
+
+    if (
+        agora -
+        Number(
+            window._ultimaVerificacaoAutoCancelNFE ||
+            0
+        ) <
+        10 * 60 * 1000
+    ) {
+        return;
+    }
+
+    window._ultimaVerificacaoAutoCancelNFE =
+        agora;
+
+
+    if (
+        !window.supabaseClient ||
+        !window.API_BASE_URL
+    ) {
+        return;
+    }
+
+
+    try {
+
+        // =================================================
+        // 1. NF-es AINDA ATIVAS (não canceladas)
+        // =================================================
+
+        const resp =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/listar-nfes`,
+                { cache: 'no-store' }
+            );
+
+        const data =
+            await resp.json();
+
+
+        if (
+            !data?.success ||
+            !Array.isArray(data.notas)
+        ) {
+            return;
+        }
+
+
+        const porVenda =
+            new Map();
+
+
+        for (const n of data.notas) {
+
+            if (n.cancelada) {
+                continue;
+            }
+
+
+            const vId =
+                normalizarOrderIdML(
+                    n.venda_id ||
+                    n.venda_id_ml ||
+                    n.id_venda
+                );
+
+            const chave =
+                String(
+                    n.chave_acesso ||
+                    n.chave ||
+                    ''
+                ).replace(/\D/g, '');
+
+
+            if (!vId || chave.length !== 44) {
+                continue;
+            }
+
+
+            porVenda.set(vId, {
+                chave,
+                data_emissao: n.data_emissao
+            });
+        }
+
+
+        if (porVenda.size === 0) {
+            return;
+        }
+
+
+        // =================================================
+        // 2. QUAIS DESSAS VENDAS ESTÃO CANCELADAS HÁ +1h
+        // =================================================
+
+        const ids =
+            [...porVenda.keys()];
+
+        const limite1h =
+            new Date(
+                agora - 60 * 60 * 1000
+            ).toISOString();
+
+
+        const aCancelar =
+            [];
+
+
+        for (let i = 0; i < ids.length; i += 100) {
+
+            const lote =
+                ids.slice(i, i + 100);
+
+
+            const {
+                data: rows,
+                error
+            } =
+                await window.supabaseClient
+                    .from('vendas_nfe_cache')
+                    .select(
+                        'id_venda_ml, venda_cancelada, venda_cancelada_em, ml_status'
+                    )
+                    .in('id_venda_ml', lote);
+
+
+            if (error) {
+                console.warn(
+                    '⚠️ [NFE AUTO-CANCEL] cache:',
+                    error.message
+                );
+                continue;
+            }
+
+
+            for (const r of (rows || [])) {
+
+                const status =
+                    String(r.ml_status || '')
+                        .trim()
+                        .toLowerCase();
+
+                const cancelada =
+                    r.venda_cancelada === true ||
+                    status === 'cancelled' ||
+                    status === 'canceled';
+
+
+                if (!cancelada) {
+                    continue;
+                }
+
+
+                // Sem hora de cancelamento não dá pra saber
+                // se já passou 1h -> aguarda.
+                if (!r.venda_cancelada_em) {
+                    continue;
+                }
+
+
+                if (
+                    String(r.venda_cancelada_em) >
+                    limite1h
+                ) {
+                    continue;
+                }
+
+
+                aCancelar.push(
+                    normalizarOrderIdML(
+                        r.id_venda_ml
+                    )
+                );
+            }
+        }
+
+
+        if (aCancelar.length === 0) {
+            return;
+        }
+
+
+        console.log(
+            `🗑️ [NFE AUTO-CANCEL] ${aCancelar.length} NF-e(s) para cancelar (venda cancelada há +1h)`
+        );
+
+
+        // =================================================
+        // 3. CANCELAR UMA A UMA
+        // =================================================
+
+        let ok = 0;
+        let falha = 0;
+
+
+        for (const vId of aCancelar) {
+
+            const info =
+                porVenda.get(vId);
+
+            if (!info) {
+                continue;
+            }
+
+
+            // Janela da SEFAZ (~24h). Não insiste em nota antiga.
+            if (info.data_emissao) {
+
+                let d =
+                    String(info.data_emissao).trim();
+
+                if (
+                    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/
+                        .test(d)
+                ) {
+                    d += 'Z';
+                }
+
+                const emissao =
+                    new Date(d).getTime();
+
+
+                if (
+                    Number.isFinite(emissao) &&
+                    (agora - emissao) > 23 * 60 * 60 * 1000
+                ) {
+                    console.warn(
+                        `⏱️ [NFE AUTO-CANCEL] Venda ${vId}: NF-e emitida há +23h, fora da janela. Ignorada.`
+                    );
+                    falha++;
+                    continue;
+                }
+            }
+
+
+            const r =
+                await cancelarNFEAutomaticoSistema(
+                    info.chave,
+                    vId
+                );
+
+
+            if (r.success) {
+                ok++;
+                console.log(
+                    `✅ [NFE AUTO-CANCEL] NF-e da venda ${vId} cancelada.`
+                );
+            } else {
+                falha++;
+                console.warn(
+                    `❌ [NFE AUTO-CANCEL] Venda ${vId}: ${r.error}`
+                );
+            }
+
+
+            await new Promise(
+                res => setTimeout(res, 400)
+            );
+        }
+
+
+        if (ok > 0) {
+
+            showToast(
+                `🗑️ ${ok} NF-e(s) cancelada(s) automaticamente ` +
+                `(venda cancelada há +1h)` +
+                (falha > 0 ? ` — ${falha} falharam` : ''),
+                falha > 0 ? 'warning' : 'success'
+            );
+
+
+            try {
+                await carregarNFesEmitidas();
+            } catch (error) {}
+
+
+            try {
+                if (
+                    typeof refrescarPainelNFEPreservandoFiltro ===
+                    'function'
+                ) {
+                    refrescarPainelNFEPreservandoFiltro();
+                }
+            } catch (error) {}
+        }
+
+    } catch (error) {
+        console.warn(
+            '⚠️ [NFE AUTO-CANCEL] Erro:',
+            error.message
+        );
+    }
+}
+
+// =========================================================
 // EXPORTAR FUNÇÕES
 // =========================================================
 
@@ -4453,6 +4979,8 @@ window.atualizarStatusVendaSistema = atualizarStatusVendaSistema;
 window.restaurarEstoqueSistema = restaurarEstoqueSistema;
 window.listarNFesParaCancelarSistema = listarNFesParaCancelarSistema;
 window.cancelarNFEporVendaSistema = cancelarNFEporVendaSistema;
+window.cancelarNFEAutomaticoSistema = cancelarNFEAutomaticoSistema;
+window.verificarCancelamentosAutomaticosNFE = verificarCancelamentosAutomaticosNFE;
 
 console.log('✅ Funções de cancelamento de NF-e (SISTEMA) carregadas!');
 console.log('📋 Comandos disponíveis:');
@@ -8789,6 +9317,10 @@ function obterItemIdFotoProdutoNFE(
     venda
 ) {
 
+    // A chave de foto pode carregar a variação vendida:
+    // "MLB123::VARIATION_ID". buscarFotoProdutoMLNFE separa
+    // as duas partes e pega a imagem exata da variação.
+
     // =====================================================
     // 1. ORDER_ITEMS
     // =====================================================
@@ -8816,9 +9348,22 @@ function obterItemIdFotoProdutoNFE(
                 itemId
             ) {
 
-                return String(
-                    itemId
-                ).trim();
+                const variationId =
+                    orderItem?.item?.variation_id ??
+                    orderItem?.variation_id ??
+                    null;
+
+
+                return (
+                    String(itemId).trim() +
+                    (
+                        variationId !== null &&
+                        variationId !== undefined &&
+                        String(variationId).trim() !== ''
+                            ? `::${String(variationId).trim()}`
+                            : ''
+                    )
+                );
             }
         }
     }
@@ -8841,9 +9386,22 @@ function obterItemIdFotoProdutoNFE(
         itemId
     ) {
 
-        return String(
-            itemId
-        ).trim();
+        const variationId =
+            venda?.variation_id ??
+            venda?.item?.variation_id ??
+            null;
+
+
+        return (
+            String(itemId).trim() +
+            (
+                variationId !== null &&
+                variationId !== undefined &&
+                String(variationId).trim() !== ''
+                    ? `::${String(variationId).trim()}`
+                    : ''
+            )
+        );
     }
 
 
@@ -9042,9 +9600,17 @@ async function buscarFotoProdutoMLNFE(
                     }
 
 
+                    // itemId pode ser "MLB123::VARIATION_ID"
+                    const [
+                        mlbId,
+                        variationId
+                    ] =
+                        itemId.split('::');
+
+
                     const url =
                         `https://api.mercadolibre.com/items/${encodeURIComponent(
-                            itemId
+                            mlbId
                         )}`;
 
 
@@ -9080,14 +9646,88 @@ async function buscarFotoProdutoMLNFE(
                         await response.json();
 
 
+                    let foto =
+                        null;
+
+
                     // =================================================
-                    // FOTO DE CAPA
+                    // FOTO DA VARIAÇÃO EXATA VENDIDA
                     // =================================================
 
-                    let foto =
-                        item.secure_thumbnail ||
-                        item.thumbnail ||
-                        null;
+                    if (
+                        variationId &&
+                        Array.isArray(
+                            item.variations
+                        )
+                    ) {
+
+                        const variacao =
+                            item.variations.find(
+                                v =>
+                                    String(v?.id) ===
+                                    String(variationId)
+                            );
+
+
+                        const pictureIdVariacao =
+                            (
+                                Array.isArray(
+                                    variacao?.picture_ids
+                                ) &&
+                                variacao.picture_ids[0]
+                            ) ||
+                            variacao?.picture_id ||
+                            null;
+
+
+                        if (
+                            pictureIdVariacao &&
+                            Array.isArray(item.pictures)
+                        ) {
+
+                            const pic =
+                                item.pictures.find(
+                                    p =>
+                                        String(p?.id) ===
+                                        String(pictureIdVariacao)
+                                );
+
+
+                            foto =
+                                pic?.secure_url ||
+                                pic?.url ||
+                                null;
+                        }
+
+
+                        // Variação sem picture na lista de pictures:
+                        // tenta montar a URL padrão do ML.
+                        if (
+                            !foto &&
+                            pictureIdVariacao
+                        ) {
+
+                            foto =
+                                `https://http2.mlstatic.com/D_${
+                                    encodeURIComponent(
+                                        pictureIdVariacao
+                                    )
+                                }-O.jpg`;
+                        }
+                    }
+
+
+                    // =================================================
+                    // FOTO DE CAPA (fallback)
+                    // =================================================
+
+                    if (!foto) {
+
+                        foto =
+                            item.secure_thumbnail ||
+                            item.thumbnail ||
+                            null;
+                    }
 
 
                     // =================================================
@@ -53398,7 +54038,10 @@ async function salvarVendasCacheNFE(
                 'full'
             ].includes(
                 statusAnteriorNormalizado
-            )
+            ) &&
+            // FULL vence qualquer outro estado final: uma venda
+            // FULL que estava como "canceladas" migra para "full".
+            statusOperacionalNFE !== 'full'
         ) {
 
             statusOperacionalNFE =
@@ -54098,6 +54741,22 @@ async function carregarVendasCacheNFE(
 
 
                     if (
+                        statusOperacionaisConsulta.length ===
+                            1 &&
+                        statusOperacionaisConsulta[0] ===
+                            'full'
+                    ) {
+
+                        // FULL: traz também vendas FULL que ainda
+                        // estão marcadas como "canceladas" no banco
+                        // (elas passam a viver no filtro "full").
+                        consulta =
+                            consulta.or(
+                                'is_full.eq.true,' +
+                                'status_operacional_nfe.eq.full'
+                            );
+
+                    } else if (
                         statusOperacionaisConsulta.length ===
                         1
                     ) {
@@ -60143,6 +60802,27 @@ async function carregarVendasPendentes(
                     window._filtroPainelNFE
             }
         );
+
+
+        // =================================================
+        // CANCELAMENTO AUTOMÁTICO DE NF-e
+        //
+        // Em segundo plano: cancela notas de vendas que
+        // foram canceladas no ML há mais de 1 hora.
+        // =================================================
+
+        try {
+
+            if (
+                typeof verificarCancelamentosAutomaticosNFE ===
+                'function'
+            ) {
+
+                verificarCancelamentosAutomaticosNFE()
+                    .catch(() => {});
+            }
+
+        } catch (error) {}
 
 
     } catch (error) {
