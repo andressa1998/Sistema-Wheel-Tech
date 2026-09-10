@@ -728,6 +728,175 @@ function normalizarStatusOperacionalNFE(
         : '';
 }
 
+// =====================================================
+// PRESERVA ESTADO OPERACIONAL DA VENDA NUMA MESCLAGEM
+//
+// Ações do usuário (separar, dar baixa, emitir NF-e) e o
+// cancelamento são IRREVERSÍVEIS. Um sync/enriquecimento
+// que traga dados mais antigos NÃO pode apagar essas
+// marcações da memória (o banco já é protegido em
+// salvarVendasCacheNFE). Só carrega o estado "positivo"
+// da base quando a nova versão não o tem.
+// =====================================================
+function preservarEstadoOperacionalVendaNFE(
+    baseVenda,
+    novaVenda
+) {
+
+    if (!novaVenda) {
+        return baseVenda || novaVenda;
+    }
+
+    if (!baseVenda) {
+        return novaVenda;
+    }
+
+
+    const resultado = {
+        ...novaVenda
+    };
+
+
+    // ---- SEPARAÇÃO ----
+    const baseSeparado =
+        baseVenda._separado === true ||
+        baseVenda.separado === true;
+
+    const novaSeparado =
+        resultado._separado === true ||
+        resultado.separado === true;
+
+    if (baseSeparado && !novaSeparado) {
+
+        resultado._separado = true;
+        resultado.separado = true;
+
+        resultado._separado_em =
+            baseVenda._separado_em ||
+            baseVenda.separado_em ||
+            resultado._separado_em ||
+            null;
+        resultado.separado_em = resultado._separado_em;
+
+        resultado._separado_por_username =
+            baseVenda._separado_por_username ||
+            baseVenda.separado_por_username ||
+            resultado._separado_por_username ||
+            null;
+        resultado.separado_por_username = resultado._separado_por_username;
+
+        resultado._separado_por_nome =
+            baseVenda._separado_por_nome ||
+            baseVenda.separado_por_nome ||
+            resultado._separado_por_nome ||
+            null;
+        resultado.separado_por_nome = resultado._separado_por_nome;
+    }
+
+
+    // ---- BAIXA DE ESTOQUE ----
+    const baseBaixado =
+        baseVenda._estoque_baixado === true ||
+        baseVenda.estoque_baixado === true;
+
+    const novaBaixado =
+        resultado._estoque_baixado === true ||
+        resultado.estoque_baixado === true;
+
+    if (baseBaixado && !novaBaixado) {
+
+        resultado._estoque_baixado = true;
+        resultado.estoque_baixado = true;
+
+        resultado._estoque_status =
+            baseVenda._estoque_status ||
+            baseVenda.estoque_status ||
+            resultado._estoque_status ||
+            null;
+        resultado.estoque_status = resultado._estoque_status;
+
+        resultado._estoque_baixado_em =
+            baseVenda._estoque_baixado_em ||
+            baseVenda.estoque_baixado_em ||
+            resultado._estoque_baixado_em ||
+            null;
+        resultado.estoque_baixado_em = resultado._estoque_baixado_em;
+
+        resultado._estoque_baixado_por_username =
+            baseVenda._estoque_baixado_por_username ||
+            baseVenda.estoque_baixado_por_username ||
+            resultado._estoque_baixado_por_username ||
+            null;
+        resultado.estoque_baixado_por_username = resultado._estoque_baixado_por_username;
+
+        resultado._estoque_baixado_por_nome =
+            baseVenda._estoque_baixado_por_nome ||
+            baseVenda.estoque_baixado_por_nome ||
+            resultado._estoque_baixado_por_nome ||
+            null;
+        resultado.estoque_baixado_por_nome = resultado._estoque_baixado_por_nome;
+
+        if (
+            Array.isArray(baseVenda._estoque_detalhes) &&
+            !Array.isArray(resultado._estoque_detalhes)
+        ) {
+            resultado._estoque_detalhes = baseVenda._estoque_detalhes;
+        }
+    }
+
+
+    // ---- NF-E EMITIDA ----
+    const baseTemNfe =
+        baseVenda._tem_nfe === true ||
+        baseVenda.tem_nfe === true;
+
+    const novaTemNfe =
+        resultado._tem_nfe === true ||
+        resultado.tem_nfe === true;
+
+    if (baseTemNfe && !novaTemNfe) {
+
+        resultado._tem_nfe = true;
+        resultado.tem_nfe = true;
+
+        resultado.nfe_emitida_por_username =
+            baseVenda.nfe_emitida_por_username ||
+            resultado.nfe_emitida_por_username ||
+            null;
+
+        resultado.nfe_emitida_por_nome =
+            baseVenda.nfe_emitida_por_nome ||
+            resultado.nfe_emitida_por_nome ||
+            null;
+    }
+
+
+    // ---- CANCELAMENTO ----
+    const baseCancelada =
+        baseVenda._venda_cancelada === true ||
+        baseVenda.venda_cancelada === true;
+
+    const novaCancelada =
+        resultado._venda_cancelada === true ||
+        resultado.venda_cancelada === true;
+
+    if (baseCancelada && !novaCancelada) {
+
+        resultado._venda_cancelada = true;
+        resultado.venda_cancelada = true;
+
+        resultado._venda_cancelada_em =
+            baseVenda._venda_cancelada_em ||
+            baseVenda.venda_cancelada_em ||
+            resultado._venda_cancelada_em ||
+            null;
+        resultado.venda_cancelada_em = resultado._venda_cancelada_em;
+    }
+
+
+    return resultado;
+}
+
 function mesclarVendasPainelNFE(
     base,
     novas
@@ -781,7 +950,10 @@ function mesclarVendasPainelNFE(
         if (id) {
             mapa.set(
                 id,
-                venda
+                preservarEstadoOperacionalVendaNFE(
+                    mapa.get(id),
+                    venda
+                )
             );
         }
     }
@@ -19039,7 +19211,10 @@ async function sincronizarPainelOperacionalNFE(
 
                     mapa.set(
                         id,
-                        venda
+                        preservarEstadoOperacionalVendaNFE(
+                            mapa.get(id),
+                            venda
+                        )
                     );
                 }
             }
@@ -20619,6 +20794,11 @@ function atualizarPainelNFEIncremental() {
             filtradas;
 
 
+        reaplicarResumosComentariosNFECache(
+            filtradas
+        );
+
+
         return filtradas;
     }
 
@@ -20929,6 +21109,67 @@ function atualizarPainelNFEIncremental() {
         ) {
 
             aplicarBotoesDetalhesVendaNFE();
+        }
+
+    } catch (error) {}
+
+
+    // Linhas reconstruídas perdem o resumo de comentários
+    // (ele é aplicado por fora do template). Reaplica do
+    // cache e, se faltar algo, busca só o que não tem.
+    reaplicarResumosComentariosNFECache(
+        filtradas
+    );
+
+
+    try {
+
+        if (
+            typeof carregarResumosComentariosVendasNFE ===
+            'function'
+        ) {
+
+            const temCache =
+                window._resumoComentariosNFECache instanceof Map;
+
+
+            const faltamCache =
+                filtradas.filter(
+                    venda => {
+
+                        const id =
+                            normalizarOrderIdML(
+                                venda?.id_venda_ml ||
+                                venda?.id
+                            );
+
+
+                        if (!id) {
+                            return false;
+                        }
+
+
+                        return (
+                            !temCache ||
+                            !window._resumoComentariosNFECache.has(
+                                String(id)
+                            )
+                        );
+                    }
+                );
+
+
+            if (
+                faltamCache.length >
+                0
+            ) {
+
+                carregarResumosComentariosVendasNFE(
+                    faltamCache
+                ).catch(
+                    () => {}
+                );
+            }
         }
 
     } catch (error) {}
@@ -29359,10 +29600,110 @@ function montarCelulaComentariosVendaNFE(
 }
 
 
+// Cache em memória dos comentários por venda.
+// Serve para reaplicar o resumo quando a linha é
+// reconstruída (render incremental) sem ir ao banco.
+window._resumoComentariosNFECache =
+    window._resumoComentariosNFECache ||
+    new Map();
+
+
+function guardarResumoComentariosNFECache(
+    vendaId,
+    comentarios
+) {
+
+    try {
+
+        if (
+            !(window._resumoComentariosNFECache instanceof Map)
+        ) {
+
+            window._resumoComentariosNFECache =
+                new Map();
+        }
+
+
+        window._resumoComentariosNFECache.set(
+            String(vendaId),
+            Array.isArray(comentarios)
+                ? comentarios
+                : []
+        );
+
+
+        window._resumoComentariosNFECacheEm =
+            Date.now();
+
+    } catch (error) {}
+}
+
+
+function reaplicarResumosComentariosNFECache(
+    vendas
+) {
+
+    try {
+
+        if (
+            !(window._resumoComentariosNFECache instanceof Map) ||
+            !Array.isArray(vendas)
+        ) {
+
+            return;
+        }
+
+
+        for (
+            const venda
+            of vendas
+        ) {
+
+            const id =
+                normalizarOrderIdML(
+                    venda?.id_venda_ml ||
+                    venda?.id
+                );
+
+
+            if (!id) {
+                continue;
+            }
+
+
+            const chave =
+                String(id);
+
+
+            if (
+                window._resumoComentariosNFECache.has(
+                    chave
+                )
+            ) {
+
+                renderizarResumoComentariosVendaNFE(
+                    id,
+                    window._resumoComentariosNFECache.get(
+                        chave
+                    )
+                );
+            }
+        }
+
+    } catch (error) {}
+}
+
+
 function renderizarResumoComentariosVendaNFE(
     vendaId,
     comentarios = []
 ) {
+
+    guardarResumoComentariosNFECache(
+        vendaId,
+        comentarios
+    );
+
 
     const elementos =
         document.querySelectorAll(
@@ -29619,8 +29960,15 @@ function renderizarResumoComentariosVendaNFE(
 // =========================================================
 
 async function carregarResumosComentariosVendasNFE(
-    vendas
+    vendas,
+    opcoes = {}
 ) {
+
+    const forcar =
+        opcoes &&
+        opcoes.forcar ===
+            true;
+
 
     if (
         !Array.isArray(
@@ -29655,6 +30003,59 @@ async function carregarResumosComentariosVendasNFE(
         ids.length ===
         0
     ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // GUARDA DE FRESCOR
+    //
+    // Se TODAS as vendas pedidas já estão no cache e ele é
+    // recente, só reaplica na tela — evita repetir a mesma
+    // consulta em cada render incremental.
+    //
+    // forcar: true ignora o cache (ex.: após salvar/editar).
+    // =====================================================
+
+    const cacheValido =
+        window._resumoComentariosNFECache instanceof Map;
+
+
+    const cacheRecente =
+        Date.now() -
+        Number(
+            window._resumoComentariosNFECacheEm ||
+            0
+        ) <
+        20000;
+
+
+    if (
+        !forcar &&
+        cacheValido &&
+        cacheRecente &&
+        ids.every(
+            id =>
+                window._resumoComentariosNFECache.has(
+                    String(id)
+                )
+        )
+    ) {
+
+        for (
+            const id
+            of ids
+        ) {
+
+            renderizarResumoComentariosVendaNFE(
+                id,
+                window._resumoComentariosNFECache.get(
+                    String(id)
+                )
+            );
+        }
+
 
         return;
     }
@@ -52796,27 +53197,52 @@ async function salvarVendasCacheNFE(
 
             // =============================================
             // ESTOQUE
+            //
+            // Variantes com "_" também: a linha da tabela lê
+            // venda._estoque_*; sem isso a baixa "sumia" após
+            // um reload do painel.
             // =============================================
 
             estoque_baixado:
                 estoqueBaixado,
 
+            _estoque_baixado:
+                estoqueBaixado,
+
             estoque_status:
+                estoqueStatus,
+
+            _estoque_status:
                 estoqueStatus,
 
             estoque_baixado_em:
                 estoqueBaixadoEm,
 
+            _estoque_baixado_em:
+                estoqueBaixadoEm,
+
             estoque_baixado_por_username:
+                estoqueBaixadoPorUsername,
+
+            _estoque_baixado_por_username:
                 estoqueBaixadoPorUsername,
 
             estoque_baixado_por_nome:
                 estoqueBaixadoPorNome,
 
+            _estoque_baixado_por_nome:
+                estoqueBaixadoPorNome,
+
             estoque_detalhes:
                 estoqueDetalhes,
 
+            _estoque_detalhes:
+                estoqueDetalhes,
+
             estoque_anuncio_pos_venda:
+                estoqueAnuncioPosVenda,
+
+            _estoque_anuncio_pos_venda:
                 estoqueAnuncioPosVenda,
 
 
@@ -52828,10 +53254,20 @@ async function salvarVendasCacheNFE(
                 statusVenda ||
                 null,
 
+            _ml_status:
+                statusVenda ||
+                null,
+
             venda_cancelada:
                 vendaCancelada,
 
+            _venda_cancelada:
+                vendaCancelada,
+
             venda_cancelada_em:
+                vendaCanceladaEm,
+
+            _venda_cancelada_em:
                 vendaCanceladaEm,
 
             estoque_restaurado_cancelamento:
@@ -54160,6 +54596,10 @@ async function carregarVendasCacheNFE(
 
                     // =============================================
                     // ESTOQUE
+                    //
+                    // Grava também as variantes com "_" porque a
+                    // renderização da linha lê venda._estoque_*.
+                    // Sem isso, a baixa "sumia" após um reload.
                     // =============================================
 
                     estoque_baixado:
@@ -54170,6 +54610,24 @@ async function carregarVendasCacheNFE(
 
                         venda
                             .estoque_baixado ===
+                            true ||
+
+                        venda
+                            ._estoque_baixado ===
+                            true,
+
+                    _estoque_baixado:
+
+                        registro
+                            .estoque_baixado ===
+                            true ||
+
+                        venda
+                            .estoque_baixado ===
+                            true ||
+
+                        venda
+                            ._estoque_baixado ===
                             true,
 
 
@@ -54177,6 +54635,22 @@ async function carregarVendasCacheNFE(
 
                         registro
                             .estoque_status ??
+
+                        venda
+                            .estoque_status ??
+
+                        venda
+                            ._estoque_status ??
+
+                        null,
+
+                    _estoque_status:
+
+                        registro
+                            .estoque_status ??
+
+                        venda
+                            ._estoque_status ??
 
                         venda
                             .estoque_status ??
@@ -54192,6 +54666,22 @@ async function carregarVendasCacheNFE(
                         venda
                             .estoque_baixado_em ??
 
+                        venda
+                            ._estoque_baixado_em ??
+
+                        null,
+
+                    _estoque_baixado_em:
+
+                        registro
+                            .estoque_baixado_em ??
+
+                        venda
+                            ._estoque_baixado_em ??
+
+                        venda
+                            .estoque_baixado_em ??
+
                         null,
 
 
@@ -54199,6 +54689,22 @@ async function carregarVendasCacheNFE(
 
                         registro
                             .estoque_baixado_por_username ??
+
+                        venda
+                            .estoque_baixado_por_username ??
+
+                        venda
+                            ._estoque_baixado_por_username ??
+
+                        null,
+
+                    _estoque_baixado_por_username:
+
+                        registro
+                            .estoque_baixado_por_username ??
+
+                        venda
+                            ._estoque_baixado_por_username ??
 
                         venda
                             .estoque_baixado_por_username ??
@@ -54214,6 +54720,22 @@ async function carregarVendasCacheNFE(
                         venda
                             .estoque_baixado_por_nome ??
 
+                        venda
+                            ._estoque_baixado_por_nome ??
+
+                        null,
+
+                    _estoque_baixado_por_nome:
+
+                        registro
+                            .estoque_baixado_por_nome ??
+
+                        venda
+                            ._estoque_baixado_por_nome ??
+
+                        venda
+                            .estoque_baixado_por_nome ??
+
                         null,
 
 
@@ -54225,6 +54747,22 @@ async function carregarVendasCacheNFE(
                         venda
                             .estoque_detalhes ??
 
+                        venda
+                            ._estoque_detalhes ??
+
+                        null,
+
+                    _estoque_detalhes:
+
+                        registro
+                            .estoque_detalhes ??
+
+                        venda
+                            ._estoque_detalhes ??
+
+                        venda
+                            .estoque_detalhes ??
+
                         null,
 
 
@@ -54232,6 +54770,22 @@ async function carregarVendasCacheNFE(
 
                         registro
                             .estoque_anuncio_pos_venda ??
+
+                        venda
+                            .estoque_anuncio_pos_venda ??
+
+                        venda
+                            ._estoque_anuncio_pos_venda ??
+
+                        null,
+
+                    _estoque_anuncio_pos_venda:
+
+                        registro
+                            .estoque_anuncio_pos_venda ??
+
+                        venda
+                            ._estoque_anuncio_pos_venda ??
 
                         venda
                             .estoque_anuncio_pos_venda ??
@@ -54256,6 +54810,19 @@ async function carregarVendasCacheNFE(
 
                         null,
 
+                    _ml_status:
+
+                        registro
+                            .ml_status ??
+
+                        venda
+                            ._ml_status ??
+
+                        venda
+                            .ml_status ??
+
+                        null,
+
 
                     venda_cancelada:
 
@@ -54265,6 +54832,24 @@ async function carregarVendasCacheNFE(
 
                         venda
                             .venda_cancelada ===
+                            true ||
+
+                        venda
+                            ._venda_cancelada ===
+                            true,
+
+                    _venda_cancelada:
+
+                        registro
+                            .venda_cancelada ===
+                            true ||
+
+                        venda
+                            .venda_cancelada ===
+                            true ||
+
+                        venda
+                            ._venda_cancelada ===
                             true,
 
 
@@ -54272,6 +54857,22 @@ async function carregarVendasCacheNFE(
 
                         registro
                             .venda_cancelada_em ??
+
+                        venda
+                            .venda_cancelada_em ??
+
+                        venda
+                            ._venda_cancelada_em ??
+
+                        null,
+
+                    _venda_cancelada_em:
+
+                        registro
+                            .venda_cancelada_em ??
+
+                        venda
+                            ._venda_cancelada_em ??
 
                         venda
                             .venda_cancelada_em ??
@@ -54778,7 +55379,10 @@ async function enriquecerVendasNovasBackgroundNFE(
 
                     mapa.set(
                         id,
-                        atualizada
+                        preservarEstadoOperacionalVendaNFE(
+                            mapa.get(id),
+                            atualizada
+                        )
                     );
                 }
             }
@@ -55030,7 +55634,10 @@ async function corrigirVendasIncompletasCacheNFE() {
 
                 mapa.set(
                     id,
-                    depois
+                    preservarEstadoOperacionalVendaNFE(
+                        mapa.get(id),
+                        depois
+                    )
                 );
             }
         }
@@ -55441,7 +56048,10 @@ async function completarSomenteDadosFaltantesVendasNFE(
 
             mapa.set(
                 id,
-                venda
+                preservarEstadoOperacionalVendaNFE(
+                    mapa.get(id),
+                    venda
+                )
             );
         }
     }
