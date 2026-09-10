@@ -5112,6 +5112,57 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
 
 
                 // =========================================
+                // ANÁLISE (estoque_analise.js) — admin
+                // =========================================
+
+                case 'fornecedor':
+
+                    valorA = (a._analise?.fornecedor || '').toLowerCase();
+                    valorB = (b._analise?.fornecedor || '').toLowerCase();
+
+                    break;
+
+
+                case 'vendas':
+
+                    valorA = a._analise?.vendasTotal || 0;
+                    valorB = b._analise?.vendasTotal || 0;
+
+                    break;
+
+
+                case 'valor_estoque':
+
+                    valorA = a._analise?.valorEstoque || 0;
+                    valorB = b._analise?.valorEstoque || 0;
+
+                    break;
+
+
+                case 'projecao': {
+
+                    // produtos sem projeção (menos de 2 vendas) sempre por último
+                    const pa = a._analise?.projecaoDias;
+                    const pb = b._analise?.projecaoDias;
+                    if (pa == null && pb == null) return 0;
+                    if (pa == null) return 1;
+                    if (pb == null) return -1;
+                    return direcao === 'asc' ? pa - pb : pb - pa;
+                }
+
+
+                case 'sem_venda': {
+
+                    // "nunca vendeu" conta como o mais parado de todos
+                    const da = a._analise?.diasSemVenda;
+                    const db = b._analise?.diasSemVenda;
+                    const va = da == null ? Number.MAX_VALUE : da;
+                    const vb = db == null ? Number.MAX_VALUE : db;
+                    return direcao === 'asc' ? va - vb : vb - va;
+                }
+
+
+                // =========================================
                 // PADRÃO
                 // =========================================
 
@@ -5977,66 +6028,6 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
 
                 <td>
                     ${syncStatusHtml}
-                </td>
-
-
-                <!-- ======================================= -->
-                <!-- ATRIBUTOS -->
-                <!-- ======================================= -->
-
-                <td>
-
-                    <span
-                        title="${escapeHtml(
-                            atributosResumo
-                        )}"
-                        class="badge bg-info"
-                    >
-
-                        ${
-                            Object.keys(
-                                prod.dados_extra ||
-                                {}
-                            ).length
-                        }
-                        atributos
-
-                    </span>
-
-
-                    ${
-                        temMLB
-
-                            ? `
-
-                                <span
-                                    class="badge bg-success"
-                                >
-
-                                    <i
-                                        class="fab fa-mercadolibre"
-                                    ></i>
-
-                                    ${
-                                        Array.isArray(
-                                            mlbCodes
-                                        )
-
-                                            ? mlbCodes.length
-
-                                            : 1
-                                    }
-
-                                </span>
-
-                            `
-
-                            : ''
-                    }
-
-
-                    ${excessoInfo}
-
                 </td>
 
 
