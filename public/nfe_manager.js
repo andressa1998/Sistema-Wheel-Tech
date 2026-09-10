@@ -2168,6 +2168,24 @@ function mapearUF(nomeEstado) {
     return '';
 }
 
+// Estados para os quais o envio é proibido: precisa falar com o Ronald.
+const ESTADOS_ENVIO_PROIBIDO_NFE = ['TO', 'RR'];
+
+function estadoEnvioProibidoNFE(...valores) {
+    for (const valor of valores) {
+        const t = String(valor || '').trim().toUpperCase();
+        if (!t) continue;
+        if (ESTADOS_ENVIO_PROIBIDO_NFE.includes(t)) return true;
+        // "BR-TO", "BR-RR"
+        const m = t.match(/^BR[-\s]?([A-Z]{2})$/);
+        if (m && ESTADOS_ENVIO_PROIBIDO_NFE.includes(m[1])) return true;
+        // nomes por extenso
+        if (t === 'TOCANTINS' || t === 'RORAIMA') return true;
+    }
+    return false;
+}
+window.estadoEnvioProibidoNFE = estadoEnvioProibidoNFE;
+
 // =========================================================
 // BUSCAR VALOR EXATO + MÉTODO DE PAGAMENTO + PARCELAMENTO
 // =========================================================
@@ -5648,6 +5666,133 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
+        // 3.5. EXPANDIR O PACK PELO MERCADO LIVRE
+        //
+        // Quando o cliente compra 2+ produtos diferentes no
+        // mesmo carrinho, o ML cria uma order por produto, todas
+        // com o mesmo pack_id. Precisam ir na MESMA nota.
+        // Aqui consultamos /packs/{pack_id} para pegar todas as
+        // orders, mesmo que a "irmã" não esteja carregada na tela.
+        // =====================================================
+
+        try {
+
+            const idParaPack =
+                orderIdsDaNFE[0] ||
+                orderId;
+
+
+            let packIdML =
+                null;
+
+
+            // pack_id que já temos localmente
+            if (vendaAtual) {
+                packIdML =
+                    obterPackIdLocal(
+                        vendaAtual
+                    );
+            }
+
+
+            // senão, consulta a order no ML só para achar o pack_id
+            if (!packIdML && idParaPack) {
+
+                try {
+
+                    const urlOrder =
+                        `https://api.mercadolibre.com/orders/${idParaPack}`;
+
+                    const proxyOrder =
+                        `${window.WORKER_URL}/api/ml/proxy?url=` +
+                        `${encodeURIComponent(urlOrder)}` +
+                        `&token=${encodeURIComponent(token)}`;
+
+                    const respOrder =
+                        await fetch(
+                            proxyOrder,
+                            { cache: 'no-store' }
+                        );
+
+                    if (respOrder.ok) {
+
+                        const dadosOrder =
+                            await respOrder.json();
+
+                        if (dadosOrder && dadosOrder.pack_id) {
+                            packIdML =
+                                String(dadosOrder.pack_id);
+                        }
+                    }
+
+                } catch (error) {
+                    console.warn(
+                        '⚠️ [NFE PACK] Falha lendo order para pack_id:',
+                        error
+                    );
+                }
+            }
+
+
+            if (packIdML) {
+
+                const urlPack =
+                    `https://api.mercadolibre.com/packs/${packIdML}`;
+
+                const proxyPack =
+                    `${window.WORKER_URL}/api/ml/proxy?url=` +
+                    `${encodeURIComponent(urlPack)}` +
+                    `&token=${encodeURIComponent(token)}`;
+
+                const respPack =
+                    await fetch(
+                        proxyPack,
+                        { cache: 'no-store' }
+                    );
+
+                if (respPack.ok) {
+
+                    const dadosPack =
+                        await respPack.json();
+
+                    const idsDoPack =
+                        (Array.isArray(dadosPack?.orders)
+                            ? dadosPack.orders
+                            : [])
+                            .map(o =>
+                                normalizarOrderIdML(
+                                    o?.id ||
+                                    o?.order_id
+                                )
+                            )
+                            .filter(Boolean);
+
+
+                    for (const idp of idsDoPack) {
+                        if (!orderIdsDaNFE.includes(idp)) {
+                            orderIdsDaNFE.push(idp);
+                        }
+                    }
+
+
+                    if (idsDoPack.length > 1) {
+                        console.log(
+                            `📦 [NFE PACK] pack ${packIdML} -> ${idsDoPack.length} orders:`,
+                            idsDoPack
+                        );
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.warn(
+                '⚠️ [NFE PACK] Não foi possível expandir o pack:',
+                error
+            );
+        }
+
+
+        // =====================================================
         // 4. FALLBACK
         // =====================================================
 
@@ -7214,6 +7359,39 @@ async function abrirModalEdicaoProdutos(orderId) {
                     }
 
 
+                    ${
+                        estadoEnvioProibidoNFE(uf, ufOriginal)
+
+                            ? `
+                                <div
+                                    style="
+                                        background:#fdecec;
+                                        border:2px solid #dc3545;
+                                        padding:14px 16px;
+                                        border-radius:8px;
+                                        margin-bottom:16px;
+                                        color:#a71d2a;
+                                        font-weight:700;
+                                        display:flex;
+                                        align-items:center;
+                                        gap:10px;
+                                    "
+                                >
+                                    <i
+                                        class="fas fa-triangle-exclamation"
+                                        style="font-size:20px;"
+                                    ></i>
+                                    <span>
+                                        Estado de envio proibido${uf ? ' (' + esc(String(uf).toUpperCase()) + ')' : ''} —
+                                        verificar com Ronald o envio.
+                                    </span>
+                                </div>
+                            `
+
+                            : ''
+                    }
+
+
                     <!-- ===================================== -->
                     <!-- VALOR -->
                     <!-- ===================================== -->
@@ -7985,6 +8163,21 @@ async function abrirModalEdicaoProdutos(orderId) {
         document.body.appendChild(
             container.firstElementChild
         );
+
+
+        // =====================================================
+        // ESTADO DE ENVIO PROIBIDO (TO / RR)
+        // =====================================================
+
+        if (
+            estadoEnvioProibidoNFE(uf, ufOriginal)
+        ) {
+
+            showToast(
+                `⚠️ Estado de envio proibido${uf ? ' (' + String(uf).toUpperCase() + ')' : ''} — verificar com Ronald o envio.`,
+                'warning'
+            );
+        }
 
 
         // =====================================================
