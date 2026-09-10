@@ -5650,6 +5650,188 @@ async function corrigirFreteSalvoPelaOrder(
     }
 }
 
+/*
+ * ============================================================
+ * CURSOR DE BUSCA DE FRETES
+ *
+ * - 1ª busca (sem cursor): varre apenas os últimos
+ *   FRETES_DIAS_PRIMEIRA_BUSCA dias.
+ * - Guarda a data/hora da última venda COM frete processada.
+ * - Buscas seguintes: partem dessa data (economiza chamadas
+ *   ao banco e à API do Mercado Livre).
+ *
+ * Persistido em configuracoes_sistema (chave/valor) para valer
+ * em todos os computadores, com backup em localStorage.
+ * ============================================================
+ */
+
+const FRETES_CURSOR_CHAVE =
+    'fretes_ml_cursor_v1';
+
+const FRETES_DIAS_PRIMEIRA_BUSCA =
+    25;
+
+function normalizarCursorFretes(valor) {
+    if (!valor) {
+        return {};
+    }
+
+    if (typeof valor === 'string') {
+        try {
+            valor = JSON.parse(valor);
+        } catch (error) {
+            return {};
+        }
+    }
+
+    if (
+        typeof valor !== 'object' ||
+        Array.isArray(valor)
+    ) {
+        return {};
+    }
+
+    return {
+        ultima_venda_com_frete:
+            valor.ultima_venda_com_frete ||
+            null,
+
+        ultima_busca_em:
+            valor.ultima_busca_em ||
+            null,
+
+        atualizado_em:
+            valor.atualizado_em ||
+            null
+    };
+}
+
+async function carregarCursorFretes() {
+    /*
+     * 1. BANCO
+     */
+    try {
+        if (window.supabaseClient) {
+            const {
+                data,
+                error
+            } =
+                await window.supabaseClient
+                    .from('configuracoes_sistema')
+                    .select('valor')
+                    .eq('chave', FRETES_CURSOR_CHAVE)
+                    .maybeSingle();
+
+            if (error) {
+                throw error;
+            }
+
+            const cursorBanco =
+                normalizarCursorFretes(
+                    data?.valor
+                );
+
+            if (
+                cursorBanco.ultima_venda_com_frete
+            ) {
+                try {
+                    localStorage.setItem(
+                        FRETES_CURSOR_CHAVE,
+                        JSON.stringify(cursorBanco)
+                    );
+                } catch (error) {}
+
+                return cursorBanco;
+            }
+        }
+    } catch (error) {
+        console.warn(
+            '⚠️ [FRETES CURSOR] Não foi possível ler o cursor do Supabase:',
+            error.message
+        );
+    }
+
+    /*
+     * 2. FALLBACK LOCAL
+     */
+    try {
+        const cursorLocal =
+            normalizarCursorFretes(
+                localStorage.getItem(
+                    FRETES_CURSOR_CHAVE
+                )
+            );
+
+        if (
+            cursorLocal.ultima_venda_com_frete
+        ) {
+            return cursorLocal;
+        }
+    } catch (error) {}
+
+    /*
+     * 3. PRIMEIRA EXECUÇÃO
+     */
+    return {};
+}
+
+async function salvarCursorFretes(cursor) {
+    cursor =
+        normalizarCursorFretes(cursor);
+
+    cursor.atualizado_em =
+        new Date().toISOString();
+
+    /*
+     * Backup local sempre.
+     */
+    try {
+        localStorage.setItem(
+            FRETES_CURSOR_CHAVE,
+            JSON.stringify(cursor)
+        );
+    } catch (error) {}
+
+    /*
+     * Persistir para todos os computadores.
+     */
+    try {
+        if (!window.supabaseClient) {
+            return cursor;
+        }
+
+        const {
+            error
+        } =
+            await window.supabaseClient
+                .from('configuracoes_sistema')
+                .upsert(
+                    {
+                        chave:
+                            FRETES_CURSOR_CHAVE,
+
+                        valor:
+                            cursor
+                    },
+                    {
+                        onConflict:
+                            'chave'
+                    }
+                );
+
+        if (error) {
+            throw error;
+        }
+    } catch (error) {
+        console.warn(
+            '⚠️ [FRETES CURSOR] Cursor salvo somente localmente:',
+            error.message
+        );
+    }
+
+    return cursor;
+}
+
 async function buscarFretes() {
     console.log(
         '🔍 INICIANDO SINCRONIZAÇÃO DE FRETES...'
@@ -5690,6 +5872,27 @@ async function buscarFretes() {
     `;
 
     try {
+        /*
+         * ========================================
+         * TABELA DE FRETE (base da comparação)
+         * ========================================
+         */
+
+        if (
+            tabelasFreteHistoricas.length === 0 &&
+            typeof carregarTabelasFreteHistoricas ===
+                'function'
+        ) {
+            try {
+                await carregarTabelasFreteHistoricas();
+            } catch (error) {
+                console.warn(
+                    '⚠️ Não foi possível recarregar as tabelas de frete:',
+                    error.message
+                );
+            }
+        }
+
         /*
          * ========================================
          * TOKEN
@@ -5739,16 +5942,56 @@ async function buscarFretes() {
         /*
          * ========================================
          * PERÍODO
+         *
+         * 1ª busca (sem cursor): últimos
+         * FRETES_DIAS_PRIMEIRA_BUSCA dias.
+         *
+         * Buscas seguintes: a partir da última venda
+         * com frete já processada (+1s para não repetir
+         * a venda-limite).
          * ========================================
          */
+
+        const cursorFretes =
+            await carregarCursorFretes();
+
+        const cursorData =
+            cursorFretes.ultima_venda_com_frete
+                ? new Date(
+                    cursorFretes.ultima_venda_com_frete
+                )
+                : null;
+
+        const primeiraBusca =
+            !cursorData ||
+            isNaN(cursorData.getTime());
 
         const dataInicio =
             new Date();
 
-        dataInicio.setDate(
-            dataInicio.getDate() -
-            30
-        );
+        if (primeiraBusca) {
+            dataInicio.setDate(
+                dataInicio.getDate() -
+                FRETES_DIAS_PRIMEIRA_BUSCA
+            );
+
+            console.log(
+                `🆕 Primeira busca: varrendo os últimos ` +
+                `${FRETES_DIAS_PRIMEIRA_BUSCA} dias.`
+            );
+
+        } else {
+            dataInicio.setTime(
+                cursorData.getTime() +
+                1000
+            );
+
+            console.log(
+                `⏩ Busca incremental a partir de ` +
+                `${dataInicio.toISOString()} ` +
+                `(última venda com frete).`
+            );
+        }
 
         const dataFim =
             new Date();
@@ -5756,8 +5999,18 @@ async function buscarFretes() {
         /*
          * ========================================
          * FRETES JÁ SALVOS
+         *
+         * Só o que está dentro da janela consultada
+         * (com uma folga de 1 dia). Evita baixar a
+         * tabela inteira a cada clique.
          * ========================================
          */
+
+        const dataInicioSalvos =
+            new Date(
+                dataInicio.getTime() -
+                24 * 60 * 60 * 1000
+            );
 
         let idsSalvos =
             new Set();
@@ -5789,6 +6042,11 @@ async function buscarFretes() {
                     peso_estimado,
                     data_venda
                 `)
+
+                .gte(
+                    'data_venda',
+                    dataInicioSalvos.toISOString()
+                )
 
                 .limit(
                     10000
@@ -5848,11 +6106,25 @@ async function buscarFretes() {
         let paginasBuscadas =
             0;
 
+        /*
+         * A 1ª busca cobre 25 dias, então precisa de mais
+         * páginas. As incrementais param sozinhas em
+         * offset >= total.
+         */
         const MAX_PAGINAS =
-            20;
+            primeiraBusca
+                ? 60
+                : 20;
 
         let existentesCorrigidos =
             0;
+
+        /*
+         * Para avançar o cursor: maior date_created entre as
+         * vendas (não FULL) que tinham frete pago por nós.
+         */
+        let maiorDataVendaComFrete =
+            null;
 
         while (
             (
@@ -6264,6 +6536,27 @@ async function buscarFretes() {
                     continue;
                 }
 
+                /*
+                 * Esta venda tem frete pago por nós:
+                 * conta para o avanço do cursor,
+                 * mesmo que o valor esteja correto.
+                 */
+                if (
+                    order.date_created &&
+                    (
+                        !maiorDataVendaComFrete ||
+                        new Date(
+                            order.date_created
+                        ) >
+                        new Date(
+                            maiorDataVendaComFrete
+                        )
+                    )
+                ) {
+                    maiorDataVendaComFrete =
+                        order.date_created;
+                }
+
                 let valorTotal =
                     0;
 
@@ -6546,6 +6839,40 @@ async function buscarFretes() {
 
         /*
          * ========================================
+         * AVANÇAR O CURSOR
+         *
+         * Guarda a data/hora da venda com frete mais
+         * recente que foi processada. Só grava se algo
+         * foi realmente varrido.
+         * ========================================
+         */
+
+        if (
+            paginasBuscadas > 0
+        ) {
+            const novaUltimaVenda =
+                maiorDataVendaComFrete ||
+                cursorFretes.ultima_venda_com_frete ||
+                null;
+
+            if (novaUltimaVenda) {
+                await salvarCursorFretes({
+                    ultima_venda_com_frete:
+                        novaUltimaVenda,
+
+                    ultima_busca_em:
+                        new Date().toISOString()
+                });
+
+                console.log(
+                    `📌 Cursor de fretes salvo em ` +
+                    `${novaUltimaVenda}`
+                );
+            }
+        }
+
+        /*
+         * ========================================
          * RECARREGAR
          * ========================================
          */
@@ -6562,6 +6889,12 @@ async function buscarFretes() {
         console.log(
             '📊 RESULTADO FINAL:',
             {
+                primeiraBusca:
+                    primeiraBusca,
+
+                janelaInicio:
+                    dataInicio.toISOString(),
+
                 existentesCorrigidos:
                     existentesCorrigidos,
 
