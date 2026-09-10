@@ -20391,9 +20391,9 @@ async function sincronizarPainelOperacionalNFE(
                         try {
 
                             return (
-                                typeof vendaTemDadosFaltando ===
+                                typeof vendaPrecisaEnriquecimentoNFE ===
                                     'function' &&
-                                vendaTemDadosFaltando(
+                                vendaPrecisaEnriquecimentoNFE(
                                     venda
                                 )
                             );
@@ -20617,9 +20617,9 @@ async function sincronizarPainelOperacionalNFE(
                     try {
 
                         return (
-                            typeof vendaTemDadosFaltando ===
+                            typeof vendaPrecisaEnriquecimentoNFE ===
                                 'function' &&
-                            vendaTemDadosFaltando(
+                            vendaPrecisaEnriquecimentoNFE(
                                 venda
                             )
                         );
