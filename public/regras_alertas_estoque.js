@@ -41,6 +41,10 @@
             limite_local: 1,
             ajustar_local_auto: false
         },
+        full_zerado: {
+            alertar: true,
+            exigir_estoque_local: true         // só alerta se houver estoque para o Local
+        },
         vendas_full: {
             registrar_historico: true,
             restaurar_ao_cancelar: true,
@@ -64,6 +68,7 @@
         const sv = b.sem_variacoes || {};
         const cv = b.com_variacoes || {};
         const fl = b.full_local || {};
+        const fz = b.full_zerado || {};
         const vf = b.vendas_full || {};
         return {
             ativo: b.ativo === true,
@@ -84,6 +89,10 @@
                 prioridade: ['full', 'local', 'maior'].includes(fl.prioridade) ? fl.prioridade : 'full',
                 limite_local: Math.max(0, num(fl.limite_local, 1)),
                 ajustar_local_auto: fl.ajustar_local_auto === true
+            },
+            full_zerado: {
+                alertar: fz.alertar !== false,
+                exigir_estoque_local: fz.exigir_estoque_local !== false
             },
             vendas_full: {
                 registrar_historico: vf.registrar_historico !== false,
@@ -508,6 +517,21 @@
                 </label>
             </div>
 
+            <!-- FULL ZERADO -->
+            <div class="rex-sec">
+                <h3>Full zerado</h3><hr>
+                <label class="rex-chk" style="margin-bottom:10px">
+                    <input type="checkbox" id="rexFzAlertar" ${r.full_zerado.alertar ? 'checked' : ''}>
+                    <span>Alertar quando <b>todas</b> as variações zeram no FULL
+                        <span class="rex-sub" style="margin:0">Aviso laranja: tirar o anúncio do FULL e passar a vender pelo Local. Depois a exposição volta ao limiar normal (1 = Clássico, ≥ mínimo = Premium).</span>
+                    </span>
+                </label>
+                <label class="rex-chk">
+                    <input type="checkbox" id="rexFzExigirLocal" ${r.full_zerado.exigir_estoque_local ? 'checked' : ''}>
+                    <span>Só alertar se houver estoque para o Local</span>
+                </label>
+            </div>
+
             <!-- VENDAS FULL -->
             <div class="rex-sec">
                 <h3>Vendas Full</h3><hr>
@@ -570,6 +594,8 @@
         r.full_local.prioridade = q('rexFlPrioridade').value;
         r.full_local.limite_local = Math.max(0, num(q('rexLimiteLocal').value, 1));
         r.full_local.ajustar_local_auto = q('rexAjustarLocal').checked;
+        r.full_zerado.alertar = q('rexFzAlertar').checked;
+        r.full_zerado.exigir_estoque_local = q('rexFzExigirLocal').checked;
         r.vendas_full.registrar_historico = q('rexVfHist').checked;
         r.vendas_full.restaurar_ao_cancelar = q('rexVfRest').checked;
         r.vendas_full.recalcular_exposicao = q('rexVfRecalc').checked;

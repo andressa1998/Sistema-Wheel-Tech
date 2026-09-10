@@ -40716,6 +40716,22 @@ function obterAlertasExposicaoVendaNFE(
 
 
     // =====================================================
+    // CONFIG DAS REGRAS DE EXPOSIÇÃO (regras_alertas_estoque.js)
+    // =====================================================
+
+    const motorExposicaoAtivo =
+        window.RegrasAlertasEstoque &&
+        typeof window.RegrasAlertasEstoque.estaAtivo === 'function' &&
+        window.RegrasAlertasEstoque.estaAtivo();
+
+    const cfgExposicao =
+        (motorExposicaoAtivo &&
+            typeof window.RegrasAlertasEstoque.obterConfig === 'function')
+            ? window.RegrasAlertasEstoque.obterConfig()
+            : null;
+
+
+    // =====================================================
     // EVITAR PROCESSAR DUAS VEZES O MESMO MLB
     //
     // Uma venda pode trazer mais de um snapshot da mesma
@@ -41109,14 +41125,33 @@ function obterAlertasExposicaoVendaNFE(
             // PRIORIDADE 1 — FULL ZERADO
             //
             // SÓ SE O MLB INTEIRO ZEROU.
+            //
+            // Regra 8: se todas as variações zeraram no FULL e
+            // ainda temos estoque para o Local, o anúncio tem de
+            // sair do FULL e passar a vender pelo Local. Depois
+            // disso a exposição volta a seguir o limiar normal.
             // =================================================
 
-            if (
-                todosFullZerados ===
-                    true &&
-                aindaEstaNoFull ===
-                    true
-            ) {
+            const temEstoqueParaLocalFullZero =
+                Number(estoqueTotalLocal) > 0 ||
+                (capacidadeInterna &&
+                    Number(capacidadeInterna.capacidade_anuncio) > 0);
+
+            const cfgFullZero =
+                (cfgExposicao && cfgExposicao.full_zerado) ||
+                null;
+
+            const deveAlertarFullZero =
+                todosFullZerados === true &&
+                aindaEstaNoFull === true &&
+                (!cfgFullZero || cfgFullZero.alertar !== false) &&
+                (
+                    !cfgFullZero ||
+                    cfgFullZero.exigir_estoque_local !== true ||
+                    temEstoqueParaLocalFullZero
+                );
+
+            if (deveAlertarFullZero) {
 
                 alertas.push({
 
@@ -41151,7 +41186,9 @@ function obterAlertasExposicaoVendaNFE(
                         'FULL ZERADO',
 
                     mensagem:
-                        'Todas as variações do anúncio ficaram sem estoque FULL. Remova a oferta FULL ou regularize o estoque.',
+                        temEstoqueParaLocalFullZero
+                            ? 'Todas as variações ficaram sem estoque FULL e ainda há estoque para o Local. Remova a oferta FULL e adicione o estoque no anúncio local.'
+                            : 'Todas as variações do anúncio ficaram sem estoque FULL. Remova a oferta FULL ou regularize o estoque.',
 
                     listing_type_atual:
                         listingTypeAtual,
