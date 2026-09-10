@@ -354,41 +354,31 @@
     }
 
     /* =================================================================
-     * INTERFACE  (tela dedicada em overlay de tela cheia)
+     * INTERFACE  (tela dedicada — mesmo layout das outras abas)
      * ================================================================= */
 
-    let telaEl = null;
-    let rascunho = null; // cópia editável do estado enquanto a tela está aberta
+    let telaEl = null;    // #regrasAlertaEstoqueSystem
+    let rascunho = null;  // cópia editável do estado enquanto a tela está aberta
 
     function css() {
         if (document.getElementById('wtRegrasAlertasCss')) return;
         const s = document.createElement('style');
         s.id = 'wtRegrasAlertasCss';
         s.textContent = `
-        #wtRegrasAlertasTela{position:fixed;inset:0;z-index:100000;background:#eef1f6;
-            display:flex;flex-direction:column;font-family:inherit;color:#1c2733}
-        #wtRegrasAlertasTela *{box-sizing:border-box}
-        .wtra-top{display:flex;align-items:center;gap:14px;padding:14px 22px;background:#001a45;color:#fff;flex:0 0 auto}
-        .wtra-top h2{margin:0;font-size:18px;font-weight:700;flex:1}
-        .wtra-top button{border:0;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer;font-size:13px}
-        .wtra-fechar{background:rgba(255,255,255,.14);color:#fff}
-        .wtra-fechar:hover{background:rgba(255,255,255,.26)}
-        .wtra-body{flex:1;overflow-y:auto;padding:22px;max-width:1040px;width:100%;margin:0 auto}
-        .wtra-master{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #d8dee8;
-            border-radius:12px;padding:16px 18px;margin-bottom:16px}
-        .wtra-master strong{font-size:15px}
-        .wtra-master small{color:#5b6b7d;display:block;margin-top:2px}
+        #regrasAlertaEstoqueSystem{padding-bottom:40px}
+        #regrasAlertaEstoqueSystem .container{max-width:1080px;margin:0 auto;padding:0 20px}
+        #regrasAlertaEstoqueSystem .wtra-master{display:flex;align-items:center;gap:14px}
+        #regrasAlertaEstoqueSystem .wtra-master strong{font-size:15px}
+        #regrasAlertaEstoqueSystem .wtra-master small{color:#5b6b7d;display:block;margin-top:3px;line-height:1.45}
         .wtra-switch{position:relative;width:52px;height:28px;flex:0 0 auto}
         .wtra-switch input{opacity:0;width:0;height:0}
         .wtra-slider{position:absolute;inset:0;background:#c3ccd8;border-radius:999px;transition:.15s;cursor:pointer}
         .wtra-slider:before{content:"";position:absolute;height:22px;width:22px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.15s}
-        .wtra-switch input:checked + .wtra-slider{background:#1a9c4a}
+        .wtra-switch input:checked + .wtra-slider{background:#76B843}
         .wtra-switch input:checked + .wtra-slider:before{transform:translateX(24px)}
         .wtra-barra{display:flex;align-items:center;gap:10px;margin-bottom:14px}
         .wtra-barra h3{margin:0;font-size:15px;flex:1}
-        .wtra-add{background:#0a66c2;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer}
-        .wtra-add:hover{background:#0954a0}
-        .wtra-vazio{background:#fff;border:1px dashed #c3ccd8;border-radius:12px;padding:34px;text-align:center;color:#5b6b7d}
+        .wtra-vazio{background:#f8fafc;border:1px dashed #c3ccd8;border-radius:12px;padding:34px;text-align:center;color:#5b6b7d}
         .wtra-regra{background:#fff;border:1px solid #d8dee8;border-radius:12px;margin-bottom:12px;overflow:hidden}
         .wtra-regra.inativa{opacity:.55}
         .wtra-regra-cab{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #eef1f6}
@@ -417,11 +407,10 @@
         .wtra-salvar-regra{background:#1a9c4a;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-weight:600;cursor:pointer}
         .wtra-cancelar-regra{background:#eef1f6;border:0;border-radius:8px;padding:9px 18px;font-weight:600;cursor:pointer}
         .wtra-resumo{font-size:12.5px;color:#42505f;padding:0 14px 12px}
-        .wtra-teste{background:#fff;border:1px solid #d8dee8;border-radius:12px;padding:16px;margin-top:20px}
-        .wtra-teste h3{margin:0 0 10px;font-size:14px}
         .wtra-teste .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
         .wtra-teste label{font-size:12px;display:flex;flex-direction:column;gap:3px}
-        .wtra-teste-resultado{margin-top:12px;font-weight:700;font-size:14px}
+        .wtra-teste label input,.wtra-teste label select{border:1px solid #cdd5e0;border-radius:7px;padding:6px 8px;font-size:13px}
+        .wtra-teste-resultado{margin-top:14px;font-weight:700;font-size:14px}
         `;
         document.head.appendChild(s);
     }
@@ -432,35 +421,99 @@
             .join('');
     }
 
+    function garantirTela() {
+        if (telaEl) return telaEl;
+
+        telaEl = document.createElement('div');
+        telaEl.id = 'regrasAlertaEstoqueSystem';
+        telaEl.className = 'hidden';
+        telaEl.innerHTML = `
+            <header class="main-header">
+                <div class="container">
+                    <div class="header-content">
+                        <h1 style="display:flex;align-items:center;gap:10px;">
+                            <img src="logo.png" alt="Wheel Tech" style="height:35px;width:auto;">
+                            <span>Regras de Alerta de Estoque</span>
+                        </h1>
+                        <div class="user-info">
+                            <div class="user-avatar" id="regrasAlertaUserAvatar">R</div>
+                            <div>
+                                <div id="regrasAlertaUserName">Usuário</div>
+                                <div id="regrasAlertaUserRole"></div>
+                                <div class="d-flex gap-2 mt-2">
+                                    <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                                    <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <div class="container" id="regrasAlertaEstoqueConteudo"></div>
+        `;
+        document.body.appendChild(telaEl);
+        return telaEl;
+    }
+
+    function esconderOutrosSistemas() {
+        document.querySelectorAll('[id$="System"]').forEach((el) => {
+            if (el.id !== 'regrasAlertaEstoqueSystem') el.classList.add('hidden');
+        });
+    }
+
+    // Se o usuário navegar para outro módulo (menu lateral / voltar ao menu),
+    // some com esta tela — sem precisar editar os outros arquivos.
+    let navHookLigado = false;
+    function ligarNavHook() {
+        if (navHookLigado) return;
+        navHookLigado = true;
+        document.addEventListener('click', (e) => {
+            if (!telaEl || telaEl.classList.contains('hidden')) return;
+            const alvo = e.target.closest(
+                '.wt-nav-item, .wt-summary-card, [onclick*="voltarParaMenu"], [onclick*="abrirSistema"], [onclick*="abrirGestao"], [onclick*="abrirPainel"], [onclick*="abrirHistorico"]'
+            );
+            if (!alvo) return;
+            if (alvo.getAttribute('onclick') && alvo.getAttribute('onclick').indexOf('RegrasAlertasEstoque') !== -1) return;
+            telaEl.classList.add('hidden');
+        }, true);
+    }
+
     function abrirTela() {
+        if (typeof window.currentUser === 'undefined' || !window.currentUser) {
+            if (typeof showToast === 'function') showToast('⚠️ Faça login primeiro', 'warning');
+            return;
+        }
         css();
+        garantirTela();
+        ligarNavHook();
+
+        const u = window.currentUser || {};
+        const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        setTxt('regrasAlertaUserName', u.name || 'Usuário');
+        setTxt('regrasAlertaUserRole', u.role || '');
+        setTxt('regrasAlertaUserAvatar', (u.avatar || (u.name || 'R')[0] || 'R'));
+
         carregar().then(() => {
             rascunho = JSON.parse(JSON.stringify(normalizar(estado)));
-            if (!telaEl) {
-                telaEl = document.createElement('div');
-                telaEl.id = 'wtRegrasAlertasTela';
-                document.body.appendChild(telaEl);
-            }
-            telaEl.style.display = 'flex';
+            esconderOutrosSistemas();
+            telaEl.classList.remove('hidden');
+            window.scrollTo(0, 0);
             renderTela();
         });
     }
 
-    function fecharTela() {
-        if (telaEl) telaEl.style.display = 'none';
-    }
-
     function renderTela() {
         if (!telaEl) return;
+        const conteudo = telaEl.querySelector('#regrasAlertaEstoqueConteudo');
+        if (!conteudo) return;
         const regras = rascunho.regras;
 
-        telaEl.innerHTML = `
-        <div class="wtra-top">
-            <h2>Regras de Alerta de Estoque — Clássico × Premium</h2>
-            <button class="wtra-fechar" id="wtraFechar">Fechar</button>
-            <button class="wtra-add" id="wtraSalvarTudo" style="background:#1a9c4a">Salvar tudo</button>
-        </div>
-        <div class="wtra-body">
+        conteudo.innerHTML = `
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title"><i class="fas fa-sliders-h"></i> Clássico × Premium</h2>
+                <button class="btn btn-success" id="wtraSalvarTudo"><i class="fas fa-save"></i> Salvar tudo</button>
+            </div>
             <div class="wtra-master">
                 <label class="wtra-switch">
                     <input type="checkbox" id="wtraMaster" ${rascunho.ativo ? 'checked' : ''}>
@@ -476,31 +529,29 @@
                     </small>
                 </div>
             </div>
+        </div>
 
+        <div class="card mb-4">
             <div class="wtra-barra">
-                <h3>Minhas regras (a 1ª que casar vence — arraste a ordem pelas setas)</h3>
-                <button class="wtra-add" id="wtraNova">+ Nova regra</button>
+                <h3>Minhas regras (a 1ª que casar vence — use as setas para ordenar)</h3>
+                <button class="btn btn-primary" id="wtraNova"><i class="fas fa-plus"></i> Nova regra</button>
             </div>
-
             <div id="wtraLista">
                 ${regras.length === 0
-                    ? `<div class="wtra-vazio">Nenhuma regra ainda. Clique em <strong>+ Nova regra</strong>.</div>`
+                    ? `<div class="wtra-vazio">Nenhuma regra ainda. Clique em <strong>Nova regra</strong>.</div>`
                     : regras.map((r, i) => cardRegra(r, i, regras.length)).join('')}
             </div>
+        </div>
 
+        <div class="card wtra-teste">
+            <div class="card-header"><h2 class="card-title"><i class="fas fa-flask"></i> Testar (simule os números de um anúncio)</h2></div>
             ${blocoTeste()}
         </div>
         `;
 
-        telaEl.querySelector('#wtraFechar').onclick = () => {
-            if (JSON.stringify(rascunho) !== JSON.stringify(normalizar(estado))) {
-                if (!confirm('Há alterações não salvas. Fechar mesmo assim?')) return;
-            }
-            fecharTela();
-        };
-        telaEl.querySelector('#wtraSalvarTudo').onclick = salvarTudo;
-        telaEl.querySelector('#wtraMaster').onchange = (e) => { rascunho.ativo = e.target.checked; };
-        telaEl.querySelector('#wtraNova').onclick = () => {
+        conteudo.querySelector('#wtraSalvarTudo').onclick = salvarTudo;
+        conteudo.querySelector('#wtraMaster').onchange = (e) => { rascunho.ativo = e.target.checked; };
+        conteudo.querySelector('#wtraNova').onclick = () => {
             rascunho.regras.push({
                 id: 'r_' + Date.now().toString(36),
                 nome: 'Nova regra',
@@ -770,8 +821,7 @@
 
     function blocoTeste() {
         return `
-        <div class="wtra-teste">
-            <h3>Testar (simule os números de um anúncio)</h3>
+        <div>
             <div class="grid">
                 ${CAMPOS_TESTE.map((k) => {
                     const cat = CAMPOS[k];
