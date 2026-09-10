@@ -263,13 +263,88 @@
         };
     }
 
+    // =====================================================
+    // REGRAS DE EXEMPLO (as 6 regras que a Wheel Tech passou)
+    //
+    // Só entram no PRIMEIRO uso, enquanto nada foi salvo.
+    // Ficam com o motor DESLIGADO (ativo: false) para não
+    // mudar nada até a revisão. É só ligar a chave depois.
+    // =====================================================
+
+    const SEED = {
+        ativo: false,
+        regras: [
+            {
+                id: 'seed_1',
+                nome: '1) Variações — todas ficaram com 1 → Clássico',
+                ativa: true,
+                combinacao: 'todas',
+                resultado: 'classico',
+                condicoes: [
+                    { campo: 'tem_variacoes', operador: 'verdadeiro' },
+                    { campo: 'variacoes', agregacao: 'todas', atributo: 'estoque', operador: 'igual', valor: 1 }
+                ]
+            },
+            {
+                id: 'seed_5a',
+                nome: '5a) FULL + local, com variação, estoque no FULL = 1 → Clássico',
+                ativa: true,
+                combinacao: 'todas',
+                resultado: 'classico',
+                condicoes: [
+                    { campo: 'tem_variacoes', operador: 'verdadeiro' },
+                    { campo: 'full_ativo', operador: 'verdadeiro' },
+                    { campo: 'local_ativo', operador: 'verdadeiro' },
+                    { campo: 'estoque_full', operador: 'igual', valor: 1 }
+                ]
+            },
+            {
+                id: 'seed_5b',
+                nome: '5b) FULL + local, com variação, estoque no FULL 2+ → Premium',
+                ativa: true,
+                combinacao: 'todas',
+                resultado: 'premium',
+                condicoes: [
+                    { campo: 'tem_variacoes', operador: 'verdadeiro' },
+                    { campo: 'full_ativo', operador: 'verdadeiro' },
+                    { campo: 'local_ativo', operador: 'verdadeiro' },
+                    { campo: 'estoque_full', operador: 'maior_igual', valor: 2 }
+                ]
+            },
+            {
+                id: 'seed_2',
+                nome: '2) Variações — só 1 variação tem mais de 2 → Premium',
+                ativa: true,
+                combinacao: 'todas',
+                resultado: 'premium',
+                condicoes: [
+                    { campo: 'tem_variacoes', operador: 'verdadeiro' },
+                    { campo: 'variacoes', agregacao: 'contar', atributo: 'estoque', operador: 'maior', valor: 2, contagem_operador: 'igual', contagem_valor: 1 }
+                ]
+            },
+            {
+                id: 'seed_3',
+                nome: '3) Sem variação e estoque total = 1 → Clássico',
+                ativa: true,
+                combinacao: 'todas',
+                resultado: 'classico',
+                condicoes: [
+                    { campo: 'tem_variacoes', operador: 'falso' },
+                    { campo: 'estoque_total', operador: 'igual', valor: 1 }
+                ]
+            }
+        ]
+    };
+
     async function carregar(forcar) {
         if (carregado && !forcar) return estado;
+
+        let achouAlgo = false;
 
         // localStorage primeiro (rápido / offline)
         try {
             const local = localStorage.getItem(LS_CHAVE);
-            if (local) estado = normalizar(JSON.parse(local));
+            if (local) { estado = normalizar(JSON.parse(local)); achouAlgo = true; }
         } catch (e) {}
 
         try {
@@ -284,11 +359,17 @@
                     let valor = data.valor;
                     if (typeof valor === 'string') valor = JSON.parse(valor);
                     estado = normalizar(valor);
+                    achouAlgo = true;
                     try { localStorage.setItem(LS_CHAVE, JSON.stringify(estado)); } catch (e) {}
                 }
             }
         } catch (e) {
             console.warn('⚠️ [REGRAS ESTOQUE] Não foi possível carregar do Supabase:', e);
+        }
+
+        // Primeiro uso: entra com as regras de exemplo (motor desligado).
+        if (!achouAlgo) {
+            estado = normalizar(SEED);
         }
 
         carregado = true;
