@@ -237,7 +237,7 @@
 
         var style = document.createElement('style');
         style.textContent = [
-            '#wtColetaWidget{position:fixed;top:14px;right:18px;z-index:99990;',
+            '#wtColetaWidget{position:fixed;bottom:18px;right:18px;z-index:99990;',
             'display:flex;align-items:center;gap:9px;padding:7px 13px 7px 10px;',
             'background:#ffffff;border:1px solid #dbe4f0;border-radius:12px;',
             'box-shadow:0 6px 20px rgba(0,28,80,.12);color:#1f6feb;cursor:pointer;',
@@ -260,7 +260,7 @@
             '#wtColetaWidget.wt-coleta-urgente .wt-hg-stream{animation-duration:.45s}',
             '@keyframes wtColetaPulse{0%,100%{box-shadow:0 6px 20px rgba(210,31,31,.18)}',
             '50%{box-shadow:0 6px 26px rgba(210,31,31,.42)}}',
-            '@media(max-width:640px){#wtColetaWidget{top:8px;right:8px;padding:5px 9px;font-size:.72rem}',
+            '@media(max-width:640px){#wtColetaWidget{bottom:10px;right:10px;padding:5px 9px;font-size:.72rem}',
             '#wtColetaWidget .wt-coleta-sub{display:none}}',
             /* modal de config */
             '.wt-coleta-modal{position:fixed;inset:0;z-index:99991;display:flex;',
