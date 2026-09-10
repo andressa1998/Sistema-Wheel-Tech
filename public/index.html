@@ -2153,14 +2153,9 @@ body:has(#loginScreen:not(.hidden)) {
                 <span class="badge" id="countNotChecked">0</span>
             </button>
 
-            <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">
-                Revisão
-                <span class="badge" id="countRevision">0</span>
-            </button>
-
-            <button class="btn btn-info btn-sm" onclick="filterOS('fotos_atualizar')">
-                Atualizar Fotos
-                <span class="badge" id="countFotosAtualizar">0</span>
+            <button class="btn btn-dark btn-sm" onclick="filterOS('aguardando_estoque')">
+                Aguardando estoque
+                <span class="badge" id="countAguardandoEstoque">0</span>
             </button>
 
             <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
@@ -4470,6 +4465,11 @@ body:has(#loginScreen:not(.hidden)) {
 
             </div>
 
+
+            <div id="comparativoUsuariosOS" class="card mb-4" style="padding:16px;">
+                <h4 style="margin:0 0 12px 0;"><i class="fas fa-balance-scale"></i> Comparativo por usuário no período</h4>
+                <div style="color:#6c757d;">Gere o relatório para comparar quantas OS cada usuário criou e concluiu.</div>
+            </div>
 
             <!-- RESUMO -->
             <div

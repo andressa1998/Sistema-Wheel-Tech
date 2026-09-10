@@ -4884,13 +4884,15 @@ Foto da bike: ${order.linkFotoBikeRenovacao}`
 function highlightActiveFilterButton() {
     const buttons = document.querySelectorAll('.filter-group .btn');
     buttons.forEach(btn => {
-        btn.classList.remove('btn-primary', 'active');
-        btn.classList.add('btn-outline-secondary');
+        btn.classList.remove('active', 'os-filter-active');
+        btn.style.boxShadow = '';
+        btn.style.transform = '';
     });
     const activeBtn = document.querySelector(`.filter-group .btn[onclick*="'${currentFilter}'"]`);
     if (activeBtn) {
-        activeBtn.classList.remove('btn-outline-secondary');
-        activeBtn.classList.add('btn-primary', 'active');
+        activeBtn.classList.add('active', 'os-filter-active');
+        activeBtn.style.boxShadow = '0 0 0 3px rgba(0, 173, 238, .28)';
+        activeBtn.style.transform = 'translateY(-1px)';
     }
 }
 
@@ -9091,6 +9093,10 @@ async function loadOrders(forcarAtualizacao = false) {
                  */
                 updateOSNotificationBell();
 
+                // Depois de carregar as OS, verifica automaticamente se algum
+                // SKU que aguardava reposição já possui estoque novamente.
+                await verificarEstoqueDasOSAguardando();
+
                 showToast(
                     orders.length
                         ? `✅ ${orders.length} ordens carregadas`
@@ -11320,18 +11326,7 @@ function filterOrdersByUser(ordersList) {
     let listaFiltrada =
         [...ordersList];
 
-    // Esconde as OS de atualização de fotos nos demais filtros
-    if (
-        filtroAtual !==
-        'fotos_atualizar'
-    ) {
-        listaFiltrada =
-            listaFiltrada.filter(
-                order =>
-                    order.photoType !==
-                    'fotos_para_atualizar'
-            );
-    }
+    // Todos os serviços, inclusive Fotos para atualizar, usam os filtros normais.
 
     // Administrador visualiza todas
     if (
@@ -11467,25 +11462,13 @@ function checkOrderPermission(order) {
 function updateCounters() {
     if (!currentUser) return;
 
-    // 🔥 CORREÇÃO: Pegamos TODAS as OS do usuário (incluindo as de "Atualizar Fotos")
     const userOrders = filterOrdersByUser(orders);
-    
-    // 🔥 SEPARAMOS as OS que são do tipo "fotos_para_atualizar"
-    const fotosAtualizar = userOrders.filter(o => o.photoType === 'fotos_para_atualizar');
-    
-    // 🔥 OS DEMAIS filtros EXCLUEM as "fotos_para_atualizar"
-    const demaisOrders = userOrders.filter(o => o.photoType !== 'fotos_para_atualizar');
-
-    // Contadores para os filtros normais (excluindo "Atualizar Fotos")
-    const pending = demaisOrders.filter(o => o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === '')).length;
-    const progress = demaisOrders.filter(o => o.status === 'andamento').length;
-    const notChecked = demaisOrders.filter(o => o.status === 'concluida' && !o.conferido).length;
-    const revision = demaisOrders.filter(o => o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== '').length;
-    const completed = demaisOrders.filter(o => o.status === 'concluida' && o.conferido === true).length;
-    const total = demaisOrders.length;
-
-    // 🔥 Contador para "Atualizar Fotos" (TODAS as OS desse tipo, independente do status)
-    const fotosAtualizarCount = fotosAtualizar.length;
+    const pending = userOrders.filter(o => o.status === 'pendente').length;
+    const progress = userOrders.filter(o => o.status === 'andamento').length;
+    const notChecked = userOrders.filter(o => o.status === 'concluida' && !o.conferido).length;
+    const completed = userOrders.filter(o => o.status === 'concluida' && o.conferido === true).length;
+    const aguardandoEstoque = userOrders.filter(o => o.status === 'aguardando_estoque').length;
+    const total = userOrders.length;
 
     // Atualiza os elementos HTML
     const setText = (id, value) => {
@@ -11495,10 +11478,9 @@ function updateCounters() {
     setText('countPending', pending);
     setText('countProgress', progress);
     setText('countNotChecked', notChecked);
-    setText('countRevision', revision);
     setText('countCompleted', completed);
     setText('countTotal', total);
-    setText('countFotosAtualizar', fotosAtualizarCount); // 🔥 Sempre mostra o total de "Atualizar Fotos"
+    setText('countAguardandoEstoque', aguardandoEstoque);
 
     // Atualiza contadores do usuário
     if (myOrdersCount) {
@@ -11513,7 +11495,7 @@ function updateCounters() {
     // Mensagem de vazio
     if (emptyMessage) {
         const tableResponsive = document.querySelector('.table-responsive');
-        const totalExibido = currentFilter === 'fotos_atualizar' ? fotosAtualizarCount : total;
+        const totalExibido = total;
         if (totalExibido === 0) {
             emptyMessage.classList.remove('hidden');
             if (tableResponsive) tableResponsive.classList.add('hidden');
@@ -12908,12 +12890,7 @@ function renderOrdersTable() {
                 userOrders.filter(
                     o =>
                         o.status ===
-                            'pendente' &&
-                        (
-                            !o.motivo_rejeicao ||
-                            o.motivo_rejeicao ===
-                                ''
-                        )
+                            'pendente'
                 );
 
             break;
@@ -12939,21 +12916,6 @@ function renderOrdersTable() {
                         o.status ===
                             'concluida' &&
                         !o.conferido
-                );
-
-            break;
-
-
-        case 'revisao':
-
-            filteredOrders =
-                userOrders.filter(
-                    o =>
-                        o.status ===
-                            'pendente' &&
-                        o.motivo_rejeicao &&
-                        o.motivo_rejeicao !==
-                            ''
                 );
 
             break;
@@ -13029,13 +12991,11 @@ function renderOrdersTable() {
         }
 
 
-        case 'fotos_atualizar':
+        case 'aguardando_estoque':
 
             filteredOrders =
                 userOrders.filter(
-                    o =>
-                        o.photoType ===
-                        'fotos_para_atualizar'
+                    o => o.status === 'aguardando_estoque'
                 );
 
             break;
@@ -13938,6 +13898,24 @@ if (
 
             let actionButtons =
                 '';
+
+
+            if (
+                (hasPermission || isAdmin) &&
+                order.photoType === 'fotos_para_atualizar' &&
+                ['pendente', 'andamento'].includes(order.status)
+            ) {
+                actionButtons += `
+                    <button
+                        class="btn btn-dark btn-sm"
+                        onclick="marcarOSProdutoSemEstoque('${order.id}')"
+                        title="Mover para Aguardando estoque"
+                    >
+                        <i class="fas fa-box-open"></i>
+                        Produto sem estoque
+                    </button>
+                `;
+            }
 
 
             if (
@@ -22652,6 +22630,13 @@ async function gerarRelatorioOS() {
             )?.checked ===
             true;
 
+        renderizarComparativoUsuariosOS(
+            todasOSRelatorio,
+            dataInicio,
+            dataFim,
+            todosUsuarios ? null : usuariosSelecionados
+        );
+
 
         let dados =
             [
@@ -28110,6 +28095,159 @@ Anúncio: ${order.linkAnuncio}`
         '✅ Fluxo de renovação de anúncio instalado.'
     );
 })();
+
+// ============================================================
+// OS: AGUARDANDO ESTOQUE E COMPARATIVO POR USUÁRIO
+// ============================================================
+function normalizarSkuOS(valor) {
+    return String(valor || '').trim().toUpperCase();
+}
+
+function obterSkusDaOS(order) {
+    const origem = Array.isArray(order?.skus) ? order.skus : String(order?.skus || '').split(/[,.;\n|]+/);
+    return [...new Set(origem.map(item => normalizarSkuOS(
+        typeof item === 'object' ? (item.sku || item.codigo || item.value) : item
+    )).filter(Boolean))];
+}
+
+window.marcarOSProdutoSemEstoque = async function(orderId) {
+    const order = orders.find(item => String(item.id) === String(orderId));
+    if (!order) return showToast('❌ OS não encontrada', 'error');
+    if (order.photoType !== 'fotos_para_atualizar') {
+        return showToast('⚠️ Esta ação é exclusiva do serviço Fotos a atualizar.', 'warning');
+    }
+
+    const skus = obterSkusDaOS(order);
+    if (!skus.length) return showToast('⚠️ Esta OS não possui SKU para acompanhar.', 'warning');
+    if (!confirm(`Mover a OS ${order.code} para Aguardando estoque?\n\nSKU(s): ${skus.join(', ')}`)) return;
+
+    const agora = new Date().toISOString();
+    const aviso = `[AGUARDANDO_ESTOQUE ${agora}] Produto sem estoque. Monitorando SKU(s): ${skus.join(', ')}.`;
+    const observacoes = [order.observations, aviso].filter(Boolean).join('\n\n');
+
+    try {
+        const { error } = await supabaseClient.from('ordens_service').update({
+            status: 'aguardando_estoque',
+            observacoes,
+            user_notified: false,
+            ultima_atualizacao: agora
+        }).eq('id', orderId);
+        if (error) throw error;
+
+        order.status = 'aguardando_estoque';
+        order.observations = observacoes;
+        order.updatedAt = agora;
+        currentFilter = 'aguardando_estoque';
+        paginaAtualOS = 1;
+        updateCounters();
+        renderOrdersTable();
+        highlightActiveFilterButton();
+        showToast('📦 OS movida para Aguardando estoque.', 'success');
+    } catch (error) {
+        console.error('Erro movendo OS para aguardando estoque:', error);
+        showToast('❌ Não foi possível atualizar a OS: ' + error.message, 'error');
+    }
+};
+
+let verificacaoAutomaticaEstoqueOS = false;
+async function verificarEstoqueDasOSAguardando({ silencioso = true } = {}) {
+    if (verificacaoAutomaticaEstoqueOS || !supabaseClient || !currentUser) return;
+    const aguardando = orders.filter(order => order.status === 'aguardando_estoque');
+    if (!aguardando.length) return;
+    verificacaoAutomaticaEstoqueOS = true;
+
+    try {
+        const skus = [...new Set(aguardando.flatMap(obterSkusDaOS))];
+        const { data, error } = await supabaseClient.from('produtos_estoque')
+            .select('sku, quantidade').in('sku', skus);
+        if (error) throw error;
+
+        const estoque = new Map((data || []).map(produto => [
+            normalizarSkuOS(produto.sku), Number(produto.quantidade) || 0
+        ]));
+        let liberadas = 0;
+
+        for (const order of aguardando) {
+            const skusOS = obterSkusDaOS(order);
+            if (!skusOS.some(sku => (estoque.get(sku) || 0) > 0)) continue;
+
+            const agora = new Date().toISOString();
+            const aviso = `[ESTOQUE_ENTROU ${agora}] O produto entrou em estoque. Esta OS voltou automaticamente para Pendentes.`;
+            const observacoes = [order.observations, aviso].filter(Boolean).join('\n\n');
+            const { error: erroOS } = await supabaseClient.from('ordens_service').update({
+                status: 'pendente',
+                observacoes,
+                motivo_rejeicao: null,
+                user_notified: false,
+                ultima_atualizacao: agora
+            }).eq('id', order.id).eq('status', 'aguardando_estoque');
+            if (erroOS) throw erroOS;
+
+            order.status = 'pendente';
+            order.observations = observacoes;
+            order.motivo_rejeicao = null;
+            order.user_notified = false;
+            order.updatedAt = agora;
+            liberadas++;
+        }
+
+        if (liberadas) {
+            updateCounters();
+            renderOrdersTable();
+            updateOSNotificationBell?.();
+            showToast(`✅ ${liberadas} OS voltou para Pendentes porque o produto entrou em estoque.`, 'success');
+        } else if (!silencioso) {
+            showToast('📦 Nenhum dos produtos aguardados possui estoque ainda.', 'info');
+        }
+    } catch (error) {
+        console.error('Erro verificando estoque das OS:', error);
+        if (!silencioso) showToast('❌ Erro ao verificar o estoque das OS.', 'error');
+    } finally {
+        verificacaoAutomaticaEstoqueOS = false;
+    }
+}
+window.verificarEstoqueDasOSAguardando = verificarEstoqueDasOSAguardando;
+
+function renderizarComparativoUsuariosOS(base, dataInicio, dataFim, usuariosSelecionados = null) {
+    const container = document.getElementById('comparativoUsuariosOS');
+    if (!container) return;
+    const inicio = dataInicio ? new Date(`${dataInicio}T00:00:00`) : null;
+    const fim = dataFim ? new Date(`${dataFim}T23:59:59.999`) : null;
+    const noPeriodo = valor => {
+        if (!valor) return false;
+        const data = new Date(valor);
+        return !isNaN(data) && (!inicio || data >= inicio) && (!fim || data <= fim);
+    };
+
+    const usuarios = new Set();
+    (base || []).forEach(order => {
+        if (order.createdBy) usuarios.add(order.createdBy);
+        if (order.responsibleName) usuarios.add(order.responsibleName);
+    });
+    let nomes = [...usuarios].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (Array.isArray(usuariosSelecionados)) nomes = nomes.filter(nome => usuariosSelecionados.includes(nome));
+
+    const linhas = nomes.map(nome => {
+        const criadas = base.filter(order => order.createdBy === nome && noPeriodo(order.createdAt)).length;
+        const feitas = base.filter(order => order.responsibleName === nome && noPeriodo(order.completionDate)).length;
+        const diferenca = feitas - criadas;
+        return `<tr><td>${escapeHtml(nome)}</td><td style="text-align:center">${criadas}</td><td style="text-align:center">${feitas}</td><td style="text-align:center;font-weight:700;color:${diferenca >= 0 ? '#198754' : '#dc3545'}">${diferenca > 0 ? '+' : ''}${diferenca}</td></tr>`;
+    }).join('');
+
+    container.innerHTML = `
+        <h4 style="margin:0 0 12px 0"><i class="fas fa-balance-scale"></i> Comparativo por usuário no período</h4>
+        <div class="table-responsive"><table class="table table-sm table-striped" style="margin:0">
+            <thead><tr><th>Usuário</th><th style="text-align:center">OS criadas</th><th style="text-align:center">OS feitas</th><th style="text-align:center">Diferença</th></tr></thead>
+            <tbody>${linhas || '<tr><td colspan="4" style="text-align:center">Nenhum dado no período.</td></tr>'}</tbody>
+        </table></div>`;
+}
+window.renderizarComparativoUsuariosOS = renderizarComparativoUsuariosOS;
+
+// Verifica ao carregar/voltar para a página e, enquanto o sistema estiver aberto, a cada 5 minutos.
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) verificarEstoqueDasOSAguardando();
+});
+window.setInterval(() => verificarEstoqueDasOSAguardando(), 5 * 60 * 1000);
 
 // ============================================================
 // CORREÇÃO DEFINITIVA DO FLUXO DE RENOVAÇÃO
