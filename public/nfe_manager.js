@@ -1145,6 +1145,126 @@ async function carregarContagensStatusOperacionalNFE(
     return resultado;
 }
 
+// =========================================================
+// COMPLETAR DADOS (estoque do anúncio, envio, etc.) DAS
+// VENDAS DE UM FILTRO FINAL (full / enviadas / canceladas).
+//
+// A sincronização normal só enriquece nfe_liberadas /
+// nfe_nao_liberadas. As vendas FULL antigas ficavam com
+// "Não capturado" para sempre. Aqui, ao abrir o filtro,
+// completamos o que falta.
+// =========================================================
+
+window._enriquecimentoFiltroFinalNFEEm =
+    window._enriquecimentoFiltroFinalNFEEm ||
+    {};
+
+async function completarDadosFiltroFinalNFE(filtro) {
+
+    try {
+
+        if (
+            typeof completarSomenteDadosFaltantesVendasNFE !==
+                'function' ||
+            typeof vendaPrecisaEnriquecimentoNFE !==
+                'function'
+        ) {
+            return;
+        }
+
+
+        // Throttle: no máx. uma varredura deste filtro a cada 5 min.
+        const agora = Date.now();
+        if (
+            agora - (window._enriquecimentoFiltroFinalNFEEm[filtro] || 0) <
+            5 * 60 * 1000
+        ) {
+            return;
+        }
+
+
+        const base =
+            Array.isArray(window._vendasPainelNFEBase)
+                ? window._vendasPainelNFEBase
+                : [];
+
+
+        const incompletas =
+            base.filter(venda => {
+                try {
+                    return (
+                        classificarVendaPainelNFE(venda) === filtro &&
+                        vendaPrecisaEnriquecimentoNFE(venda)
+                    );
+                } catch (error) {
+                    return false;
+                }
+            });
+
+
+        if (incompletas.length === 0) {
+            window._enriquecimentoFiltroFinalNFEEm[filtro] = agora;
+            return;
+        }
+
+
+        window._enriquecimentoFiltroFinalNFEEm[filtro] = agora;
+
+
+        console.log(
+            `🧩 [NFE ${filtro.toUpperCase()}] Completando ${incompletas.length} venda(s) sem dados...`
+        );
+
+
+        const token =
+            await obterTokenMLNFE();
+
+        if (!token) return;
+
+
+        const corrigidas =
+            await completarSomenteDadosFaltantesVendasNFE(
+                incompletas,
+                token,
+                {
+                    prefixo:
+                        `Completando ${filtro.replaceAll('_', ' ')}`
+                }
+            );
+
+
+        if (
+            Array.isArray(corrigidas) &&
+            corrigidas.length > 0
+        ) {
+
+            window._vendasPainelNFEBase =
+                mesclarVendasPainelNFE(
+                    window._vendasPainelNFEBase,
+                    corrigidas
+                );
+
+
+            if (
+                typeof refrescarPainelNFEPreservandoFiltro ===
+                'function'
+            ) {
+                refrescarPainelNFEPreservandoFiltro();
+            }
+        }
+
+    } catch (error) {
+
+        console.warn(
+            `⚠️ [NFE] Falha completando dados do filtro ${filtro}:`,
+            error
+        );
+    }
+}
+
+window.completarDadosFiltroFinalNFE =
+    completarDadosFiltroFinalNFE;
+
 async function selecionarFiltroPainelNFE(
     filtro
 ) {
@@ -1293,6 +1413,21 @@ async function selecionarFiltroPainelNFE(
         .catch(
             () => {}
         );
+
+
+    // Vendas de estados finais (full principalmente) também
+    // precisam do estoque do anúncio / data de envio para as
+    // regras de ajuste. Fire-and-forget.
+    if (
+        [
+            'full',
+            'enviadas',
+            'canceladas'
+        ].includes(filtro)
+    ) {
+        completarDadosFiltroFinalNFE(filtro)
+            .catch(() => {});
+    }
 }
 
 window.selecionarFiltroPainelNFE =
