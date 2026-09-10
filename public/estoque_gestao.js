@@ -51112,3 +51112,50 @@ protegerModaisEstoqueContraFechamentoPorArraste();
 }
 
 console.log('📦 Gestão de Estoque carregada com sucesso! (Versão completa com categorias customizadas)');
+
+// ============================================================
+// INTEGRAÇÃO COM OS QUE ESTÃO AGUARDANDO ESTOQUE
+// ============================================================
+// Depois de qualquer entrada, saída ou ajuste de estoque, solicita ao módulo
+// de OS uma verificação imediata. Assim, uma OS de "Fotos para atualizar"
+// volta de "Aguardando estoque" para "Pendentes" assim que seu SKU tiver
+// quantidade disponível. O monitor periódico permanece no script principal
+// para cobrir entradas feitas por outro usuário ou por integrações externas.
+if (
+    typeof registrarMovimentacao === 'function' &&
+    !window.__integracaoOSComEstoqueAtivada
+) {
+    window.__integracaoOSComEstoqueAtivada = true;
+
+    const registrarMovimentacaoOriginalOS =
+        registrarMovimentacao;
+
+    registrarMovimentacao = async function(...args) {
+        const resultado =
+            await registrarMovimentacaoOriginalOS.apply(
+                this,
+                args
+            );
+
+        if (
+            typeof window.verificarEstoqueDasOSAguardando ===
+            'function'
+        ) {
+            try {
+                await window.verificarEstoqueDasOSAguardando();
+            } catch (error) {
+                // Uma falha na checagem de OS não desfaz nem bloqueia a
+                // movimentação de estoque que já foi concluída.
+                console.warn(
+                    '⚠️ Estoque atualizado, mas não foi possível verificar as OS aguardando estoque:',
+                    error
+                );
+            }
+        }
+
+        return resultado;
+    };
+
+    window.registrarMovimentacao =
+        registrarMovimentacao;
+}
