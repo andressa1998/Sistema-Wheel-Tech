@@ -61989,6 +61989,14 @@ async function corrigirVendaIncompletaNFE(
         // e para a ampulheta da coleta.
         // =====================================================
 
+        console.log(
+            `📦 [NFE ENVIO] ${idVenda} precisa data_envio?`,
+            pendencias.includes('data_envio'),
+            'shipmentId:',
+            shipmentId
+        );
+
+
         if (
             pendencias.includes(
                 'data_envio'
@@ -62003,6 +62011,12 @@ async function corrigirVendaIncompletaNFE(
                         shipmentId,
                         token
                     );
+
+
+                console.log(
+                    `📦 [NFE ENVIO] ${idVenda} shipment ${shipmentId} lead_time:`,
+                    leadTime
+                );
 
 
                 if (
