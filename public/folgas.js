@@ -89,9 +89,13 @@ window.abrirSistemaFolgas = function() {
         return;
     }
 
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-    
+    if (typeof esconderTodosOsSistemas === 'function') {
+        esconderTodosOsSistemas('folgasSystem');
+    } else {
+        const menuSystem = document.getElementById('menuSystem');
+        if (menuSystem) menuSystem.classList.add('hidden');
+    }
+
     const folgasSystem = document.getElementById('folgasSystem');
     if (folgasSystem) folgasSystem.classList.remove('hidden');
     

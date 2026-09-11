@@ -4095,6 +4095,32 @@ let systemNotifications = [];
 let unreadNotifications = 0;
 
 
+// ============================================================
+// NAVEGAÇÃO GLOBAL ENTRE MÓDULOS
+//
+// Cada aba (Vendas, Estoque, NF-e, Caixa, etc.) tinha sua
+// própria lista de ids pra esconder antes de se mostrar. Essas
+// listas foram ficando desatualizadas toda vez que um módulo
+// novo era criado, e algumas nem tinham lista nenhuma — então
+// trocar de aba pela barra lateral podia deixar o módulo antigo
+// "grudado" atrás do novo.
+//
+// Esta função esconde TODOS os módulos (qualquer elemento cujo
+// id termine em "System" ou "Screen", exceto a tela de login)
+// de uma vez só, deixando visível apenas o alvo. Toda função
+// abrirSistemaX() deve chamar esta função em vez de manter sua
+// própria lista.
+// ============================================================
+function esconderTodosOsSistemas(idParaMostrar) {
+    document.querySelectorAll('[id$="System"], [id$="Screen"]').forEach(el => {
+        if (el.id === 'loginScreen') return;
+        if (el.id === idParaMostrar) return;
+        el.classList.add('hidden');
+    });
+}
+window.esconderTodosOsSistemas = esconderTodosOsSistemas;
+
+
 // ===== ELEMENTOS DOM =====
 const loginScreen = document.getElementById('loginScreen');
 const mainSystem = document.getElementById('mainSystem');
@@ -7727,9 +7753,15 @@ function updateNotificationsUI() {
     if (!content) return;
 
     // OS não lidas
+    // IMPORTANTE: comparação EXATA (não .includes) — um nome que é
+    // substring de outro (ex.: "Ana" dentro de "Juliana") não pode
+    // fazer o usuário errado enxergar notificação de outra pessoa.
+    const nomeUsuarioAtualNotif =
+        normalizarNomeNotificacaoOS(currentUser?.name);
+
     const osNaoLidas = orders
-        .filter(os => 
-            os.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) &&
+        .filter(os =>
+            normalizarNomeNotificacaoOS(os.responsibleName) === nomeUsuarioAtualNotif &&
             os.user_notified === false
         )
         .map(os => ({
@@ -8594,32 +8626,7 @@ function handleLogout() {
     // ESCONDER SISTEMAS
     // ========================================================
 
-    const sistemas = [
-                    'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem',
-                    'precificacaoSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem',
-                    'estoqueSystem', 'entradasSystem', 'estoqueGestaoSystem', 'perguntasSystem',
-                    'feedbackSystem', 'nfeSystem', 'historicoAcessosScreen', 'promocoesSystem', 'gerenciamentoAnunciosSystem'
-                    ];
-
-
-    sistemas.forEach(
-        id => {
-
-            const el =
-                document.getElementById(
-                    id
-                );
-
-
-            if (el) {
-
-                el.classList.add(
-                    'hidden'
-                );
-            }
-
-        }
-    );
+    esconderTodosOsSistemas('loginScreen');
 
 
     // ========================================================
@@ -14882,20 +14889,9 @@ window.abrirSistemaOS = function() {
         showToast('Faça login primeiro', 'warning');
         return;
     }
-    // Esconder menu
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-    
-    // Esconder outros sistemas
-    const sistemas = ['salesSystem', 'reembolsosSystem', 'caixaSystem', 'entradasSystem', 'promocoesSystem', 'precificacaoSystem', 'promocoesSystem', 'reviewsSystem', 'feedbackSystem', 'perguntasSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'estoqueGestaoSystem'];
-    sistemas.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
+    // Esconder todos os outros módulos e mostrar somente este
+    esconderTodosOsSistemas('mainSystem');
 
-    if (perguntasSystem) perguntasSystem.classList.add('hidden');
-    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
-    
     // Mostrar sistema principal de OS
     const mainSystem = document.getElementById('mainSystem');
     if (mainSystem) mainSystem.classList.remove('hidden');
@@ -17918,22 +17914,10 @@ window.abrirSistemaReembolsos = function() {
         return;
     }
 
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-    
     console.log('💰 Iniciando sistema de reembolsos...');
-    
-    // Esconder outros sistemas - usando getElementById com verificação
-    const sistemasIds = [
-        'mainSystem', 'caixaSystem', 'salesSystem', 'precificacaoSystem', 'reviewsSystem', 
-        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'entradasSystem', 'perguntasSystem', 'feedbackSystem', 'promocoesSystem',
-        'estoqueGestaoSystem', 'gerenciamentoAnunciosSystem'
-    ];
-    sistemasIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
-    
+
+    esconderTodosOsSistemas('reembolsosSystem');
+
     // Mostrar sistema de reembolsos
     const reembolsosSystem = document.getElementById('reembolsosSystem');
     if (!reembolsosSystem) {
@@ -18013,17 +17997,8 @@ window.abrirSistemaCaixa = function() {
 
 // Função para voltar ao sistema principal (OS)
 window.voltarParaMenu = function() {
-    // Lista de todos os sistemas que podem estar abertos
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem', 'entradasSystem', 'promocoesSystem',
-                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem', 'perguntasSystem',
-                      'estoqueGestaoSystem', 'gerenciamentoAnunciosSystem'];
-    sistemas.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
-    const historyScreen = document.getElementById('historicoAcessosScreen');
-    if (historyScreen) historyScreen.classList.add('hidden');
-    // Mostrar menu
+    // Esconder todos os módulos e mostrar somente o menu
+    esconderTodosOsSistemas('menuSystem');
     const menu = document.getElementById('menuSystem');
     if (menu) menu.classList.remove('hidden');
     showToast('Menu principal', 'info');
@@ -18044,22 +18019,10 @@ window.abrirSistemaReviews = function() {
         return;
     }
 
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-    
     console.log('⭐ Iniciando sistema de avaliações...');
-    
-    // Esconder outros sistemas
-    const sistemasIds = [
-        'mainSystem', 'reembolsosSystem', 'salesSystem', 'precificacaoSystem', 'caixaSystem', 'entradasSystem',
-        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 'promocoesSystem',
-        'estoqueGestaoSystem', 'gerenciamentoAnunciosSystem'
-    ];
-    sistemasIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
-    
+
+    esconderTodosOsSistemas('reviewsSystem');
+
     // Mostrar sistema de avaliações
     const reviewsSystem = document.getElementById('reviewsSystem');
     if (!reviewsSystem) {
@@ -18276,20 +18239,10 @@ window.abrirSistemaVendas = async function() {
         return;
     }
 
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-    
     console.log('🛒 Iniciando sistema de vendas ML...');
-    
-    // Esconder outros sistemas
-    if (mainSystem) mainSystem.classList.add('hidden');
-    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
-    if (caixaSystem) caixaSystem.classList.add('hidden');
-    if (perguntasSystem) perguntasSystem.classList.add('hidden');
-    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
-    if (entradasSystem) entradasSystem.classList.add('hidden');
-    if (gerenciamentoAnunciosSystem) gerenciamentoAnunciosSystem.classList.add('hidden');
-    
+
+    esconderTodosOsSistemas('salesSystem');
+
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
     if (!salesSystem) {
@@ -19429,18 +19382,7 @@ window.abrirSistemaFrete = function() {
         return;
     }
 
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-
-    const sistemasIds = [
-        'mainSystem', 'salesSystem', 'reembolsosSystem', 'perguntasSystem', 'precificacaoSystem', 'promocoesSystem',
-        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem', 'feedbackSystem', 'entradasSystem',
-        'estoqueGestaoSystem', 'nfeSystem', 'gerenciamentoAnunciosSystem'
-    ];
-    sistemasIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
+    esconderTodosOsSistemas('shippingSystem');
 
     const shippingSystem = document.getElementById('shippingSystem');
     if (shippingSystem) shippingSystem.classList.remove('hidden');
@@ -19678,18 +19620,7 @@ window.abrirSistemaNFE = async function() {
     }
 
     // Esconde o menu principal e outros sistemas
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-
-    const sistemasIds = [
-        'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem', 'promocoesSystem',
-        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem', 'entradasSystem',
-        'perguntasSystem', 'estoqueGestaoSystem', 'gerenciamentoAnunciosSystem'
-    ];
-    sistemasIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
+    esconderTodosOsSistemas('estoqueSystem');
 
     // Container da NF-e (usando o mesmo ID do original)
     let nfeContainer = document.getElementById('estoqueSystem');
@@ -20464,8 +20395,7 @@ async function abrirHistoricoAcessos() {
     }
 
     // Esconde o menu principal e outros sistemas
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
+    esconderTodosOsSistemas('historicoAcessosScreen');
 
     // Se já existir uma tela de histórico, remove-a (para recriar atualizada)
     const existingScreen = document.getElementById('historicoAcessosScreen');
@@ -25553,18 +25483,7 @@ window.abrirSistemaPrecificacao = function() {
     }
 
     // Esconder menu e outros sistemas
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-
-    const sistemasIds = [
-        'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'precificacaoSystem',
-        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem',
-        'estoqueGestaoSystem', 'nfeSystem', 'gerenciamentoAnunciosSystem', 'perguntasSystem', 'entradasSystem', 'promocoesSystem'
-    ];
-    sistemasIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
+    esconderTodosOsSistemas('precificacaoSystem');
 
     const precSystem = document.getElementById('precificacaoSystem');
     if (precSystem) precSystem.classList.remove('hidden');
@@ -26381,6 +26300,7 @@ async function confirmarCriarOSDevolucao() {
             urgency: 'alta',
             osType: 'devolucao',
             photoType: 'estudio', // padrão
+            fluxoRenovacao: false,
             skus: [],
             observations: observacao || `Devolução: ${dev.nome_produto} - ${dev.venda_link || ''}`,
             createdBy: currentUser.name,

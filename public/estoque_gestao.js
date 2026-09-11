@@ -3492,42 +3492,23 @@ window.abrirGestaoEstoque = function() {
     // ESCONDER OUTROS SISTEMAS
     // =====================================================
 
-    const sistemas = [
+    if (
+        typeof esconderTodosOsSistemas ===
+        'function'
+    ) {
 
-        'mainSystem',
-        'salesSystem',
-        'reembolsosSystem',
-        'caixaSystem',
-        'promocoesSystem',
-        'reviewsSystem',
-        'folgasSystem',
-        'shippingSystem',
-        'estoqueSystem',
-        'menuSystem',
-        'perguntasSystem'
+        esconderTodosOsSistemas(
+            'estoqueGestaoSystem'
+        );
 
-    ];
+    } else {
 
-
-    sistemas.forEach(
-        id => {
-
-            const el =
-                document.getElementById(
-                    id
-                );
-
-
-            if (el) {
-
-                el.classList.add(
-                    'hidden'
-                );
-
-            }
-
-        }
-    );
+        document.getElementById(
+            'menuSystem'
+        )?.classList.add(
+            'hidden'
+        );
+    }
 
 
     // =====================================================

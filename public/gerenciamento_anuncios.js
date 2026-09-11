@@ -10396,61 +10396,22 @@ function exportarCSV() {
         // ESCONDER OUTROS SISTEMAS
         // =====================================================
 
-        const sistemas = [
-
-            'menuSystem',
-
-            'mainSystem',
-
-            'salesSystem',
-
-            'precificacaoSystem',
-
-            'reembolsosSystem',
-
-            'caixaSystem',
-
-            'perguntasSystem',
-
-            'promocoesSystem',
-
-            'reviewsSystem',
-
-            'folgasSystem',
-
-            'shippingSystem',
-
-            'entradasSystem',
-
-            'feedbackSystem',
-
-            'estoqueSystem',
-
-            'estoqueGestaoSystem',
-
-            'fullSystem',
-
-            'gerenciamentoAnunciosSystem'
-        ];
-
-
-        for (
-            const id
-            of sistemas
+        if (
+            typeof esconderTodosOsSistemas ===
+            'function'
         ) {
 
-            const elemento =
-                document.getElementById(
-                    id
-                );
+            esconderTodosOsSistemas(
+                'gerenciamentoAnunciosSystem'
+            );
 
+        } else {
 
-            if (elemento) {
-
-                elemento.classList.add(
-                    'hidden'
-                );
-            }
+            document.getElementById(
+                'menuSystem'
+            )?.classList.add(
+                'hidden'
+            );
         }
 
 

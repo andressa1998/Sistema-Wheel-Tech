@@ -32,16 +32,12 @@ window.abrirSistemaFeedback = function() {
     return;
   }
 
-  const menuSystem = document.getElementById('menuSystem');
-  if (menuSystem) menuSystem.classList.add('hidden');
-
-  const sistemas = ['mainSystem','salesSystem','reembolsosSystem','precificacaoSystem','caixaSystem',
-                    'reviewsSystem','folgasSystem','shippingSystem','estoqueSystem', 'promocoesSystem',
-                    'estoqueGestaoSystem','nfeSystem'];
-  sistemas.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add('hidden');
-  });
+  if (typeof esconderTodosOsSistemas === 'function') {
+    esconderTodosOsSistemas('feedbackSystem');
+  } else {
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
+  }
 
   const feedbackSystem = document.getElementById('feedbackSystem');
   if (feedbackSystem) feedbackSystem.classList.remove('hidden');

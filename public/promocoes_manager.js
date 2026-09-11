@@ -64,16 +64,11 @@
         log(`Usuário: ${window.currentUser.name} (${window.currentUser.role})`, 'info');
 
         // Esconder outros sistemas
-        const sistemas = [
-            'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
-            'caixaSystem', 'precificacaoSystem', 'reviewsSystem', 'folgasSystem',
-            'shippingSystem', 'estoqueSystem', 'entradasSystem', 'estoqueGestaoSystem',
-            'perguntasSystem', 'feedbackSystem', 'nfeSystem', 'promocoesSystem'
-        ];
-        sistemas.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.add('hidden');
-        });
+        if (typeof esconderTodosOsSistemas === 'function') {
+            esconderTodosOsSistemas('bulkPromotionSystem');
+        } else {
+            document.getElementById('menuSystem')?.classList.add('hidden');
+        }
         log('Sistemas ocultados', 'debug');
 
         // Criar ou mostrar container

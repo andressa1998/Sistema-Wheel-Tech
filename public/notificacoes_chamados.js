@@ -1839,16 +1839,13 @@
                         os.responsavel
                     );
 
+                // Comparação EXATA (não .includes): um nome que é
+                // substring de outro (ex.: "Ana" dentro de "Juliana")
+                // não pode fazer a pessoa errada ver a notificação.
                 return nomesUsuario.some(
-                    nomeUsuario => {
-                        return (
-                            responsavel ===
-                                nomeUsuario ||
-                            responsavel.includes(
-                                nomeUsuario
-                            )
-                        );
-                    }
+                    nomeUsuario =>
+                        responsavel ===
+                        nomeUsuario
                 );
             });
 

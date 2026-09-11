@@ -7365,8 +7365,10 @@ body:has(#loginScreen:not(.hidden)) {
             const username = normalizar(user.username || user.login || user.usuario);
             const role = normalizar(user.role || user.cargo);
             if (role === 'administrador' || username === 'andressamiotto' || username === 'ronald') return true;
-            return [registro.criado_por_username, registro.responsavel, registro.criado_por_nome]
-                .some(valor => normalizar(valor).includes(username) && username);
+            // Comparação EXATA (não .includes): evita que um nome que é
+            // substring de outro mostre registro da pessoa errada.
+            return !!username && [registro.criado_por_username, registro.responsavel, registro.criado_por_nome]
+                .some(valor => normalizar(valor) === username);
         };
 
         async function carregarContadores(sb) {
@@ -7402,7 +7404,9 @@ body:has(#loginScreen:not(.hidden)) {
                     const responsavel = normalizar(os.responsavel);
                     const criador = normalizar(os.criado_por);
                     const devolucaoLeticia = normalizar(user.username || user.login) === 'leticia' && normalizar(os.tipo_os) === 'devolucao';
-                    return devolucaoLeticia || nomes.some(nome => responsavel.includes(nome) || criador.includes(nome));
+                    // Comparação EXATA (não .includes): evita que um nome que é
+                    // substring de outro conte OS da pessoa errada no card do usuário.
+                    return devolucaoLeticia || nomes.some(nome => responsavel === nome || criador === nome);
                 });
                 texto('wtCountOS', visiveis.filter(os =>
                     os.status === 'pendente' &&
@@ -7567,16 +7571,11 @@ body:has(#loginScreen:not(.hidden)) {
     }
 
     // Esconde todos os outros sistemas
-    const sistemas = [
-        'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
-        'caixaSystem', 'precificacaoSystem', 'reviewsSystem', 'folgasSystem',
-        'shippingSystem', 'estoqueSystem', 'entradasSystem', 'estoqueGestaoSystem',
-        'perguntasSystem', 'feedbackSystem', 'nfeSystem', 'promocoesSystem'
-    ];
-    sistemas.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
+    if (typeof esconderTodosOsSistemas === 'function') {
+        esconderTodosOsSistemas('fullSystem');
+    } else {
+        document.getElementById('menuSystem')?.classList.add('hidden');
+    }
 
     // Mostra o sistema FULL
     const fullSystem = document.getElementById('fullSystem');
@@ -7673,16 +7672,11 @@ document.addEventListener('click', function(e) {
         }
 
         // Esconde outros sistemas
-        const sistemas = [
-            'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
-            'caixaSystem', 'precificacaoSystem', 'reviewsSystem', 'folgasSystem',
-            'shippingSystem', 'estoqueSystem', 'entradasSystem', 'estoqueGestaoSystem',
-            'perguntasSystem', 'feedbackSystem', 'nfeSystem', 'promocoesSystem'
-        ];
-        sistemas.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.add('hidden');
-        });
+        if (typeof esconderTodosOsSistemas === 'function') {
+            esconderTodosOsSistemas('fullSystem');
+        } else {
+            document.getElementById('menuSystem')?.classList.add('hidden');
+        }
 
         // Mostra sistema FULL
         const fullSystem = document.getElementById('fullSystem');

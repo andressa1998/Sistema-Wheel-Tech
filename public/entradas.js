@@ -179,39 +179,12 @@ window.abrirSistemaEntradas = function() {
         return;
     }
 
-    const menuSystem = document.getElementById('menuSystem');
-
-    if (menuSystem) {
-        menuSystem.classList.add('hidden');
+    if (typeof esconderTodosOsSistemas === 'function') {
+        esconderTodosOsSistemas('entradasSystem');
+    } else {
+        const menuSystem = document.getElementById('menuSystem');
+        if (menuSystem) menuSystem.classList.add('hidden');
     }
-
-    const sistemasIds = [
-        'mainSystem',
-        'salesSystem',
-        'reembolsosSystem',
-        'caixaSystem',
-        'promocoesSystem',
-        'reviewsSystem',
-        'folgasSystem',
-        'shippingSystem',
-        'estoqueSystem',
-        'feedbackSystem',
-        'perguntasSystem',
-        'estoqueGestaoSystem',
-        'nfeSystem',
-        'precificacaoSystem',
-        'fullSystem'
-    ];
-
-    sistemasIds.forEach(id => {
-
-        const el = document.getElementById(id);
-
-        if (el) {
-            el.classList.add('hidden');
-        }
-
-    });
 
     const entradasSystem = document.getElementById('entradasSystem');
 

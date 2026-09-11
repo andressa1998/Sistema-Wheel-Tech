@@ -4790,37 +4790,39 @@ window.salvarNovoChamado =
             criarModalRecadoChamados();
 
             // Esconde todas as outras abas do sistema
-            document
-                .querySelectorAll(
-                    '[id$="System"]'
-                )
+            if (
+                typeof esconderTodosOsSistemas ===
+                'function'
+            ) {
 
-                .forEach(
-                    el => {
+                esconderTodosOsSistemas(
+                    'chamadosSystem'
+                );
 
-                        if (
-                            el.id !==
-                            'chamadosSystem'
-                        ) {
+            } else {
 
-                            el.classList.add(
-                                'hidden'
-                            );
+                document
+                    .querySelectorAll(
+                        '[id$="System"]'
+                    )
+                    .forEach(
+                        el => {
+
+                            if (
+                                el.id !==
+                                'chamadosSystem'
+                            ) {
+
+                                el.classList.add(
+                                    'hidden'
+                                );
+
+                            }
 
                         }
+                    );
 
-                    }
-                );
-
-
-            document
-                .getElementById(
-                    'menuSystem'
-                )
-                ?.classList
-                .add(
-                    'hidden'
-                );
+            }
 
 
             document

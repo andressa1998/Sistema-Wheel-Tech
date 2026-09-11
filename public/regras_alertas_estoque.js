@@ -357,6 +357,10 @@
     }
 
     function esconderOutrosSistemas() {
+        if (typeof window.esconderTodosOsSistemas === 'function') {
+            window.esconderTodosOsSistemas('regrasAlertaEstoqueSystem');
+            return;
+        }
         document.querySelectorAll('[id$="System"]').forEach((el) => {
             if (el.id !== 'regrasAlertaEstoqueSystem') el.classList.add('hidden');
         });

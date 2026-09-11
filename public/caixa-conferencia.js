@@ -67,23 +67,22 @@ window.abrirSistemaCaixa = function() {
         return;
     }
 
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-    
     // Verifica se hoje é final de semana
     const todayStr = new Date().toISOString().split('T')[0];
     if (isWeekend(todayStr)) {
         showToast('⚠️ O sistema de caixa não está disponível nos finais de semana.', 'warning');
         return;
     }
-    
+
     console.log('💰 Iniciando sistema de conferência de caixa...');
-    
-    // Esconder outros sistemas
-    if (mainSystem) mainSystem.classList.add('hidden');
-    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
-    if (salesSystem) salesSystem.classList.add('hidden');
-    
+
+    if (typeof esconderTodosOsSistemas === 'function') {
+        esconderTodosOsSistemas('caixaSystem');
+    } else {
+        const menuSystem = document.getElementById('menuSystem');
+        if (menuSystem) menuSystem.classList.add('hidden');
+    }
+
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');
     if (!caixaSystem) {

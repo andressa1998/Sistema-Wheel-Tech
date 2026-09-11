@@ -30,17 +30,13 @@ window.abrirSistemaPerguntas = async function() {
         return;
     }
     
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-    
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'promocoesSystem',
-                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 
-                      'estoqueGestaoSystem', 'nfeSystem'];
-    sistemas.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
-    
+    if (typeof esconderTodosOsSistemas === 'function') {
+        esconderTodosOsSistemas('perguntasSystem');
+    } else {
+        const menuSystem = document.getElementById('menuSystem');
+        if (menuSystem) menuSystem.classList.add('hidden');
+    }
+
     const perguntasSystem = document.getElementById('perguntasSystem');
     if (perguntasSystem) {
         perguntasSystem.classList.remove('hidden');
