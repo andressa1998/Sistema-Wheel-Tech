@@ -61348,12 +61348,33 @@ async function carregarVendasPendentes(
 
     // =====================================================
     // NÃO SUBSTITUIR BASE VÁLIDA POR []
+    //
+    // IMPORTANTE: esta busca (carregarVendasCachePeriodoNFE
+    // sem opções) só traz "nfe_liberadas" / "nfe_nao_liberadas"
+    // por padrão — ela NUNCA inclui "full" / "enviadas" /
+    // "canceladas" (ver carregarVendasCacheNFE, statusPadraoAtivos).
+    //
+    // Se o usuário estiver com um filtro final (ex.: FULL) já
+    // carregado e esta atualização terminar depois, SUBSTITUIR
+    // a base inteira apagava as vendas FULL que já estavam na
+    // tela (a lista "sumia", sobrando só o que tinha vindo de
+    // outra fonte). Por isso mesclamos em vez de substituir —
+    // igual ao que selecionarFiltroPainelNFE() já faz.
     // =====================================================
 
     if (
         cacheCarregado ||
         baseAnterior.length === 0
     ) {
+
+        vendas =
+            baseAnterior.length > 0
+                ? mesclarVendasPainelNFE(
+                    baseAnterior,
+                    vendas
+                )
+                : vendas;
+
 
         window._vendasPainelNFEBase =
             vendas;
