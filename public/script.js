@@ -13488,47 +13488,14 @@ function renderOrdersTable() {
             }
 
 
-            const aIsRevision =
-                (
-                    a.status ===
-                        'pendente' &&
-                    a.motivo_rejeicao
-                );
-
-
-            const bIsRevision =
-                (
-                    b.status ===
-                        'pendente' &&
-                    b.motivo_rejeicao
-                );
-
-
-            if (
-                aIsRevision &&
-                !bIsRevision
-            ) {
-
-                return -1;
-            }
-
-
-            if (
-                !aIsRevision &&
-                bIsRevision
-            ) {
-
-                return 1;
-            }
-
-
+            // Novas, revisões e atualizações ficam juntas na mesma lista,
+            // ordenadas apenas pela data/horário do pedido (mais recentes primeiro).
+            // A distinção entre elas é feita pela cor da linha, não pela posição.
             return (
                 new Date(
-                    b.updatedAt ||
                     b.createdAt
                 ) -
                 new Date(
-                    a.updatedAt ||
                     a.createdAt
                 )
             );
@@ -13859,6 +13826,15 @@ if (
             // COR DA LINHA
             // =================================
 
+            const isAtualizacao =
+                (
+                    order.photoType ===
+                        'fotos_para_atualizar' ||
+                    order.photoType ===
+                        'renovacao_anuncio'
+                );
+
+
             if (
                 isRejectedPending
             ) {
@@ -13888,6 +13864,17 @@ if (
 
                 row.style.backgroundColor =
                     '#ffe5e5';
+
+
+            } else if (
+                isAtualizacao
+            ) {
+
+                row.style.backgroundColor =
+                    '#d6ecfa';
+
+                row.style.borderLeft =
+                    '4px solid #17a2b8';
             }
 
 
@@ -24633,6 +24620,17 @@ window.abrirModalEdicaoOS =
             'hidden'
         );
     };
+
+// ============================================================
+// FECHAR MODAL DE EDIÇÃO DA OS
+// ============================================================
+window.fecharModalEdicaoOS = function() {
+    const modal = document.getElementById('editOSModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    editingOSId = null;
+};
 
 window.salvarEdicaoOS =
     async function() {
