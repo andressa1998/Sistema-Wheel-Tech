@@ -1174,3 +1174,68 @@ h4 {
     width: calc(100% - 30px);
     margin: 0 auto;
 }
+
+/* ===== Colunas redimensináveis manualmente (estilo Excel) ===== */
+/* Tabelas da aba de Emissão de NF-e: largura fixa por coluna,
+   permitindo que o usuário arraste a borda de cada cabeçalho. */
+#tabelaVendasPendentes,
+#tabelaNFesEmitidas {
+    table-layout: fixed !important;
+    /* A largura (em px) é controlada via JS (definirLarguraTabelaNFE em
+       script.js), usando setProperty(...,'important') para vencer a regra
+       global "table { width:100% !important }". Sem isso, table-layout:
+       fixed + width:auto faz o navegador redistribuir as colunas para
+       caber no container, ignorando os valores exatos de cada <col> —
+       e o arraste manual parece não fazer nada. */
+}
+/* Usada só durante a medição da largura "natural" de cada coluna
+   (antes de existir uma largura salva). Precisa vencer a regra acima
+   por especificidade (id + classe), já que ambas são !important. */
+#tabelaVendasPendentes.nfe-medindo-auto,
+#tabelaNFesEmitidas.nfe-medindo-auto {
+    table-layout: auto !important;
+}
+#tabelaVendasPendentes th,
+#tabelaNFesEmitidas th {
+    position: relative;
+}
+/* Impede que conteúdo maior que a coluna "vaze" visualmente para
+   cima da célula vizinha; o conteúdo continua quebrando linha
+   normalmente dentro do espaço disponível. */
+#tabelaVendasPendentes td,
+#tabelaNFesEmitidas td {
+    overflow: hidden;
+}
+.col-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 12px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 5;
+    touch-action: none;
+}
+/* Marca visível (sempre presente, não só no hover) na borda de cada
+   coluna, para o usuário saber onde arrastar — igual à "pegada" que
+   aparece entre colunas no Excel/Planilhas Google. */
+.col-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 18%;
+    bottom: 18%;
+    right: 4px;
+    width: 2px;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.18);
+}
+.col-resize-handle:hover,
+.col-resize-handle.resizing {
+    background: rgba(13, 110, 253, 0.12);
+}
+.col-resize-handle:hover::after,
+.col-resize-handle.resizing::after {
+    background: rgba(13, 110, 253, 0.7);
+    width: 3px;
+}

@@ -5769,8 +5769,23 @@ function startSessionTimer() {
     );
 }
 
+// resetSessionTimer é chamado a cada scroll/mousemove/keypress (ver
+// setupActivityDetectors) — sem esse limite, ele escrevia no
+// localStorage a cada pixel rolado, o que travava a rolagem em telas
+// com muitos elementos (ex.: aba "FULL" com ~2000 linhas). Como o
+// timeout de sessão é medido em minutos, resetar a cada poucos
+// segundos já é mais que suficiente.
+let _ultimoResetSessionTimer = 0;
+const INTERVALO_MINIMO_RESET_SESSION = 5000;
+
 function resetSessionTimer() {
     if (currentUser) {
+        const agora = Date.now();
+        if (agora - _ultimoResetSessionTimer < INTERVALO_MINIMO_RESET_SESSION) {
+            return;
+        }
+        _ultimoResetSessionTimer = agora;
+
         // Atualizar tempo de expiração
         const sessionData = {
             user: currentUser,
@@ -19472,6 +19487,198 @@ window.abrirSistemaFrete = function() {
 };
 
 // ============================================
+// REDIMENSIONAMENTO MANUAL DE COLUNAS (estilo Excel)
+// ============================================
+// Define a largura da tabela explicitamente em px = soma de todas as
+// colunas (ou a largura do container, se for maior). Precisa usar
+// setProperty(...,'important') porque a regra global "table { width:100%
+// !important }" (style.css) venceria um simples table.style.width.
+//
+// Sem isso, table-layout:fixed + width:auto faz o navegador REDISTRIBUIR
+// proporcionalmente a largura das colunas para caber no espaço do
+// container, ignorando os valores exatos definidos em cada <col> — é
+// por isso que arrastar a borda de uma coluna não tinha efeito visível
+// nenhum, mesmo a largura sendo corretamente gravada no elemento <col>.
+function definirLarguraTabelaNFE(table, colgroup) {
+    const soma = Array.from(colgroup.querySelectorAll('col'))
+        .reduce((s, c) => s + (parseFloat(c.style.width) || 0), 0);
+    const minimo = table.parentElement ? table.parentElement.clientWidth : 0;
+    table.style.setProperty('width', Math.max(soma, minimo) + 'px', 'important');
+}
+
+// Adiciona alças de arraste nas bordas das colunas de uma tabela,
+// permitindo o usuário ajustar a largura manualmente. As larguras
+// escolhidas ficam salvas no localStorage e são restauradas depois.
+//
+// É seguro chamar esta função várias vezes na mesma tabela (ex.: toda
+// vez que a lista é atualizada): ela só reconstrói o <colgroup> quando
+// a quantidade/ordem/visibilidade das colunas realmente muda, e nunca
+// duplica as alças de arraste já existentes. Isso é necessário porque
+// tabelas como a de "Vendas sem Nota Fiscal" reconstroem o cabeçalho
+// dinamicamente (reordenar/ocultar colunas, atualizar dados etc.).
+//
+// IMPORTANTE: o <colgroup> só tem um <col> por coluna VISÍVEL. Ao
+// aplicar as larguras do colgroup, o navegador pula colunas com
+// display:none ao mapear para as colunas realmente renderizadas — se
+// o colgroup tivesse um <col> "a mais" para cada coluna oculta, as
+// larguras de todas as colunas seguintes ficariam deslocadas uma
+// posição (foi o bug: arrastar "Estoque anúncio" redimensionava
+// "Comentários" depois de ocultar a coluna "Foto").
+window.ativarRedimensionamentoColunas = function(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    // Não mexe no colgroup enquanto o usuário está arrastando uma coluna
+    if (table.dataset.resizeEmAndamento === '1') return;
+
+    const headerCells = Array.from(table.querySelectorAll('thead th'));
+    if (!headerCells.length) return;
+
+    // Chave estável por coluna: usa o id semântico da coluna quando
+    // existir (data-coluna-nfe), senão cai para a posição (tabelas simples,
+    // sem reordenação de colunas).
+    const chaves = headerCells.map((th, index) => th.dataset.colunaNfe || String(index));
+
+    const storageKey = 'colWidths_' + tableId;
+    let larguraSalva = {};
+    try {
+        larguraSalva = JSON.parse(localStorage.getItem(storageKey)) || {};
+    } catch (e) {
+        larguraSalva = {};
+    }
+
+    // Assinatura da estrutura atual (quantidade + ordem + visibilidade).
+    // Só reconstrói o colgroup quando ela muda, para não perder alças
+    // presas a um arraste em andamento nem "esquecer" larguras à toa.
+    const assinatura = chaves
+        .map((chave, i) => chave + (headerCells[i].style.display === 'none' ? ':oculta' : ''))
+        .join('|');
+
+    let colgroup = table.querySelector(':scope > colgroup');
+    const precisaReconstruirColgroup = !colgroup || table.dataset.resizeAssinatura !== assinatura;
+
+    // Só as colunas visíveis entram no colgroup.
+    const visiveis = [];
+    headerCells.forEach((th, index) => {
+        if (th.style.display !== 'none') {
+            visiveis.push({ th, index });
+        }
+    });
+
+    if (precisaReconstruirColgroup) {
+        // As alças antigas ficariam presas a colunas erradas depois de
+        // reordenar/ocultar, então removemos para recriá-las certas.
+        table.querySelectorAll(':scope > thead th > .col-resize-handle').forEach(h => h.remove());
+
+        if (colgroup) colgroup.remove();
+
+        // Para colunas sem largura salva ainda, mede o tamanho "natural"
+        // (considerando o conteúdo real das linhas, não só o cabeçalho).
+        // Isso exige tirar a coluna do modo table-layout:fixed por um
+        // instante — por isso a classe auxiliar (CSS já força "fixed"
+        // com !important, então só uma regra mais específica destrava).
+        const faltaMedirNatural = visiveis.some(({ index }) => !larguraSalva[chaves[index]]);
+        const largurasNaturais = new Map();
+        if (faltaMedirNatural) {
+            table.classList.add('nfe-medindo-auto');
+            visiveis.forEach(({ th, index }) => {
+                largurasNaturais.set(index, th.getBoundingClientRect().width);
+            });
+            table.classList.remove('nfe-medindo-auto');
+        }
+
+        colgroup = document.createElement('colgroup');
+        visiveis.forEach(({ index }) => {
+            const col = document.createElement('col');
+            const salva = larguraSalva[chaves[index]];
+            // Largura medida naturalmente: limitada a uma faixa razoável
+            // para nenhuma coluna "engolir" a tabela sozinha; o usuário
+            // pode arrastar para ajustar depois.
+            const natural = Math.min(260, Math.max(70, largurasNaturais.get(index) || 120));
+            col.style.width = (salva || natural) + 'px';
+            colgroup.appendChild(col);
+        });
+        table.insertBefore(colgroup, table.firstChild);
+        table.dataset.resizeAssinatura = assinatura;
+        definirLarguraTabelaNFE(table, colgroup);
+    }
+
+    const cols = colgroup.querySelectorAll('col');
+
+    // posVisivel = posição do <col> dentro da lista de colunas
+    // VISÍVEIS (não o índice entre todas as colunas — esse incluiria
+    // as ocultas e causaria o desalinhamento descrito acima).
+    visiveis.forEach(({ th, index }, posVisivel) => {
+        th.style.position = 'relative';
+
+        // Já tem alça (coluna não mudou de estrutura) — não duplica.
+        if (th.querySelector(':scope > .col-resize-handle')) return;
+
+        th.style.overflow = 'hidden';
+        th.style.textOverflow = 'ellipsis';
+
+        const handle = document.createElement('div');
+        handle.className = 'col-resize-handle';
+        th.appendChild(handle);
+
+        let startX = 0;
+        let startWidth = 0;
+
+        const salvarLarguras = () => {
+            const larguras = {};
+            visiveis.forEach(({ index: idx }, i) => {
+                if (cols[i]) larguras[chaves[idx]] = parseFloat(cols[i].style.width) || 0;
+            });
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(larguras));
+            } catch (e) { /* ignora erro de storage cheio */ }
+        };
+
+        const onMouseMove = (e) => {
+            const novaLargura = Math.max(40, startWidth + (e.clientX - startX));
+            cols[posVisivel].style.width = novaLargura + 'px';
+            definirLarguraTabelaNFE(table, colgroup);
+        };
+
+        const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            handle.classList.remove('resizing');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            table.dataset.resizeEmAndamento = '';
+            salvarLarguras();
+        };
+
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            startX = e.clientX;
+            startWidth = cols[posVisivel].getBoundingClientRect().width;
+            handle.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            table.dataset.resizeEmAndamento = '1';
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        // Duplo clique na alça: volta a coluna para a largura automática
+        handle.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const larguraAnterior = cols[posVisivel].style.width;
+            cols[posVisivel].style.width = '';
+            table.classList.add('nfe-medindo-auto');
+            const largura = th.getBoundingClientRect().width;
+            table.classList.remove('nfe-medindo-auto');
+            cols[posVisivel].style.width = (largura || parseFloat(larguraAnterior) || 120) + 'px';
+            definirLarguraTabelaNFE(table, colgroup);
+            salvarLarguras();
+        });
+    });
+};
+
+// ============================================
 // FUNÇÃO PARA ABRIR SISTEMA DE EMISSÃO DE NF-e
 // ============================================
 // ============================================
@@ -19740,6 +19947,12 @@ window.abrirSistemaNFE = async function() {
 
     // Atualiza informações do usuário
     atualizarHeaderNFE();
+
+    // Ativa o redimensionamento manual das colunas (estilo Excel).
+    // Obs.: "tabelaVendasPendentes" tem cabeçalho reconstruído dinamicamente
+    // pelo nfe_manager.js (colunas reordenáveis/ocultáveis) — sua ativação
+    // fica em aplicarPreferenciasColunasNFE() para rodar sempre depois disso.
+    window.ativarRedimensionamentoColunas('tabelaNFesEmitidas');
 
     // ===== DEFINIÇÃO DAS FUNÇÕES AUXILIARES (FALLBACK) =====
     // Essas funções são definidas como globais apenas se já não existirem,

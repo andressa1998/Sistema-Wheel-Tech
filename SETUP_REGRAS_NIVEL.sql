@@ -27,6 +27,8 @@ alter table public.regras_nivel_estoque add column if not exists escopo_qtd_valo
 alter table public.regras_nivel_estoque add column if not exists gatilho_qtd        integer not null default 5;
 -- escada: [{ "nivel": 11, "modo": "pct", "valor": 5 }, ...]  (do gatilho até 1)
 alter table public.regras_nivel_estoque add column if not exists escada             jsonb not null default '[]'::jsonb;
+-- ajustes manuais por anúncio: { "<mlb>": { "<nivel>": precoManual }, ... }
+alter table public.regras_nivel_estoque add column if not exists overrides          jsonb not null default '{}'::jsonb;
 alter table public.regras_nivel_estoque add column if not exists criado_por         text;
 alter table public.regras_nivel_estoque add column if not exists criado_em          timestamptz not null default now();
 alter table public.regras_nivel_estoque add column if not exists atualizado_em      timestamptz not null default now();

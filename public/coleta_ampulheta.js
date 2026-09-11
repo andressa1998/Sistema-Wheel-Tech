@@ -1,7 +1,11 @@
 /* =========================================================
  * AMPULHETA DA COLETA
  *
- * Widget fixo no topo, visível em todas as abas.
+ * Widget embutido nas sidebars (a global #wtGlobalSidebar e a do
+ * menu principal #menuSystem), em cima do nome/foto do usuário.
+ * Se por algum motivo nenhuma sidebar existir na página, cai de
+ * volta pro cartão flutuante no canto (comportamento antigo).
+ *
  * Conta o tempo até a próxima coleta e a areia vai "caindo".
  * Fica amarela abaixo de 3h e vermelha/piscando abaixo de 1h
  * ou quando o prazo estoura.
@@ -40,11 +44,7 @@
 
     var DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-    var elWrap = null;
-    var elSandTop = null;
-    var elSandBot = null;
-    var elMain = null;
-    var elSub = null;
+    var instancias = [];   // um item por lugar onde o widget é mostrado
     var timer = null;
     var schedule = null;
 
@@ -198,7 +198,7 @@
             da.getDate() === db.getDate();
     }
 
-    // ---------- render ----------
+    // ---------- criação (embutido nas sidebars, com fallback fixo) ----------
 
     function loginAtivo() {
         var b = document.body;
@@ -209,59 +209,57 @@
         return false;
     }
 
-    function criar() {
-        if (elWrap) return;
-
-        elWrap = document.createElement('div');
-        elWrap.id = 'wtColetaWidget';
-        elWrap.setAttribute('role', 'status');
-        elWrap.title = 'Próxima coleta — clique para configurar os horários';
-        elWrap.addEventListener('click', abrirConfig);
-
-        elWrap.innerHTML = [
-            '<svg viewBox="0 0 24 34" width="26" height="36" aria-hidden="true">',
-            '  <path d="M4 2 H20 M4 32 H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-            '  <path d="M4 2 L4 5 Q4 12 12 17 Q20 12 20 5 L20 2 Z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
-            '  <path d="M4 32 L4 29 Q4 22 12 17 Q20 22 20 29 L20 32 Z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
-            '  <clipPath id="wtHgTop"><path d="M4 2 L4 5 Q4 12 12 17 Q20 12 20 5 L20 2 Z"/></clipPath>',
-            '  <clipPath id="wtHgBot"><path d="M4 32 L4 29 Q4 22 12 17 Q20 22 20 29 L20 32 Z"/></clipPath>',
-            '  <rect class="wt-hg-sand-top" x="3" y="2" width="18" height="15" clip-path="url(#wtHgTop)" fill="currentColor"/>',
-            '  <rect class="wt-hg-sand-bot" x="3" y="32" width="18" height="0" clip-path="url(#wtHgBot)" fill="currentColor"/>',
-            '  <line class="wt-hg-stream" x1="12" y1="14" x2="12" y2="22" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
-            '</svg>',
-            '<span class="wt-coleta-copy">',
-            '  <strong class="wt-coleta-main">--</strong>',
-            '  <span class="wt-coleta-sub">coleta</span>',
-            '</span>'
-        ].join('');
+    function garantirEstiloColeta() {
+        if (document.getElementById('wtColetaEstilo')) return;
 
         var style = document.createElement('style');
+        style.id = 'wtColetaEstilo';
         style.textContent = [
-            '#wtColetaWidget{position:fixed;bottom:18px;right:18px;z-index:99990;',
-            'display:flex;align-items:center;gap:9px;padding:7px 13px 7px 10px;',
-            'background:#ffffff;border:1px solid #dbe4f0;border-radius:12px;',
-            'box-shadow:0 6px 20px rgba(0,28,80,.12);color:#1f6feb;cursor:pointer;',
+            '.wt-coleta-widget{display:flex;align-items:center;gap:9px;cursor:pointer;',
             'font-family:inherit;font-size:.8rem;line-height:1.1;',
             'transition:color .3s,border-color .3s,background .3s}',
-            '#wtColetaWidget.wt-coleta-hidden{display:none}',
-            '#wtColetaWidget svg{flex:0 0 auto;display:block}',
-            '#wtColetaWidget .wt-coleta-copy{display:flex;flex-direction:column;gap:2px}',
-            '#wtColetaWidget .wt-coleta-main{font-size:.9rem;font-weight:800;white-space:nowrap}',
-            '#wtColetaWidget .wt-coleta-sub{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:#8895ab;white-space:nowrap}',
-            '#wtColetaWidget .wt-hg-sand-top,#wtColetaWidget .wt-hg-sand-bot{transition:y .9s linear,height .9s linear}',
-            '#wtColetaWidget .wt-hg-stream{opacity:0}',
-            '#wtColetaWidget.wt-coleta-correndo .wt-hg-stream{opacity:1;animation:wtHgStream 1s linear infinite}',
+            '.wt-coleta-widget.wt-coleta-hidden{display:none}',
+            '.wt-coleta-widget svg{flex:0 0 auto;display:block}',
+            '.wt-coleta-widget .wt-coleta-copy{display:flex;flex-direction:column;gap:2px;min-width:0}',
+            '.wt-coleta-widget .wt-coleta-main{font-size:.9rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+            '.wt-coleta-widget .wt-coleta-sub{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+            '.wt-coleta-widget .wt-hg-sand-top,.wt-coleta-widget .wt-hg-sand-bot{transition:y .9s linear,height .9s linear}',
+            '.wt-coleta-widget .wt-hg-stream{opacity:0}',
+            '.wt-coleta-widget.wt-coleta-correndo .wt-hg-stream{opacity:1;animation:wtHgStream 1s linear infinite;stroke-dasharray:1 3}',
             '@keyframes wtHgStream{to{stroke-dashoffset:-8}}',
-            '#wtColetaWidget.wt-coleta-correndo .wt-hg-stream{stroke-dasharray:1 3}',
-            '#wtColetaWidget.wt-coleta-ok{color:#1f9d55;border-color:#c4ead2}',
-            '#wtColetaWidget.wt-coleta-atencao{color:#c77700;border-color:#f3dcae;background:#fffaf0}',
-            '#wtColetaWidget.wt-coleta-urgente{color:#d21f1f;border-color:#f2c2c2;background:#fff5f5;',
-            'animation:wtColetaPulse 1.4s ease-in-out infinite}',
-            '#wtColetaWidget.wt-coleta-urgente .wt-hg-stream{animation-duration:.45s}',
+            '.wt-coleta-widget.wt-coleta-urgente .wt-hg-stream{animation-duration:.45s}',
             '@keyframes wtColetaPulse{0%,100%{box-shadow:0 6px 20px rgba(210,31,31,.18)}',
             '50%{box-shadow:0 6px 26px rgba(210,31,31,.42)}}',
-            '@media(max-width:640px){#wtColetaWidget{bottom:10px;right:10px;padding:5px 9px;font-size:.72rem}',
-            '#wtColetaWidget .wt-coleta-sub{display:none}}',
+
+            /* -------- versão FIXA (fallback, sem sidebar na página) -------- */
+            '.wt-coleta-widget.wt-coleta-fixed{position:fixed;bottom:18px;right:18px;z-index:99990;',
+            'padding:7px 13px 7px 10px;background:#ffffff;border:1px solid #dbe4f0;border-radius:12px;',
+            'box-shadow:0 6px 20px rgba(0,28,80,.12);color:#1f6feb}',
+            '.wt-coleta-widget.wt-coleta-fixed .wt-coleta-sub{color:#8895ab}',
+            '.wt-coleta-widget.wt-coleta-fixed.wt-coleta-ok{color:#1f9d55;border-color:#c4ead2}',
+            '.wt-coleta-widget.wt-coleta-fixed.wt-coleta-atencao{color:#c77700;border-color:#f3dcae;background:#fffaf0}',
+            '.wt-coleta-widget.wt-coleta-fixed.wt-coleta-urgente{color:#d21f1f;border-color:#f2c2c2;background:#fff5f5;',
+            'animation:wtColetaPulse 1.4s ease-in-out infinite}',
+            '@media(max-width:640px){.wt-coleta-widget.wt-coleta-fixed{bottom:10px;right:10px;padding:5px 9px;font-size:.72rem}',
+            '.wt-coleta-widget.wt-coleta-fixed .wt-coleta-sub{display:none}}',
+
+            /* -------- versão EMBUTIDA na sidebar (em cima do usuário) -------- */
+            '.wt-coleta-widget.wt-coleta-embed{width:100%;box-sizing:border-box;margin:0 0 10px;',
+            'padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.07);',
+            'border:1px solid rgba(255,255,255,.14);color:#dce6ff}',
+            '.wt-coleta-widget.wt-coleta-embed .wt-coleta-sub{color:rgba(220,230,255,.62)}',
+            '.wt-coleta-widget.wt-coleta-embed.wt-coleta-ok{color:#8ee6ad;border-color:rgba(142,230,173,.32);background:rgba(142,230,173,.09)}',
+            '.wt-coleta-widget.wt-coleta-embed.wt-coleta-ok .wt-coleta-sub{color:rgba(142,230,173,.65)}',
+            '.wt-coleta-widget.wt-coleta-embed.wt-coleta-atencao{color:#ffcf7a;border-color:rgba(255,207,122,.35);background:rgba(255,207,122,.1)}',
+            '.wt-coleta-widget.wt-coleta-embed.wt-coleta-atencao .wt-coleta-sub{color:rgba(255,207,122,.7)}',
+            '.wt-coleta-widget.wt-coleta-embed.wt-coleta-urgente{color:#ff9d9d;border-color:rgba(255,140,140,.45);background:rgba(255,70,70,.14);',
+            'animation:wtColetaPulseEmbed 1.4s ease-in-out infinite}',
+            '.wt-coleta-widget.wt-coleta-embed.wt-coleta-urgente .wt-coleta-sub{color:rgba(255,157,157,.75)}',
+            '@keyframes wtColetaPulseEmbed{0%,100%{background:rgba(255,70,70,.14)}50%{background:rgba(255,70,70,.26)}}',
+            /* a sidebar global fica só com ícones até passar o mouse — some o texto igual ao nome do usuário */
+            '#wtGlobalSidebar .wt-coleta-embed .wt-coleta-copy{opacity:0;visibility:hidden;transition:opacity .14s ease}',
+            '#wtGlobalSidebar:hover .wt-coleta-embed .wt-coleta-copy,#wtGlobalSidebar:focus-within .wt-coleta-embed .wt-coleta-copy{opacity:1;visibility:visible}',
+
             /* modal de config */
             '.wt-coleta-modal{position:fixed;inset:0;z-index:99991;display:flex;',
             'align-items:center;justify-content:center;background:rgba(15,28,60,.45)}',
@@ -279,53 +277,112 @@
         ].join('');
 
         document.head.appendChild(style);
-        (document.body || document.documentElement).appendChild(elWrap);
+    }
 
-        elSandTop = elWrap.querySelector('.wt-hg-sand-top');
-        elSandBot = elWrap.querySelector('.wt-hg-sand-bot');
-        elMain = elWrap.querySelector('.wt-coleta-main');
-        elSub = elWrap.querySelector('.wt-coleta-sub');
+    function markupWidget() {
+        return [
+            '<svg viewBox="0 0 24 34" width="26" height="36" aria-hidden="true">',
+            '  <path d="M4 2 H20 M4 32 H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+            '  <path d="M4 2 L4 5 Q4 12 12 17 Q20 12 20 5 L20 2 Z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+            '  <path d="M4 32 L4 29 Q4 22 12 17 Q20 22 20 29 L20 32 Z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+            '  <clipPath id="wtHgTop"><path d="M4 2 L4 5 Q4 12 12 17 Q20 12 20 5 L20 2 Z"/></clipPath>',
+            '  <clipPath id="wtHgBot"><path d="M4 32 L4 29 Q4 22 12 17 Q20 22 20 29 L20 32 Z"/></clipPath>',
+            '  <rect class="wt-hg-sand-top" x="3" y="2" width="18" height="15" clip-path="url(#wtHgTop)" fill="currentColor"/>',
+            '  <rect class="wt-hg-sand-bot" x="3" y="32" width="18" height="0" clip-path="url(#wtHgBot)" fill="currentColor"/>',
+            '  <line class="wt-hg-stream" x1="12" y1="14" x2="12" y2="22" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+            '</svg>',
+            '<span class="wt-coleta-copy">',
+            '  <strong class="wt-coleta-main">--</strong>',
+            '  <span class="wt-coleta-sub">coleta</span>',
+            '</span>'
+        ].join('');
+    }
+
+    function criarInstancia(target, embed) {
+        var wrap = document.createElement('div');
+        wrap.className = 'wt-coleta-widget ' + (embed ? 'wt-coleta-embed' : 'wt-coleta-fixed');
+        wrap.setAttribute('role', 'status');
+        wrap.title = 'Próxima coleta — clique para configurar os horários';
+        wrap.addEventListener('click', abrirConfig);
+        wrap.innerHTML = markupWidget();
+
+        if (embed) {
+            var userRow = target.querySelector('.wt-user-row');
+            if (userRow) target.insertBefore(wrap, userRow);
+            else target.insertBefore(wrap, target.firstChild);
+        } else {
+            target.appendChild(wrap);
+        }
+
+        return {
+            wrap: wrap,
+            sandTop: wrap.querySelector('.wt-hg-sand-top'),
+            sandBot: wrap.querySelector('.wt-hg-sand-bot'),
+            main: wrap.querySelector('.wt-coleta-main'),
+            sub: wrap.querySelector('.wt-coleta-sub')
+        };
+    }
+
+    function criar() {
+        if (instancias.length) return;
+        garantirEstiloColeta();
+
+        var rodapes = document.querySelectorAll('.wt-sidebar-footer');
+        if (rodapes.length) {
+            rodapes.forEach(function (footer) {
+                instancias.push(criarInstancia(footer, true));
+            });
+        } else {
+            // sem sidebar na página (não deveria acontecer) -> volta pro cartão flutuante
+            instancias.push(criarInstancia(document.body || document.documentElement, false));
+        }
     }
 
     function aplicarAreia(frac) {
-        if (!elSandTop) return;
         frac = Math.max(0, Math.min(1, frac));
         var max = 15;
         var alturaTopo = max * frac;
-        elSandTop.setAttribute('y', (17 - alturaTopo).toFixed(2));
-        elSandTop.setAttribute('height', alturaTopo.toFixed(2));
+        var alturaBaixo = max * (1 - frac);
 
-        if (elSandBot) {
-            var alturaBaixo = max * (1 - frac);
-            elSandBot.setAttribute('y', (32 - alturaBaixo).toFixed(2));
-            elSandBot.setAttribute('height', alturaBaixo.toFixed(2));
-        }
+        instancias.forEach(function (inst) {
+            if (!inst.sandTop) return;
+            inst.sandTop.setAttribute('y', (17 - alturaTopo).toFixed(2));
+            inst.sandTop.setAttribute('height', alturaTopo.toFixed(2));
+            if (inst.sandBot) {
+                inst.sandBot.setAttribute('y', (32 - alturaBaixo).toFixed(2));
+                inst.sandBot.setAttribute('height', alturaBaixo.toFixed(2));
+            }
+        });
     }
 
     function render() {
         criar();
-        if (!elWrap) return;
+        if (!instancias.length) return;
 
         if (loginAtivo()) {
-            elWrap.classList.add('wt-coleta-hidden');
+            instancias.forEach(function (inst) { inst.wrap.classList.add('wt-coleta-hidden'); });
             return;
         }
-        elWrap.classList.remove('wt-coleta-hidden');
+        instancias.forEach(function (inst) { inst.wrap.classList.remove('wt-coleta-hidden'); });
 
-        elWrap.classList.remove(
-            'wt-coleta-ok',
-            'wt-coleta-atencao',
-            'wt-coleta-urgente',
-            'wt-coleta-correndo'
-        );
+        instancias.forEach(function (inst) {
+            inst.wrap.classList.remove(
+                'wt-coleta-ok',
+                'wt-coleta-atencao',
+                'wt-coleta-urgente',
+                'wt-coleta-correndo'
+            );
+        });
 
         var prazo = calcularPrazo();
 
         if (!prazo) {
-            elMain.textContent = 'Sem coleta';
-            if (elSub) elSub.textContent = 'configurar';
+            instancias.forEach(function (inst) {
+                inst.main.textContent = 'Sem coleta';
+                if (inst.sub) inst.sub.textContent = 'configurar';
+                inst.wrap.classList.add('wt-coleta-ok');
+            });
             aplicarAreia(1);
-            elWrap.classList.add('wt-coleta-ok');
             return;
         }
 
@@ -334,27 +391,32 @@
 
         aplicarAreia(restante / JANELA_MS);
 
-        if (restante > 0) elWrap.classList.add('wt-coleta-correndo');
+        var estadoTexto, subTexto, classeEstado;
 
         if (restante <= 0) {
-            elMain.textContent = 'Estourou';
-            if (elSub) elSub.textContent = 'coleta ' + formatarHora(prazo);
+            estadoTexto = 'Estourou';
+            subTexto = 'coleta ' + formatarHora(prazo);
         } else {
-            elMain.textContent = formatarRestante(restante);
-            if (elSub) {
-                elSub.textContent = mesmoDia(agora, prazo)
-                    ? 'coleta hoje ' + formatarHora(prazo)
-                    : 'coleta ' + DIAS[new Date(prazo).getDay()] + ' ' + formatarHora(prazo);
-            }
+            estadoTexto = formatarRestante(restante);
+            subTexto = mesmoDia(agora, prazo)
+                ? 'coleta hoje ' + formatarHora(prazo)
+                : 'coleta ' + DIAS[new Date(prazo).getDay()] + ' ' + formatarHora(prazo);
         }
 
         if (restante <= 0 || restante <= 60 * 60 * 1000) {
-            elWrap.classList.add('wt-coleta-urgente');
+            classeEstado = 'wt-coleta-urgente';
         } else if (restante <= 3 * 60 * 60 * 1000) {
-            elWrap.classList.add('wt-coleta-atencao');
+            classeEstado = 'wt-coleta-atencao';
         } else {
-            elWrap.classList.add('wt-coleta-ok');
+            classeEstado = 'wt-coleta-ok';
         }
+
+        instancias.forEach(function (inst) {
+            inst.main.textContent = estadoTexto;
+            if (inst.sub) inst.sub.textContent = subTexto;
+            if (restante > 0) inst.wrap.classList.add('wt-coleta-correndo');
+            inst.wrap.classList.add(classeEstado);
+        });
     }
 
     // ---------- config ----------

@@ -1734,7 +1734,7 @@ body:has(#loginScreen:not(.hidden)) {
 
         <main class="wt-main">
             <header class="wt-topbar">
-                <div class="wt-welcome"><h1>Olá, <span id="wtGreetingName">Andressa</span>!</h1><p>Bem-vinda ao sistema Wheel Tech. Aqui você tem uma visão completa do que importa.</p></div>
+                <div class="wt-welcome"><h1>Olá, <span id="wtGreetingName">Andressa</span>!</h1><p>Bem-vinda ao sistema ANDRA. Aqui você tem uma visão completa do que importa.</p></div>
                 <div class="wt-top-actions">
                     <button class="wt-icon-button" id="wtMenuSettingsBtn" type="button" title="Configurações" onclick="abrirGerenciarVisualizacaoMenu()"><i class="fas fa-gear"></i></button>
                     <button class="wt-icon-button" id="wtMenuNotificationBtn" type="button" title="Notificações" onclick="if(window.toggleNotificacoesChamados) window.toggleNotificacoesChamados()"><i class="fas fa-bell"></i></button>
@@ -7188,8 +7188,8 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="estoque.js"></script>
     <script src="nfe_manager.js?v=20260910-12"></script>
     <script src="estoque_gestao.js?v=20260910-5"></script>
-    <script src="estoque_analise.js?v=20260910-5"></script>
-    <script src="regras_nivel_estoque.js?v=20260910-4"></script>
+    <script src="estoque_analise.js?v=20260911-1"></script>
+    <script src="regras_nivel_estoque.js?v=20260911-3"></script>
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
     <script src="entradas.js"></script>
@@ -7199,7 +7199,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="chamados.js"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
     <script src="notificacoes_chamados.js"></script>
-    <script src="coleta_ampulheta.js?v=20260910-3"></script>
+    <script src="coleta_ampulheta.js?v=20260911-1"></script>
     <script src="regras_alertas_estoque.js?v=20260910-6"></script>
     <script src="usuarios_gestao.js?v=20260910-4"></script>
 
@@ -7958,6 +7958,85 @@ document.addEventListener('click', function(e) {
         body:not(.login-active) .btn-danger,
         body:not(.login-active) .badge-danger,
         body:not(.login-active) .text-danger { --status-color: #dc3545; }
+    </style>
+
+    <style id="colunasRedimensionaveisNFE">
+        /* ===== Colunas redimensináveis manualmente (estilo Excel) ===== */
+        /* Tabelas da aba de Emissão de NF-e: largura fixa por coluna,
+           permitindo que o usuário arraste a borda de cada cabeçalho. */
+        #tabelaVendasPendentes,
+        #tabelaNFesEmitidas {
+            table-layout: fixed !important;
+            /* A largura (em px) é controlada via JS (definirLarguraTabelaNFE
+               em script.js), usando setProperty(...,'important'). */
+        }
+        /* Usada só durante a medição da largura "natural" de cada coluna
+           (antes de existir uma largura salva). */
+        #tabelaVendasPendentes.nfe-medindo-auto,
+        #tabelaNFesEmitidas.nfe-medindo-auto {
+            table-layout: auto !important;
+        }
+        #tabelaVendasPendentes th,
+        #tabelaNFesEmitidas th {
+            position: relative;
+        }
+        /* Impede que conteúdo maior que a coluna "vaze" visualmente para
+           cima da célula vizinha; o conteúdo continua quebrando linha
+           normalmente dentro do espaço disponível. */
+        #tabelaVendasPendentes td,
+        #tabelaNFesEmitidas td {
+            overflow: hidden;
+        }
+        .col-resize-handle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 12px;
+            height: 100%;
+            cursor: col-resize;
+            user-select: none;
+            z-index: 5;
+            touch-action: none;
+        }
+        /* Marca visível (sempre presente, não só no hover) na borda de
+           cada coluna, para o usuário saber onde arrastar. */
+        .col-resize-handle::after {
+            content: '';
+            position: absolute;
+            top: 18%;
+            bottom: 18%;
+            right: 4px;
+            width: 2px;
+            border-radius: 2px;
+            background: rgba(0, 0, 0, 0.18);
+        }
+        .col-resize-handle:hover,
+        .col-resize-handle.resizing {
+            background: rgba(13, 110, 253, 0.12);
+        }
+        .col-resize-handle:hover::after,
+        .col-resize-handle.resizing::after {
+            background: rgba(13, 110, 253, 0.7);
+            width: 3px;
+        }
+
+        /* ===== Desempenho: listas grandes (aba FULL, ~2000 vendas) ===== */
+        /* Faz o navegador pular o layout/pintura de linhas que estão
+           fora da área visível, só processando-as quando o usuário
+           rola até elas. Isso reduz muito o travamento ao rolar uma
+           tabela enorme. Diferente de paginação/virtualização manual,
+           o conteúdo continua no HTML normalmente — Ctrl+F do
+           navegador continua encontrando texto em linhas "pausadas"
+           (o Chrome renderiza a linha automaticamente quando ela
+           corresponde à busca). "contain-intrinsic-size" é só uma
+           estimativa de altura usada enquanto a linha não é
+           desenhada, pra rolagem não "pular"; se a altura real das
+           linhas variar muito, pode ajustar esse valor. */
+        #vendasPendentesBody > tr,
+        #nfesEmitidasBody > tr {
+            content-visibility: auto;
+            contain-intrinsic-size: auto 130px;
+        }
     </style>
 </body>
 </html>

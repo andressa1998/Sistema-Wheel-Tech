@@ -2,7 +2,7 @@
 // BIBLIOTECAS
 // ============================================
 import { SignedXml } from 'xml-crypto';
-import { DOMParser, XMLSerializer } from 'xmldom';
+import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import forge from 'node-forge';
 import { XMLParser } from 'fast-xml-parser';
 

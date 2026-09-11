@@ -47,6 +47,31 @@
     function getProdutos() {
         try { return (typeof produtosEstoque !== 'undefined' && produtosEstoque) || []; } catch (e) { return []; }
     }
+    // O motor precisa da lista de produtos MESMO se ninguém abriu a aba
+    // Gestão de Estoque nesta sessão (o alerta deve funcionar de
+    // qualquer tela). Se a variável global da tela ainda não foi
+    // carregada, busca direto do banco (com cache de 5 min).
+    let produtosMotorCache = null;
+    let produtosMotorCacheQuando = 0;
+    async function obterProdutosParaMotor() {
+        const vivos = getProdutos();
+        if (vivos && vivos.length) return vivos;
+        if (produtosMotorCache && Date.now() - produtosMotorCacheQuando < 5 * 60000) return produtosMotorCache;
+        const cli = sb();
+        if (!cli) return [];
+        try {
+            const { data, error } = await cli.from('produtos_estoque')
+                .select('id, sku, nome, categoria, quantidade, mlb_codes, dados_extra, ultimo_custo, custo_medio')
+                .limit(20000);
+            if (error) throw error;
+            produtosMotorCache = data || [];
+            produtosMotorCacheQuando = Date.now();
+            return produtosMotorCache;
+        } catch (e) {
+            console.warn('[regras-nivel] produtos para o motor:', e.message || e);
+            return produtosMotorCache || [];
+        }
+    }
     function getEstadoFiltros() {
         try { return (typeof estadoFiltrosEstoque !== 'undefined' && estadoFiltrosEstoque) || {}; } catch (e) { return {}; }
     }
@@ -113,18 +138,42 @@
     }
 
     // ---------- escada ------------------------------------
-    // escada: [{nivel, modo:'pct'|'fixo', valor}] do gatilho até 1
-    // calcula o preço para o nível alvo a partir do preço base
-    function precoNoNivel(precoBase, escada, nivelAlvo) {
+    // escada: [{nivel, modo:'pct'|'soma'|'fixo', valor}] do gatilho até 1
+    // calcula o preço para o nível alvo a partir do preço base.
+    // overridesMlb (opcional): { "<nivel>": precoManual } — um valor
+    // ajustado à mão pra ESSE mlb; a partir dele a escada continua
+    // se aplicando normalmente pros níveis abaixo (auto ajuste em
+    // cima do valor manual).
+    function precoNoNivel(precoBase, escada, nivelAlvo, overridesMlb) {
+        overridesMlb = overridesMlb || {};
         let preco = Number(precoBase) || 0;
         for (const d of escada) {
             if (d.nivel < nivelAlvo) break;   // escada vem ordenada do maior nível pro menor
+            const ov = overridesMlb[String(d.nivel)];
+            if (ov !== undefined && ov !== null && ov !== '' && !isNaN(Number(ov))) {
+                preco = Number(ov);           // ajuste manual: trava aqui e segue dele pra baixo
+                continue;
+            }
             const v = Number(d.valor) || 0;
             if (d.modo === 'soma') preco = preco + v;          // R$ somado no preço da linha de cima
             else if (d.modo === 'fixo') preco = v;             // R$ absoluto (trava)
             else preco = preco * (1 + v / 100);               // %
         }
         return round2(preco);
+    }
+    // tira entradas vazias/​inválidas antes de salvar
+    function limparOverrides(overrides) {
+        const limpo = {};
+        Object.keys(overrides || {}).forEach(mlb => {
+            const porNivel = overrides[mlb] || {};
+            const niveisLimpos = {};
+            Object.keys(porNivel).forEach(nivel => {
+                const v = porNivel[nivel];
+                if (v !== '' && v != null && !isNaN(Number(v))) niveisLimpos[nivel] = Number(v);
+            });
+            if (Object.keys(niveisLimpos).length) limpo[mlb] = niveisLimpos;
+        });
+        return limpo;
     }
     function descreverEscada(escada) {
         if (!escada || !escada.length) return '—';
@@ -207,7 +256,11 @@
         if (!cli) return [];
         const { data, error } = await cli.from('regras_nivel_estoque').select('*').order('criado_em', { ascending: false });
         if (error) { console.warn('[regras-nivel]', error.message); return regrasCache; }
-        regrasCache = (data || []).map(r => ({ ...r, escada: Array.isArray(r.escada) ? r.escada : (r.escada ? JSON.parse(r.escada) : []) }));
+        regrasCache = (data || []).map(r => ({
+            ...r,
+            escada: Array.isArray(r.escada) ? r.escada : (r.escada ? JSON.parse(r.escada) : []),
+            overrides: (r.overrides && typeof r.overrides === 'object') ? r.overrides : (r.overrides ? JSON.parse(r.overrides) : {})
+        }));
         return regrasCache;
     }
 
@@ -228,7 +281,7 @@
             const estadoDe = {};
             (estados || []).forEach(s => { estadoDe[s.regra_id + '|' + String(s.produto_id)] = s; });
 
-            const produtos = getProdutos();
+            const produtos = await obterProdutosParaMotor();
             let token = null;
             let houveMudanca = false;
 
@@ -284,7 +337,8 @@
                     const log = [];
                     for (const mlb of mlbs) {
                         const b = base[mlb] != null ? base[mlb] : 0;
-                        const alvo = precoNoNivel(b, r.escada, nivelAlvo);
+                        const overridesMlb = (r.overrides && r.overrides[mlb]) || {};
+                        const alvo = precoNoNivel(b, r.escada, nivelAlvo, overridesMlb);
                         if (!alvo || alvo <= 0) { log.push({ mlb, ok: false, erro: 'preço inválido', preco_antigo: b }); continue; }
                         const res = token ? await aplicarPreco(mlb, alvo, token) : { ok: false, erro: 'sem token ML' };
                         log.push({ mlb, preco_antigo: round2(b), preco_novo: alvo, ok: res.ok, erro: res.erro || null });
@@ -370,6 +424,7 @@
             #rnModal table.rn-escada input{width:80px;padding:5px 6px}
             #rnModal table.rn-escada select{padding:5px 6px}
             #rnModal table.rn-escada .rn-preco{font-weight:700;color:#0b8043}
+            #rnModal .rn-limpar-override{border:none;background:#fee2e2;color:#b91c1c;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:12px}
             #rnModal .rn-btn{border:none;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;font-weight:600}
             #rnModal .rn-btn-primary{background:#7c3aed;color:#fff}
             #rnModal .rn-btn-sec{background:#e2e8f0;color:#334155}
@@ -453,6 +508,8 @@
     // ---------- MODAL -----------------------------------
     let abaAtual = 'regras';
     let escadaDraft = [];       // rascunho da escada em edição
+    let overridesDraft = {};    // { [mlb]: { [nivel]: precoManual } } — ajustes manuais por anúncio
+    let regraEditandoId = null; // != null -> painel está editando uma regra já salva
     let previewToken = null;
 
     function garantirOverlay() {
@@ -485,6 +542,7 @@
     async function abrirPainel(aba) {
         if (!ehAdmin()) { toast('🔒 Só administradores.', 'warning'); return; }
         abaAtual = aba || 'regras';
+        if (!regraEditandoId) { escadaDraft = []; overridesDraft = {}; previewToken = null; }
         garantirOverlay().classList.remove('hidden');
         const corpo = document.querySelector('#rnModal .rn-corpo');
         if (corpo) corpo.innerHTML = `<div class="rn-vazio">Carregando…</div>`;
@@ -522,15 +580,21 @@
     }
 
     function renderRegras(corpo) {
-        const escopo = lerFiltroAtual();
+        const regraAtual = regraEditandoId ? regrasCache.find(x => x.id === regraEditandoId) : null;
+        const escopo = regraAtual || lerFiltroAtual();
         const produtos = produtosDoEscopo(escopo);
         const temFiltro = temEscopo(escopo);
-        if (!escadaDraft.length) escadaDraft = montarEscadaDraft(5);
+        if (!escadaDraft.length) escadaDraft = montarEscadaDraft(regraAtual ? (regraAtual.gatilho_qtd || 5) : 5, regraAtual ? regraAtual.escada : []);
 
         corpo.innerHTML = `
             <fieldset>
-                <legend>Nova regra</legend>
-                <label>Escopo — vem do que está selecionado / filtrado na tabela agora</label>
+                <legend>${regraAtual ? 'Editar regra' : 'Nova regra'}</legend>
+                ${regraAtual ? `
+                    <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                        <span>Editando <strong>${esc(regraAtual.nome || 'regra')}</strong> — o escopo é o que foi salvo na criação.</span>
+                        <button type="button" class="rn-btn rn-btn-sec" id="rnCancelarEdicao" style="padding:4px 10px;font-size:12px;">Cancelar edição</button>
+                    </div>` : ''}
+                <label>Escopo ${regraAtual ? '(salvo nesta regra)' : '— vem do que está selecionado / filtrado na tabela agora'}</label>
                 <div class="rn-escopo-box">
                     ${temFiltro
                         ? esc(descreverEscopoObj(escopo))
@@ -548,8 +612,8 @@
 
                 <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                     <button type="button" class="rn-btn rn-btn-sec" id="rnPuxarPrecos">Puxar preços atuais do ML</button>
-                    <input type="text" id="rnNomeRegra" placeholder="Nome da regra (opcional)" style="flex:1;min-width:160px;">
-                    <button type="button" class="rn-btn rn-btn-primary" id="rnCriar">Criar regra</button>
+                    <input type="text" id="rnNomeRegra" placeholder="Nome da regra (opcional)" value="${esc(regraAtual ? (regraAtual.nome || '') : '')}" style="flex:1;min-width:160px;">
+                    <button type="button" class="rn-btn rn-btn-primary" id="rnCriar">${regraAtual ? 'Salvar alterações' : 'Criar regra'}</button>
                 </div>
             </fieldset>
 
@@ -568,10 +632,37 @@
             renderPreview(corpo, produtos);
         });
         corpo.querySelector('#rnPuxarPrecos').addEventListener('click', () => renderPreview(corpo, produtos, true));
-        corpo.querySelector('#rnCriar').addEventListener('click', () => criarRegra(corpo, temFiltro));
+        corpo.querySelector('#rnCriar').addEventListener('click', () => salvarRegra(corpo, temFiltro, regraAtual));
+        if (regraAtual) corpo.querySelector('#rnCancelarEdicao').addEventListener('click', cancelarEdicao);
 
-        renderPreview(corpo, produtos);
+        // delegação: edição manual do preço calculado, direto no preview
+        const previewBox = corpo.querySelector('#rnPreview');
+        previewBox.addEventListener('change', e => {
+            if (!e.target.classList.contains('rn-override-input')) return;
+            const tr = e.target.closest('tr');
+            const mlb = tr.dataset.mlb, nivel = tr.dataset.nivel;
+            overridesDraft[mlb] = overridesDraft[mlb] || {};
+            overridesDraft[mlb][nivel] = e.target.value === '' ? '' : round2(e.target.value);
+            renderPreview(corpo, produtos, false);
+        });
+        previewBox.addEventListener('click', e => {
+            if (!e.target.classList.contains('rn-limpar-override')) return;
+            const tr = e.target.closest('tr');
+            const mlb = tr.dataset.mlb, nivel = tr.dataset.nivel;
+            if (overridesDraft[mlb]) delete overridesDraft[mlb][nivel];
+            renderPreview(corpo, produtos, false);
+        });
+
+        // escopo pequeno -> já puxa os preços do ML sozinho, sem precisar clicar
+        renderPreview(corpo, produtos, produtos.length > 0 && produtos.length <= 15);
         renderListaRegras(corpo);
+    }
+
+    function cancelarEdicao() {
+        regraEditandoId = null;
+        escadaDraft = [];
+        overridesDraft = {};
+        render();
     }
 
     function renderTabelaEscada(corpo) {
@@ -629,37 +720,75 @@
         if (!produtos.length) { box.innerHTML = ''; return; }
 
         if (puxar && !previewToken) previewToken = await obterTokenML();
-        box.innerHTML = `<h4 style="margin:10px 0 6px;">Preview (${produtos.length} produto${produtos.length > 1 ? 's' : ''})</h4>` +
-            (await Promise.all(produtos.slice(0, 40).map(async p => {
-                const mlbs = mlbsDoProduto(p);
-                const linhasMlb = await Promise.all(mlbs.map(async mlb => {
-                    let preco = precoMLBCache[mlb] ? precoMLBCache[mlb].preco : null;
-                    if (preco == null && puxar && previewToken) preco = await precoAtualMLB(mlb, previewToken);
-                    const base = preco != null ? preco : null;
-                    const escadaHtml = base != null
-                        ? escadaDraft.map(d => `nv${d.nivel}: ${fmtBRL(precoNoNivel(base, escadaDraft, d.nivel))}`).join(' · ')
-                        : '<em>clique em "Puxar preços atuais do ML"</em>';
-                    return `<div class="rn-mlb" ${base != null ? `data-preco-atual="${base}"` : ''}>${esc(mlb)} — atual: ${base != null ? fmtBRL(base) : '?'}</div>
-                            <div style="font-size:11px;color:#64748b;">${escadaHtml}</div>`;
-                }));
-                return `<details class="rn-prod">
-                    <summary>${esc(p.sku || '')} · estoque ${p.quantidade} · ${esc(p.nome || '')}</summary>
-                    <div class="rn-prod-body">${mlbs.length ? linhasMlb.join('') : '<em style="font-size:12px;color:#94a3b8;">sem anúncios (mlb_codes)</em>'}</div>
-                </details>`;
-            }))).join('');
+        const limite = 40;
+        const abrirDeCara = produtos.length <= 15;
+        const blocos = await Promise.all(produtos.slice(0, limite).map(async p => {
+            const mlbs = mlbsDoProduto(p);
+            const mlbBlocos = await Promise.all(mlbs.map(async mlb => {
+                let preco = precoMLBCache[mlb] ? precoMLBCache[mlb].preco : null;
+                if (preco == null && puxar && previewToken) preco = await precoAtualMLB(mlb, previewToken);
+                return montarBlocoMlb(mlb, preco);
+            }));
+            const resumoMlb = mlbs.length
+                ? ` · ${mlbs.length} MLB${mlbs.length > 1 ? 's' : ''}: ${esc(mlbs.join(', '))}`
+                : ' · sem anúncio vinculado';
+            return `<details class="rn-prod" ${abrirDeCara ? 'open' : ''}>
+                <summary>${esc(p.sku || '')} · estoque ${p.quantidade} · ${esc(p.nome || '')}<span style="font-weight:400;color:#64748b;">${resumoMlb}</span></summary>
+                <div class="rn-prod-body">${mlbs.length ? mlbBlocos.join('') : '<em style="font-size:12px;color:#94a3b8;">sem anúncios (mlb_codes)</em>'}</div>
+            </details>`;
+        }));
+        box.innerHTML = `<h4 style="margin:10px 0 6px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                <span>Preview (${produtos.length} produto${produtos.length > 1 ? 's' : ''}${produtos.length > limite ? ' — mostrando os primeiros ' + limite : ''})</span>
+                ${produtos.length > 1 ? `<span>
+                    <button type="button" class="rn-btn rn-btn-sec" id="rnAbrirTudo" style="padding:4px 10px;font-size:12px;">Abrir todos</button>
+                    <button type="button" class="rn-btn rn-btn-sec" id="rnFecharTudo" style="padding:4px 10px;font-size:12px;">Fechar todos</button>
+                </span>` : ''}
+            </h4>
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Cada produto mostra o MLB e o preço atual + o preço calculado em cada nível. Edite o preço de qualquer nível pra ajustar manualmente — os níveis abaixo dele recalculam a partir do valor que você colocou.</div>`
+            + blocos.join('');
         atualizarPrecosRef(corpo);
+
+        const btnAbrir = box.querySelector('#rnAbrirTudo');
+        const btnFechar = box.querySelector('#rnFecharTudo');
+        if (btnAbrir) btnAbrir.addEventListener('click', () => box.querySelectorAll('details.rn-prod').forEach(d => { d.open = true; }));
+        if (btnFechar) btnFechar.addEventListener('click', () => box.querySelectorAll('details.rn-prod').forEach(d => { d.open = false; }));
+    }
+
+    // um MLB = uma escada própria (mesmos degraus, preço-base diferente,
+    // e pode ter ajustes manuais por nível salvos em overridesDraft[mlb])
+    function montarBlocoMlb(mlb, precoAtual) {
+        if (precoAtual == null) {
+            return `<div class="rn-mlb">${esc(mlb)} — atual: ?</div>
+                <div style="font-size:11px;color:#64748b;margin-bottom:10px;"><em>clique em "Puxar preços atuais do ML"</em></div>`;
+        }
+        const overMlb = overridesDraft[mlb] || {};
+        const linhas = escadaDraft.map(d => {
+            const val = precoNoNivel(precoAtual, escadaDraft, d.nivel, overMlb);
+            const chaveNivel = String(d.nivel);
+            const temOverride = overMlb[chaveNivel] != null && overMlb[chaveNivel] !== '';
+            return `<tr data-mlb="${esc(mlb)}" data-nivel="${d.nivel}">
+                <td>${d.nivel}</td>
+                <td><input type="number" step="0.01" class="rn-override-input" value="${val}"
+                    style="${temOverride ? 'border-color:#7c3aed;font-weight:700;color:#7c3aed;' : ''}"></td>
+                <td>${temOverride ? '<button type="button" class="rn-limpar-override" title="Voltar ao calculado">✕</button>' : ''}</td>
+            </tr>`;
+        }).join('');
+        return `<div class="rn-mlb" data-preco-atual="${precoAtual}">${esc(mlb)} — atual: ${fmtBRL(precoAtual)}</div>
+            <table class="rn-escada" style="margin-bottom:12px;"><tr><th>Nível</th><th>Preço</th><th></th></tr>${linhas}</table>`;
     }
 
     function renderListaRegras(corpo) {
         const lista = corpo.querySelector('#rnListaRegras');
         if (!lista) return;
         if (!regrasCache.length) { lista.innerHTML = `<div class="rn-vazio">Nenhuma regra criada.</div>`; return; }
+        const temOverrides = r => r.overrides && Object.values(r.overrides).some(m => m && Object.keys(m).length);
         lista.innerHTML = regrasCache.map(r => `
             <div class="rn-regra ${r.ativo ? '' : 'off'}" data-id="${r.id}">
                 <h4 style="margin:0 0 4px;font-size:14px;">${esc(r.nome || 'Regra')} — gatilho: estoque ${r.gatilho_qtd}</h4>
                 <div style="font-size:12px;color:#64748b;">Escopo: ${esc(descreverEscopoObj(r))}</div>
-                <div style="font-size:12px;color:#64748b;">Escada: ${esc(descreverEscada(r.escada))}</div>
+                <div style="font-size:12px;color:#64748b;">Escada: ${esc(descreverEscada(r.escada))}${temOverrides(r) ? ' · <span style="color:#7c3aed;font-weight:600;">tem ajustes manuais</span>' : ''}</div>
                 <div class="rn-acoes">
+                    <button data-a="editar">Ajustar preços</button>
                     <button data-a="toggle">${r.ativo ? 'Pausar' : 'Ativar'}</button>
                     <button data-a="rodar">Verificar agora</button>
                     <button data-a="excluir">Excluir</button>
@@ -670,21 +799,57 @@
             el.querySelectorAll('button[data-a]').forEach(b => b.addEventListener('click', () => {
                 if (b.dataset.a === 'toggle') toggleRegra(id);
                 else if (b.dataset.a === 'excluir') excluirRegra(id);
+                else if (b.dataset.a === 'editar') iniciarEdicao(id);
                 else { toast('Verificando…'); avaliarRegras({ forcar: true }).then(() => { toast('Pronto.', 'success'); render(); }); }
             }));
         });
     }
 
-    async function criarRegra(corpo, temFiltro) {
+    function iniciarEdicao(id) {
+        const r = regrasCache.find(x => x.id === id);
+        if (!r) return;
+        regraEditandoId = id;
+        escadaDraft = (r.escada || []).map(d => ({ ...d }));
+        overridesDraft = JSON.parse(JSON.stringify(r.overrides || {}));
+        previewToken = null;
+        render();
+        const corpo = document.querySelector('#rnModal .rn-corpo');
+        if (corpo) corpo.scrollTop = 0;
+    }
+
+    async function salvarRegra(corpo, temFiltro, regraExistente) {
         const cli = sb();
         if (!cli) { toast('Sem conexão.', 'error'); return; }
+        if (!escadaDraft.length) { toast('Monte a escada primeiro.', 'warning'); return; }
+        const gatilho = escadaDraft[0].nivel;
+        const escadaFinal = escadaDraft.map(d => ({ nivel: d.nivel, modo: d.modo, valor: Number(d.valor) || 0 }));
+        const overridesFinal = limparOverrides(overridesDraft);
+        const nomeInformado = (corpo.querySelector('#rnNomeRegra').value || '').trim();
+
+        // ---- editando uma regra que já existe ----
+        if (regraExistente) {
+            const { error } = await cli.from('regras_nivel_estoque').update({
+                gatilho_qtd: gatilho,
+                escada: escadaFinal,
+                overrides: overridesFinal,
+                nome: nomeInformado || regraExistente.nome,
+                atualizado_em: new Date().toISOString()
+            }).eq('id', regraExistente.id);
+            if (error) { toast('Erro ao salvar: ' + error.message, 'error'); return; }
+            toast('✅ Regra atualizada. Verificando os produtos…', 'success');
+            regraEditandoId = null;
+            escadaDraft = []; overridesDraft = {};
+            await carregarRegras();
+            render();
+            avaliarRegras({ forcar: true }).then(() => render());
+            return;
+        }
+
+        // ---- criando uma regra nova ----
         const escopo = lerFiltroAtual();
         if (!temEscopo(escopo) && !confirm('Nada selecionado nem filtrado — a regra vai valer para TODOS os produtos. Continuar?')) return;
-        if (!escadaDraft.length) { toast('Monte a escada primeiro.', 'warning'); return; }
 
-        const gatilho = escadaDraft[0].nivel;
-        const nome = (corpo.querySelector('#rnNomeRegra').value || '').trim()
-            || `${descreverEscopoObj(escopo)} · gatilho ${gatilho}`.slice(0, 90);
+        const nome = nomeInformado || `${descreverEscopoObj(escopo)} · gatilho ${gatilho}`.slice(0, 90);
 
         const jaNoGatilho = produtosDoEscopo(escopo).filter(p => (Number(p.quantidade) || 0) <= gatilho);
         if (jaNoGatilho.length && !confirm(
@@ -698,11 +863,13 @@
             escopo_custo_op: escopo.custo_op, escopo_custo_valor: escopo.custo_valor,
             escopo_qtd_op: escopo.qtd_op, escopo_qtd_valor: escopo.qtd_valor,
             gatilho_qtd: gatilho,
-            escada: escadaDraft.map(d => ({ nivel: d.nivel, modo: d.modo, valor: Number(d.valor) || 0 })),
+            escada: escadaFinal,
+            overrides: overridesFinal,
             criado_por: (window.currentUser && window.currentUser.name) || 'admin'
         }]);
         if (error) { toast('Erro ao criar: ' + error.message, 'error'); return; }
         toast('✅ Regra criada. Verificando os produtos…', 'success');
+        escadaDraft = []; overridesDraft = {};
         await carregarRegras();
         render();
         avaliarRegras({ forcar: true }).then(() => render());
@@ -775,11 +942,12 @@
             if (!window.currentUser || !ehAdmin()) return;
             garantirSino();
             atualizarSino();
+            // roda em QUALQUER tela — o alerta tem que funcionar mesmo
+            // que a pessoa esteja só na tela inicial (o throttle interno
+            // de 45s evita ficar batendo no banco/ML toda hora).
+            avaliarRegras();
             const sistema = document.getElementById('estoqueGestaoSystem');
-            if (sistema && !sistema.classList.contains('hidden')) {
-                garantirBotaoToolbar();
-                if (getProdutos().length) avaliarRegras();
-            }
+            if (sistema && !sistema.classList.contains('hidden')) garantirBotaoToolbar();
         }, 3000);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

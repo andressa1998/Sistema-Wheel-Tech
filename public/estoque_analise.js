@@ -361,18 +361,19 @@
     }
 
     // cor da PROJEÇÃO conforme os intervalos pedidos:
-    // <1sem, 2sem, 1mês, 2m, 3m, 6m, 1a, 2a  (verde -> vermelho conforme demora)
+    // <1sem, 2sem, 1mês, 2m, 3m, 6m, 1a, 2a — roxo escuro (vende rápido)
+    // clareando conforme demora mais pra vender.
     function corProjecao(dias) {
         if (dias == null) return '#adb5bd';
-        if (dias < 7) return '#0b8043';
-        if (dias < 14) return '#43a047';
-        if (dias < 30) return '#7cb342';
-        if (dias < 60) return '#c0ca33';
-        if (dias < 90) return '#f9a825';
-        if (dias < 180) return '#fb8c00';
-        if (dias < 365) return '#f4511e';
-        if (dias < 730) return '#e53935';
-        return '#b71c1c';
+        if (dias < 7) return '#2e1065';
+        if (dias < 14) return '#3f0f91';
+        if (dias < 30) return '#4c1d95';
+        if (dias < 60) return '#5b21b6';
+        if (dias < 90) return '#6d28d9';
+        if (dias < 180) return '#7c3aed';
+        if (dias < 365) return '#8b5cf6';
+        if (dias < 730) return '#a78bfa';
+        return '#c4b5fd';
     }
 
     function iconeOrdenacao(col) {

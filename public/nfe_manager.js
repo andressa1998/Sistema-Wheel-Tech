@@ -14535,174 +14535,9 @@ function montarFiltroCabecalhoNFE(
     coluna
 ) {
 
-    const valorAtual =
-        window
-            ._filtrosColunasNFE[
-                coluna.id
-            ] ||
-        '';
-
-
-    if (
-        coluna.id ===
-        'modalidade'
-    ) {
-
-        const atual =
-            window
-                ._filtroModalidadeNFE ||
-            'todas';
-
-
-        return `
-            <select
-                class="form-control"
-                onclick="event.stopPropagation()"
-                onchange="
-                    alterarFiltroModalidadeNFE(
-                        this.value
-                    )
-                "
-                style="
-                    height:27px;
-                    padding:2px 4px !important;
-                    font-size:10px !important;
-                    margin-top:4px;
-                    min-width:95px;
-                "
-            >
-                <option
-                    value="todas"
-                    ${
-                        atual ===
-                            'todas'
-                            ? 'selected'
-                            : ''
-                    }
-                >
-                    Todas
-                </option>
-
-                <option
-                    value="full"
-                    ${
-                        atual ===
-                            'full'
-                            ? 'selected'
-                            : ''
-                    }
-                >
-                    FULL
-                </option>
-
-                <option
-                    value="me"
-                    ${
-                        atual ===
-                            'me'
-                            ? 'selected'
-                            : ''
-                    }
-                >
-                    ME
-                </option>
-            </select>
-        `;
-    }
-
-
-    if (
-        coluna.id ===
-        'separado'
-    ) {
-
-        return `
-            <select
-                class="form-control"
-                onclick="event.stopPropagation()"
-                onchange="
-                    alterarFiltroColunaNFE(
-                        'separado',
-                        this.value
-                    )
-                "
-                style="
-                    height:27px;
-                    padding:2px 4px !important;
-                    font-size:10px !important;
-                    margin-top:4px;
-                    min-width:100px;
-                "
-            >
-                <option value="">
-                    Todos
-                </option>
-
-                <option
-                    value="separado"
-                    ${
-                        valorAtual ===
-                            'separado'
-                            ? 'selected'
-                            : ''
-                    }
-                >
-                    Separados
-                </option>
-
-                <option
-                    value="pendente"
-                    ${
-                        valorAtual ===
-                            'pendente'
-                            ? 'selected'
-                            : ''
-                    }
-                >
-                    Pendentes
-                </option>
-            </select>
-        `;
-    }
-
-
-    if (
-        [
-            'foto',
-            'acoes'
-        ].includes(
-            coluna.id
-        )
-    ) {
-
-        return '';
-    }
-
-
-    return `
-        <input
-            type="text"
-            class="form-control"
-            value="${escaparHTMLNFE(
-                valorAtual
-            )}"
-            placeholder="Filtrar..."
-            onclick="event.stopPropagation()"
-            oninput="
-                alterarFiltroColunaNFE(
-                    '${coluna.id}',
-                    this.value
-                )
-            "
-            style="
-                height:27px;
-                padding:2px 5px !important;
-                font-size:10px !important;
-                margin-top:4px;
-                min-width:75px;
-            "
-        >
-    `;
+    // Removido a pedido: os campos de filtro abaixo de cada coluna
+    // não são mais exibidos (o usuário prefere usar Ctrl+F do navegador).
+    return '';
 }
 
 
@@ -15171,6 +15006,29 @@ function aplicarPreferenciasColunasNFE() {
                 coluna.id
         );
 
+    // Reordenar/ocultar colunas exige, por linha, montar um Map de
+    // células e mover cada <td> com appendChild — com ~2000 vendas
+    // (aba FULL) isso é caro. Na configuração padrão (usuário não
+    // reordenou nem ocultou nenhuma coluna) esse trabalho não muda
+    // nada visualmente, então é seguro pular por completo.
+    //
+    // Importante: se alguma coluna JÁ foi ocultada nesta sessão (ex.:
+    // usuário ocultou e depois clicou "mostrar todas"), continuamos
+    // sempre passando por aqui — mesmo com "ocultas" vazio agora —
+    // para garantir que o display:none antigo de células de linhas
+    // já renderizadas seja mesmo revertido.
+    if (ocultas.size > 0) {
+        window._algumaColunaJaFoiOcultadaNFE = true;
+    }
+
+    const precisaReordenarOuOcultarColunas =
+        ocultas.size > 0 ||
+        window._algumaColunaJaFoiOcultadaNFE ||
+        ordem.length !== ordemPadrao.length ||
+        ordem.some(
+            (id, i) => id !== ordemPadrao[i]
+        );
+
 
     const mapaVendas =
         new Map();
@@ -15596,6 +15454,17 @@ function aplicarPreferenciasColunasNFE() {
                 // =============================================
                 // REORDENAR
                 // =============================================
+                // Só entra aqui se o usuário realmente reordenou ou
+                // ocultou alguma coluna — na configuração padrão, as
+                // células já nascem na ordem certa e nada está oculto.
+
+                if (
+                    !precisaReordenarOuOcultarColunas
+                ) {
+
+                    return;
+                }
+
 
                 const mapaCells =
                     new Map(
@@ -15689,6 +15558,14 @@ function aplicarPreferenciasColunasNFE() {
                 ${visiveis}/${COLUNAS_VENDAS_NFE.length}
             </span>
         `;
+    }
+
+    // Redimensionamento manual de colunas (estilo Excel). Esta função é
+    // chamada toda vez que o cabeçalho é reconstruído, reordenado ou tem
+    // colunas ocultadas/exibidas, então é o lugar certo para (re)aplicar
+    // as alças de arraste com os índices/larguras corretos.
+    if (typeof window.ativarRedimensionamentoColunas === 'function') {
+        window.ativarRedimensionamentoColunas('tabelaVendasPendentes');
     }
 }
 
@@ -22054,6 +21931,28 @@ function atualizarPainelNFEIncremental() {
     // =====================================================
     // ADICIONAR / ATUALIZAR SOMENTE AS QUE MUDARAM
     // =====================================================
+    // A tabela é paginada (ver obterPaginaAtualVendasNFE): só as
+    // vendas da página atual têm uma <tr> desenhada de propósito.
+    // Sem este filtro, todo item de "filtradas" que não está com a
+    // página atual na tela (ex.: ~1900 de ~2000 na aba FULL) seria
+    // tratado como "linha faltando" e uma <tr> nova seria criada pra
+    // cada um — travando o navegador. As vendas fora da página atual
+    // simplesmente não são tocadas aqui (não são removidas nem
+    // recriadas); trocar de página já refaz o render completo.
+
+    const idsPaginaAtualNFE =
+        new Set(
+            obterPaginaAtualVendasNFE(filtradas)
+                .map(
+                    venda =>
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        )
+                )
+                .filter(Boolean)
+        );
+
 
     for (
         const venda
@@ -22068,6 +21967,17 @@ function atualizarPainelNFEIncremental() {
 
 
         if (!id) {
+            continue;
+        }
+
+
+        if (
+            !mapaLinhas.has(id) &&
+            !idsPaginaAtualNFE.has(id)
+        ) {
+
+            // Não está na tela e não pertence à página atual —
+            // nada a fazer.
             continue;
         }
 
@@ -43779,6 +43689,145 @@ function agendarVerificacaoConcorrentesFinalNFE() {
         );
 }
 
+// =========================================================
+// PAGINAÇÃO DA TABELA DE VENDAS (evita renderizar milhares de
+// linhas de uma vez — a aba "FULL" chega a ter ~2000 vendas, e
+// isso travava a rolagem/interação mesmo com content-visibility).
+// =========================================================
+// Defensivo: cada função que usa isto garante a própria inicialização
+// (obterEstadoPaginacaoVendasNFE), em vez de depender de uma única
+// atribuição no topo do arquivo — nfe_manager.js pode ser recarregado
+// ou este trecho pode ser alcançado antes de outra inicialização top-
+// level rodar, dependendo da ordem de carregamento.
+function obterEstadoPaginacaoVendasNFE() {
+    if (!window._paginacaoVendasNFE) {
+        window._paginacaoVendasNFE = {
+            pagina: 1,
+            porPagina: 100,
+            assinatura: ''
+        };
+    }
+    return window._paginacaoVendasNFE;
+}
+
+function obterAssinaturaListaVendasNFE(lista) {
+    if (!lista || !lista.length) return '0';
+    const ids = lista.map(
+        v => v.id_venda_ml || v.id || ''
+    );
+    return lista.length + '|' + ids.slice(0, 3).join(',') + '|' + ids.slice(-3).join(',');
+}
+
+// Retorna só a "página" atual da lista completa. Se a lista mudou de
+// verdade (filtro/data diferente), volta pra página 1; se é a "mesma"
+// lista sendo re-renderizada (ex.: sincronização em segundo plano),
+// mantém a página em que o usuário estava.
+function obterPaginaAtualVendasNFE(listaCompleta) {
+    const estado = obterEstadoPaginacaoVendasNFE();
+    const assinatura = obterAssinaturaListaVendasNFE(listaCompleta);
+
+    if (assinatura !== estado.assinatura) {
+        estado.assinatura = assinatura;
+        estado.pagina = 1;
+    }
+
+    const totalPaginas = Math.max(1, Math.ceil(listaCompleta.length / estado.porPagina));
+    if (estado.pagina > totalPaginas) {
+        estado.pagina = totalPaginas;
+    }
+
+    const inicio = (estado.pagina - 1) * estado.porPagina;
+    return listaCompleta.slice(inicio, inicio + estado.porPagina);
+}
+
+// Chamada pelos botões de "Anterior"/"Próxima"/número de página.
+window.irParaPaginaVendasNFE = function(novaPagina) {
+    const estado = obterEstadoPaginacaoVendasNFE();
+    const listaCompleta = window._vendasParaPaginarNFE || [];
+    const totalPaginas = Math.max(1, Math.ceil(listaCompleta.length / estado.porPagina));
+
+    novaPagina = Math.max(1, Math.min(totalPaginas, novaPagina));
+    if (novaPagina === estado.pagina) return;
+
+    estado.pagina = novaPagina;
+
+    // Re-renderiza usando a MESMA lista original de entrada — a
+    // assinatura não muda, então a página que acabamos de ajustar é
+    // preservada, e só a fatia de linhas desenhadas troca.
+    renderizarVendasNFETabela(window._vendasTabelaNFEBase);
+
+    const tabela = document.getElementById('tabelaVendasPendentes');
+    if (tabela) {
+        tabela.scrollIntoView({ block: 'nearest' });
+    }
+};
+
+function renderizarControlesPaginacaoNFE(totalItens) {
+    const tbody = document.getElementById('vendasPendentesBody');
+    const tabela = tbody ? tbody.closest('table') : null;
+    const wrapper = tabela ? tabela.closest('.table-responsive') : null;
+    if (!wrapper) return;
+
+    const estado = obterEstadoPaginacaoVendasNFE();
+    const totalPaginas = Math.max(1, Math.ceil(totalItens / estado.porPagina));
+    const inicio = totalItens === 0 ? 0 : (estado.pagina - 1) * estado.porPagina + 1;
+    const fim = Math.min(totalItens, estado.pagina * estado.porPagina);
+
+    let container = document.getElementById('paginacaoVendasNFE');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'paginacaoVendasNFE';
+        container.style.cssText = `
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            flex-wrap:wrap;
+            padding:10px 4px;
+            font-size:13px;
+        `;
+        wrapper.parentNode.insertBefore(container, wrapper);
+    }
+
+    if (totalPaginas <= 1) {
+        container.innerHTML = totalItens
+            ? `<span>${totalItens} venda(s)</span>`
+            : '';
+        return;
+    }
+
+    container.innerHTML = `
+        <span>Mostrando ${inicio}–${fim} de ${totalItens} venda(s)</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+            <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                onclick="irParaPaginaVendasNFE(1)"
+                ${estado.pagina === 1 ? 'disabled' : ''}
+            >«</button>
+            <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                onclick="irParaPaginaVendasNFE(${estado.pagina - 1})"
+                ${estado.pagina === 1 ? 'disabled' : ''}
+            >‹ Anterior</button>
+            <span>Página ${estado.pagina} de ${totalPaginas}</span>
+            <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                onclick="irParaPaginaVendasNFE(${estado.pagina + 1})"
+                ${estado.pagina === totalPaginas ? 'disabled' : ''}
+            >Próxima ›</button>
+            <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                onclick="irParaPaginaVendasNFE(${totalPaginas})"
+                ${estado.pagina === totalPaginas ? 'disabled' : ''}
+            >»</button>
+        </div>
+    `;
+}
+
 function renderizarVendasNFETabela(vendas) {
 
     garantirEstiloAlertaExposicaoFullNFE();
@@ -43958,6 +44007,9 @@ function renderizarVendasNFETabela(vendas) {
 
             aplicarEstadosFullTabelaNFE();
         }
+
+
+        renderizarControlesPaginacaoNFE(0);
 
 
         return;
@@ -45176,6 +45228,21 @@ function renderizarVendasNFETabela(vendas) {
                 </span>
             `;
         };
+
+
+    // =====================================================
+    // PAGINAÇÃO
+    // =====================================================
+    // "vendas" aqui já é a lista final (agrupada + filtro de
+    // modalidade). Guardamos ela inteira para os controles de
+    // paginação saberem o total, mas só desenhamos (tbody.innerHTML)
+    // a "página" atual — o restante do sistema (emissão, baixa,
+    // comentários, detalhes) continua usando a lista completa através
+    // de "vendasPendentes", que não é afetada por isto.
+
+    window._vendasParaPaginarNFE = vendas;
+    vendas = obterPaginaAtualVendasNFE(vendas);
+    renderizarControlesPaginacaoNFE(window._vendasParaPaginarNFE.length);
 
 
     // =====================================================

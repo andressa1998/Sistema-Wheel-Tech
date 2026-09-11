@@ -1,0 +1,15 @@
+- cores de aviso:
+
+projeçao de estoque:
+de menos de uma semana
+2 semanas
+1 mes
+2 meses
+3 meses
+6 meses
+1 ano
+2 anos
+
+cada uma dessas é uma cor que pinte na coluna de projeção
+
+- No xml levar em consideraçao o tipo unidade vendida, como o richman que é por groza GZ (144)
