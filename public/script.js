@@ -30063,7 +30063,8 @@ window.verificarVendaAtual = verificarVendaAtual;
         'shippingSystem', 'perguntasSystem', 'nfeSystem', 'entradasSystem',
         'fullSystem', 'estoqueGestaoSystem', 'gerenciamentoAnunciosSystem',
         'promocoesSystem', 'chamadosSystem', 'reclamacoesSystem',
-        'historicoAcessosScreen', 'metaRonaldSystem', 'devolucoesSystem'
+        'historicoAcessosScreen', 'metaRonaldSystem', 'devolucoesSystem',
+        'reclamacoesClientesSystem'
     ];
 
     function elementoVisivel(el) {
