@@ -5413,6 +5413,69 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
                 );
 
 
+            const listaMlbCodes =
+                temMLB
+                    ? (
+                        Array.isArray(
+                            mlbCodes
+                        )
+                            ? mlbCodes
+                            : String(
+                                mlbCodes
+                            ).split(',')
+                    )
+                        .map(
+                            c =>
+                                String(
+                                    c
+                                ).trim()
+                        )
+                        .filter(
+                            Boolean
+                        )
+                    : [];
+
+
+            const mlbLinksHtml =
+                listaMlbCodes
+                    .map(
+                        codigo => {
+
+                            const link =
+                                linkAnuncioMLB(
+                                    codigo
+                                );
+
+                            if (
+                                !link
+                            ) {
+                                return '';
+                            }
+
+                            return `
+                                <a
+                                    href="${link}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style="
+                                        display: block;
+                                        font-size: 11px;
+                                        color: #0d6efd;
+                                        text-decoration: none;
+                                        white-space: nowrap;
+                                    "
+                                    title="Ver anúncio ${escapeHtml(codigo)} como o cliente vê"
+                                >
+                                    <i class="fas fa-external-link-alt" style="font-size: 9px;"></i>
+                                    ${escapeHtml(codigo)}
+                                </a>
+                            `;
+                        }
+                    )
+                    .join('') ||
+                '<span class="text-muted">-</span>';
+
+
             // =================================================
             // CUSTOS
             // =================================================
@@ -5750,8 +5813,7 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             // =================================================
 
             if (
-                temMLB &&
-                podeModificarSync
+                temMLB
             ) {
 
                 botoes += `
@@ -5768,36 +5830,6 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
                             )
                         "
                         title="Sincronizar estoque com ML"
-                    >
-
-                        <i
-                            class="fab fa-mercadolibre"
-                        ></i>
-
-                    </button>
-
-                `;
-
-            }
-
-            else if (
-                temMLB &&
-                !podeModificarSync
-            ) {
-
-                botoes += `
-
-                    <button
-                        class="
-                            btn
-                            btn-sm
-                            btn-secondary
-                        "
-                        disabled
-                        title="
-                            Apenas administradores
-                            podem sincronizar
-                        "
                     >
 
                         <i
@@ -5954,6 +5986,15 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
 
                     </small>
 
+                </td>
+
+
+                <!-- ======================================= -->
+                <!-- MLB -->
+                <!-- ======================================= -->
+
+                <td>
+                    ${mlbLinksHtml}
                 </td>
 
 
@@ -16079,6 +16120,116 @@ const camposPorCategoria = {
 };
 
 // =========================================================
+// LINK PÚBLICO DO ANÚNCIO A PARTIR DE UM CÓDIGO MLB
+// (a mesma página que o cliente vê no Mercado Livre)
+// =========================================================
+
+function linkAnuncioMLB(mlbCode) {
+
+    let digitos =
+        String(mlbCode || '')
+            .trim()
+            .toUpperCase();
+
+    if (
+        digitos.startsWith('MLB')
+    ) {
+
+        digitos =
+            digitos.substring(3);
+
+    }
+
+    digitos =
+        digitos.replace(
+            /[^0-9]/g,
+            ''
+        );
+
+    return digitos
+        ? `https://produto.mercadolivre.com.br/MLB-${digitos}`
+        : null;
+}
+
+// Atualiza a prévia de links clicáveis logo abaixo do campo
+// "Códigos MLB" no cadastro/edição de produto.
+function atualizarLinksMlbCadastro() {
+
+    const campo =
+        document.getElementById(
+            'campo_mlb_codes'
+        );
+
+    const preview =
+        document.getElementById(
+            'linksMlbCadastroPreview'
+        );
+
+    if (
+        !campo ||
+        !preview
+    ) {
+        return;
+    }
+
+    const codigos =
+        String(campo.value || '')
+            .split(',')
+            .map(c => c.trim())
+            .filter(Boolean);
+
+    if (
+        codigos.length === 0
+    ) {
+
+        preview.innerHTML =
+            '';
+
+        return;
+    }
+
+    preview.innerHTML =
+        codigos
+            .map(codigo => {
+
+                const link =
+                    linkAnuncioMLB(codigo);
+
+                if (
+                    !link
+                ) {
+                    return '';
+                }
+
+                return `
+                    <a
+                        href="${link}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="badge"
+                        style="
+                            background: #eef8ff;
+                            color: #0d6efd;
+                            border: 1px solid #b8e2f7;
+                            padding: 4px 8px;
+                            border-radius: 5px;
+                            font-size: 12px;
+                            text-decoration: none;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 4px;
+                        "
+                        title="Ver anúncio ${escapeHtml(codigo)} como o cliente vê"
+                    >
+                        <i class="fas fa-external-link-alt"></i>
+                        ${escapeHtml(codigo)}
+                    </a>
+                `;
+            })
+            .join('');
+}
+
+// =========================================================
 // GERAR CAMPOS DINÂMICOS
 // CATEGORIA + SUBCATEGORIA + ESTOQUE A CAMINHO
 // =========================================================
@@ -16760,6 +16911,48 @@ function gerarCamposDinamicos(
                 div.appendChild(
                     textarea
                 );
+
+
+                // =============================================
+                // LINKS DOS ANÚNCIOS (COMO O CLIENTE VÊ)
+                // Só para o campo de códigos MLB.
+                // =============================================
+
+                if (
+                    campo.nome ===
+                    'mlb_codes'
+                ) {
+
+                    const linksPreview =
+                        document.createElement(
+                            'div'
+                        );
+
+                    linksPreview.id =
+                        'linksMlbCadastroPreview';
+
+                    linksPreview.style.display =
+                        'flex';
+
+                    linksPreview.style.flexWrap =
+                        'wrap';
+
+                    linksPreview.style.gap =
+                        '6px';
+
+                    linksPreview.style.marginTop =
+                        '6px';
+
+                    div.appendChild(
+                        linksPreview
+                    );
+
+                    textarea.addEventListener(
+                        'input',
+                        atualizarLinksMlbCadastro
+                    );
+
+                }
 
 
                 grid.appendChild(
@@ -23856,21 +24049,15 @@ window.sincronizarProdutoML = async function(produtoId) {
     }
     
     const syncBloqueado = produto.bloquear_sync_ml || produto.dados_extra?.bloquear_sync_ml || false;
-    
+
     if (syncBloqueado) {
         showToast(`🔒 Sincronização com ML bloqueada para ${produto.nome}`, 'warning');
         return;
     }
-    
-    const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
-    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
-    
-    if (!podeModificarSync) {
-        showToast('⚠️ Apenas administradores podem sincronizar manualmente', 'warning');
-        return;
-    }
-    
+
+    // Sincronização individual liberada para qualquer usuário logado.
+    // (Bloquear/desbloquear a sincronização automática continua restrito a admins.)
+
     if (window.showToast) showToast(`🔄 Sincronizando estoque (${produto.quantidade}) com ML...`, 'info');
     await sincronizarEstoqueML(produto);
 };
@@ -26526,6 +26713,9 @@ async function abrirModalProdutoEstoque(
 
             }
         );
+
+
+        atualizarLinksMlbCadastro();
 
 
         // =================================================
