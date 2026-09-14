@@ -30631,14 +30631,6 @@ async function processarArquivoXmlFull(input) {
 
 
 function abrirImportacaoXmlFull() {
-    const username = currentUser?.username?.toLowerCase()?.trim() || '';
-    const autorizado = usuariosAutorizadosSync.includes(username) || usuariosAdmin.includes(username);
-
-    if (!autorizado) {
-        showToast('Você não tem permissão para baixar e sincronizar estoques.', 'warning');
-        return;
-    }
-
     let input = document.getElementById('inputImportacaoXmlFull');
 
     if (!input) {
@@ -30658,14 +30650,7 @@ function abrirImportacaoXmlFull() {
 
 
 function adicionarBotaoImportarXmlFull() {
-    const username = currentUser?.username?.toLowerCase()?.trim() || '';
-    const autorizado = usuariosAutorizadosSync.includes(username) || usuariosAdmin.includes(username);
     const existente = document.getElementById('btnImportarXmlFull');
-
-    if (!autorizado) {
-        existente?.remove();
-        return;
-    }
 
     const menu = garantirMenuAcessibilidadeEstoque();
     if (!menu) {
