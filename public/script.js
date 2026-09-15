@@ -8248,8 +8248,14 @@ window.gerarRelatorioReembolsos = async function() {
 // Gerar gráfico de reembolsos (simplificado)
 function gerarGraficoReembolsos(data) {
     const container = document.getElementById('graficoContainer');
-    
+
     if (!data || data.length === 0) {
+        // Placeholder: mantém centralizado (mesmo estilo do HTML original).
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.justifyContent = 'center';
+        container.style.height = '300px';
+
         container.innerHTML = `
             <div style="text-align: center;">
                 <i class="fas fa-chart-bar fa-3x" style="color: #6c757d; opacity: 0.3;"></i>
@@ -8258,6 +8264,15 @@ function gerarGraficoReembolsos(data) {
         `;
         return;
     }
+
+    // Com dados reais: o container não pode ficar com altura fixa nem
+    // centralizado em flex (isso empurrava as barras para cima,
+    // sobrepondo o título "Distribuição por Mês" quando havia mais
+    // meses do que cabiam nos 300px). Aqui ele cresce com o conteúdo.
+    container.style.display = 'block';
+    container.style.alignItems = '';
+    container.style.justifyContent = '';
+    container.style.height = 'auto';
     
     // Agrupar por mês
     const meses = {};

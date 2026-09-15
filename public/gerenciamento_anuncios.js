@@ -2011,6 +2011,13 @@
                         variationId:
                             variation.id,
 
+                        // buildRows só chega até aqui quando
+                        // isFull(item) já deu true (ver mais acima),
+                        // então todo item nesta lista está mesmo
+                        // ativo no FULL neste momento.
+                        ativoNoFull:
+                            true,
+
                         title:
                             item.title ||
                             '-',
@@ -2147,6 +2154,9 @@
 
                     variationId:
                         null,
+
+                    ativoNoFull:
+                        true,
 
                     title:
                         item.title ||
@@ -2768,6 +2778,12 @@
             row.status ||
             null,
 
+        // Confirmado no momento do fetch (isFull(item) em buildRows).
+        ativo_no_full:
+            Boolean(
+                row.ativoNoFull
+            ),
+
         price:
             numeroOuNull(
                 row.price
@@ -2901,6 +2917,17 @@
 
         exposureName:
             '',
+
+        // registro.ativo_no_full pode não existir ainda (coluna nova,
+        // ou linha salva antes de existir/antes do próximo sync) —
+        // nesse caso fica null ("ainda não verificado"), em vez de
+        // presumir true, porque o status de envio FULL pode mudar
+        // com o tempo e presumir errado gera selo enganoso na tela.
+        ativoNoFull:
+            registro.ativo_no_full === undefined ||
+            registro.ativo_no_full === null
+                ? null
+                : Boolean(registro.ativo_no_full),
 
         status:
             registro.status ||
@@ -7906,6 +7933,133 @@ function aplicarSinalizacaoCapaAnuncioGA() {
 }
 
 
+// ============================================================
+// 30+ DIAS SEM VENDER -> ENTRA AUTOMATICAMENTE NA LISTA FIXA
+// "SEMPRE PREMIUM"
+//
+// Antes disso, o sistema só sinalizava (coluna Tipo piscando
+// "Mudar para Premium"), mas quem cadastra o MLB na lista fixa
+// (Gestão de Estoque > Regras > Regras Fixas de Tipo de Anúncio)
+// continuava sendo uma pessoa, manualmente. Agora, assim que um
+// MLB cruza os 30 dias sem vender no FULL e ainda está Clássico,
+// ele é adicionado sozinho à lista "Sempre PREMIUM" (reaproveita
+// window.salvarRegrasFixasTipoAnuncioML, de estoque_gestao.js —
+// a mesma tela/tabela usada quando alguém edita a lista na mão).
+// ============================================================
+
+GA._mlbsVerificadosPremiumFixo =
+    GA._mlbsVerificadosPremiumFixo ||
+    new Set();
+
+function verificarEAdicionarPremiumFixoGA() {
+
+    // Roda só em sessão de admin — é uma escrita automática numa
+    // configuração compartilhada por todo mundo; evita que várias
+    // abas de usuários comuns disparem a mesma checagem à toa.
+    if (
+        !window.currentUser ||
+        String(window.currentUser.role || '').toLowerCase() !== 'administrador'
+    ) {
+        return;
+    }
+
+    if (!Array.isArray(GA.rows) || !GA.rows.length) return;
+
+    const jaVerificados = GA._mlbsVerificadosPremiumFixo;
+    const vistos = new Set();
+    const candidatos = new Set();
+
+    GA.rows.forEach(row => {
+
+        if (!row.itemId || vistos.has(row.itemId)) return;
+        vistos.add(row.itemId);
+
+        if (jaVerificados.has(row.itemId)) return;
+
+        if (gaPrecisaCorrigirTipo(row)) {
+            candidatos.add(row.itemId);
+        }
+    });
+
+    if (!candidatos.size) return;
+
+    // Marca já (otimista) pra não disparar de novo em renders
+    // seguintes enquanto a chamada assíncrona ainda está correndo.
+    candidatos.forEach(mlb => jaVerificados.add(mlb));
+
+    adicionarMLBsNaListaPremiumFixaGA([...candidatos]);
+}
+
+async function adicionarMLBsNaListaPremiumFixaGA(mlbs) {
+
+    if (
+        typeof window.carregarRegrasFixasTipoAnuncioML !== 'function' ||
+        typeof window.salvarRegrasFixasTipoAnuncioML !== 'function'
+    ) {
+        console.warn(
+            '⚠️ Funções de regras fixas de tipo (Clássico/Premium) não disponíveis — carregue a aba Gestão de Estoque ao menos uma vez.'
+        );
+        return;
+    }
+
+    try {
+
+        const atuais =
+            await window.carregarRegrasFixasTipoAnuncioML();
+
+        const classicoAtual =
+            Array.isArray(atuais?.classico) ? atuais.classico : [];
+
+        const premiumAtual =
+            Array.isArray(atuais?.premium) ? atuais.premium : [];
+
+        // Não mexe em quem já está fixo em Clássico (respeita a
+        // regra oposta) nem em quem já está em Premium.
+        const novos =
+            mlbs.filter(mlb =>
+                !classicoAtual.includes(mlb) &&
+                !premiumAtual.includes(mlb)
+            );
+
+        if (!novos.length) return;
+
+        const resultado =
+            await window.salvarRegrasFixasTipoAnuncioML({
+                classico: classicoAtual,
+                premium: [...premiumAtual, ...novos]
+            });
+
+        if (resultado?.success === false) {
+            console.warn(
+                '⚠️ Não foi possível adicionar automaticamente à lista fixa Premium:',
+                resultado.error
+            );
+            return;
+        }
+
+        console.log(
+            `✅ ${novos.length} MLB(s) com 30+ dias sem vender adicionado(s) à lista fixa "Sempre Premium":`,
+            novos
+        );
+
+        if (typeof window.showToast === 'function') {
+            window.showToast(
+                `🔵 ${novos.length} anúncio(s) com mais de 30 dias sem vender no FULL ` +
+                `foram adicionados à lista fixa "Sempre Premium".`,
+                'info'
+            );
+        }
+
+    } catch (erro) {
+
+        console.error(
+            '❌ Erro adicionando MLB(s) à lista fixa Premium:',
+            erro
+        );
+    }
+}
+
+
 function render() {
 
     const body =
@@ -7933,6 +8087,13 @@ function render() {
     // =========================================================
 
     aplicarSinalizacaoCapaAnuncioGA();
+
+
+    // =========================================================
+    // 30+ DIAS SEM VENDER -> LISTA FIXA "SEMPRE PREMIUM"
+    // =========================================================
+
+    verificarEAdicionarPremiumFixoGA();
 
 
     // =========================================================
@@ -8559,6 +8720,8 @@ function render() {
                                         `
                                 }
 
+                                ${gaRenderBadgeStatusFullGA(row)}
+
                             </td>
 
 
@@ -8954,6 +9117,120 @@ function gaPrecisaCorrigirEstoqueDeposito(
     );
 }
 
+
+// ============================================================
+// ESTOQUE "SOBRANDO" NO DEPÓSITO COM O FULL JÁ ABASTECIDO
+//
+// Quando o anúncio já tem estoque disponível no FULL (full > 0),
+// o depósito (fora do FULL) só deveria segurar 1 unidade — o
+// resto precisa ser mandado pro Mercado Livre e a quantidade/
+// exposição do anúncio revisada. Mais de 1 unidade parada nessa
+// situação já é motivo de alerta.
+// ============================================================
+
+function gaPrecisaAjustarQuantidadeExposicao(
+    row
+) {
+
+    if (
+        !row?.ativoNoFull
+    ) {
+
+        return false;
+    }
+
+
+    const estoqueFull =
+        Number(
+            row?.full
+        );
+
+
+    if (
+        !Number.isFinite(
+            estoqueFull
+        ) ||
+        estoqueFull <= 0
+    ) {
+
+        return false;
+    }
+
+
+    if (
+        row?.warehouse === null ||
+        row?.warehouse === undefined
+    ) {
+
+        return false;
+    }
+
+
+    const depositoML =
+        Number(
+            row.warehouse
+        );
+
+
+    if (
+        !Number.isFinite(
+            depositoML
+        )
+    ) {
+
+        return false;
+    }
+
+
+    return (
+        depositoML > 1
+    );
+}
+
+
+// ============================================================
+// SELO "ATIVO NO FULL" DA COLUNA FULL
+//
+// Mostra puramente se o anúncio está OFERECENDO envio FULL ou não
+// (item.shipping.logistic_type === 'fulfillment' — isFull() em
+// buildRows), sem misturar com quantidade de estoque. Só não
+// mostra nada quando o status ainda não foi verificado de verdade
+// (row.ativoNoFull null/undefined — ex.: linha vinda do banco
+// antes desta coluna existir, ainda sem um sync novo confirmando).
+// ============================================================
+
+function gaRenderBadgeStatusFullGA(
+    row
+) {
+
+    if (
+        row.ativoNoFull === undefined ||
+        row.ativoNoFull === null
+    ) {
+
+        return '';
+    }
+
+
+    if (
+        row.ativoNoFull === false
+    ) {
+
+        return `
+            <div style="font-size:10px; font-weight:700; color:#dc3545; margin-top:2px;">
+                <i class="fas fa-times-circle"></i> Não oferece FULL
+            </div>
+        `;
+    }
+
+
+    return `
+        <div style="font-size:10px; font-weight:700; color:#198754; margin-top:2px;">
+            <i class="fas fa-check-circle"></i> Oferece envio FULL
+        </div>
+    `;
+}
+
 // Monta um resumo (para hover) das localizações de estoque que o
 // Mercado Livre retornou para este anúncio, e quando foi a última
 // sincronização — ajuda a diagnosticar um número de depósito que
@@ -9055,6 +9332,95 @@ function gaRenderEstoqueDeposito(
         gaPrecisaCorrigirEstoqueDeposito(
             row
         );
+
+
+    // =========================================================
+    // ATIVO NO FULL COM ESTOQUE SOBRANDO NO DEPÓSITO
+    // =========================================================
+
+    if (
+        gaPrecisaAjustarQuantidadeExposicao(
+            row
+        )
+    ) {
+
+        const urlAjuste =
+            gaUrlModificarAnuncio(
+                row.itemId
+            );
+
+        return `
+
+            <td
+                data-coluna-ga="deposito"
+                class="ga-full-excesso-deposito"
+                style="
+                    text-align:center;
+                "
+            >
+
+                <strong
+                    style="
+                        font-size:20px;
+                        color:#fd7e14;
+                    "
+                    title="${esc(gaTituloDetalheEstoqueDeposito(row))}"
+                >
+                    ${esc(estoqueDeposito)}
+                </strong>
+
+
+                <div class="ga-alerta-estoque" style="color:#fd7e14;">
+
+                    <i class="fas fa-exclamation-triangle"></i>
+
+                    Ativo no FULL com estoque parado
+
+                    <br>
+
+                    Ajustar quantidade/exposição
+
+                </div>
+
+
+                <div class="ga-acoes-correcao-estoque">
+
+                    <a
+                        href="${esc(urlAjuste)}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="ga-link-corrigir-estoque"
+                        style="color:#fd7e14;"
+                    >
+
+                        <i class="fas fa-edit"></i>
+
+                        Modificar anúncio
+
+                    </a>
+
+
+                    <button
+                        type="button"
+                        class="ga-btn-corrigido-estoque"
+                        onclick="verificarCorrecaoQuantidadeExposicaoAnuncio(
+                            '${esc(row.itemId)}',
+                            '${esc(row.variationId || '')}',
+                            this
+                        )"
+                    >
+
+                        <i class="fas fa-check"></i>
+
+                        Corrigido
+
+                    </button>
+
+                </div>
+
+            </td>
+        `;
+    }
 
 
     // =========================================================
@@ -11690,6 +12056,10 @@ function exportarCSV() {
                     null;
 
 
+                row.ativoNoFull =
+                    isFull(item);
+
+
                 row.permalink =
                     item.permalink ||
                     row.permalink;
@@ -12153,6 +12523,10 @@ function exportarCSV() {
                     null;
 
 
+                row.ativoNoFull =
+                    isFull(item);
+
+
                 row.permalink =
                     item.permalink ||
                     row.permalink;
@@ -12468,6 +12842,373 @@ function exportarCSV() {
 
             console.error(
                 `❌ Erro verificando estoque de ${mlb}:`,
+                error
+            );
+
+
+            window.showToast?.(
+
+                `Erro ao verificar ${mlb}: ${
+                    error?.message ||
+                    'Erro desconhecido'
+                }`,
+
+                'error'
+            );
+
+
+        } finally {
+
+            if (
+                botao &&
+                document.body.contains(
+                    botao
+                )
+            ) {
+
+                botao.disabled =
+                    false;
+
+
+                botao.innerHTML =
+                    htmlOriginal;
+            }
+        }
+    };
+
+
+    // ============================================================
+    // "CORRIGIDO" DO ALERTA "ATIVO NO FULL COM ESTOQUE SOBRANDO"
+    //
+    // Mesma sequência de re-sincronização de verificarCorrecaoEstoqueAnuncio
+    // (busca o MLB de novo, atualiza estoque/tipo/capa, salva),
+    // mas a confirmação final checa a condição OPOSTA (depósito
+    // acima de 2 com o anúncio ativo no FULL) — por isso não dá
+    // pra reaproveitar aquela função direto, ela sempre confirmaria
+    // sucesso pra este caso sem checar nada.
+    // ============================================================
+
+    window.verificarCorrecaoQuantidadeExposicaoAnuncio =
+    async function (
+        itemId,
+        variationId = '',
+        botao = null
+    ) {
+
+        const mlb =
+            String(
+                itemId || ''
+            ).trim();
+
+
+        const variacaoAlvo =
+            String(
+                variationId || ''
+            ).trim();
+
+
+        if (!mlb) {
+
+            return;
+        }
+
+
+        const htmlOriginal =
+            botao?.innerHTML ||
+            'Corrigido';
+
+
+        if (botao) {
+
+            botao.disabled =
+                true;
+
+
+            botao.innerHTML = `
+
+                <i class="fas fa-spinner fa-spin"></i>
+
+                Verificando...
+            `;
+        }
+
+
+        try {
+
+            const item =
+                await ml(
+                    `/items/${encodeURIComponent(mlb)}` +
+                    `?include_attributes=all`
+                );
+
+
+            if (
+                !item?.id
+            ) {
+
+                throw new Error(
+                    'Mercado Livre não retornou o anúncio.'
+                );
+            }
+
+
+            const linhasMlb =
+                GA.rows.filter(
+                    row =>
+                        String(
+                            row.itemId
+                        ) ===
+                        mlb
+                );
+
+
+            if (
+                !linhasMlb.length
+            ) {
+
+                throw new Error(
+                    'MLB não encontrado na tabela.'
+                );
+            }
+
+
+            for (
+                const row
+                of linhasMlb
+            ) {
+
+                row.status =
+                    item.status ||
+                    row.status;
+
+
+                row.listingTypeId =
+                    item.listing_type_id ||
+                    row.listingTypeId;
+
+
+                row.listingTypeName =
+                    gaNomeTipoPorId(
+                        row.listingTypeId
+                    );
+
+
+                row.title =
+                    item.title ||
+                    row.title;
+
+
+                row.thumbnail =
+                    item.thumbnail ||
+                    row.thumbnail;
+
+
+                row.itemCapaPictureId =
+                    item.pictures?.[0]?.id ||
+                    null;
+
+
+                row.ativoNoFull =
+                    isFull(item);
+
+
+                row.permalink =
+                    item.permalink ||
+                    row.permalink;
+
+
+                if (
+                    row.variationId &&
+                    Array.isArray(
+                        item.variations
+                    )
+                ) {
+
+                    const variation =
+                        item.variations.find(
+                            variation =>
+                                String(
+                                    variation.id
+                                ) ===
+                                String(
+                                    row.variationId
+                                )
+                        );
+
+
+                    if (variation) {
+
+                        row.variationPictureIds =
+                            Array.isArray(
+                                variation.picture_ids
+                            )
+                                ? variation.picture_ids
+                                : [];
+                    }
+                }
+            }
+
+
+            try {
+
+                await loadInternalStock();
+
+
+                atualizarEstoqueInternoGerenciamento(
+                    linhasMlb
+                );
+
+            } catch (errorInterno) {
+
+                console.warn(
+                    '⚠️ Não foi possível atualizar estoque interno:',
+                    errorInterno
+                );
+            }
+
+
+            for (
+                const row
+                of linhasMlb
+            ) {
+
+                if (
+                    row.userProductId &&
+                    GA.userProductStockCache
+                ) {
+
+                    GA.userProductStockCache.delete(
+                        row.userProductId
+                    );
+                }
+
+
+                if (
+                    row.userProductId &&
+                    GA.userProductStockPromises
+                ) {
+
+                    GA.userProductStockPromises.delete(
+                        row.userProductId
+                    );
+                }
+
+
+                if (
+                    row.inventoryId &&
+                    GA.inventoryStockCache
+                ) {
+
+                    GA.inventoryStockCache.delete(
+                        row.inventoryId
+                    );
+                }
+            }
+
+
+            await loadFullStocks(
+                linhasMlb
+            );
+
+
+            let linhaAlvo =
+                null;
+
+
+            if (
+                variacaoAlvo
+            ) {
+
+                linhaAlvo =
+                    linhasMlb.find(
+                        row =>
+                            String(
+                                row.variationId ||
+                                ''
+                            ) ===
+                            variacaoAlvo
+                    );
+
+            } else {
+
+                linhaAlvo =
+                    linhasMlb.find(
+                        row =>
+                            !row.variationId
+                    ) ||
+                    linhasMlb[0];
+            }
+
+
+            if (!linhaAlvo) {
+
+                throw new Error(
+                    'Não foi possível identificar a variação verificada.'
+                );
+            }
+
+
+            try {
+
+                await salvarAnunciosBanco(
+                    linhasMlb,
+                    false
+                );
+
+            } catch (errorBanco) {
+
+                console.warn(
+                    `⚠️ Não foi possível salvar ${mlb}:`,
+                    errorBanco
+                );
+            }
+
+
+            updateSummary();
+
+
+            applyFilters(
+                false
+            );
+
+
+            // =================================================
+            // CONFIRMAR SE FOI CORRIGIDO
+            // (condição oposta à do estoque zerado)
+            // =================================================
+
+            if (
+                gaPrecisaAjustarQuantidadeExposicao(
+                    linhaAlvo
+                )
+            ) {
+
+                window.showToast?.(
+
+                    `${mlb} ainda está ativo no FULL com ${Number(linhaAlvo.warehouse)} ` +
+                    `unidade(s) no depósito. Ajuste a quantidade/exposição no anúncio ` +
+                    `e clique novamente em Corrigido.`,
+
+                    'warning'
+                );
+
+
+                return;
+            }
+
+
+            window.showToast?.(
+
+                `${mlb} corrigido. Estoque no depósito: ${Number(linhaAlvo.warehouse)}.`,
+
+                'success'
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                `❌ Erro verificando ${mlb}:`,
                 error
             );
 
