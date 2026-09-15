@@ -3262,7 +3262,6 @@ async function salvarMedidasERecalcular(
             calcularFreteEsperado(
                 valorProduto,
                 peso,
-                item.data_venda,
                 vendaAtual?.data_venda
             );
 

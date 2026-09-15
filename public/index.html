@@ -1243,6 +1243,44 @@ body > * {
 }
 
 /* ============================================================
+   ALERTA - CAPA DO ANÚNCIO NÃO É A VARIAÇÃO FULL CORRETA
+   ============================================================ */
+
+@keyframes gaPiscarCapaCorrecao {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(220,53,69,.6);
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px rgba(220,53,69,0);
+    }
+}
+
+.ga-capa-alerta-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #dc3545;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    text-decoration: none;
+    animation: gaPiscarCapaCorrecao 1s infinite;
+}
+
+.ga-capa-alerta-badge:hover {
+    text-decoration: none;
+    background: #b02a37;
+}
+
+/* ============================================================
    OS - TABELA AMPLA + FILTROS POR COLUNA
    ============================================================ */
 #mainSystem > .container,
@@ -7215,7 +7253,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="script.js?v=20260910-13"></script>
     <script src="ml_token_manager.js"></script>
     <script src="folgas.js?v=20260915-3"></script>
-    <script src="shipping_simple.js?v=20260910-2"></script>
+    <script src="shipping_simple.js?v=20260915-1"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
@@ -7228,7 +7266,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="entradas.js"></script>
     <script src="promocoes_manager.js?v=20260915-1"></script>
     <script src="full_analysis.js"></script>
-    <script src="gerenciamento_anuncios.js?v=20260915-2"></script>
+    <script src="gerenciamento_anuncios.js?v=20260915-3"></script>
     <script src="chamados.js?v=20260915-2"></script>
     <script src="reclamacoes_clientes.js?v=20260916-7"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>

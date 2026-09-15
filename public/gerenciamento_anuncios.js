@@ -1799,6 +1799,8 @@
 
                 'thumbnail',
 
+                'pictures',
+
                 'permalink',
 
                 'status',
@@ -2017,6 +2019,23 @@
                             item.thumbnail ||
                             '',
 
+                        // Id da foto que hoje é a capa do anúncio
+                        // (primeira de item.pictures) e ids das fotos
+                        // que pertencem a ESTA variação — usados só
+                        // para detectar se a capa bate com a
+                        // variação certa (não mudamos nada no ML).
+                        itemCapaPictureId:
+                            item.pictures?.[0]
+                                ?.id ||
+                            null,
+
+                        variationPictureIds:
+                            Array.isArray(
+                                variation.picture_ids
+                            )
+                                ? variation.picture_ids
+                                : [],
+
                         permalink:
                             item.permalink ||
                             '',
@@ -2136,6 +2155,13 @@
                     thumbnail:
                         item.thumbnail ||
                         '',
+
+                    // Sem variação não há o que comparar de capa.
+                    itemCapaPictureId:
+                        null,
+
+                    variationPictureIds:
+                        [],
 
                     permalink:
                         item.permalink ||
@@ -7772,6 +7798,114 @@ function gaRenderTipo(
     `;
 }
 
+// ============================================================
+// CAPA DO ANÚNCIO — SÓ SINALIZA, NÃO MEXE NO MERCADO LIVRE
+//
+// Quando um anúncio tem mais de uma variação, a foto de capa
+// (item.pictures[0]) deveria ser de uma variação que está no
+// FULL — e, havendo mais de uma no FULL, da que está há mais
+// tempo sem vender (empurra o produto parado). Aqui só
+// detectamos se a capa atual bate com essa variação; a correção
+// em si é manual, igual às outras sinalizações desta tela
+// (Tipo, Estoque) — reaproveita gaUrlModificarAnuncio.
+// ============================================================
+
+function aplicarSinalizacaoCapaAnuncioGA() {
+
+    if (
+        !Array.isArray(GA.rows) ||
+        !GA.rows.length
+    ) {
+        return;
+    }
+
+    const porItem =
+        new Map();
+
+    GA.rows.forEach(
+        row => {
+
+            row.capaPrecisaCorrigir =
+                false;
+
+            row.capaVariacaoRecomendadaId =
+                null;
+
+            if (!row.itemId) return;
+
+            if (!porItem.has(row.itemId)) {
+                porItem.set(row.itemId, []);
+            }
+
+            porItem.get(row.itemId).push(row);
+        }
+    );
+
+    porItem.forEach(
+        linhas => {
+
+            // Só faz sentido com mais de uma variação.
+            if (linhas.length < 2) return;
+
+            const noFull =
+                linhas.filter(
+                    row => Number(row.full) > 0
+                );
+
+            if (!noFull.length) return;
+
+            // Escolhe a variação no FULL há mais tempo sem vender.
+            // "Nunca vendeu, já pesquisado o histórico" conta como
+            // o maior tempo possível (mesma regra usada nas
+            // regras de promoção por dias sem vender no FULL).
+            let escolhida = null;
+            let melhorScore = -1;
+
+            noFull.forEach(
+                row => {
+
+                    const semVendaConfirmada =
+                        (
+                            row.diasSemVender === null ||
+                            row.diasSemVender === undefined
+                        ) &&
+                        Boolean(row.vendasFullAtualizadoEm);
+
+                    const score =
+                        semVendaConfirmada
+                            ? Infinity
+                            : (
+                                Number.isFinite(Number(row.diasSemVender))
+                                    ? Number(row.diasSemVender)
+                                    : -1
+                            );
+
+                    if (score > melhorScore) {
+                        melhorScore = score;
+                        escolhida = row;
+                    }
+                }
+            );
+
+            // Sem a foto atual da capa ainda carregada, não dá
+            // pra comparar — evita falso positivo.
+            if (!escolhida || !escolhida.itemCapaPictureId) return;
+
+            const capaCorreta =
+                Array.isArray(escolhida.variationPictureIds) &&
+                escolhida.variationPictureIds.includes(
+                    escolhida.itemCapaPictureId
+                );
+
+            if (!capaCorreta) {
+                escolhida.capaPrecisaCorrigir = true;
+                escolhida.capaVariacaoRecomendadaId = escolhida.variationId;
+            }
+        }
+    );
+}
+
+
 function render() {
 
     const body =
@@ -7788,6 +7922,17 @@ function render() {
 
         return;
     }
+
+
+    // =========================================================
+    // CAPA DO ANÚNCIO (anúncios com variação)
+    //
+    // Recalcula a cada render — é barato (só agrupa o que já
+    // está em memória) e assim se autocorrige assim que mais
+    // dados chegam (estoque FULL, dias sem vender, fotos).
+    // =========================================================
+
+    aplicarSinalizacaoCapaAnuncioGA();
 
 
     // =========================================================
@@ -8260,17 +8405,32 @@ function render() {
                                     row.thumbnail
 
                                         ? `
-                                            <img
-                                                src="${esc(
-                                                    row.thumbnail
-                                                )}"
-                                                alt=""
-                                                style="
-                                                    width:45px;
-                                                    height:45px;
-                                                    object-fit:contain;
-                                                "
-                                            >
+                                            <div style="position:relative; display:inline-block;">
+                                                <img
+                                                    src="${esc(
+                                                        row.thumbnail
+                                                    )}"
+                                                    alt=""
+                                                    style="
+                                                        width:45px;
+                                                        height:45px;
+                                                        object-fit:contain;
+                                                    "
+                                                >
+                                                ${
+                                                    row.capaPrecisaCorrigir
+                                                        ? `
+                                                            <a
+                                                                href="${esc(gaUrlModificarAnuncio(row.itemId))}"
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                class="ga-capa-alerta-badge"
+                                                                title="A capa deste anúncio deveria ser a foto desta variação (está no FULL há mais tempo sem vender). Clique para corrigir no Mercado Livre."
+                                                            >!</a>
+                                                        `
+                                                        : ''
+                                                }
+                                            </div>
                                         `
 
                                         : '-'
@@ -8794,6 +8954,57 @@ function gaPrecisaCorrigirEstoqueDeposito(
     );
 }
 
+// Monta um resumo (para hover) das localizações de estoque que o
+// Mercado Livre retornou para este anúncio, e quando foi a última
+// sincronização — ajuda a diagnosticar um número de depósito que
+// parece errado sem precisar abrir o console do navegador.
+function gaTituloDetalheEstoqueDeposito(
+    row
+) {
+
+    const partes =
+        [];
+
+    if (
+        row.ultimaSincronizacao
+    ) {
+
+        try {
+
+            partes.push(
+                'Sincronizado em: ' +
+                new Date(row.ultimaSincronizacao)
+                    .toLocaleString('pt-BR')
+            );
+
+        } catch (erro) {}
+    }
+
+    if (
+        Array.isArray(row.stockLocations) &&
+        row.stockLocations.length
+    ) {
+
+        row.stockLocations.forEach(
+            local => {
+
+                partes.push(
+                    `${local?.type || '?'}: ${Number(local?.quantity) || 0} un.`
+                );
+            }
+        );
+
+    } else {
+
+        partes.push(
+            'Sem detalhe de localizações salvo — sincronize este anúncio individualmente para atualizar.'
+        );
+    }
+
+    return partes.join('\n');
+}
+
+
 function gaRenderEstoqueDeposito(
     row
 ) {
@@ -8871,7 +9082,10 @@ function gaRenderEstoqueDeposito(
                                 ? '#198754'
                                 : '#dc3545'
                         };
+                        cursor:help;
+                        border-bottom:1px dotted #adb5bd;
                     "
+                    title="${esc(gaTituloDetalheEstoqueDeposito(row))}"
                 >
                     ${esc(
                         estoqueDeposito
@@ -11471,6 +11685,11 @@ function exportarCSV() {
                     row.thumbnail;
 
 
+                row.itemCapaPictureId =
+                    item.pictures?.[0]?.id ||
+                    null;
+
+
                 row.permalink =
                     item.permalink ||
                     row.permalink;
@@ -11551,6 +11770,14 @@ function exportarCSV() {
                             item.inventory_id ||
 
                             null;
+
+
+                        row.variationPictureIds =
+                            Array.isArray(
+                                variation.picture_ids
+                            )
+                                ? variation.picture_ids
+                                : [];
 
 
                         if (
@@ -11921,6 +12148,11 @@ function exportarCSV() {
                     row.thumbnail;
 
 
+                row.itemCapaPictureId =
+                    item.pictures?.[0]?.id ||
+                    null;
+
+
                 row.permalink =
                     item.permalink ||
                     row.permalink;
@@ -11985,6 +12217,14 @@ function exportarCSV() {
                             item.inventory_id ||
 
                             null;
+
+
+                        row.variationPictureIds =
+                            Array.isArray(
+                                variation.picture_ids
+                            )
+                                ? variation.picture_ids
+                                : [];
                     }
 
                 } else {
