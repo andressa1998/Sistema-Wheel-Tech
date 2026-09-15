@@ -4175,6 +4175,21 @@ window.excluirRecadoChamados =
                     'hidden-ch'
                 );
 
+
+            /*
+             * Esconde o modal de detalhes enquanto edita, senão
+             * os dois modais ficam abertos um por cima do outro.
+             */
+
+            document
+                .getElementById(
+                    'modalDetalhesChamado'
+                )
+                ?.classList
+                .add(
+                    'hidden-ch'
+                );
+
         };
 
 
@@ -4189,6 +4204,30 @@ window.excluirRecadoChamados =
                 .add(
                     'hidden-ch'
                 );
+
+
+            /*
+             * Quando o modal estava sendo usado para EDITAR um
+             * chamado, o modal de detalhes foi escondido ao abrir
+             * a edição (para não ficar um por cima do outro) —
+             * então, ao fechar/cancelar a edição, ele volta a
+             * aparecer.
+             */
+
+            if (
+                chamadoEmEdicaoId
+            ) {
+
+                document
+                    .getElementById(
+                        'modalDetalhesChamado'
+                    )
+                    ?.classList
+                    .remove(
+                        'hidden-ch'
+                    );
+
+            }
 
         };
 

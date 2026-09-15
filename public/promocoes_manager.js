@@ -6639,7 +6639,601 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
         }
     });
 
+    // ============================================================
+    // PROMOÇÃO RÁPIDA POR ITEM
+    //
+    // Usado pelo botão "🏷️" na aba Gerenciamento de Anúncios —
+    // abre um modal simples para colocar UM MLB em promoção, sem
+    // precisar abrir a tela cheia de Promoções em Lote. Reaproveita
+    // as mesmas funções de consulta ao Mercado Livre já usadas ali
+    // (buscarPromocoesDoItem, valorPromocaoEmReais) e o mesmo
+    // formato de linha da tabela promocoes_agendadas.
+    //
+    // Além de agendar por DATA (igual já existia), permite criar
+    // uma REGRA: "quando este MLB completar N dias sem vender no
+    // FULL, agende esta promoção automaticamente". A condição é
+    // avaliada em segundo plano (avaliarRegrasPromocoesFull) lendo
+    // a coluna dias_sem_vender já mantida por gerenciamento_anuncios.js
+    // na tabela gerenciamento_anuncios_ml. Quando a condição bate,
+    // a regra vira um registro normal em promocoes_agendadas com
+    // ativação imediata — a partir daí ela entra no MESMO fluxo de
+    // aviso "pronta para ativar" que já existe para os agendamentos
+    // por data (verificarAvisosPromocoesAgendadas), sem precisar de
+    // nenhum código novo de notificação.
+    // ============================================================
+
+    const TABELA_REGRAS_PROMOCAO_FULL = 'promocoes_regras_full';
+
+    let promoItemEstado = null;
+    let promoItemModo = 'data'; // 'data' | 'regra'
+
+    function chaveItemPromocao(itemId, variationId) {
+        return `${itemId}:${variationId || '0'}`;
+    }
+
+    function criarModalPromocaoItemSeNecessario() {
+        if (document.getElementById('modalPromocaoItemUnico')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'modalPromocaoItemUnico';
+        overlay.className = 'modal hidden';
+        overlay.addEventListener('click', e => {
+            if (e.target === overlay) window.fecharModalPromocaoItem();
+        });
+
+        overlay.innerHTML = `
+            <div class="modal-content" style="max-width:660px;" onclick="event.stopPropagation()">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h3 style="margin:0;">
+                        <i class="fas fa-tags"></i>
+                        <span id="promoItemTituloModal">Colocar em promoção</span>
+                    </h3>
+                    <button onclick="fecharModalPromocaoItem()"
+                        style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1;">
+                        &times;
+                    </button>
+                </div>
+                <div id="promoItemCorpo"></div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+    }
+
+    window.fecharModalPromocaoItem = function() {
+        document.getElementById('modalPromocaoItemUnico')?.classList.add('hidden');
+        promoItemEstado = null;
+        promoItemModo = 'data';
+    };
+
+    async function carregarRegrasPendentesPromocaoFull(chave) {
+        const supabase = obterSupabasePromocoes();
+        if (!supabase) return [];
+
+        const { data, error } = await supabase
+            .from(TABELA_REGRAS_PROMOCAO_FULL)
+            .select('*')
+            .eq('chave', chave)
+            .eq('status', 'aguardando_condicao')
+            .order('criado_em', { ascending: false });
+
+        if (error) {
+            console.warn('⚠️ Erro carregando regras de promoção pendentes:', error);
+            return [];
+        }
+
+        return data || [];
+    }
+
+    function renderizarListaRegrasPendentesHtml(regras) {
+        if (!Array.isArray(regras) || !regras.length) return '';
+
+        return `
+            <div class="alert alert-info" style="margin-bottom:14px;">
+                <strong><i class="fas fa-bullseye"></i> Regra(s) aguardando condição para este item:</strong>
+                <ul style="margin:8px 0 0; padding-left:18px;">
+                    ${regras.map(r => `
+                        <li style="margin-bottom:4px;">
+                            ${escaparHtmlAgenda(r.promotion_name || r.promotion_id)} —
+                            após <strong>${Number(r.dias_sem_venda)}</strong> dia(s) sem vender no FULL
+                            <button type="button" class="btn btn-sm btn-outline-danger" style="margin-left:8px; padding:1px 8px;"
+                                onclick="cancelarRegraPromocaoFull(${Number(r.id)})">
+                                Cancelar
+                            </button>
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        `;
+    }
+
+    function definirDatasPadraoModalItem() {
+        const inicio = document.getElementById('promoItemDataAtivacao');
+        const fim = document.getElementById('promoItemDataDesativacao');
+        if (!inicio || !fim || inicio.value || fim.value) return;
+
+        const agora = new Date();
+        agora.setSeconds(0, 0);
+        agora.setMinutes(agora.getMinutes() + 5);
+        const depois = new Date(agora);
+        depois.setDate(depois.getDate() + 7);
+        const localInput = data => {
+            const ajuste = data.getTimezoneOffset() * 60000;
+            return new Date(data.getTime() - ajuste).toISOString().slice(0, 16);
+        };
+        inicio.value = localInput(agora);
+        fim.value = localInput(depois);
+    }
+
+    function renderizarCorpoModalPromocaoItem() {
+        const corpo = document.getElementById('promoItemCorpo');
+        if (!corpo || !promoItemEstado) return;
+
+        const { promocoes, selecionadoIndex, regrasPendentes } = promoItemEstado;
+
+        if (!promocoes.length) {
+            corpo.innerHTML = `
+                ${renderizarListaRegrasPendentesHtml(regrasPendentes)}
+                <div class="alert alert-warning">Este MLB não possui promoções disponíveis no momento.</div>
+            `;
+            return;
+        }
+
+        const selecionada = selecionadoIndex !== null ? promocoes[selecionadoIndex] : null;
+
+        corpo.innerHTML = `
+            ${renderizarListaRegrasPendentesHtml(regrasPendentes)}
+
+            <h5 style="margin-top:0;">Selecione a promoção</h5>
+            <div class="table-responsive" style="max-height:220px; overflow-y:auto; margin-bottom:12px;">
+                <table class="table table-sm table-bordered" style="margin-bottom:0;">
+                    <thead><tr><th style="width:36px;"></th><th>Promoção</th><th>Status</th></tr></thead>
+                    <tbody>
+                        ${promocoes.map((p, index) => {
+                            const candidato = p.status === 'candidate';
+                            const status = candidato ? 'Candidata' : p.status === 'pending' ? 'Já programada no ML' : 'Já ativa';
+                            return `
+                                <tr style="${candidato ? 'cursor:pointer;' : 'opacity:.6;'}" ${candidato ? `onclick="selecionarPromocaoModalItem(${index})"` : ''}>
+                                    <td style="text-align:center;">
+                                        <input type="radio" name="promoItemRadio" ${selecionadoIndex === index ? 'checked' : ''} ${candidato ? '' : 'disabled'} onclick="selecionarPromocaoModalItem(${index})">
+                                    </td>
+                                    <td><strong>${escaparHtmlAgenda(p.name)}</strong><br><small>${escaparHtmlAgenda(p.type)} • ${escaparHtmlAgenda(p.id)}</small></td>
+                                    <td>${escaparHtmlAgenda(status)}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <small class="text-muted">Somente promoções com status "Candidata" podem ser programadas.</small>
+
+            ${!selecionada ? `
+                <div class="alert alert-warning" style="margin-top:10px;">
+                    Selecione uma promoção "Candidata" para continuar.
+                </div>
+            ` : `
+                <div class="form-group" style="margin-top:12px;">
+                    <label>Valor final desejado (R$)</label>
+                    <input type="number" id="promoItemValor" class="form-control" min="0.01" step="0.01"
+                        value="${selecionada.valor > 0 ? selecionada.valor.toFixed(2) : ''}">
+                </div>
+
+                <div class="form-group" style="margin-top:12px;">
+                    <label>Como programar</label>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-sm ${promoItemModo === 'data' ? 'btn-primary' : 'btn-outline-secondary'}"
+                            onclick="definirModoAgendamentoModalItem('data')">
+                            <i class="fas fa-calendar"></i> Por data
+                        </button>
+                        <button type="button" class="btn btn-sm ${promoItemModo === 'regra' ? 'btn-primary' : 'btn-outline-secondary'}"
+                            onclick="definirModoAgendamentoModalItem('regra')">
+                            <i class="fas fa-bullseye"></i> Por regra (dias sem vender)
+                        </button>
+                    </div>
+                </div>
+
+                ${promoItemModo === 'data' ? `
+                    <div class="row" style="margin-top:10px;">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Ativar em</label>
+                                <input type="datetime-local" id="promoItemDataAtivacao" class="form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Desativar em</label>
+                                <input type="datetime-local" id="promoItemDataDesativacao" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="form-group" style="margin-top:10px;">
+                        <label>Dias sem vender no FULL</label>
+                        <input type="number" id="promoItemDiasSemVenda" class="form-control" min="1" step="1" value="10">
+                        <small class="text-muted">
+                            Assim que este anúncio completar esse número de dias sem vender no FULL, a promoção é
+                            agendada automaticamente e você recebe o mesmo aviso da agenda por data para ativá-la.
+                        </small>
+                    </div>
+                `}
+
+                <div style="text-align:right; margin-top:15px; display:flex; gap:8px; justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="fecharModalPromocaoItem()">Cancelar</button>
+                    <button id="promoItemBtnSalvar" class="btn btn-primary" onclick="salvarPromocaoModalItem()">
+                        <i class="fas fa-save"></i> ${promoItemModo === 'data' ? 'Programar' : 'Criar regra'}
+                    </button>
+                </div>
+            `}
+        `;
+
+        if (promoItemModo === 'data') {
+            definirDatasPadraoModalItem();
+        }
+    }
+
+    window.selecionarPromocaoModalItem = function(index) {
+        if (!promoItemEstado) return;
+        const promo = promoItemEstado.promocoes[index];
+        if (!promo || promo.status !== 'candidate') return;
+        promoItemEstado.selecionadoIndex = index;
+        renderizarCorpoModalPromocaoItem();
+    };
+
+    window.definirModoAgendamentoModalItem = function(modo) {
+        promoItemModo = modo === 'regra' ? 'regra' : 'data';
+        renderizarCorpoModalPromocaoItem();
+    };
+
+    window.abrirModalPromocaoItem = async function(itemId, variationId, tituloProduto) {
+        const mlb = normalizarMlbAgenda(itemId);
+        if (!/^MLB\d+$/.test(mlb)) {
+            showToast('⚠️ MLB inválido.', 'warning');
+            return;
+        }
+
+        criarModalPromocaoItemSeNecessario();
+
+        const chave = chaveItemPromocao(mlb, variationId);
+
+        promoItemEstado = {
+            mlb,
+            variationId: variationId || null,
+            chave,
+            titulo: tituloProduto || '',
+            promocoes: [],
+            selecionadoIndex: null,
+            regrasPendentes: []
+        };
+        promoItemModo = 'data';
+
+        const tituloEl = document.getElementById('promoItemTituloModal');
+        if (tituloEl) tituloEl.textContent = `Colocar em promoção — ${mlb}`;
+
+        document.getElementById('modalPromocaoItemUnico')?.classList.remove('hidden');
+
+        const corpo = document.getElementById('promoItemCorpo');
+        if (corpo) {
+            corpo.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Consultando promoções disponíveis para ${escaparHtmlAgenda(mlb)}...
+                </div>
+            `;
+        }
+
+        try {
+            const tokenData = await window.getValidToken?.();
+            if (!tokenData?.access_token) throw new Error('Token do Mercado Livre não disponível');
+
+            const [promocoesItem, regras] = await Promise.all([
+                buscarPromocoesDoItem(mlb, tokenData.access_token),
+                carregarRegrasPendentesPromocaoFull(chave)
+            ]);
+
+            if (!Array.isArray(promocoesItem)) throw new Error('Não foi possível consultar as promoções deste item.');
+
+            promoItemEstado.promocoes = promocoesItem
+                .filter(p => ['candidate', 'pending', 'started'].includes(p.status))
+                .map(p => ({
+                    id: String(p.id || ''),
+                    name: p.name || p.id || 'Promoção sem nome',
+                    type: p.type || '',
+                    status: p.status || 'unknown',
+                    valor: valorPromocaoEmReais(p)
+                }))
+                .filter(p => p.id && p.type);
+
+            promoItemEstado.regrasPendentes = regras;
+
+            const primeiroCandidato = promoItemEstado.promocoes.findIndex(p => p.status === 'candidate');
+            promoItemEstado.selecionadoIndex = primeiroCandidato >= 0 ? primeiroCandidato : null;
+
+            renderizarCorpoModalPromocaoItem();
+
+        } catch (error) {
+            log(`Erro ao abrir promoção do item: ${error.message}`, 'error');
+            if (corpo) {
+                corpo.innerHTML = `<div class="alert alert-danger">${escaparHtmlAgenda(error.message)}</div>`;
+            }
+            showToast(`❌ ${error.message}`, 'error');
+        }
+    };
+
+    window.salvarPromocaoModalItem = async function() {
+        if (!promoItemEstado || promoItemEstado.selecionadoIndex === null) {
+            showToast('⚠️ Selecione uma promoção.', 'warning');
+            return;
+        }
+
+        const supabase = obterSupabasePromocoes();
+        if (!supabase) return showToast('❌ Supabase não conectado', 'error');
+
+        const promo = promoItemEstado.promocoes[promoItemEstado.selecionadoIndex];
+        const valor = Number(document.getElementById('promoItemValor')?.value);
+        if (!Number.isFinite(valor) || valor <= 0) {
+            showToast('⚠️ Informe um valor final válido.', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('promoItemBtnSalvar');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...'; }
+
+        try {
+            if (promoItemModo === 'regra') {
+                const dias = Number(document.getElementById('promoItemDiasSemVenda')?.value);
+                if (!Number.isFinite(dias) || dias <= 0) {
+                    showToast('⚠️ Informe um número de dias válido.', 'warning');
+                    return;
+                }
+
+                const registro = {
+                    mlb: promoItemEstado.mlb,
+                    chave: promoItemEstado.chave,
+                    variation_id: promoItemEstado.variationId,
+                    titulo: promoItemEstado.titulo || null,
+                    promotion_id: promo.id,
+                    promotion_name: promo.name,
+                    promotion_type: promo.type,
+                    valor_final: Number(valor.toFixed(2)),
+                    dias_sem_venda: Math.round(dias),
+                    status: 'aguardando_condicao',
+                    criada_por: nomeUsuarioAgenda()
+                };
+
+                const { error } = await supabase.from(TABELA_REGRAS_PROMOCAO_FULL).insert(registro);
+                if (error) throw error;
+
+                showToast('✅ Regra criada! A promoção será agendada automaticamente quando a condição for atendida.', 'success');
+
+            } else {
+                const inicioValor = document.getElementById('promoItemDataAtivacao')?.value;
+                const fimValor = document.getElementById('promoItemDataDesativacao')?.value;
+                if (!inicioValor || !fimValor) {
+                    showToast('⚠️ Informe as datas de ativação e desativação', 'warning');
+                    return;
+                }
+
+                const inicio = new Date(inicioValor);
+                const fim = new Date(fimValor);
+                if (!Number.isFinite(inicio.getTime()) || !Number.isFinite(fim.getTime())) {
+                    showToast('⚠️ Datas inválidas', 'warning');
+                    return;
+                }
+                if (fim <= inicio) {
+                    showToast('⚠️ A desativação deve ser posterior à ativação', 'warning');
+                    return;
+                }
+
+                const registro = {
+                    mlb: promoItemEstado.mlb,
+                    promotion_id: promo.id,
+                    promotion_name: promo.name,
+                    promotion_type: promo.type,
+                    valor_final: Number(valor.toFixed(2)),
+                    data_ativacao: inicio.toISOString(),
+                    data_desativacao: fim.toISOString(),
+                    status: 'agendada',
+                    criada_por: nomeUsuarioAgenda()
+                };
+
+                const { error } = await supabase.from('promocoes_agendadas').insert(registro);
+                if (error) throw error;
+
+                showToast('✅ Promoção programada!', 'success');
+
+                if (typeof carregarAgendamentosPromocoes === 'function') await carregarAgendamentosPromocoes();
+                if (typeof verificarAvisosPromocoesAgendadas === 'function') await verificarAvisosPromocoesAgendadas();
+            }
+
+            window.fecharModalPromocaoItem();
+
+        } catch (error) {
+            const duplicado = String(error.message || '').toLowerCase().includes('duplicate');
+            showToast(duplicado ? '⚠️ Já existe um registro igual para este item.' : `❌ Erro ao salvar: ${error.message}`, duplicado ? 'warning' : 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="fas fa-save"></i> ${promoItemModo === 'data' ? 'Programar' : 'Criar regra'}`;
+            }
+        }
+    };
+
+    window.cancelarRegraPromocaoFull = async function(id) {
+        const supabase = obterSupabasePromocoes();
+        if (!supabase) return;
+
+        try {
+            const { error } = await supabase
+                .from(TABELA_REGRAS_PROMOCAO_FULL)
+                .update({
+                    status: 'cancelada',
+                    cancelada_por: nomeUsuarioAgenda(),
+                    cancelada_em: new Date().toISOString()
+                })
+                .eq('id', id)
+                .eq('status', 'aguardando_condicao');
+
+            if (error) throw error;
+
+            showToast('✅ Regra cancelada.', 'success');
+
+            if (promoItemEstado) {
+                promoItemEstado.regrasPendentes = await carregarRegrasPendentesPromocaoFull(promoItemEstado.chave);
+                renderizarCorpoModalPromocaoItem();
+            }
+
+        } catch (error) {
+            showToast(`❌ Erro ao cancelar regra: ${error.message}`, 'error');
+        }
+    };
+
+    // ============================================================
+    // MOTOR DE AVALIAÇÃO DAS REGRAS ("dias sem vender no FULL")
+    //
+    // Roda em segundo plano, em QUALQUER tela (mesmo padrão do
+    // monitor de avisos de agendamento por data), lendo os dados já
+    // mantidos por gerenciamento_anuncios.js na tabela
+    // gerenciamento_anuncios_ml. Quando uma regra "dispara", ela vira
+    // um registro comum em promocoes_agendadas (ativação imediata) —
+    // o aviso para ativar reaproveita o modal que já existe.
+    // ============================================================
+
+    async function avaliarRegrasPromocoesFull() {
+        const supabase = obterSupabasePromocoes();
+        if (!supabase) return;
+
+        try {
+            const { data: regras, error } = await supabase
+                .from(TABELA_REGRAS_PROMOCAO_FULL)
+                .select('*')
+                .eq('status', 'aguardando_condicao');
+
+            if (error) {
+                console.warn('⚠️ Erro carregando regras de promoção por FULL:', error);
+                return;
+            }
+
+            if (!Array.isArray(regras) || !regras.length) return;
+
+            const chaves = [...new Set(regras.map(r => r.chave).filter(Boolean))];
+            if (!chaves.length) return;
+
+            const { data: registrosGA, error: erroGA } = await supabase
+                .from('gerenciamento_anuncios_ml')
+                .select('chave, dias_sem_vender, vendas_full_atualizado_em')
+                .in('chave', chaves);
+
+            if (erroGA) {
+                console.warn('⚠️ Erro consultando dados de FULL para avaliar regras de promoção:', erroGA);
+                return;
+            }
+
+            const mapaGA = new Map((registrosGA || []).map(r => [r.chave, r]));
+
+            for (const regra of regras) {
+                const dados = mapaGA.get(regra.chave);
+                if (!dados) continue;
+
+                const semVendaConfirmada =
+                    (dados.dias_sem_vender === null || dados.dias_sem_vender === undefined) &&
+                    Boolean(dados.vendas_full_atualizado_em);
+
+                const diasSemVender = Number(dados.dias_sem_vender);
+
+                const condicaoAtendida =
+                    semVendaConfirmada ||
+                    (Number.isFinite(diasSemVender) && diasSemVender >= Number(regra.dias_sem_venda));
+
+                if (!condicaoAtendida) continue;
+
+                await dispararRegraPromocaoFull(regra);
+            }
+
+        } catch (error) {
+            console.warn('⚠️ Erro avaliando regras de promoção por FULL:', error);
+        }
+    }
+
+    async function dispararRegraPromocaoFull(regra) {
+        const supabase = obterSupabasePromocoes();
+        if (!supabase) return;
+
+        // Reserva condicional (só segue se ainda estiver aguardando) —
+        // evita duplicar caso mais de um usuário/aba avalie a mesma
+        // regra ao mesmo tempo. Mesmo padrão de reservarAcaoAgenda.
+        const { data: reservada, error: erroReserva } = await supabase
+            .from(TABELA_REGRAS_PROMOCAO_FULL)
+            .update({ status: 'disparando' })
+            .eq('id', regra.id)
+            .eq('status', 'aguardando_condicao')
+            .select()
+            .maybeSingle();
+
+        if (erroReserva || !reservada) return;
+
+        const agora = new Date().toISOString();
+
+        try {
+            const { data: agendamento, error: erroAgendamento } = await supabase
+                .from('promocoes_agendadas')
+                .insert({
+                    mlb: regra.mlb,
+                    promotion_id: regra.promotion_id,
+                    promotion_name: regra.promotion_name,
+                    promotion_type: regra.promotion_type,
+                    valor_final: regra.valor_final,
+                    data_ativacao: agora,
+                    data_desativacao: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                    status: 'agendada',
+                    criada_por: regra.criada_por || 'Regra automática (FULL)'
+                })
+                .select()
+                .single();
+
+            if (erroAgendamento) throw erroAgendamento;
+
+            await supabase
+                .from(TABELA_REGRAS_PROMOCAO_FULL)
+                .update({
+                    status: 'agendada',
+                    disparada_em: agora,
+                    agendamento_id: agendamento?.id || null
+                })
+                .eq('id', regra.id);
+
+            log(`🏷️ Regra de promoção disparada para ${regra.mlb} (${regra.dias_sem_venda} dias sem vender no FULL).`, 'success');
+
+            if (typeof carregarAgendamentosPromocoes === 'function') await carregarAgendamentosPromocoes();
+            if (typeof verificarAvisosPromocoesAgendadas === 'function') await verificarAvisosPromocoesAgendadas();
+
+        } catch (error) {
+            console.error('❌ Erro ao disparar regra de promoção por FULL:', error);
+
+            await supabase
+                .from(TABELA_REGRAS_PROMOCAO_FULL)
+                .update({
+                    status: 'erro',
+                    erro: String(error.message || error)
+                })
+                .eq('id', regra.id);
+        }
+    }
+
+    function iniciarMonitorRegrasPromocoesFull() {
+        if (window.__monitorRegrasPromocoesFullIniciado) return;
+        window.__monitorRegrasPromocoesFullIniciado = true;
+
+        const verificarAgora = () => {
+            avaliarRegrasPromocoesFull().catch(() => {});
+        };
+
+        setInterval(verificarAgora, 60000);
+        setTimeout(verificarAgora, 8000);
+    }
+
     iniciarMonitorGlobalAvisosPromocoes();
+    iniciarMonitorRegrasPromocoesFull();
 
     // ============================================================
     // INICIALIZAÇÃO

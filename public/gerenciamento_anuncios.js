@@ -8528,25 +8528,50 @@ function render() {
 
                             <td data-coluna-ga="acoes">
 
-                                ${
-                                    row.permalink
+                                <div
+                                    style="
+                                        display:flex;
+                                        gap:4px;
+                                        flex-wrap:wrap;
+                                    "
+                                >
 
-                                        ? `
-                                            <a
-                                                href="${esc(
-                                                    row.permalink
-                                                )}"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                class="btn btn-sm btn-outline-primary"
-                                                title="Abrir anúncio"
-                                            >
-                                                <i class="fas fa-external-link-alt"></i>
-                                            </a>
-                                        `
+                                    ${
+                                        row.permalink
 
-                                        : '-'
-                                }
+                                            ? `
+                                                <a
+                                                    href="${esc(
+                                                        row.permalink
+                                                    )}"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    class="btn btn-sm btn-outline-primary"
+                                                    title="Abrir anúncio"
+                                                >
+                                                    <i class="fas fa-external-link-alt"></i>
+                                                </a>
+                                            `
+
+                                            : ''
+                                    }
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-warning"
+                                        title="Colocar em promoção"
+                                        onclick="
+                                            abrirModalPromocaoItem(
+                                                '${esc(row.itemId)}',
+                                                '${esc(row.variationId || '')}',
+                                                '${esc(row.title || '')}'
+                                            )
+                                        "
+                                    >
+                                        <i class="fas fa-tags"></i>
+                                    </button>
+
+                                </div>
 
                             </td>
 
