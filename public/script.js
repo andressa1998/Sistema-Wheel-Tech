@@ -25651,7 +25651,7 @@ function initCarousel() {
 
     let currentIndex = 0;
     const totalSlides = slideItems.length;
-    let intervalId = null;
+    let timeoutId = null;
     let isTransitioning = false;
 
     // Criar indicadores
@@ -25661,6 +25661,16 @@ function initCarousel() {
         if (i === 0) dot.classList.add('active');
         dot.addEventListener('click', () => goToSlide(i));
         indicators.appendChild(dot);
+    }
+
+    // Quantos segundos o slide ATUAL fica parado antes de avançar —
+    // lido do atributo data-duracao de cada .carousel-slide (em
+    // segundos), pra permitir um tempo diferente por slide. Sem o
+    // atributo (ou valor inválido), usa 6s como sempre foi.
+    function duracaoAtualMs() {
+        const el = slideItems[currentIndex];
+        const segundos = parseFloat(el?.dataset?.duracao);
+        return (Number.isFinite(segundos) && segundos > 0 ? segundos : 6) * 1000;
     }
 
     function goToSlide(index) {
@@ -25684,9 +25694,12 @@ function initCarousel() {
         goToSlide((currentIndex - 1 + totalSlides) % totalSlides);
     }
 
+    // Usa setTimeout (não setInterval) porque a duração pode mudar de
+    // slide pra slide — a cada troca, reagenda com a duração do slide
+    // que acabou de ficar visível.
     function resetInterval() {
-        if (intervalId) clearInterval(intervalId);
-        intervalId = setInterval(nextSlide, 6000);
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(nextSlide, duracaoAtualMs());
     }
 
     // Eventos dos botões
@@ -25695,7 +25708,7 @@ function initCarousel() {
 
     // Pausar ao passar o mouse
     container.addEventListener('mouseenter', () => {
-        if (intervalId) clearInterval(intervalId);
+        if (timeoutId) clearTimeout(timeoutId);
     });
     container.addEventListener('mouseleave', resetInterval);
 

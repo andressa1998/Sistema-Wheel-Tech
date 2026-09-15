@@ -25,6 +25,7 @@
     const CHAVE_CARROSSEL = 'carrossel_menu_slides';
     const BUCKET_CARROSSEL = 'carrossel';
     const COR_PELICULA_PADRAO = '#002673';
+    const DURACAO_PADRAO_SEGUNDOS = 6;
 
     // Os mesmos 16 slides que já estavam fixos no HTML — usados
     // como padrão enquanto ninguém salvar nada customizado.
@@ -109,7 +110,11 @@
                     texto: s?.texto || '',
                     imagem_url: s?.imagem_url || null,
                     pelicula_ativa: Boolean(s?.pelicula_ativa),
-                    pelicula_cor: s?.pelicula_cor || COR_PELICULA_PADRAO
+                    pelicula_cor: s?.pelicula_cor || COR_PELICULA_PADRAO,
+                    duracao_segundos:
+                        Number.isFinite(Number(s?.duracao_segundos)) && Number(s?.duracao_segundos) > 0
+                            ? Number(s.duracao_segundos)
+                            : DURACAO_PADRAO_SEGUNDOS
                 }))
                 : clonarSlidesPadrao();
 
@@ -181,8 +186,13 @@
                             ` style="background: url('${esc(slide.imagem_url)}') right center/cover no-repeat;"`;
                     }
 
+                    const duracao =
+                        Number(slide.duracao_segundos) > 0
+                            ? Number(slide.duracao_segundos)
+                            : DURACAO_PADRAO_SEGUNDOS;
+
                     return `
-                        <div class="carousel-slide"${estiloFundo}>
+                        <div class="carousel-slide" data-duracao="${duracao}"${estiloFundo}>
                             ${slide.kicker ? `<span class="wt-value-kicker">${esc(slide.kicker)}</span>` : ''}
                             ${slide.titulo ? `<h2>${esc(slide.titulo)}</h2>` : ''}
                             ${slide.texto ? `<p>${esc(slide.texto)}</p>` : ''}
@@ -311,6 +321,15 @@
                         <textarea class="form-control form-control-sm" rows="2" placeholder="Texto"
                             oninput="atualizarCampoSlideCarrossel(${index}, 'texto', this.value)">${esc(slide.texto || '')}</textarea>
 
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin:2px 0 0;">
+                            Ficar parado
+                            <input type="number" class="form-control form-control-sm" min="1" max="60" step="1"
+                                style="width:64px; display:inline-block;"
+                                value="${esc(slide.duracao_segundos || DURACAO_PADRAO_SEGUNDOS)}"
+                                oninput="atualizarCampoSlideCarrossel(${index}, 'duracao_segundos', Number(this.value))">
+                            segundos
+                        </label>
+
                         ${imagemAtual ? `
                             <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin:2px 0 0;">
                                 <input type="checkbox" ${slide.pelicula_ativa ? 'checked' : ''}
@@ -405,7 +424,8 @@
             texto: '',
             imagem_url: null,
             pelicula_ativa: false,
-            pelicula_cor: COR_PELICULA_PADRAO
+            pelicula_cor: COR_PELICULA_PADRAO,
+            duracao_segundos: DURACAO_PADRAO_SEGUNDOS
         });
         renderizarListaSlidesCarrossel();
     };
@@ -511,7 +531,11 @@
                 texto: (s.texto || '').trim(),
                 imagem_url: s.imagem_url || null,
                 pelicula_ativa: Boolean(s.imagem_url) && Boolean(s.pelicula_ativa),
-                pelicula_cor: s.pelicula_cor || COR_PELICULA_PADRAO
+                pelicula_cor: s.pelicula_cor || COR_PELICULA_PADRAO,
+                duracao_segundos:
+                    Number.isFinite(Number(s.duracao_segundos)) && Number(s.duracao_segundos) > 0
+                        ? Number(s.duracao_segundos)
+                        : DURACAO_PADRAO_SEGUNDOS
             }));
 
             const cli = sb();
