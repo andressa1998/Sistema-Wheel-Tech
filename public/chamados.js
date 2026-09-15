@@ -31,10 +31,14 @@
 
     const MODULOS_CHAMADOS = [
         'Ordem de Serviço',
+        'Calendario',
+        'Chamados',
         'Vendas',
         'NF-e',
         'Entradas',
         'Gestão de Estoque',
+        'Histórico de acessos',
+        'Meta Ronald',
         'Estoque',
         'Promoções',
         'Perguntas',
@@ -42,7 +46,9 @@
         'Fretes',
         'Caixa',
         'Precificação',
-        'Reembolsos',
+        'Reclamações',
+        'Reclamações de Clientes',
+        'Regra de alertas',
         'Folgas',
         'Feedback',
         'FULL',
@@ -140,6 +146,8 @@
     let salvandoMensagem = false;
     let recadosChamadosCache = [];
     let salvandoRecadoChamados = false;
+    let chamadoEmEdicaoId = null;
+    let printExistenteUrlEdicao = null;
 
 
     // ========================================================
@@ -355,6 +363,55 @@ function atualizarCabecalhoVisibilidadeChamados() {
                 usernameChamados()
             )
 
+        );
+
+    }
+
+    // ========================================================
+    // PERMISSÃO DE EDIÇÃO DO CHAMADO
+    //
+    // O criador só pode editar os dados do chamado enquanto
+    // nenhum administrador tiver respondido (mensagem na
+    // conversa enviada por alguém de CFG_CHAMADOS.admins).
+    // Depois da primeira resposta, a edição é bloqueada para
+    // não invalidar o que já foi discutido.
+    // ========================================================
+
+    function chamadoFoiRespondidoPorAdmin() {
+
+        return mensagensCache.some(
+            m =>
+                CFG_CHAMADOS.admins.includes(
+                    normalizarUsuarioChamados(
+                        m.autor_username
+                    )
+                )
+        );
+
+    }
+
+    function podeEditarChamadoAberto() {
+
+        if (
+            !chamadoAberto
+        ) {
+
+            return false;
+
+        }
+
+
+        const ehCriador =
+            normalizarUsuarioChamados(
+                chamadoAberto
+                    .criado_por_username
+            ) ===
+            usernameChamados();
+
+
+        return (
+            ehCriador &&
+            !chamadoFoiRespondidoPorAdmin()
         );
 
     }
@@ -3397,7 +3454,11 @@ window.excluirRecadoChamados =
                             "
                         ></i>
 
-                        Abrir novo chamado
+                        <span
+                            id="chModalNovoTituloTexto"
+                        >
+                            Abrir novo chamado
+                        </span>
 
                     </h3>
 
@@ -3770,7 +3831,7 @@ window.excluirRecadoChamados =
                             btn-primary
                         "
                         onclick="
-                            salvarNovoChamado()
+                            salvarChamadoModal()
                         "
                     >
 
@@ -3940,6 +4001,183 @@ window.excluirRecadoChamados =
         };
 
 
+    // ========================================================
+    // EDITAR CHAMADO (SOMENTE O CRIADOR, ANTES DE SER RESPONDIDO)
+    // ========================================================
+
+    window.abrirEdicaoChamado =
+        function(id) {
+
+            if (
+                !chamadoAberto ||
+                Number(chamadoAberto.id) !==
+                    Number(id)
+            ) {
+
+                toastChamados(
+                    '❌ Abra o chamado antes de editar.',
+                    'error'
+                );
+
+                return;
+
+            }
+
+
+            if (
+                !podeEditarChamadoAberto()
+            ) {
+
+                toastChamados(
+                    '⚠️ Este chamado não pode mais ser editado.',
+                    'warning'
+                );
+
+                return;
+
+            }
+
+
+            criarModalNovoChamado();
+
+
+            const c =
+                chamadoAberto;
+
+
+            chamadoEmEdicaoId =
+                c.id;
+
+
+            const campos = {
+
+                chNovoTipo:
+                    c.tipo ||
+                    '',
+
+                chNovoModulo:
+                    c.modulo ||
+                    '',
+
+                chNovoTitulo:
+                    c.titulo ||
+                    '',
+
+                chNovoErro:
+                    c.erro ||
+                    '',
+
+                chNovoPrioridade:
+                    c.prioridade ||
+                    'normal',
+
+                chNovoDescricao:
+                    c.descricao ||
+                    ''
+
+            };
+
+
+            Object.keys(
+                campos
+            ).forEach(
+                campoId => {
+
+                    const el =
+                        document.getElementById(
+                            campoId
+                        );
+
+
+                    if (el) {
+
+                        el.value =
+                            campos[campoId];
+
+                    }
+
+                }
+            );
+
+
+            printNovoChamado =
+                null;
+
+
+            printExistenteUrlEdicao =
+                c.print_url ||
+                null;
+
+
+            const arq =
+                document.getElementById(
+                    'chArquivoNovo'
+                );
+
+
+            if (arq) {
+
+                arq.value =
+                    '';
+
+            }
+
+
+            renderPreviewNovo();
+
+
+            window
+                .mudarTipoNovoChamado();
+
+
+            const tituloModal =
+                document.getElementById(
+                    'chModalNovoTituloTexto'
+                );
+
+
+            if (tituloModal) {
+
+                tituloModal.textContent =
+                    `Editar chamado #${numeroChamado(c.id)}`;
+
+            }
+
+
+            const btnSalvar =
+                document.getElementById(
+                    'chSalvarNovo'
+                );
+
+
+            if (btnSalvar) {
+
+                btnSalvar.innerHTML = `
+                    <i
+                        class="
+                            fas
+                            fa-save
+                        "
+                    ></i>
+
+                    Salvar alterações
+                `;
+
+            }
+
+
+            document
+                .getElementById(
+                    'modalNovoChamado'
+                )
+                ?.classList
+                .remove(
+                    'hidden-ch'
+                );
+
+        };
+
+
     window.fecharNovoChamado =
         function() {
 
@@ -4066,6 +4304,50 @@ window.excluirRecadoChamados =
             null;
 
 
+        printExistenteUrlEdicao =
+            null;
+
+
+        chamadoEmEdicaoId =
+            null;
+
+
+        const tituloModal =
+            document.getElementById(
+                'chModalNovoTituloTexto'
+            );
+
+
+        if (tituloModal) {
+
+            tituloModal.textContent =
+                'Abrir novo chamado';
+
+        }
+
+
+        const btnSalvar =
+            document.getElementById(
+                'chSalvarNovo'
+            );
+
+
+        if (btnSalvar) {
+
+            btnSalvar.innerHTML = `
+                <i
+                    class="
+                        fas
+                        fa-paper-plane
+                    "
+                ></i>
+
+                Abrir chamado
+            `;
+
+        }
+
+
         renderPreviewNovo();
 
 
@@ -4150,6 +4432,41 @@ window.excluirRecadoChamados =
 
 
         if (
+            !printNovoChamado &&
+            printExistenteUrlEdicao
+        ) {
+
+            box.innerHTML = `
+
+                <div
+                    class="ch-preview"
+                >
+
+                    <img
+                        src="${escChamados(printExistenteUrlEdicao)}"
+                        alt="Print atual"
+                    >
+
+                    <div
+                        class="text-muted"
+                        style="
+                            font-size:11px;
+                            margin-top:4px;
+                        "
+                    >
+                        Print atual — selecione outra imagem para substituir.
+                    </div>
+
+                </div>
+
+            `;
+
+            return;
+
+        }
+
+
+        if (
             !printNovoChamado
         ) {
 
@@ -4212,6 +4529,30 @@ window.excluirRecadoChamados =
         `;
 
     }
+
+
+    // ========================================================
+    // DISPATCHER DO BOTÃO SALVAR DO MODAL
+    // (o mesmo modal é usado para criar e para editar)
+    // ========================================================
+
+    window.salvarChamadoModal =
+        function() {
+
+            if (
+                chamadoEmEdicaoId
+            ) {
+
+                return window
+                    .salvarEdicaoChamado();
+
+            }
+
+
+            return window
+                .salvarNovoChamado();
+
+        };
 
 
     // ========================================================
@@ -4760,6 +5101,407 @@ window.salvarNovoChamado =
         }
 
     };
+
+
+    // ========================================================
+    // SALVAR EDIÇÃO DE CHAMADO
+    // (somente o criador, enquanto nenhum admin respondeu)
+    // ========================================================
+
+    window.salvarEdicaoChamado =
+        async function() {
+
+            if (
+                salvandoChamado
+            ) {
+
+                return;
+
+            }
+
+
+            const sb =
+                sbChamados();
+
+
+            const u =
+                usuarioChamados();
+
+
+            if (
+                !sb ||
+                !u
+            ) {
+
+                toastChamados(
+                    '❌ Supabase ou usuário não disponível.',
+                    'error'
+                );
+
+                return;
+
+            }
+
+
+            const id =
+                chamadoEmEdicaoId;
+
+
+            if (
+                !id ||
+                !podeEditarChamadoAberto() ||
+                Number(
+                    chamadoAberto?.id
+                ) !==
+                    Number(id)
+            ) {
+
+                toastChamados(
+                    '⚠️ Este chamado não pode mais ser editado.',
+                    'warning'
+                );
+
+                window
+                    .fecharNovoChamado();
+
+                return;
+
+            }
+
+
+            const tipo =
+                document
+                    .getElementById(
+                        'chNovoTipo'
+                    )
+                    ?.value ||
+                '';
+
+
+            const modulo =
+                document
+                    .getElementById(
+                        'chNovoModulo'
+                    )
+                    ?.value ||
+                '';
+
+
+            const titulo =
+                document
+                    .getElementById(
+                        'chNovoTitulo'
+                    )
+                    ?.value
+                    .trim() ||
+                '';
+
+
+            const erroTexto =
+                document
+                    .getElementById(
+                        'chNovoErro'
+                    )
+                    ?.value
+                    .trim() ||
+                '';
+
+
+            const prioridade =
+                document
+                    .getElementById(
+                        'chNovoPrioridade'
+                    )
+                    ?.value ||
+                'normal';
+
+
+            const descricao =
+                document
+                    .getElementById(
+                        'chNovoDescricao'
+                    )
+                    ?.value
+                    .trim() ||
+                '';
+
+
+            if (
+                !tipo
+            ) {
+
+                toastChamados(
+                    '⚠️ Selecione o tipo.',
+                    'warning'
+                );
+
+                return;
+
+            }
+
+
+            if (
+                !modulo
+            ) {
+
+                toastChamados(
+                    '⚠️ Selecione a aba/módulo.',
+                    'warning'
+                );
+
+                return;
+
+            }
+
+
+            if (
+                !titulo
+            ) {
+
+                toastChamados(
+                    '⚠️ Informe o título.',
+                    'warning'
+                );
+
+                return;
+
+            }
+
+
+            if (
+                tipo === 'erro' &&
+                !erroTexto
+            ) {
+
+                toastChamados(
+                    '⚠️ Informe qual erro está acontecendo.',
+                    'warning'
+                );
+
+                return;
+
+            }
+
+
+            if (
+                !descricao
+            ) {
+
+                toastChamados(
+                    '⚠️ Informe a descrição.',
+                    'warning'
+                );
+
+                return;
+
+            }
+
+
+            salvandoChamado =
+                true;
+
+
+            const btn =
+                document.getElementById(
+                    'chSalvarNovo'
+                );
+
+
+            if (btn) {
+
+                btn.disabled =
+                    true;
+
+
+                btn.innerHTML = `
+                    <i
+                        class="
+                            fas
+                            fa-spinner
+                            fa-spin
+                        "
+                    ></i>
+
+                    Salvando...
+                `;
+
+            }
+
+
+            try {
+
+                const agora =
+                    new Date()
+                        .toISOString();
+
+
+                const atualizacao = {
+
+                    tipo:
+                        tipo,
+
+                    modulo:
+                        modulo,
+
+                    titulo:
+                        titulo,
+
+                    erro:
+                        tipo === 'erro'
+                            ? erroTexto
+                            : null,
+
+                    descricao:
+                        descricao,
+
+                    prioridade:
+                        prioridade,
+
+                    atualizado_em:
+                        agora
+
+                };
+
+
+                if (
+                    printNovoChamado
+                ) {
+
+                    try {
+
+                        const url =
+                            await uploadImagemChamados(
+                                printNovoChamado,
+                                id,
+                                'abertura'
+                            );
+
+
+                        atualizacao.print_url =
+                            url;
+
+
+                    } catch (
+                        erroUpload
+                    ) {
+
+                        console.warn(
+                            '⚠️ Falha ao enviar novo print na edição do chamado:',
+                            erroUpload
+                        );
+
+
+                        toastChamados(
+                            `⚠️ Chamado atualizado, mas o novo print não foi enviado: ${erroUpload.message}`,
+                            'warning'
+                        );
+
+                    }
+
+                }
+
+
+                const {
+                    error
+                } =
+                    await sb
+
+                        .from(
+                            CFG_CHAMADOS
+                                .tabelaChamados
+                        )
+
+                        .update(
+                            atualizacao
+                        )
+
+                        .eq(
+                            'id',
+                            id
+                        );
+
+
+                if (
+                    error
+                ) {
+
+                    throw error;
+
+                }
+
+
+                toastChamados(
+                    '✅ Chamado atualizado!',
+                    'success'
+                );
+
+
+                window
+                    .fecharNovoChamado();
+
+
+                await window
+                    .carregarChamados(
+                        false
+                    );
+
+
+                await window
+                    .abrirDetalhesChamado(
+                        id
+                    );
+
+
+            } catch (
+                e
+            ) {
+
+                console.error(
+                    '❌ Erro ao editar chamado:',
+                    e
+                );
+
+
+                toastChamados(
+                    '❌ Erro ao editar chamado: ' +
+                    (
+                        e.message ||
+                        'erro desconhecido'
+                    ),
+                    'error'
+                );
+
+
+            } finally {
+
+                salvandoChamado =
+                    false;
+
+
+                if (
+                    btn
+                ) {
+
+                    btn.disabled =
+                        false;
+
+
+                    btn.innerHTML = `
+                        <i
+                            class="
+                                fas
+                                fa-save
+                            "
+                        ></i>
+
+                        Salvar alterações
+                    `;
+
+                }
+
+            }
+
+        };
 
 
     // ========================================================
@@ -6952,6 +7694,68 @@ window.renderizarChamados =
                         </div>
 
                     </div>
+
+
+                    ${
+                        podeEditarChamadoAberto()
+
+                            ? `
+
+                                <div
+                                    class="ch-box"
+                                >
+
+                                    <div
+                                        class="ch-box-titulo"
+                                    >
+                                        ✏️ Editar chamado
+                                    </div>
+
+
+                                    <div
+                                        class="text-muted"
+                                        style="
+                                            font-size:12px;
+                                            margin-bottom:8px;
+                                        "
+                                    >
+                                        Ainda não há resposta da equipe — você pode editar os dados do chamado.
+                                    </div>
+
+
+                                    <button
+                                        class="
+                                            btn
+                                            btn-secondary
+                                            btn-sm
+                                        "
+                                        style="
+                                            width:100%;
+                                        "
+                                        onclick="
+                                            abrirEdicaoChamado(
+                                                ${Number(c.id)}
+                                            )
+                                        "
+                                    >
+
+                                        <i
+                                            class="
+                                                fas
+                                                fa-pen
+                                            "
+                                        ></i>
+
+                                        Editar chamado
+
+                                    </button>
+
+                                </div>
+
+                            `
+
+                            : ''
+                    }
 
 
                     <div

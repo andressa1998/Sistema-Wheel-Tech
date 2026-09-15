@@ -92,6 +92,276 @@
     }
 
 
+    // ============================================================
+    // COLUNAS PERSONALIZÁVEIS (ocultar / reordenar / redimensionar)
+    // Mesmo padrão usado na aba de Emissão de NF-e (nfe_manager.js).
+    // ============================================================
+
+    const COLUNAS_GA = [
+        { id: 'foto', nome: 'Foto', style: 'width:50px;' },
+        { id: 'mlb', nome: 'MLB', style: 'min-width:130px;' },
+        { id: 'titulo', nome: 'Título / SKU', style: 'min-width:200px;' },
+        { id: 'deposito', nome: 'Depósito', style: 'width:110px; text-align:center;' },
+        { id: 'full', nome: 'FULL', style: 'width:110px; text-align:center;' },
+        { id: 'vendas30d', nome: 'Vendas FULL 30d', style: 'width:120px; text-align:center;' },
+        { id: 'semVender', nome: 'Sem vender', style: 'width:140px; text-align:center;' },
+        { id: 'tipo', nome: 'Tipo', style: 'width:100px;' },
+        { id: 'status', nome: 'Status', style: 'width:100px;' },
+        { id: 'preco', nome: 'Preço', style: 'width:100px; text-align:right;' },
+        { id: 'inventoryId', nome: 'Inventory ID', style: 'min-width:120px;' },
+        { id: 'acoes', nome: 'Ações', style: 'width:80px;' }
+    ];
+
+    function obterUsuarioPreferenciasColunasGA() {
+
+        if (window.currentUser?.username) {
+            return String(window.currentUser.username).trim().toLowerCase();
+        }
+
+        try {
+            const usuarioSalvo = JSON.parse(localStorage.getItem('wheeltech_user') || 'null');
+            if (usuarioSalvo?.username) {
+                return String(usuarioSalvo.username).trim().toLowerCase();
+            }
+        } catch (error) {
+            console.warn('⚠️ Não foi possível identificar usuário para preferências GA:', error);
+        }
+
+        return 'padrao';
+    }
+
+    function obterChavePreferenciasColunasGA() {
+        return `wheeltech_ga_colunas_ocultas_${obterUsuarioPreferenciasColunasGA()}`;
+    }
+
+    function obterChaveOrdemColunasGA() {
+        return `wheeltech_ga_ordem_colunas_${obterUsuarioPreferenciasColunasGA()}`;
+    }
+
+    function carregarOrdemColunasGA() {
+
+        const padrao = COLUNAS_GA.map(coluna => coluna.id);
+
+        try {
+            const bruto = localStorage.getItem(obterChaveOrdemColunasGA());
+            if (!bruto) return padrao;
+
+            const salva = JSON.parse(bruto);
+            if (!Array.isArray(salva)) return padrao;
+
+            const validas = salva.filter(id => padrao.includes(id));
+
+            // Novas colunas entram automaticamente no fim.
+            padrao.forEach(id => {
+                if (!validas.includes(id)) validas.push(id);
+            });
+
+            return validas;
+
+        } catch (error) {
+            console.warn('⚠️ Erro carregando ordem das colunas GA:', error);
+            return padrao;
+        }
+    }
+
+    function salvarOrdemColunasGA(ordem) {
+        try {
+            localStorage.setItem(obterChaveOrdemColunasGA(), JSON.stringify(ordem));
+        } catch (error) {
+            console.error('❌ Erro salvando ordem das colunas GA:', error);
+        }
+    }
+
+    function moverColunaGA(colunaId, direcao) {
+
+        const ordem = carregarOrdemColunasGA();
+        const indice = ordem.indexOf(colunaId);
+        if (indice < 0) return;
+
+        const novoIndice = indice + Number(direcao);
+        if (novoIndice < 0 || novoIndice >= ordem.length) return;
+
+        [ordem[indice], ordem[novoIndice]] = [ordem[novoIndice], ordem[indice]];
+
+        salvarOrdemColunasGA(ordem);
+        reconstruirCabecalhoGA();
+        aplicarPreferenciasColunasGA();
+    }
+    window.moverColunaGA = moverColunaGA;
+
+    function carregarColunasOcultasGA() {
+        try {
+            const salvo = localStorage.getItem(obterChavePreferenciasColunasGA());
+            if (!salvo) return new Set();
+
+            const lista = JSON.parse(salvo);
+            if (!Array.isArray(lista)) return new Set();
+
+            const idsValidos = new Set(COLUNAS_GA.map(coluna => coluna.id));
+            return new Set(lista.filter(id => idsValidos.has(id)));
+
+        } catch (error) {
+            console.warn('⚠️ Erro carregando preferência de colunas GA:', error);
+            return new Set();
+        }
+    }
+
+    function salvarColunasOcultasGA(colunasOcultas) {
+        try {
+            localStorage.setItem(obterChavePreferenciasColunasGA(), JSON.stringify(Array.from(colunasOcultas)));
+        } catch (error) {
+            console.error('❌ Erro salvando preferência de colunas GA:', error);
+        }
+    }
+
+    function reconstruirCabecalhoGA() {
+
+        const tbody = document.getElementById('gaTabelaBody');
+        const tabela = tbody?.closest('table');
+        const header = tabela?.querySelector('thead tr');
+        if (!header) return;
+
+        const ordem = carregarOrdemColunasGA();
+        const mapa = new Map(COLUNAS_GA.map(coluna => [coluna.id, coluna]));
+
+        header.innerHTML = ordem.map(id => {
+            const coluna = mapa.get(id);
+            if (!coluna) return '';
+            return `<th data-coluna-ga="${coluna.id}" style="${coluna.style || ''}">${esc(coluna.nome)}</th>`;
+        }).join('');
+    }
+
+    function renderizarListaColunasGA() {
+
+        const container = document.getElementById('listaColunasGA');
+        if (!container) return;
+
+        const ordem = carregarOrdemColunasGA();
+        const ocultas = carregarColunasOcultasGA();
+        const mapa = new Map(COLUNAS_GA.map(coluna => [coluna.id, coluna]));
+
+        container.innerHTML = ordem.map((id, index) => {
+            const coluna = mapa.get(id);
+            if (!coluna) return '';
+            return `
+                <div style="display:flex; align-items:center; gap:6px; padding:5px; border-bottom:1px solid #f1f3f5;">
+                    <input type="checkbox" data-coluna-ga="${id}" ${ocultas.has(id) ? '' : 'checked'}
+                        onchange="alterarVisibilidadeColunaGA('${id}', this.checked)">
+                    <span style="flex:1; font-size:12px;">${index + 1}. ${esc(coluna.nome)}</span>
+                    <button type="button" class="btn btn-sm btn-light"
+                        onclick="event.stopPropagation(); moverColunaGA('${id}', -1)"
+                        ${index === 0 ? 'disabled' : ''} title="Mover para cima">↑</button>
+                    <button type="button" class="btn btn-sm btn-light"
+                        onclick="event.stopPropagation(); moverColunaGA('${id}', 1)"
+                        ${index === ordem.length - 1 ? 'disabled' : ''} title="Mover para baixo">↓</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function alterarVisibilidadeColunaGA(colunaId, visivel) {
+        const ocultas = carregarColunasOcultasGA();
+        if (visivel) ocultas.delete(colunaId); else ocultas.add(colunaId);
+        salvarColunasOcultasGA(ocultas);
+        aplicarPreferenciasColunasGA();
+    }
+    window.alterarVisibilidadeColunaGA = alterarVisibilidadeColunaGA;
+
+    function mostrarTodasColunasGA() {
+        salvarColunasOcultasGA(new Set());
+        aplicarPreferenciasColunasGA();
+    }
+    window.mostrarTodasColunasGA = mostrarTodasColunasGA;
+
+    function ocultarTodasColunasGA() {
+        salvarColunasOcultasGA(new Set(COLUNAS_GA.map(coluna => coluna.id)));
+        aplicarPreferenciasColunasGA();
+    }
+    window.ocultarTodasColunasGA = ocultarTodasColunasGA;
+
+    function restaurarColunasPadraoGA() {
+        try {
+            localStorage.removeItem(obterChavePreferenciasColunasGA());
+            localStorage.removeItem(obterChaveOrdemColunasGA());
+            reconstruirCabecalhoGA();
+            aplicarPreferenciasColunasGA();
+            window.showToast?.('✅ Colunas e ordem restauradas para o padrão.', 'success');
+        } catch (error) {
+            console.error(error);
+        }
+    }
+    window.restaurarColunasPadraoGA = restaurarColunasPadraoGA;
+
+    function alternarPainelColunasGA() {
+        const painel = document.getElementById('painelColunasGA');
+        if (!painel) return;
+
+        const aberto = painel.style.display === 'block';
+        painel.style.display = aberto ? 'none' : 'block';
+
+        if (!aberto) aplicarPreferenciasColunasGA();
+    }
+    window.alternarPainelColunasGA = alternarPainelColunasGA;
+
+    function aplicarPreferenciasColunasGA() {
+
+        const tbody = document.getElementById('gaTabelaBody');
+        if (!tbody) return;
+
+        const tabela = tbody.closest('table');
+        if (!tabela) return;
+
+        const ocultas = carregarColunasOcultasGA();
+        const ordem = carregarOrdemColunasGA();
+
+        const headerRow = tabela.querySelector('thead tr');
+        if (headerRow) {
+            const mapaTh = new Map();
+            headerRow.querySelectorAll(':scope > th[data-coluna-ga]').forEach(th => {
+                mapaTh.set(th.dataset.colunaGa, th);
+            });
+            ordem.forEach(id => {
+                const th = mapaTh.get(id);
+                if (!th) return;
+                th.style.display = ocultas.has(id) ? 'none' : '';
+                headerRow.appendChild(th);
+            });
+        }
+
+        tbody.querySelectorAll(':scope > tr').forEach(tr => {
+            const mapaTd = new Map();
+            tr.querySelectorAll(':scope > td[data-coluna-ga]').forEach(td => {
+                mapaTd.set(td.dataset.colunaGa, td);
+            });
+            if (!mapaTd.size) return;
+            ordem.forEach(id => {
+                const td = mapaTd.get(id);
+                if (!td) return;
+                td.style.display = ocultas.has(id) ? 'none' : '';
+                tr.appendChild(td);
+            });
+        });
+
+        renderizarListaColunasGA();
+
+        const botao = document.getElementById('btnConfigColunasGA');
+        if (botao) {
+            const visiveis = COLUNAS_GA.length - ocultas.size;
+            botao.innerHTML = `
+                <i class="fas fa-columns"></i>
+                Colunas
+                <span style="background:rgba(255,255,255,.25); padding:2px 6px; border-radius:10px; font-size:10px;">
+                    ${visiveis}/${COLUNAS_GA.length}
+                </span>
+            `;
+        }
+
+        if (typeof window.ativarRedimensionamentoColunas === 'function') {
+            window.ativarRedimensionamentoColunas('gaTabela');
+        }
+    }
+
+
     function sleep(ms) {
 
         return new Promise(
@@ -7416,7 +7686,7 @@ function gaRenderTipo(
 
         return `
 
-            <td>
+            <td data-coluna-ga="tipo">
 
                 <strong>
                     ${esc(
@@ -7442,7 +7712,7 @@ function gaRenderTipo(
 
     return `
 
-        <td class="ga-tipo-precisa-corrigir">
+        <td data-coluna-ga="tipo" class="ga-tipo-precisa-corrigir">
 
             <strong
                 style="
@@ -7984,7 +8254,7 @@ function render() {
                             <!-- 1. FOTO -->
                             <!-- ===================================== -->
 
-                            <td>
+                            <td data-coluna-ga="foto">
 
                                 ${
                                     row.thumbnail
@@ -8013,7 +8283,7 @@ function render() {
                             <!-- 2. MLB -->
                             <!-- ===================================== -->
 
-                            <td>
+                            <td data-coluna-ga="mlb">
 
                                 <strong>
                                     ${esc(
@@ -8050,7 +8320,7 @@ function render() {
                             <!-- 3. TÍTULO / SKU -->
                             <!-- ===================================== -->
 
-                            <td>
+                            <td data-coluna-ga="titulo">
 
                                 <div
                                     style="
@@ -8091,6 +8361,7 @@ function render() {
                             <!-- ===================================== -->
 
                             <td
+                                data-coluna-ga="full"
                                 style="
                                     text-align:center;
                                 "
@@ -8136,6 +8407,7 @@ function render() {
                             <!-- ===================================== -->
 
                             <td
+                                data-coluna-ga="vendas30d"
                                 style="
                                     text-align:center;
                                 "
@@ -8151,6 +8423,7 @@ function render() {
                             <!-- ===================================== -->
 
                             <td
+                                data-coluna-ga="semVender"
                                 style="
                                     text-align:center;
                                 "
@@ -8170,7 +8443,7 @@ function render() {
                             <!-- 9. STATUS -->
                             <!-- ===================================== -->
 
-                            <td>
+                            <td data-coluna-ga="status">
 
                                 <span
                                     class="badge ${statusClassName}"
@@ -8192,6 +8465,7 @@ function render() {
                             <!-- ===================================== -->
 
                             <td
+                                data-coluna-ga="preco"
                                 style="
                                     text-align:right;
                                     white-space:nowrap;
@@ -8209,7 +8483,7 @@ function render() {
                             <!-- 11. INVENTORY ID -->
                             <!-- ===================================== -->
 
-                            <td>
+                            <td data-coluna-ga="inventoryId">
 
                                 <code
                                     style="
@@ -8252,7 +8526,7 @@ function render() {
                             <!-- 12. AÇÕES -->
                             <!-- ===================================== -->
 
-                            <td>
+                            <td data-coluna-ga="acoes">
 
                                 ${
                                     row.permalink
@@ -8388,6 +8662,14 @@ function render() {
             GA.page >=
             totalPaginas;
     }
+
+
+    // =========================================================
+    // COLUNAS PERSONALIZADAS (ordem / visibilidade / largura)
+    // =========================================================
+
+    reconstruirCabecalhoGA();
+    aplicarPreferenciasColunasGA();
 }
 
 function atualizarEstoqueInternoGerenciamento(
@@ -8513,6 +8795,7 @@ function gaRenderEstoqueDeposito(
         return `
 
             <td
+                data-coluna-ga="deposito"
                 style="
                     text-align:center;
                 "
@@ -8549,6 +8832,7 @@ function gaRenderEstoqueDeposito(
         return `
 
             <td
+                data-coluna-ga="deposito"
                 style="
                     text-align:center;
                 "
@@ -8587,6 +8871,7 @@ function gaRenderEstoqueDeposito(
     return `
 
         <td
+            data-coluna-ga="deposito"
             class="ga-estoque-precisa-corrigir"
             style="
                 text-align:center;
@@ -10431,6 +10716,13 @@ function exportarCSV() {
                 'hidden'
             );
         }
+
+
+        // =====================================================
+        // COLUNAS PERSONALIZADAS
+        // =====================================================
+
+        reconstruirCabecalhoGA();
 
 
         // =====================================================

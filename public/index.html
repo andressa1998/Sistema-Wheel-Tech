@@ -5209,7 +5209,7 @@ body:has(#loginScreen:not(.hidden)) {
             </div>
             <div id="agendaSemanalGrid" class="agenda-week-grid mt-3"><div class="agenda-empty">Carregando agenda...</div></div>
         </div>
-        <!-- Cabeçalho com botões de ação -->
+        <!-- Cabeçalho com botões de ação (folgas aparecem na Agenda Semanal acima) -->
         <div class="card mb-4">
             <div class="d-flex justify-content-between align-items-center">
                 <h3 style="margin:0;"><i class="fas fa-calendar-plus"></i> Gerenciar Folgas</h3>
@@ -5222,11 +5222,6 @@ body:has(#loginScreen:not(.hidden)) {
                     </button>
                 </div>
             </div>
-        </div>
-
-        <!-- Calendário -->
-        <div class="card">
-            <div id="folgasCalendario" style="height: 600px;"></div>
         </div>
 
         <!-- Escala de Sábados - VISUAL COMPLETA -->
@@ -7074,6 +7069,26 @@ body:has(#loginScreen:not(.hidden)) {
                     <button class="btn btn-success" onclick="exportarGerenciamentoAnunciosExcel()">
                         <i class="fas fa-file-excel"></i> Exportar
                     </button>
+
+                    <div style="position: relative;">
+                        <button type="button" class="btn btn-secondary" id="btnConfigColunasGA"
+                                onclick="event.stopPropagation(); alternarPainelColunasGA();">
+                            <i class="fas fa-columns"></i> Colunas
+                        </button>
+
+                        <div id="painelColunasGA" onclick="event.stopPropagation();"
+                             style="display:none; position:absolute; top:calc(100% + 7px); right:0; width:330px;
+                                    background:white; border:1px solid #dee2e6; border-radius:10px;
+                                    box-shadow:0 8px 25px rgba(0,0,0,.18); padding:12px; z-index:9999;">
+                            <div style="font-weight:700; font-size:13px; margin-bottom:4px;">Colunas e ordem</div>
+                            <div id="listaColunasGA" style="max-height:390px; overflow-y:auto;"></div>
+                            <div style="border-top:1px solid #e9ecef; margin-top:10px; padding-top:10px; display:flex; gap:5px; flex-wrap:wrap;">
+                                <button class="btn btn-sm btn-primary" onclick="mostrarTodasColunasGA();">Todas</button>
+                                <button class="btn btn-sm btn-secondary" onclick="ocultarTodasColunasGA();">Nenhuma</button>
+                                <button class="btn btn-sm btn-warning" onclick="restaurarColunasPadraoGA();">Padrão</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -7199,7 +7214,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="script.js?v=20260910-13"></script>
     <script src="ml_token_manager.js"></script>
-    <script src="folgas.js"></script>
+    <script src="folgas.js?v=20260915-3"></script>
     <script src="shipping_simple.js?v=20260910-2"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
@@ -7213,12 +7228,12 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="entradas.js"></script>
     <script src="promocoes_manager.js"></script>
     <script src="full_analysis.js"></script>
-    <script src="gerenciamento_anuncios.js"></script>
-    <script src="chamados.js"></script>
+    <script src="gerenciamento_anuncios.js?v=20260915-1"></script>
+    <script src="chamados.js?v=20260915-1"></script>
     <script src="reclamacoes_clientes.js?v=20260916-7"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
     <script src="notificacoes_chamados.js"></script>
-    <script src="coleta_ampulheta.js?v=20260911-1"></script>
+    <script src="coleta_ampulheta.js?v=20260915-2"></script>
     <script src="regras_alertas_estoque.js?v=20260910-6"></script>
     <script src="usuarios_gestao.js?v=20260910-4"></script>
 
@@ -7978,7 +7993,8 @@ document.addEventListener('click', function(e) {
         /* Tabelas da aba de Emissão de NF-e: largura fixa por coluna,
            permitindo que o usuário arraste a borda de cada cabeçalho. */
         #tabelaVendasPendentes,
-        #tabelaNFesEmitidas {
+        #tabelaNFesEmitidas,
+        #gaTabela {
             table-layout: fixed !important;
             /* A largura (em px) é controlada via JS (definirLarguraTabelaNFE
                em script.js), usando setProperty(...,'important'). */
@@ -7986,18 +8002,21 @@ document.addEventListener('click', function(e) {
         /* Usada só durante a medição da largura "natural" de cada coluna
            (antes de existir uma largura salva). */
         #tabelaVendasPendentes.nfe-medindo-auto,
-        #tabelaNFesEmitidas.nfe-medindo-auto {
+        #tabelaNFesEmitidas.nfe-medindo-auto,
+        #gaTabela.nfe-medindo-auto {
             table-layout: auto !important;
         }
         #tabelaVendasPendentes th,
-        #tabelaNFesEmitidas th {
+        #tabelaNFesEmitidas th,
+        #gaTabela th {
             position: relative;
         }
         /* Impede que conteúdo maior que a coluna "vaze" visualmente para
            cima da célula vizinha; o conteúdo continua quebrando linha
            normalmente dentro do espaço disponível. */
         #tabelaVendasPendentes td,
-        #tabelaNFesEmitidas td {
+        #tabelaNFesEmitidas td,
+        #gaTabela td {
             overflow: hidden;
         }
         .col-resize-handle {

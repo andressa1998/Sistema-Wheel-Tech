@@ -45,26 +45,47 @@ function carregarFullCalendar(callback) {
     document.head.appendChild(script);
 }
 
+function instalarEstiloCalendarioFolgas() {
+    if (document.getElementById('folgasCalendarioEstilo')) return;
+    const style = document.createElement('style');
+    style.id = 'folgasCalendarioEstilo';
+    style.textContent = `
+        #folgasCalendario .fc-day-past { background-color: #f1f2f4; }
+        #folgasCalendario .fc-day-past .fc-daygrid-day-number { color: #9aa0a6; }
+    `;
+    document.head.appendChild(style);
+}
+
 function initCalendario() {
     const calendarEl = document.getElementById('folgasCalendario');
     if (!calendarEl) return;
-    
+
     calendarEl.innerHTML = '';
-    
+    instalarEstiloCalendarioFolgas();
+
     calendario = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
+        initialView: 'duasSemanas',
         locale: 'pt-br',
         timeZone: 'local',
+        views: {
+            duasSemanas: {
+                type: 'dayGrid',
+                duration: { weeks: 2 },
+                // Sempre começa na semana atual, nunca uma semana pra trás.
+                dateAlignment: 'week'
+            }
+        },
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
-            right: 'dayGridMonth,timeGridWeek'
+            right: 'duasSemanas,dayGridMonth,timeGridWeek'
         },
         buttonText: {
             today: 'hoje',
             month: 'mês',
             week: 'semana',
-            day: 'dia'
+            day: 'dia',
+            duasSemanas: '2 semanas'
         },
         events: [],
         eventClick: function(info) {
@@ -110,12 +131,11 @@ window.abrirSistemaFolgas = function() {
         painelPendentes.classList.toggle('hidden', currentUser.role !== 'Administrador');
     }
     
-    // Carregar FullCalendar e dados
-    carregarFullCalendar(() => {
-        if (!calendario) initCalendario();
-        carregarFolgas();
-        carregarAgendaSemanal();
-    });
+    // Um único calendário na tela (a Agenda Semanal, mais acima): ela
+    // já mostra folgas aprovadas e a escala de sábados junto com os
+    // eventos, então não inicializamos mais o FullCalendar separado.
+    carregarFolgas();
+    carregarAgendaSemanal();
 
     // ===== INICIALIZAR ESCALA DE SÁBADOS =====
     const inputMes = document.getElementById('escalaMesAno');
@@ -162,7 +182,12 @@ async function carregarFolgas() {
         
         folgas = data || [];
         atualizarCalendario();
-        
+
+        // As folgas aprovadas aparecem na Agenda Semanal (calendário único).
+        if (typeof renderizarAgendaSemanal === 'function') {
+            renderizarAgendaSemanal();
+        }
+
         if (currentUser && currentUser.role === 'Administrador') {
             carregarSolicitacoesPendentes();
         }
@@ -471,6 +496,12 @@ async function carregarEscalaMensal() {
 
     // Renderizar tabela
     renderizarTabelaEscala(sabados);
+
+    // A Agenda Semanal também mostra quem trabalha no sábado —
+    // re-renderiza pra refletir a escala recém-carregada.
+    if (typeof renderizarAgendaSemanal === 'function') {
+        renderizarAgendaSemanal();
+    }
 }
 
 // 3. Renderizar tabela colorida
@@ -624,22 +655,60 @@ const agendaEscape = v => String(v ?? '').replaceAll('&','&amp;').replaceAll('<'
 const agendaDataISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 function agendaInicioSemana(d=new Date()){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()), dia=x.getDay(); x.setDate(x.getDate()-(dia===0?6:dia-1)); return x; }
 function agendaFimSemana(i){ const x=new Date(i); x.setDate(x.getDate()+5); return x; }
+// Fim da SEGUNDA semana (sábado da semana seguinte) — a agenda agora
+// mostra a semana atual + a próxima semana na mesma tela.
+function agendaFimDuasSemanas(i){ const x=new Date(i); x.setDate(x.getDate()+12); return x; }
+
+function instalarEstiloAgendaSemanal(){
+    if(document.getElementById('agendaSemanalEstilo'))return;
+    const style=document.createElement('style');
+    style.id='agendaSemanalEstilo';
+    style.textContent=`.agenda-day.past{background:#eef0f3;opacity:.75}.agenda-day.past .agenda-day-head{background:#e3e6ea;color:#8b95a3}`;
+    document.head.appendChild(style);
+}
 
 async function carregarAgendaSemanal(){
     const grid=document.getElementById('agendaSemanalGrid'); if(!grid)return;
+    instalarEstiloAgendaSemanal();
     document.querySelectorAll('.agenda-admin-only').forEach(el=>el.classList.toggle('hidden',!agendaEhAdmin()));
-    const ini=agendaInicioSemana(agendaSemanaBase), fim=agendaFimSemana(ini);
+    const ini=agendaInicioSemana(agendaSemanaBase), fim=agendaFimDuasSemanas(ini);
     try{
         const {data,error}=await supabaseClient.from('agenda_eventos').select('*').lte('data_inicio',agendaDataISO(fim)).gte('data_fim',agendaDataISO(ini)).order('data_inicio',{ascending:true}).order('hora_inicio',{ascending:true});
         if(error)throw error; agendaEventos=data||[]; renderizarAgendaSemanal(); atualizarCalendario();
     }catch(error){ console.error('Erro ao carregar agenda:',error); grid.innerHTML='<div class="agenda-empty">Não foi possível carregar a agenda. Execute primeiro o arquivo SQL enviado.</div>'; }
 }
+// Um único calendário: a Agenda Semanal também mostra as folgas
+// aprovadas e a escala de sábados, pra não precisar de mais de uma
+// grade na mesma tela.
+const AGENDA_CORES_FOLGA={dia_inteiro:'#28a745',manha:'#ffc107',tarde:'#17a2b8'};
+const AGENDA_TEXTO_FOLGA={dia_inteiro:'Dia inteiro',manha:'Manhã',tarde:'Tarde'};
+
 function renderizarAgendaSemanal(){
     const grid=document.getElementById('agendaSemanalGrid'), label=document.getElementById('agendaSemanaLabel'); if(!grid)return;
-    const ini=agendaInicioSemana(agendaSemanaBase), fim=agendaFimSemana(ini), hoje=agendaDataISO(new Date()); if(label)label.textContent=`${ini.toLocaleDateString('pt-BR')} a ${fim.toLocaleDateString('pt-BR')}`;
-    let html=''; for(let i=0;i<6;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const iso=agendaDataISO(d), itens=agendaEventos.filter(e=>e.data_inicio<=iso&&(e.data_fim||e.data_inicio)>=iso);
-        html+=`<section class="agenda-day ${iso===hoje?'today':''}"><div class="agenda-day-head">${d.toLocaleDateString('pt-BR',{weekday:'long'})}<span>${d.toLocaleDateString('pt-BR')}</span></div><div class="agenda-items">`;
-        html+=itens.length?itens.map(e=>{ const hora=e.dia_inteiro?'Dia inteiro':([e.hora_inicio?.slice(0,5),e.hora_fim?.slice(0,5)].filter(Boolean).join(' às ')||'Sem horário'), extra=[hora,e.responsavel].filter(Boolean).join(' • '); return `<div class="agenda-item" style="--agenda-cor:${agendaEscape(e.cor||'#0875ee')};${e.destaque?'background:#fff8dc;':''}" onclick="abrirDetalhesAgenda('${e.id}')"><strong>${agendaEscape(e.titulo)}</strong><small>${agendaEscape(AGENDA_TIPOS[e.tipo]||e.tipo)} • ${agendaEscape(extra)}</small></div>`;}).join(''):'<div class="agenda-empty">Sem itens</div>'; html+='</div></section>';
+    const ini=agendaInicioSemana(agendaSemanaBase), fim=agendaFimDuasSemanas(ini), hoje=agendaDataISO(new Date()); if(label)label.textContent=`${ini.toLocaleDateString('pt-BR')} a ${fim.toLocaleDateString('pt-BR')}`;
+    // 2 semanas de 6 dias úteis (seg-sáb) cada, pulando o domingo entre elas:
+    // dias 0-5 = semana atual, dias 7-12 = próxima semana.
+    const diasParaMostrar=[0,1,2,3,4,5,7,8,9,10,11,12];
+    let html=''; for(const i of diasParaMostrar){ const d=new Date(ini); d.setDate(ini.getDate()+i); const iso=agendaDataISO(d);
+
+        const itensAgenda=agendaEventos.filter(e=>e.data_inicio<=iso&&(e.data_fim||e.data_inicio)>=iso).map(e=>{
+            const hora=e.dia_inteiro?'Dia inteiro':([e.hora_inicio?.slice(0,5),e.hora_fim?.slice(0,5)].filter(Boolean).join(' às ')||'Sem horário'), extra=[hora,e.responsavel].filter(Boolean).join(' • ');
+            return `<div class="agenda-item" style="--agenda-cor:${agendaEscape(e.cor||'#0875ee')};${e.destaque?'background:#fff8dc;':''}" onclick="abrirDetalhesAgenda('${e.id}')"><strong>${agendaEscape(e.titulo)}</strong><small>${agendaEscape(AGENDA_TIPOS[e.tipo]||e.tipo)} • ${agendaEscape(extra)}</small></div>`;
+        });
+
+        const itensFolga=(Array.isArray(folgas)?folgas:[]).filter(f=>f.status==='aprovado'&&f.data_inicio===iso).map(f=>
+            `<div class="agenda-item" style="--agenda-cor:${AGENDA_CORES_FOLGA[f.tipo]||'#28a745'}" onclick="showToast?.('Folga de ${agendaEscape(f.user_name)}','info')"><strong>🌴 ${agendaEscape(f.user_name)}</strong><small>Folga • ${agendaEscape(AGENDA_TEXTO_FOLGA[f.tipo]||f.tipo)}</small></div>`
+        );
+
+        const nomesSabado=(d.getDay()===6&&escalaMensal&&Array.isArray(escalaMensal[iso]))?escalaMensal[iso]:[];
+        const itensEscala=nomesSabado.length?[
+            `<div class="agenda-item" style="--agenda-cor:#6f42c1"><strong>🛠️ Trabalham no sábado</strong><small>${agendaEscape(nomesSabado.join(', '))}</small></div>`
+        ]:[];
+
+        const itens=[...itensAgenda,...itensFolga,...itensEscala];
+        const passado=iso<hoje;
+        html+=`<section class="agenda-day ${iso===hoje?'today':''} ${passado?'past':''}"><div class="agenda-day-head">${d.toLocaleDateString('pt-BR',{weekday:'long'})}<span>${d.toLocaleDateString('pt-BR')}</span></div><div class="agenda-items">`;
+        html+=itens.length?itens.join(''):'<div class="agenda-empty">Sem itens</div>'; html+='</div></section>';
     } grid.innerHTML=html;
 }
 window.mudarSemanaAgenda=d=>{agendaSemanaBase.setDate(agendaSemanaBase.getDate()+Number(d)*7);carregarAgendaSemanal();};

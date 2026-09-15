@@ -26,17 +26,20 @@
     var KEY_HANDLING = 'wt_proxima_coleta';
     var KEY_SCHEDULE = 'wt_coleta_horarios';
     var CONFIG_CHAVE = 'coleta_horarios';
+    var CONFIG_CHAVE_DIA = 'coleta_confirmacao_dia';
 
-    // 0 = domingo ... 6 = sábado. null = sem coleta nesse dia.
+    // 0 = domingo ... 6 = sábado. Cada dia tem 2 horários:
+    // "normal" (coleta comum) e "full" (coleta FULL — nem sempre
+    // existe, por isso costuma ficar null). null = sem coleta.
     // Padrão baseado no depósito Araucária (ajustável no widget).
     var DEFAULT_SCHEDULE = {
-        '0': null,
-        '1': null,
-        '2': '13:30',
-        '3': '13:30',
-        '4': '13:30',
-        '5': '13:30',
-        '6': '11:30'
+        '0': { normal: null, full: null },
+        '1': { normal: null, full: null },
+        '2': { normal: '13:30', full: null },
+        '3': { normal: '13:30', full: null },
+        '4': { normal: '13:30', full: null },
+        '5': { normal: '13:30', full: null },
+        '6': { normal: '11:30', full: null }
     };
 
     // Janela visual: a areia esvazia ao longo das últimas 12h.
@@ -47,6 +50,15 @@
     var instancias = [];   // um item por lugar onde o widget é mostrado
     var timer = null;
     var schedule = null;
+
+    // ---------- confirmação diária (1º usuário do dia) ----------
+    // { data: 'YYYY-MM-DD', normal: 'HH:MM'|null, full: 'HH:MM'|null, confirmado_por: 'Nome' }
+    // Guardado em configuracoes_sistema, igual o schedule semanal.
+    // Só o PRIMEIRO usuário a acessar o sistema em cada dia vê o
+    // modal; depois que ele confirma, os demais não veem mais.
+    var confirmacaoDiaria = null;
+    var verificacaoDiariaEmAndamento = false;
+    var confirmacaoDiariaResolvida = false;
 
     // ---------- schedule ----------
 
@@ -98,18 +110,26 @@
         } catch (e) {}
     }
 
+    function normalizarHorario(v) {
+        if (typeof v === 'string' && /^\d{1,2}:\d{2}$/.test(v.trim())) {
+            var p = v.trim().split(':');
+            var hh = Math.min(23, parseInt(p[0], 10));
+            var mm = Math.min(59, parseInt(p[1], 10));
+            return (hh < 10 ? '0' + hh : String(hh)) + ':' + (mm < 10 ? '0' + mm : String(mm));
+        }
+        return null;
+    }
+
     function normalizarSchedule(s) {
         var out = {};
         for (var d = 0; d < 7; d++) {
             var v = s ? s[String(d)] : undefined;
-            if (typeof v === 'string' && /^\d{1,2}:\d{2}$/.test(v.trim())) {
-                var p = v.trim().split(':');
-                var hh = Math.min(23, parseInt(p[0], 10));
-                var mm = Math.min(59, parseInt(p[1], 10));
-                out[String(d)] =
-                    (hh < 10 ? '0' + hh : hh) + ':' + (mm < 10 ? '0' + mm : mm);
+            if (v && typeof v === 'object') {
+                out[String(d)] = { normal: normalizarHorario(v.normal), full: normalizarHorario(v.full) };
             } else {
-                out[String(d)] = null;
+                // Formato antigo (um horário só por dia, como string) —
+                // migra automaticamente pra "normal", sem coleta FULL.
+                out[String(d)] = { normal: normalizarHorario(v), full: null };
             }
         }
         return out;
@@ -117,26 +137,47 @@
 
     // ---------- cálculo do prazo ----------
 
+    function adicionarCandidatoCorte(lista, diaBase, horario, tipo) {
+        if (!horario) return;
+        var p = horario.split(':');
+        var t = new Date(diaBase);
+        t.setHours(parseInt(p[0], 10), parseInt(p[1], 10), 0, 0);
+        lista.push({ tempo: t.getTime(), tipo: tipo });
+    }
+
+    // Retorna { tempo, tipo: 'normal'|'full' } do próximo corte
+    // agendado (o mais próximo entre os dois horários de cada dia),
+    // ou null se não houver nenhum configurado nos próximos 8 dias.
     function proximoCorteAgendado() {
         if (!schedule) return null;
 
         var agora = new Date();
+        var candidatos = [];
 
         for (var i = 0; i < 8; i++) {
             var alvo = new Date(agora);
             alvo.setDate(agora.getDate() + i);
             var dia = alvo.getDay();
-            var horario = schedule[String(dia)];
-            if (!horario) continue;
+            var horarios = schedule[String(dia)] || { normal: null, full: null };
+            var normal = horarios.normal;
+            var full = horarios.full;
 
-            var p = horario.split(':');
-            alvo.setHours(parseInt(p[0], 10), parseInt(p[1], 10), 0, 0);
-
-            if (alvo.getTime() > agora.getTime()) {
-                return alvo.getTime();
+            // Se for HOJE e o primeiro usuário do dia já confirmou
+            // horários específicos, eles sobrepõem o padrão semanal.
+            if (i === 0 && confirmacaoDiaria && confirmacaoDiaria.data === hojeISO()) {
+                normal = confirmacaoDiaria.normal;
+                full = confirmacaoDiaria.full;
             }
+
+            adicionarCandidatoCorte(candidatos, alvo, normal, 'normal');
+            adicionarCandidatoCorte(candidatos, alvo, full, 'full');
         }
-        return null;
+
+        var futuros = candidatos.filter(function (c) { return c.tempo > agora.getTime(); });
+        if (!futuros.length) return null;
+
+        futuros.sort(function (a, b) { return a.tempo - b.tempo; });
+        return futuros[0];
     }
 
     function prazoManuseio() {
@@ -152,17 +193,20 @@
         }
     }
 
+    // Retorna { tempo, tipo } — tipo é 'normal', 'full' ou null
+    // (quando o prazo vem do manuseio das vendas, não da agenda).
     function calcularPrazo() {
-        var a = proximoCorteAgendado();
-        var b = prazoManuseio();
+        var agendado = proximoCorteAgendado();
+        var manuseio = prazoManuseio();
         var agora = Date.now();
 
         var candidatos = [];
-        if (a && a > agora - 6 * 60 * 60 * 1000) candidatos.push(a);
-        if (b && b > agora - 6 * 60 * 60 * 1000) candidatos.push(b);
+        if (agendado && agendado.tempo > agora - 6 * 60 * 60 * 1000) candidatos.push(agendado);
+        if (manuseio && manuseio > agora - 6 * 60 * 60 * 1000) candidatos.push({ tempo: manuseio, tipo: null });
 
         if (candidatos.length === 0) return null;
-        return Math.min.apply(null, candidatos);
+        candidatos.sort(function (a, b) { return a.tempo - b.tempo; });
+        return candidatos[0];
     }
 
     // ---------- formatação ----------
@@ -196,6 +240,20 @@
         return da.getFullYear() === db.getFullYear() &&
             da.getMonth() === db.getMonth() &&
             da.getDate() === db.getDate();
+    }
+
+    function hojeISO() {
+        var d = new Date();
+        var mm = String(d.getMonth() + 1);
+        var dd = String(d.getDate());
+        if (mm.length < 2) mm = '0' + mm;
+        if (dd.length < 2) dd = '0' + dd;
+        return d.getFullYear() + '-' + mm + '-' + dd;
+    }
+
+    function horarioPadraoHoje() {
+        var s = schedule || DEFAULT_SCHEDULE;
+        return s[String(new Date().getDay())] || { normal: null, full: null };
     }
 
     // ---------- criação (embutido nas sidebars, com fallback fixo) ----------
@@ -270,6 +328,11 @@
             '.wt-coleta-modal .linha{display:flex;align-items:center;justify-content:space-between;',
             'padding:6px 0;border-bottom:1px solid #eef2f7}',
             '.wt-coleta-modal input{width:96px;padding:6px 8px;border:1px solid #d3dceb;border-radius:8px;font:inherit}',
+            /* linha com 2 colunas (Normal / FULL) */
+            '.wt-coleta-modal .linha.wt-coleta-2col{display:grid;grid-template-columns:52px 1fr 1fr;gap:8px}',
+            '.wt-coleta-modal .wt-coleta-col-label{font-size:.64rem;text-transform:uppercase;letter-spacing:.05em;',
+            'color:#8895ab;text-align:center}',
+            '.wt-coleta-modal .wt-coleta-2col input{width:100%;box-sizing:border-box}',
             '.wt-coleta-modal .acoes{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}',
             '.wt-coleta-modal button{padding:8px 16px;border-radius:9px;border:0;cursor:pointer;font:inherit;font-weight:600}',
             '.wt-coleta-modal .salvar{background:#1f6feb;color:#fff}',
@@ -357,6 +420,7 @@
 
     function render() {
         criar();
+        verificarConfirmacaoDiaria();
         if (!instancias.length) return;
 
         if (loginAtivo()) {
@@ -374,9 +438,9 @@
             );
         });
 
-        var prazo = calcularPrazo();
+        var resultado = calcularPrazo();
 
-        if (!prazo) {
+        if (!resultado) {
             instancias.forEach(function (inst) {
                 inst.main.textContent = 'Sem coleta';
                 if (inst.sub) inst.sub.textContent = 'configurar';
@@ -386,6 +450,8 @@
             return;
         }
 
+        var prazo = resultado.tempo;
+        var prefixoTipo = resultado.tipo === 'full' ? 'FULL · ' : '';
         var agora = Date.now();
         var restante = prazo - agora;
 
@@ -395,12 +461,12 @@
 
         if (restante <= 0) {
             estadoTexto = 'Estourou';
-            subTexto = 'coleta ' + formatarHora(prazo);
+            subTexto = prefixoTipo + 'coleta ' + formatarHora(prazo);
         } else {
             estadoTexto = formatarRestante(restante);
             subTexto = mesmoDia(agora, prazo)
-                ? 'coleta hoje ' + formatarHora(prazo)
-                : 'coleta ' + DIAS[new Date(prazo).getDay()] + ' ' + formatarHora(prazo);
+                ? prefixoTipo + 'coleta hoje ' + formatarHora(prazo)
+                : prefixoTipo + 'coleta ' + DIAS[new Date(prazo).getDay()] + ' ' + formatarHora(prazo);
         }
 
         if (restante <= 0 || restante <= 60 * 60 * 1000) {
@@ -427,12 +493,18 @@
 
         var atual = schedule || DEFAULT_SCHEDULE;
 
-        var linhas = '';
+        var linhas =
+            '<div class="linha wt-coleta-2col"><span></span>' +
+            '<span class="wt-coleta-col-label">Normal</span>' +
+            '<span class="wt-coleta-col-label">FULL</span></div>';
+
         for (var d = 0; d < 7; d++) {
+            var v = atual[String(d)] || { normal: null, full: null };
             linhas +=
-                '<div class="linha"><span>' + DIAS[d] + '</span>' +
-                '<input type="time" data-dia="' + d + '" value="' +
-                (atual[String(d)] || '') + '"></div>';
+                '<div class="linha wt-coleta-2col"><span>' + DIAS[d] + '</span>' +
+                '<input type="time" data-dia="' + d + '" data-tipo="normal" value="' + (v.normal || '') + '">' +
+                '<input type="time" data-dia="' + d + '" data-tipo="full" value="' + (v.full || '') + '">' +
+                '</div>';
         }
 
         var modal = document.createElement('div');
@@ -441,7 +513,7 @@
             '<div class="box">' +
             '<h3>Horários de coleta</h3>' +
             '<p>Horário limite de cada dia (deixe em branco quando não há coleta). ' +
-            'Igual "Meus horários de coleta" do Mercado Livre.</p>' +
+            'A coluna FULL é opcional — nem todo dia tem coleta FULL.</p>' +
             linhas +
             '<div class="acoes">' +
             '<button class="cancelar">Cancelar</button>' +
@@ -458,14 +530,116 @@
 
         modal.querySelector('.salvar').addEventListener('click', function () {
             var nova = {};
+            for (var d2 = 0; d2 < 7; d2++) nova[String(d2)] = { normal: null, full: null };
             modal.querySelectorAll('input[data-dia]').forEach(function (inp) {
-                nova[inp.getAttribute('data-dia')] = inp.value || null;
+                var dia = inp.getAttribute('data-dia');
+                var tipo = inp.getAttribute('data-tipo');
+                nova[dia][tipo] = inp.value || null;
             });
             schedule = normalizarSchedule(nova);
             salvarScheduleLocal(schedule);
             salvarScheduleSupabase(schedule);
             modal.remove();
             render();
+        });
+    }
+
+    // ---------- confirmação diária (1º usuário do dia) ----------
+
+    function verificarConfirmacaoDiaria() {
+        if (confirmacaoDiariaResolvida) return;
+        if (verificacaoDiariaEmAndamento) return;
+        if (loginAtivo()) return;
+        if (!window.currentUser) return;
+        if (!window.supabaseClient) return;
+
+        verificacaoDiariaEmAndamento = true;
+
+        window.supabaseClient
+            .from('configuracoes_sistema')
+            .select('valor')
+            .eq('chave', CONFIG_CHAVE_DIA)
+            .maybeSingle()
+            .then(function (res) {
+                verificacaoDiariaEmAndamento = false;
+                var v = res && res.data && res.data.valor;
+
+                if (v && v.data === hojeISO()) {
+                    // Alguém já confirmou hoje — guarda o horário (pra
+                    // sobrepor o padrão semanal na ampulheta) e não
+                    // mostra o modal.
+                    confirmacaoDiaria = v;
+                    confirmacaoDiariaResolvida = true;
+                    render();
+                    return;
+                }
+
+                // Ninguém confirmou ainda hoje: este é (até onde
+                // sabemos) o primeiro usuário — mostra o modal.
+                // Não marca confirmacaoDiariaResolvida ainda, pra
+                // tentar de novo depois se o usuário não confirmar
+                // (ex.: recarregar a página).
+                abrirConfirmacaoDiaria();
+            }, function () {
+                verificacaoDiariaEmAndamento = false;
+            });
+    }
+
+    function abrirConfirmacaoDiaria() {
+        if (document.querySelector('.wt-coleta-dia-modal')) return;
+
+        var padrao = horarioPadraoHoje();
+
+        var modal = document.createElement('div');
+        modal.className = 'wt-coleta-modal wt-coleta-dia-modal';
+        modal.innerHTML =
+            '<div class="box">' +
+            '<h3>Horário de coleta de hoje</h3>' +
+            '<p>Você é o primeiro a entrar no sistema hoje. Confirme (ou ajuste) os ' +
+            'horários de coleta de hoje — a coluna FULL pode ficar em branco quando não ' +
+            'há coleta FULL nesse dia. Isso só aparece uma vez por dia, pro primeiro usuário.</p>' +
+            '<div class="linha wt-coleta-2col"><span></span>' +
+            '<span class="wt-coleta-col-label">Normal</span>' +
+            '<span class="wt-coleta-col-label">FULL</span></div>' +
+            '<div class="linha wt-coleta-2col"><span>Hoje</span>' +
+            '<input type="time" id="wtColetaDiaNormal" value="' + (padrao.normal || '') + '">' +
+            '<input type="time" id="wtColetaDiaFull" value="' + (padrao.full || '') + '">' +
+            '</div>' +
+            '<div class="acoes"><button class="salvar">Confirmar</button></div>' +
+            '</div>';
+
+        // Propositalmente SEM botão de cancelar/fechar e sem fechar ao
+        // clicar fora — a confirmação é obrigatória pro 1º usuário.
+        document.body.appendChild(modal);
+
+        modal.querySelector('.salvar').addEventListener('click', function () {
+            var btn = modal.querySelector('.salvar');
+            var normal = (document.getElementById('wtColetaDiaNormal') || {}).value || null;
+            var full = (document.getElementById('wtColetaDiaFull') || {}).value || null;
+            var valor = {
+                data: hojeISO(),
+                normal: normal,
+                full: full,
+                confirmado_por: (window.currentUser && (window.currentUser.name || window.currentUser.username)) || null
+            };
+
+            btn.disabled = true;
+            btn.textContent = 'Salvando...';
+
+            window.supabaseClient
+                .from('configuracoes_sistema')
+                .upsert({ chave: CONFIG_CHAVE_DIA, valor: valor }, { onConflict: 'chave' })
+                .then(function () {
+                    confirmacaoDiaria = valor;
+                    confirmacaoDiariaResolvida = true;
+                    modal.remove();
+                    render();
+                    if (window.showToast) window.showToast('✅ Horários de coleta de hoje confirmados.', 'success');
+                }, function (err) {
+                    btn.disabled = false;
+                    btn.textContent = 'Confirmar';
+                    if (window.showToast) window.showToast('❌ Erro ao salvar: ' + (err && err.message ? err.message : 'tente de novo'), 'error');
+                });
         });
     }
 
