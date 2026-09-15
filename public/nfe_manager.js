@@ -20471,8 +20471,15 @@ async function sincronizarPainelOperacionalNFE(
                     );
 
 
+                // Mescla com o valor ATUAL do global (não sobrescreve
+                // direto) — evita apagar vendas adicionadas em paralelo
+                // por outra operação assíncrona (ex.: o filtro "FULL"
+                // sendo carregado ao mesmo tempo que esta sincronização).
                 window._vendasPainelNFEBase =
-                    vendas;
+                    mesclar(
+                        window._vendasPainelNFEBase,
+                        vendas
+                    );
 
             } catch (error) {
 
@@ -20734,8 +20741,13 @@ async function sincronizarPainelOperacionalNFE(
                 );
 
 
+            // Mescla com o valor ATUAL do global — ver comentário
+            // acima sobre a corrida com o carregamento do filtro FULL.
             window._vendasPainelNFEBase =
-                vendas;
+                mesclar(
+                    window._vendasPainelNFEBase,
+                    vendas
+                );
 
 
             atualizarTela();
@@ -20838,8 +20850,13 @@ async function sincronizarPainelOperacionalNFE(
             );
 
 
+            // Mescla com o valor ATUAL do global — ver comentário
+            // acima sobre a corrida com o carregamento do filtro FULL.
             window._vendasPainelNFEBase =
-                vendas;
+                mesclar(
+                    window._vendasPainelNFEBase,
+                    vendas
+                );
 
 
             atualizarTela();
@@ -20953,8 +20970,16 @@ async function sincronizarPainelOperacionalNFE(
         // FINAL
         // =====================================================
 
+        // Mescla com o valor ATUAL do global — ver comentário acima
+        // sobre a corrida com o carregamento do filtro FULL. Sem isso,
+        // esta sobrescrita final apagava vendas FULL que o usuário
+        // tivesse carregado clicando no filtro enquanto esta
+        // sincronização ainda estava rodando em segundo plano.
         window._vendasPainelNFEBase =
-            vendas;
+            mesclar(
+                window._vendasPainelNFEBase,
+                vendas
+            );
 
 
         atualizarTela();
@@ -29349,15 +29374,13 @@ function obterChaveAgrupamentoNFE(
         return null;
     }
 
-    // FULL não deve entrar no agrupamento manual
-    if (
-        detectarVendaFullNFE(
-            venda
-        )
-    ) {
-
-        return `order:${vendaId}`;
-    }
+    // Vendas FULL também podem vir com pack_id/shipment_id
+    // compartilhado (o mesmo cliente comprando 2+ anúncios
+    // diferentes no mesmo carrinho gera uma order por produto,
+    // todas com o mesmo pack_id — isso acontece independente de
+    // ser FULL ou não) — por isso não há mais exceção aqui:
+    // seguimos a mesma cascata pack_id → shipment_id → order_id
+    // para qualquer venda.
 
     const packId =
         obterPackIdNFE(
@@ -71335,6 +71358,327 @@ window.editarClienteNFE = async function editarClienteNFE(id) {
     }
 };
 
+// ============================================================
+// DEVOLUÇÃO — PERGUNTAR QUANTO REALMENTE VOLTA AO ESTOQUE
+//
+// Emitir a NF-e de devolução não quer dizer que o produto inteiro
+// volta para a venda: pode voltar avariado (0 un.), ou só parte
+// dele (ex.: kit de 28 raios, só 15 aproveitáveis). Por isso, logo
+// depois de emitir a nota perguntamos a quantidade real antes de
+// dar entrada no estoque — e só então sincronizamos os anúncios,
+// reaproveitando a mesma sincronização já usada em outros pontos
+// da baixa/restauração de estoque desta tela.
+// ============================================================
+
+let _itensModalRetornoEstoqueDevolucaoNFE = [];
+let _referenciaModalRetornoEstoqueDevolucaoNFE = '';
+
+function criarModalRetornoEstoqueDevolucaoNFESeNecessario() {
+
+    if (
+        document.getElementById(
+            'modalRetornoEstoqueDevolucaoNFE'
+        )
+    ) {
+        return;
+    }
+
+    const overlay =
+        document.createElement('div');
+
+    overlay.id =
+        'modalRetornoEstoqueDevolucaoNFE';
+
+    overlay.className =
+        'modal hidden';
+
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width:600px;">
+            <h3 style="margin-top:0;">
+                <i class="fas fa-undo"></i>
+                Quanto volta para o estoque?
+            </h3>
+            <p class="text-muted" style="font-size:13px;">
+                A NF-e de devolução foi emitida. Antes de dar entrada no estoque, informe
+                quanto de cada produto realmente pode voltar para venda — se vier avariado
+                ou incompleto, ajuste a quantidade (pode deixar 0).
+            </p>
+            <div id="listaRetornoEstoqueDevolucaoNFE"></div>
+            <div style="text-align:right; margin-top:15px; display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn btn-secondary" onclick="fecharModalRetornoEstoqueDevolucaoNFE()">
+                    Não dar entrada agora
+                </button>
+                <button id="btnConfirmarRetornoEstoqueDevolucaoNFE" class="btn btn-primary"
+                    onclick="confirmarRetornoEstoqueDevolucaoNFE()">
+                    <i class="fas fa-check"></i> Confirmar entrada
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+}
+
+window.fecharModalRetornoEstoqueDevolucaoNFE = function() {
+
+    document
+        .getElementById(
+            'modalRetornoEstoqueDevolucaoNFE'
+        )
+        ?.classList
+        .add('hidden');
+
+    _itensModalRetornoEstoqueDevolucaoNFE =
+        [];
+};
+
+window.abrirModalRetornoEstoqueDevolucaoNFE = function(
+    itens,
+    referenciaDocumento
+) {
+
+    const itensValidos =
+        (Array.isArray(itens) ? itens : [])
+            .filter(
+                item =>
+                    item &&
+                    item.produto_id
+            );
+
+    if (!itensValidos.length) {
+        return;
+    }
+
+    criarModalRetornoEstoqueDevolucaoNFESeNecessario();
+
+    _itensModalRetornoEstoqueDevolucaoNFE =
+        itensValidos;
+
+    _referenciaModalRetornoEstoqueDevolucaoNFE =
+        referenciaDocumento ||
+        `DEVOLUCAO-${Date.now()}`;
+
+    const lista =
+        document.getElementById(
+            'listaRetornoEstoqueDevolucaoNFE'
+        );
+
+    if (lista) {
+
+        lista.innerHTML =
+            itensValidos.map(
+                (item, index) => {
+
+                    const original =
+                        Number(item.quantidade) ||
+                        0;
+
+                    return `
+                        <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #eee;">
+                            <div style="flex:1;">
+                                <strong>${escaparHTMLNFE(item.nome || item.sku || 'Produto')}</strong><br>
+                                <small class="text-muted">SKU: ${escaparHTMLNFE(item.sku || '-')} • Quantidade na venda: ${original}</small>
+                            </div>
+                            <div style="width:110px;">
+                                <input type="number" class="form-control form-control-sm"
+                                    data-index-retorno-devolucao="${index}"
+                                    min="0" max="${original}" step="1" value="${original}">
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" title="Produto avariado / não volta"
+                                onclick="document.querySelector('[data-index-retorno-devolucao=&quot;${index}&quot;]').value = 0;">
+                                0
+                            </button>
+                        </div>
+                    `;
+                }
+            )
+            .join('');
+    }
+
+    document
+        .getElementById(
+            'modalRetornoEstoqueDevolucaoNFE'
+        )
+        ?.classList
+        .remove('hidden');
+};
+
+window.confirmarRetornoEstoqueDevolucaoNFE = async function() {
+
+    const btn =
+        document.getElementById(
+            'btnConfirmarRetornoEstoqueDevolucaoNFE'
+        );
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando...';
+    }
+
+    try {
+
+        const referencia =
+            _referenciaModalRetornoEstoqueDevolucaoNFE;
+
+        const itensSincronizar =
+            [];
+
+        let algumAtualizado =
+            false;
+
+        for (
+            let index = 0;
+            index < _itensModalRetornoEstoqueDevolucaoNFE.length;
+            index++
+        ) {
+
+            const item =
+                _itensModalRetornoEstoqueDevolucaoNFE[index];
+
+            const input =
+                document.querySelector(
+                    `[data-index-retorno-devolucao="${index}"]`
+                );
+
+            const quantidade =
+                Math.max(
+                    0,
+                    Math.floor(
+                        Number(input?.value) ||
+                        0
+                    )
+                );
+
+            if (
+                !item.produto_id ||
+                quantidade <= 0
+            ) {
+                continue;
+            }
+
+            const {
+                data: produto,
+                error: erroProduto
+            } =
+                await window.supabaseClient
+                    .from('produtos_estoque')
+                    .select('id, quantidade, sku')
+                    .eq('id', item.produto_id)
+                    .maybeSingle();
+
+            if (erroProduto || !produto) {
+                console.warn(
+                    '⚠️ Produto não encontrado para devolução:',
+                    item,
+                    erroProduto
+                );
+                continue;
+            }
+
+            const novaQuantidade =
+                Number(produto.quantidade || 0) +
+                quantidade;
+
+            const {
+                error: erroUpdate
+            } =
+                await window.supabaseClient
+                    .from('produtos_estoque')
+                    .update({
+                        quantidade: novaQuantidade,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', produto.id);
+
+            if (erroUpdate) {
+                console.warn(
+                    '⚠️ Erro atualizando estoque na devolução:',
+                    erroUpdate
+                );
+                continue;
+            }
+
+            if (
+                typeof window.registrarMovimentacao ===
+                'function'
+            ) {
+
+                await window.registrarMovimentacao(
+                    produto.id,
+                    'entrada',
+                    quantidade,
+                    `DEVOLUCAO-${referencia}`,
+                    'devolucao'
+                );
+            }
+
+            algumAtualizado =
+                true;
+
+            itensSincronizar.push({
+                produto_id: produto.id,
+                sku: produto.sku,
+                encontrado: true
+            });
+        }
+
+        if (!algumAtualizado) {
+
+            showToast(
+                'ℹ️ Nenhuma quantidade informada — nada foi movimentado no estoque.',
+                'info'
+            );
+
+            window.fecharModalRetornoEstoqueDevolucaoNFE();
+
+            return;
+        }
+
+        showToast(
+            '✅ Estoque da devolução atualizado!',
+            'success'
+        );
+
+        if (
+            typeof window.carregarProdutosEstoque ===
+            'function'
+        ) {
+            await window.carregarProdutosEstoque();
+        }
+
+        if (
+            itensSincronizar.length &&
+            typeof sincronizarProdutosBaixadosNFE ===
+                'function'
+        ) {
+            await sincronizarProdutosBaixadosNFE(
+                itensSincronizar
+            );
+        }
+
+        window.fecharModalRetornoEstoqueDevolucaoNFE();
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro confirmando retorno de estoque da devolução:',
+            error
+        );
+
+        showToast(
+            `❌ Erro ao dar entrada no estoque: ${error.message}`,
+            'error'
+        );
+
+    } finally {
+
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Confirmar entrada';
+        }
+    }
+};
+
 async function emitirNFEAvulsa(
     event = null
 ) {
@@ -71744,6 +72088,26 @@ if (
         );
 
 
+        // Captura os itens ANTES de limpar o formulário (que zera
+        // window._itensAvulsaNFE) — são usados a seguir para
+        // perguntar quanto realmente volta ao estoque, no caso de
+        // devolução.
+        const itensDevolucaoParaEstoque =
+            entradaDevolucao &&
+            Array.isArray(window._itensAvulsaNFE)
+                ? window._itensAvulsaNFE.map(
+                    item => ({ ...item })
+                )
+                : [];
+
+        const referenciaDevolucaoNFE =
+            result?.numero ||
+            result?.numero_nfe ||
+            result?.nfe?.numero ||
+            chaveNFeReferenciada ||
+            String(Date.now());
+
+
         await limparFormAvulsa();
 
 
@@ -71752,6 +72116,15 @@ if (
             await carregarNFesEmitidas();
 
         } catch {}
+
+
+        if (itensDevolucaoParaEstoque.length) {
+
+            abrirModalRetornoEstoqueDevolucaoNFE(
+                itensDevolucaoParaEstoque,
+                referenciaDevolucaoNFE
+            );
+        }
 
 
     } catch (
