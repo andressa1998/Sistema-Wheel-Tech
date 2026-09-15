@@ -566,6 +566,8 @@
         const itens = [];
         if (admin) itens.push(['fa-eye', 'Gerenciar visualização',
             () => window.abrirGerenciarVisualizacaoMenu && window.abrirGerenciarVisualizacaoMenu()]);
+        if (admin) itens.push(['fa-images', 'Editar carrossel',
+            () => window.abrirEditorCarrossel && window.abrirEditorCarrossel()]);
         itens.push(['fa-key', 'Alterar senha', () => abrirTrocarSenha()]);
         if (admin) itens.push(['fa-camera', 'Alterar foto do avatar', () => alterarMinhaFoto()]);
         if (admin) itens.push(['fa-users', 'Usuários', () => abrir('ativos')]);
