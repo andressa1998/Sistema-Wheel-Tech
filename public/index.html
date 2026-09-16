@@ -1268,6 +1268,54 @@ body > * {
 }
 
 /* ============================================================
+   ALERTA - MUDAR DE PREMIUM PARA CLÁSSICO (variações com 0/1 no FULL)
+   ============================================================ */
+
+@keyframes gaPiscarTipoClassico {
+
+    0%,
+    100% {
+        background-color: #eef5ff;
+        box-shadow: inset 0 0 0 2px #0d6efd;
+    }
+
+    50% {
+        background-color: #d7e7ff;
+        box-shadow: inset 0 0 0 3px #0a58ca;
+    }
+}
+
+.ga-tipo-precisa-classico {
+    animation: gaPiscarTipoClassico 1s infinite;
+    border-radius: 6px;
+    padding: 7px !important;
+}
+
+/* ============================================================
+   ALERTA - DEPÓSITO PRECISA SER ZERADO (item 30+ dias sem vender)
+   ============================================================ */
+
+@keyframes gaPiscarDepositoInatividade {
+
+    0%,
+    100% {
+        background-color: #f7edfb;
+        box-shadow: inset 0 0 0 2px #6f1d91;
+    }
+
+    50% {
+        background-color: #ecd8f5;
+        box-shadow: inset 0 0 0 3px #591574;
+    }
+}
+
+.ga-deposito-zerar-inatividade {
+    animation: gaPiscarDepositoInatividade 1s infinite;
+    border-radius: 6px;
+    padding: 7px !important;
+}
+
+/* ============================================================
    ALERTA - CAPA DO ANÚNCIO NÃO É A VARIAÇÃO FULL CORRETA
    ============================================================ */
 
@@ -7042,6 +7090,18 @@ body:has(#loginScreen:not(.hidden)) {
                         Depósito 0 / Corrigir estoque
                     </option>
 
+                    <option value="zerar_deposito">
+                        Item parado 30+ dias / Zerar depósito
+                    </option>
+
+                    <option value="mudar_classico">
+                        Variações 0/1 no FULL / Mudar p/ Clássico
+                    </option>
+
+                    <option value="full_sem_estoque">
+                        Oferece FULL sem estoque real
+                    </option>
+
                     <option value="pendencias">
                         Todas as pendências
                     </option>
@@ -7150,7 +7210,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="entradas.js"></script>
     <script src="promocoes_manager.js?v=20260915-2"></script>
     <script src="full_analysis.js"></script>
-    <script src="gerenciamento_anuncios.js?v=20260916-3"></script>
+    <script src="gerenciamento_anuncios.js?v=20260916-4"></script>
     <script src="chamados.js?v=20260915-3"></script>
     <script src="reclamacoes_clientes.js?v=20260916-8"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>

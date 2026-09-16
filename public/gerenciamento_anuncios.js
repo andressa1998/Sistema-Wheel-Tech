@@ -6073,6 +6073,19 @@ function applyFilters(
     resetPage = true
 ) {
 
+    // Garante que row._fullAtivoSemEstoqueReal e
+    // row._tipoRecomendadoPorVariacoes (usados nos filtros de
+    // pendência abaixo) estejam frescos ANTES de filtrar — eles só
+    // são recalculados dentro de render(), que roda depois disto.
+    if (
+        typeof aplicarAlertasPorVariacaoGA ===
+        'function'
+    ) {
+
+        aplicarAlertasPorVariacaoGA();
+    }
+
+
     const busca =
         String(
             document.getElementById(
@@ -6161,6 +6174,46 @@ function applyFilters(
 
 
                 // =================================================
+                // PENDÊNCIA: DEPÓSITO NÃO ZERADO EM ITEM PARADO
+                // =================================================
+
+                const precisaZerarDeposito =
+                    typeof gaPrecisaZerarDepositoPorInatividade ===
+                        'function'
+
+                        ? gaPrecisaZerarDepositoPorInatividade(
+                            row
+                        )
+
+                        : false;
+
+
+                // =================================================
+                // PENDÊNCIA: MUDAR PARA CLÁSSICO
+                // =================================================
+
+                const precisaMudarClassico =
+                    typeof gaPrecisaMudarParaClassico ===
+                        'function'
+
+                        ? gaPrecisaMudarParaClassico(
+                            row
+                        )
+
+                        : false;
+
+
+                // =================================================
+                // PENDÊNCIA: OFERECE FULL SEM ESTOQUE REAL
+                // =================================================
+
+                const precisaFullSemEstoque =
+                    Boolean(
+                        row._fullAtivoSemEstoqueReal
+                    );
+
+
+                // =================================================
                 // FILTRO 30+
                 // =================================================
 
@@ -6197,9 +6250,63 @@ function applyFilters(
 
 
                 // =================================================
+                // FILTRO ZERAR DEPÓSITO
+                // =================================================
+
+                if (
+                    correcao ===
+                    'zerar_deposito'
+                ) {
+
+                    if (
+                        !precisaZerarDeposito
+                    ) {
+
+                        return false;
+                    }
+                }
+
+
+                // =================================================
+                // FILTRO MUDAR PARA CLÁSSICO
+                // =================================================
+
+                if (
+                    correcao ===
+                    'mudar_classico'
+                ) {
+
+                    if (
+                        !precisaMudarClassico
+                    ) {
+
+                        return false;
+                    }
+                }
+
+
+                // =================================================
+                // FILTRO FULL SEM ESTOQUE
+                // =================================================
+
+                if (
+                    correcao ===
+                    'full_sem_estoque'
+                ) {
+
+                    if (
+                        !precisaFullSemEstoque
+                    ) {
+
+                        return false;
+                    }
+                }
+
+
+                // =================================================
                 // TODAS AS PENDÊNCIAS
                 //
-                // Aparece se tiver QUALQUER uma das duas.
+                // Aparece se tiver QUALQUER uma das pendências.
                 // =================================================
 
                 if (
@@ -6209,7 +6316,10 @@ function applyFilters(
 
                     if (
                         !precisaCorrigirTipo &&
-                        !precisaCorrigirEstoque
+                        !precisaCorrigirEstoque &&
+                        !precisaZerarDeposito &&
+                        !precisaMudarClassico &&
+                        !precisaFullSemEstoque
                     ) {
 
                         return false;
@@ -7919,10 +8029,38 @@ function gaPrecisaCorrigirTipo(
 ) {
 
     return (
-        gaMaisDe30DiasSemVender(
-            row
+        (
+            gaMaisDe30DiasSemVender(
+                row
+            ) ||
+            row?._tipoRecomendadoPorVariacoes ===
+                'premium'
         ) &&
         gaEhClassico(
+            row
+        )
+    );
+}
+
+
+// ============================================================
+// PRECISA MUDAR PARA CLÁSSICO?
+//
+// Direção oposta de gaPrecisaCorrigirTipo — baseada só na
+// quantidade em FULL das variações (não existe uma regra por
+// tempo pra "rebaixar" o anúncio, só por estoque parado em
+// variações pequenas). Ver aplicarAlertasPorVariacaoGA(), que
+// calcula row._tipoRecomendadoPorVariacoes por item.
+// ============================================================
+
+function gaPrecisaMudarParaClassico(
+    row
+) {
+
+    return (
+        row?._tipoRecomendadoPorVariacoes ===
+            'classico' &&
+        gaEhPremium(
             row
         )
     );
@@ -8026,6 +8164,89 @@ function gaRenderTipo(
         gaPrecisaCorrigirTipo(
             row
         );
+
+
+    // ========================================================
+    // PRECISA ALTERAR PREMIUM -> CLÁSSICO
+    //
+    // Direção oposta — todas as variações do anúncio têm 0 ou 1
+    // unidade no FULL, não justifica pagar Premium.
+    // ========================================================
+
+    if (
+        !precisaCorrigir &&
+        gaPrecisaMudarParaClassico(
+            row
+        )
+    ) {
+
+        const urlClassico =
+            gaUrlModificarAnuncio(
+                row.itemId
+            );
+
+        return `
+
+            <td data-coluna-ga="tipo" class="ga-tipo-precisa-classico">
+
+                <strong
+                    style="
+                        color:#0d6efd;
+                    "
+                >
+                    ${esc(
+                        row.listingTypeName ||
+                        'Premium'
+                    )}
+                </strong>
+
+
+                <div class="ga-alerta-tipo" style="color:#0d6efd;">
+
+                    <i class="fas fa-arrow-down"></i>
+
+                    Mudar para Clássico
+
+                </div>
+
+
+                <div class="ga-acoes-correcao-tipo">
+
+                    <a
+                        href="${esc(urlClassico)}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="ga-link-corrigir"
+                        style="color:#0d6efd;"
+                    >
+
+                        <i class="fas fa-edit"></i>
+
+                        Modificar anúncio
+
+                    </a>
+
+
+                    <button
+                        type="button"
+                        class="ga-btn-corrigido"
+                        onclick="verificarCorrecaoTipoClassicoAnuncio(
+                            '${esc(row.itemId)}',
+                            this
+                        )"
+                    >
+
+                        <i class="fas fa-check"></i>
+
+                        Corrigido
+
+                    </button>
+
+                </div>
+
+            </td>
+        `;
+    }
 
 
     // ========================================================
@@ -8233,6 +8454,129 @@ function aplicarSinalizacaoCapaAnuncioGA() {
 
 
 // ============================================================
+// ALERTAS POR ITEM (AGRUPANDO TODAS AS VARIAÇÕES)
+//
+// Roda 1x por render() (mesmo padrão de aplicarSinalizacaoCapaAnuncioGA),
+// agrupando as rows por itemId pra decidir duas coisas que só
+// fazem sentido olhando TODAS as variações de um anúncio juntas:
+//
+// 1. row._fullAtivoSemEstoqueReal — o anúncio está marcado como
+//    "oferece FULL" mas, olhando todas as variações, nenhuma tem
+//    estoque de verdade no FULL. É inconsistência de dados
+//    (ativoNoFull desatualizado) ou o FULL esvaziou sem ninguém
+//    perceber — nos dois casos, alerta.
+//
+// 2. row._tipoRecomendadoPorVariacoes — só se aplica a anúncios
+//    que TÊM variação de verdade (mais de uma linha por item):
+//      - alguma variação com mais de 1 unidade no FULL -> 'premium'
+//      - todas as variações com 0 ou 1 unidade no FULL -> 'classico'
+//    Anúncio sem variação real não entra nessa regra (fica null).
+// ============================================================
+
+function aplicarAlertasPorVariacaoGA() {
+
+    if (
+        !Array.isArray(GA.rows) ||
+        !GA.rows.length
+    ) {
+        return;
+    }
+
+    const porItem =
+        new Map();
+
+    GA.rows.forEach(
+        row => {
+
+            row._fullAtivoSemEstoqueReal =
+                false;
+
+            row._tipoRecomendadoPorVariacoes =
+                null;
+
+            if (!row.itemId) return;
+
+            if (!porItem.has(row.itemId)) {
+                porItem.set(row.itemId, []);
+            }
+
+            porItem.get(row.itemId).push(row);
+        }
+    );
+
+    porItem.forEach(
+        linhas => {
+
+            // =====================================================
+            // 1. ATIVO NO FULL MAS SEM ESTOQUE REAL EM NENHUMA
+            //    VARIAÇÃO (ou no item, quando não tem variação)
+            // =====================================================
+
+            const algumaAtivaNoFull =
+                linhas.some(
+                    row => row.ativoNoFull === true
+                );
+
+            if (algumaAtivaNoFull) {
+
+                const todasZeradas =
+                    linhas.every(
+                        row => {
+
+                            const estoqueFull =
+                                Number(row.full);
+
+                            return (
+                                !Number.isFinite(estoqueFull) ||
+                                estoqueFull <= 0
+                            );
+                        }
+                    );
+
+                if (todasZeradas) {
+
+                    linhas.forEach(
+                        row => {
+                            row._fullAtivoSemEstoqueReal = true;
+                        }
+                    );
+                }
+            }
+
+
+            // =====================================================
+            // 2. TIPO RECOMENDADO PELA QUANTIDADE NAS VARIAÇÕES
+            //
+            // Só se aplica quando o anúncio TEM variação de verdade.
+            // Complementares por definição: se nenhuma variação tem
+            // mais de 1 unidade no FULL, então todas têm 0 ou 1 —
+            // não precisa checar as duas condições separadamente.
+            // =====================================================
+
+            const temVariacaoReal =
+                linhas.length > 1 &&
+                linhas.some(row => row.variationId);
+
+            if (!temVariacaoReal) return;
+
+            const recomendado =
+                linhas.some(
+                    row => Number(row.full) > 1
+                )
+                    ? 'premium'
+                    : 'classico';
+
+            linhas.forEach(
+                row => {
+                    row._tipoRecomendadoPorVariacoes = recomendado;
+                }
+            );
+        }
+    );
+}
+
+
+// ============================================================
 // 30+ DIAS SEM VENDER -> ENTRA AUTOMATICAMENTE NA LISTA FIXA
 // "SEMPRE PREMIUM"
 //
@@ -8386,6 +8730,14 @@ function render() {
     // =========================================================
 
     aplicarSinalizacaoCapaAnuncioGA();
+
+
+    // =========================================================
+    // ALERTAS POR ITEM: FULL ATIVO SEM ESTOQUE REAL, E TIPO
+    // RECOMENDADO PELA QUANTIDADE NAS VARIAÇÕES
+    // =========================================================
+
+    aplicarAlertasPorVariacaoGA();
 
 
     // =========================================================
@@ -9360,6 +9712,25 @@ function gaPrecisaCorrigirEstoqueDeposito(
 ) {
 
     // =========================================================
+    // ITEM PARADO HÁ 30+ DIAS: NÃO SUGERE REABASTECER O DEPÓSITO
+    //
+    // O objetivo pra item parado é vender só pelo FULL — sugerir
+    // "colocar estoque no depósito" contradiz isso. Ver
+    // gaPrecisaZerarDepositoPorInatividade(), que cobre esse caso
+    // com o alerta oposto (zerar, não reabastecer).
+    // =========================================================
+
+    if (
+        gaMaisDe30DiasSemVender(
+            row
+        )
+    ) {
+
+        return false;
+    }
+
+
+    // =========================================================
     // PRECISAMOS TER ESTOQUE DO MERCADO LIVRE CONSULTADO
     // =========================================================
 
@@ -9502,6 +9873,62 @@ function gaPrecisaAjustarQuantidadeExposicao(
 
 
 // ============================================================
+// DEPÓSITO PRECISA SER ZERADO — ITEM PARADO HÁ 30+ DIAS
+//
+// Objetivo do time: item que passou 30 dias sem vender deve ser
+// vendido só pelo FULL, sem estoque parado no depósito (fora do
+// FULL). Qualquer quantidade > 0 no depósito nessa situação é
+// alerta — independente de estar ou não ativo no FULL (mesmo se
+// hoje não oferece FULL, o estoque já devia estar migrando pra
+// lá, não parado no depósito).
+// ============================================================
+
+function gaPrecisaZerarDepositoPorInatividade(
+    row
+) {
+
+    if (
+        !gaMaisDe30DiasSemVender(
+            row
+        )
+    ) {
+
+        return false;
+    }
+
+
+    if (
+        row?.warehouse === null ||
+        row?.warehouse === undefined
+    ) {
+
+        return false;
+    }
+
+
+    const depositoML =
+        Number(
+            row.warehouse
+        );
+
+
+    if (
+        !Number.isFinite(
+            depositoML
+        )
+    ) {
+
+        return false;
+    }
+
+
+    return (
+        depositoML > 0
+    );
+}
+
+
+// ============================================================
 // SELO "ATIVO NO FULL" DA COLUNA FULL
 //
 // Mostra puramente se o anúncio está OFERECENDO envio FULL ou não
@@ -9536,6 +9963,65 @@ function gaRenderBadgeStatusFullGA(
         return `
             <div style="font-size:10px; font-weight:700; color:#dc3545; margin-top:2px;">
                 <i class="fas fa-times-circle"></i> Não oferece FULL
+            </div>
+        `;
+    }
+
+
+    // ========================================================
+    // MARCADO COMO "OFERECE FULL", MAS SEM ESTOQUE REAL
+    //
+    // Nenhuma variação (ou o item, quando não tem variação) tem
+    // unidade de verdade no FULL — dado desatualizado ou o FULL
+    // esvaziou. Ver aplicarAlertasPorVariacaoGA().
+    // ========================================================
+
+    if (
+        row._fullAtivoSemEstoqueReal
+    ) {
+
+        const url =
+            gaUrlModificarAnuncio(
+                row.itemId
+            );
+
+        return `
+            <div style="font-size:10px; font-weight:700; color:#fd7e14; margin-top:2px;">
+                <i class="fas fa-exclamation-triangle"></i> Oferece FULL sem estoque
+            </div>
+
+            <div class="ga-acoes-correcao-estoque">
+
+                <a
+                    href="${esc(url)}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="ga-link-corrigir-estoque"
+                    style="color:#fd7e14;"
+                >
+
+                    <i class="fas fa-edit"></i>
+
+                    Conferir anúncio
+
+                </a>
+
+
+                <button
+                    type="button"
+                    class="ga-btn-corrigido-estoque"
+                    onclick="verificarCorrecaoFullSemEstoqueAnuncio(
+                        '${esc(row.itemId)}',
+                        this
+                    )"
+                >
+
+                    <i class="fas fa-check"></i>
+
+                    Corrigido
+
+                </button>
+
             </div>
         `;
     }
@@ -9649,6 +10135,98 @@ function gaRenderEstoqueDeposito(
         gaPrecisaCorrigirEstoqueDeposito(
             row
         );
+
+
+    // =========================================================
+    // ITEM PARADO HÁ 30+ DIAS COM DEPÓSITO NÃO ZERADO
+    //
+    // Prioridade máxima: pra item parado, o objetivo é vender só
+    // pelo FULL — nenhum estoque deveria ficar segurado fora dele.
+    // =========================================================
+
+    if (
+        gaPrecisaZerarDepositoPorInatividade(
+            row
+        )
+    ) {
+
+        const urlInatividade =
+            gaUrlModificarAnuncio(
+                row.itemId
+            );
+
+        return `
+
+            <td
+                data-coluna-ga="deposito"
+                class="ga-deposito-zerar-inatividade"
+                style="
+                    text-align:center;
+                "
+            >
+
+                <strong
+                    style="
+                        font-size:20px;
+                        color:#6f1d91;
+                    "
+                    title="${esc(gaTituloDetalheEstoqueDeposito(row))}"
+                >
+                    ${esc(estoqueDeposito)}
+                </strong>
+
+
+                <div class="ga-alerta-estoque" style="color:#6f1d91;">
+
+                    <i class="fas fa-exclamation-triangle"></i>
+
+                    Item parado há 30+ dias
+
+                    <br>
+
+                    Zerar depósito, vender só pelo FULL
+
+                </div>
+
+
+                <div class="ga-acoes-correcao-estoque">
+
+                    <a
+                        href="${esc(urlInatividade)}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="ga-link-corrigir-estoque"
+                        style="color:#6f1d91;"
+                    >
+
+                        <i class="fas fa-edit"></i>
+
+                        Modificar anúncio
+
+                    </a>
+
+
+                    <button
+                        type="button"
+                        class="ga-btn-corrigido-estoque"
+                        onclick="verificarCorrecaoDepositoInatividadeAnuncio(
+                            '${esc(row.itemId)}',
+                            '${esc(row.variationId || '')}',
+                            this
+                        )"
+                    >
+
+                        <i class="fas fa-check"></i>
+
+                        Corrigido
+
+                    </button>
+
+                </div>
+
+            </td>
+        `;
+    }
 
 
     // =========================================================
@@ -13578,5 +14156,379 @@ function exportarCSV() {
             }
         }
     };
+
+
+    // ============================================================
+    // ATUALIZAR DADOS DE UM ANÚNCIO (HELPER COMPARTILHADO)
+    //
+    // Mesma sequência de refresh usada pelos botões "Corrigido" já
+    // existentes (tipo, estoque, quantidade/exposição) — busca o
+    // item de novo no ML, atualiza status/tipo/ativoNoFull/estoque
+    // interno/estoque FULL de todas as variações do MLB, salva no
+    // banco e reaplica filtros + alertas por item. Usado pelos 3
+    // novos botões "Corrigido" abaixo, pra não repetir essa
+    // sequência inteira 3 vezes.
+    // ============================================================
+
+    async function atualizarDadosAnuncioGA(
+        itemId,
+        variationId = ''
+    ) {
+
+        const mlb =
+            String(itemId || '').trim();
+
+        const variacaoAlvo =
+            String(variationId || '').trim();
+
+        if (!mlb) {
+            throw new Error('MLB inválido.');
+        }
+
+        const item =
+            await ml(
+                `/items/${encodeURIComponent(mlb)}` +
+                `?include_attributes=all`
+            );
+
+        if (!item?.id) {
+            throw new Error('Mercado Livre não retornou o anúncio.');
+        }
+
+        const linhasMlb =
+            GA.rows.filter(
+                row => String(row.itemId) === mlb
+            );
+
+        if (!linhasMlb.length) {
+            throw new Error('MLB não encontrado na tabela.');
+        }
+
+        for (const row of linhasMlb) {
+
+            row.status =
+                item.status || row.status;
+
+            row.listingTypeId =
+                item.listing_type_id || row.listingTypeId;
+
+            row.listingTypeName =
+                gaNomeTipoPorId(row.listingTypeId);
+
+            row.title =
+                item.title || row.title;
+
+            row.thumbnail =
+                item.thumbnail || row.thumbnail;
+
+            row.itemCapaPictureId =
+                item.pictures?.[0]?.id || null;
+
+            row.ativoNoFull =
+                isFull(item);
+
+            row.permalink =
+                item.permalink || row.permalink;
+
+            if (
+                row.variationId &&
+                Array.isArray(item.variations)
+            ) {
+
+                const variation =
+                    item.variations.find(
+                        v => String(v.id) === String(row.variationId)
+                    );
+
+                if (variation) {
+                    row.variationPictureIds =
+                        Array.isArray(variation.picture_ids)
+                            ? variation.picture_ids
+                            : [];
+                }
+            }
+        }
+
+        try {
+
+            await loadInternalStock();
+
+            atualizarEstoqueInternoGerenciamento(
+                linhasMlb
+            );
+
+        } catch (errorInterno) {
+
+            console.warn(
+                '⚠️ Não foi possível atualizar estoque interno:',
+                errorInterno
+            );
+        }
+
+        for (const row of linhasMlb) {
+
+            if (row.userProductId && GA.userProductStockCache) {
+                GA.userProductStockCache.delete(row.userProductId);
+            }
+
+            if (row.userProductId && GA.userProductStockPromises) {
+                GA.userProductStockPromises.delete(row.userProductId);
+            }
+
+            if (row.inventoryId && GA.inventoryStockCache) {
+                GA.inventoryStockCache.delete(row.inventoryId);
+            }
+        }
+
+        await loadFullStocks(linhasMlb);
+
+        let linhaAlvo =
+            null;
+
+        if (variacaoAlvo) {
+
+            linhaAlvo =
+                linhasMlb.find(
+                    row => String(row.variationId || '') === variacaoAlvo
+                );
+
+        } else {
+
+            linhaAlvo =
+                linhasMlb.find(row => !row.variationId) ||
+                linhasMlb[0];
+        }
+
+        if (!linhaAlvo) {
+            throw new Error('Não foi possível identificar a variação verificada.');
+        }
+
+        try {
+
+            await salvarAnunciosBanco(
+                linhasMlb,
+                false
+            );
+
+        } catch (errorBanco) {
+
+            console.warn(
+                `⚠️ Não foi possível salvar ${mlb}:`,
+                errorBanco
+            );
+        }
+
+        updateSummary();
+
+        applyFilters(false);
+
+        aplicarAlertasPorVariacaoGA();
+
+        return { linhaAlvo, linhasMlb };
+    }
+
+
+    // ============================================================
+    // BOTÃO "CORRIGIDO" — ZERAR DEPÓSITO (ITEM PARADO 30+ DIAS)
+    // ============================================================
+
+    window.verificarCorrecaoDepositoInatividadeAnuncio =
+        async function (
+            itemId,
+            variationId = '',
+            botao = null
+        ) {
+
+            const htmlOriginal =
+                botao?.innerHTML || 'Corrigido';
+
+            if (botao) {
+                botao.disabled = true;
+                botao.innerHTML =
+                    '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+            }
+
+            try {
+
+                const { linhaAlvo } =
+                    await atualizarDadosAnuncioGA(
+                        itemId,
+                        variationId
+                    );
+
+                if (
+                    gaPrecisaZerarDepositoPorInatividade(
+                        linhaAlvo
+                    )
+                ) {
+
+                    window.showToast?.(
+                        `${itemId} ainda tem ${Number(linhaAlvo.warehouse)} unidade(s) ` +
+                        `no depósito. Zere o estoque fora do FULL e clique novamente em Corrigido.`,
+                        'warning'
+                    );
+
+                    return;
+                }
+
+                window.showToast?.(
+                    `${itemId} corrigido. Depósito: ${Number(linhaAlvo.warehouse)}.`,
+                    'success'
+                );
+
+            } catch (error) {
+
+                console.error(
+                    `❌ Erro verificando ${itemId}:`,
+                    error
+                );
+
+                window.showToast?.(
+                    `Erro ao verificar ${itemId}: ${error?.message || 'Erro desconhecido'}`,
+                    'error'
+                );
+
+            } finally {
+
+                if (botao && document.body.contains(botao)) {
+                    botao.disabled = false;
+                    botao.innerHTML = htmlOriginal;
+                }
+            }
+        };
+
+
+    // ============================================================
+    // BOTÃO "CORRIGIDO" — MUDAR PARA CLÁSSICO
+    // ============================================================
+
+    window.verificarCorrecaoTipoClassicoAnuncio =
+        async function (
+            itemId,
+            botao = null
+        ) {
+
+            const htmlOriginal =
+                botao?.innerHTML || 'Corrigido';
+
+            if (botao) {
+                botao.disabled = true;
+                botao.innerHTML =
+                    '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+            }
+
+            try {
+
+                const { linhaAlvo } =
+                    await atualizarDadosAnuncioGA(
+                        itemId
+                    );
+
+                if (
+                    gaPrecisaMudarParaClassico(
+                        linhaAlvo
+                    )
+                ) {
+
+                    window.showToast?.(
+                        `${itemId} ainda está como ${linhaAlvo.listingTypeName || 'Premium'}. ` +
+                        `Mude para Clássico no anúncio e clique novamente em Corrigido.`,
+                        'warning'
+                    );
+
+                    return;
+                }
+
+                window.showToast?.(
+                    `${itemId} corrigido. Tipo atual: ${linhaAlvo.listingTypeName || '-'}.`,
+                    'success'
+                );
+
+            } catch (error) {
+
+                console.error(
+                    `❌ Erro verificando ${itemId}:`,
+                    error
+                );
+
+                window.showToast?.(
+                    `Erro ao verificar ${itemId}: ${error?.message || 'Erro desconhecido'}`,
+                    'error'
+                );
+
+            } finally {
+
+                if (botao && document.body.contains(botao)) {
+                    botao.disabled = false;
+                    botao.innerHTML = htmlOriginal;
+                }
+            }
+        };
+
+
+    // ============================================================
+    // BOTÃO "CORRIGIDO" — FULL ATIVO SEM ESTOQUE REAL
+    // ============================================================
+
+    window.verificarCorrecaoFullSemEstoqueAnuncio =
+        async function (
+            itemId,
+            botao = null
+        ) {
+
+            const htmlOriginal =
+                botao?.innerHTML || 'Corrigido';
+
+            if (botao) {
+                botao.disabled = true;
+                botao.innerHTML =
+                    '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+            }
+
+            try {
+
+                const { linhaAlvo } =
+                    await atualizarDadosAnuncioGA(
+                        itemId
+                    );
+
+                if (
+                    linhaAlvo._fullAtivoSemEstoqueReal
+                ) {
+
+                    window.showToast?.(
+                        `${itemId} continua marcado como "oferece FULL" sem estoque real. ` +
+                        `Confira o anúncio no Mercado Livre e clique novamente em Corrigido.`,
+                        'warning'
+                    );
+
+                    return;
+                }
+
+                window.showToast?.(
+                    `${itemId} corrigido.`,
+                    'success'
+                );
+
+            } catch (error) {
+
+                console.error(
+                    `❌ Erro verificando ${itemId}:`,
+                    error
+                );
+
+                window.showToast?.(
+                    `Erro ao verificar ${itemId}: ${error?.message || 'Erro desconhecido'}`,
+                    'error'
+                );
+
+            } finally {
+
+                if (botao && document.body.contains(botao)) {
+                    botao.disabled = false;
+                    botao.innerHTML = htmlOriginal;
+                }
+            }
+        };
 
 })();
