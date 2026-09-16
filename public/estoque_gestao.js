@@ -14678,8 +14678,6 @@ async function salvarProdutoEstoque() {
     const dadosExtra = {};
 
     if (
-        (categoria === 'Raios' || categoria === 'Parafusos')
-        &&
         produtoExistenteAtual
     ) {
 
@@ -17986,12 +17984,6 @@ function prepararCamposCondicionaisParaSalvar() {
 
 
     if (
-    (
-        categoria === 'Raios'
-        ||
-        categoria === 'Parafusos'
-    )
-    &&
     typeof renderizarBlocoACaminhoRaios ===
         'function'
 ) {
@@ -42618,15 +42610,7 @@ async function abrirModalInformarRastreioCompra(
                 >
 
                     <option value="">
-                        Raios + Parafusos
-                    </option>
-
-                    <option value="Raios">
-                        Raios
-                    </option>
-
-                    <option value="Parafusos">
-                        Parafusos
+                        Todas as categorias
                     </option>
 
                 </select>
@@ -42656,7 +42640,7 @@ async function abrirModalInformarRastreioCompra(
                 "
             >
 
-                São exibidos somente Raios e Parafusos
+                São exibidos os produtos de qualquer categoria
                 que possuem quantidade a caminho e
                 <strong>ainda não possuem rastreio vinculado.</strong>
 
@@ -42785,6 +42769,8 @@ async function abrirModalInformarRastreioCompra(
     );
 
 
+    popularFiltroCategoriaCompraRastreio();
+
     renderizarProdutosCompraRastreio();
 
     atualizarResumoCompraRastreio();
@@ -42867,10 +42853,81 @@ function produtoPossuiRastreioAtivo(
 // RENDERIZAR PRODUTOS PARA INFORMAR RASTREIO
 //
 // MOSTRA SOMENTE:
-// - Raios / Parafusos
+// - Qualquer categoria (padrão ou customizada)
 // - quantidade a caminho > 0
 // - SEM rastreio pendente
 // =========================================================
+
+function popularFiltroCategoriaCompraRastreio() {
+
+    const select =
+        document.getElementById(
+            'filtroCategoriaCompraRastreio'
+        );
+
+    if (!select) {
+        return;
+    }
+
+    const valorAtual =
+        select.value;
+
+    const categorias =
+        Array.from(
+            new Set(
+                produtosEstoque
+                    .filter(
+                        produto =>
+                            obterQuantidadeDisponivelParaNovoRastreio(
+                                produto
+                            ) > 0
+                            &&
+                            !produtoPossuiRastreioAtivo(
+                                produto
+                            )
+                    )
+                    .map(
+                        produto =>
+                            produto.categoria
+                    )
+                    .filter(Boolean)
+            )
+        )
+            .sort(
+                (a, b) =>
+                    a.localeCompare(
+                        b,
+                        'pt-BR'
+                    )
+            );
+
+    select.innerHTML = `
+        <option value="">Todas as categorias</option>
+        ${
+            categorias
+                .map(
+                    categoria =>
+                        `<option value="${categoria}">${categoria}</option>`
+                )
+                .join('')
+        }
+    `;
+
+    if (
+        categorias.includes(
+            valorAtual
+        )
+    ) {
+
+        select.value =
+            valorAtual;
+
+    }
+
+}
+
+window.popularFiltroCategoriaCompraRastreio =
+    popularFiltroCategoriaCompraRastreio;
 
 function renderizarProdutosCompraRastreio() {
 
@@ -42907,19 +42964,6 @@ function renderizarProdutosCompraRastreio() {
 
     const produtos =
         produtosEstoque
-
-            // RAIOS / PARAFUSOS
-            .filter(
-                produto =>
-                    (
-                        produto.categoria ===
-                            'Raios'
-                        ||
-                        produto.categoria ===
-                            'Parafusos'
-                    )
-            )
-
 
             // TEM QUANTIDADE A CAMINHO
             .filter(
@@ -43939,27 +43983,6 @@ async function salvarCompraRastreio() {
 
 
         // =============================================
-        // CATEGORIA
-        // =============================================
-
-        if (
-            produto.categoria !==
-                'Raios'
-            &&
-            produto.categoria !==
-                'Parafusos'
-        ) {
-
-            showToast(
-                `❌ ${produto.sku} não pertence a Raios ou Parafusos.`,
-                'error'
-            );
-
-            return;
-        }
-
-
-        // =============================================
         // DISPONÍVEL
         // =============================================
 
@@ -44721,20 +44744,6 @@ function renderizarBlocoACaminhoRaios(
 
 
     // =====================================================
-    // SOMENTE RAIOS E PARAFUSOS
-    // =====================================================
-
-    if (
-        categoria !== 'Raios'
-        &&
-        categoria !== 'Parafusos'
-    ) {
-
-        return;
-    }
-
-
-    // =====================================================
     // ADMIN + ARTHUR PODEM VER
     // =====================================================
 
@@ -44849,9 +44858,7 @@ function renderizarBlocoACaminhoRaios(
     // =====================================================
 
     const descricaoCategoria =
-        categoria === 'Parafusos'
-            ? 'Parafuso'
-            : 'Raio';
+        'produto';
 
 
     // =====================================================
@@ -45442,25 +45449,6 @@ async function salvarQuantidadeACaminhoRaio(
         showToast(
             '❌ Produto não encontrado.',
             'error'
-        );
-
-        return;
-    }
-
-
-    // =====================================================
-    // SOMENTE RAIOS / PARAFUSOS
-    // =====================================================
-
-    if (
-        produto.categoria !== 'Raios'
-        &&
-        produto.categoria !== 'Parafusos'
-    ) {
-
-        showToast(
-            '⚠️ A quantidade a caminho está disponível apenas para Raios e Parafusos.',
-            'warning'
         );
 
         return;
@@ -46765,22 +46753,6 @@ function aplicarIndicadoresACaminhoTabela() {
 
 
             if (!produto) {
-                return;
-            }
-
-
-            // =================================================
-            // RAIOS + PARAFUSOS
-            // =================================================
-
-            if (
-                produto.categoria !==
-                    'Raios'
-                &&
-                produto.categoria !==
-                    'Parafusos'
-            ) {
-
                 return;
             }
 

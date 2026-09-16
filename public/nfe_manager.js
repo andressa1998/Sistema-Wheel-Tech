@@ -65535,12 +65535,9 @@ function pesquisarClienteAvulsaNFE(
 
 
     const pesquisa =
-        String(
-            termo ||
-            ''
-        )
-            .trim()
-            .toLowerCase();
+        normalizarTextoAvulsaNFE(
+            termo
+        );
 
 
     if (
@@ -65579,11 +65576,9 @@ function pesquisarClienteAvulsaNFE(
                 cliente => {
 
                     const nome =
-                        String(
-                            cliente.nome ||
-                            ''
-                        )
-                            .toLowerCase();
+                        normalizarTextoAvulsaNFE(
+                            cliente.nome
+                        );
 
 
                     const documento =
@@ -65598,11 +65593,9 @@ function pesquisarClienteAvulsaNFE(
 
 
                     const cidade =
-                        String(
-                            cliente.cidade ||
-                            ''
-                        )
-                            .toLowerCase();
+                        normalizarTextoAvulsaNFE(
+                            cliente.cidade
+                        );
 
 
                     return (
@@ -65626,7 +65619,7 @@ function pesquisarClienteAvulsaNFE(
             )
             .slice(
                 0,
-                15
+                30
             );
 
 
@@ -78049,46 +78042,120 @@ async function carregarProdutosAvulsaNFE() {
             'Carregando produtos do estoque...';
 
 
-        const {
-            data,
-            error
-        } =
-            await window
-                .supabaseClient
-                .from(
-                    'produtos_estoque'
-                )
-                .select(`
-                    id,
-                    nome,
-                    sku,
-                    quantidade,
-                    preco,
-                    categoria
-                `)
-                .order(
-                    'nome',
-                    {
-                        ascending:
-                            true
-                    }
-                );
+        // =====================================================
+        // PAGINAÇÃO
+        //
+        // O Supabase/PostgREST corta cada resposta em 1000 linhas
+        // por padrão. A tabela produtos_estoque já passa disso,
+        // então sem paginar aqui a busca "não achava" cerca de
+        // 2/3 dos produtos — eles nunca chegavam a ser carregados.
+        // Mesmo padrão já usado em estoque_gestao.js.
+        // =====================================================
 
+        const tamanhoPagina =
+            1000;
 
-        if (
-            error
+        let inicio =
+            0;
+
+        let todosProdutos =
+            [];
+
+        let continuar =
+            true;
+
+        while (
+            continuar
         ) {
 
-            throw error;
+            const fim =
+                inicio +
+                tamanhoPagina -
+                1;
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .select(`
+                        id,
+                        nome,
+                        sku,
+                        quantidade,
+                        preco,
+                        categoria
+                    `)
+                    .order(
+                        'id',
+                        {
+                            ascending:
+                                true
+                        }
+                    )
+                    .range(
+                        inicio,
+                        fim
+                    );
+
+
+            if (
+                error
+            ) {
+
+                throw error;
+            }
+
+
+            const lote =
+                data || [];
+
+            todosProdutos.push(
+                ...lote
+            );
+
+            if (
+                lote.length <
+                tamanhoPagina
+            ) {
+
+                continuar =
+                    false;
+
+            } else {
+
+                inicio +=
+                    tamanhoPagina;
+            }
+
         }
 
 
+        todosProdutos.sort(
+            (a, b) =>
+                String(
+                    a.nome ||
+                    ''
+                ).localeCompare(
+                    String(
+                        b.nome ||
+                        ''
+                    ),
+                    'pt-BR',
+                    {
+                        sensitivity:
+                            'base'
+                    }
+                )
+        );
+
+
         window._produtosEstoqueAvulsaNFE =
-            Array.isArray(
-                data
-            )
-                ? data
-                : [];
+            todosProdutos;
 
 
         campoBusca.disabled =
@@ -78151,12 +78218,9 @@ function pesquisarProdutoAvulsaNFE(
 
 
     const pesquisa =
-        String(
-            termo ||
-            ''
-        )
-            .trim()
-            .toLowerCase();
+        normalizarTextoAvulsaNFE(
+            termo
+        );
 
 
     if (
@@ -78188,11 +78252,9 @@ function pesquisarProdutoAvulsaNFE(
                 produto => {
 
                     const nome =
-                        String(
-                            produto.nome ||
-                            ''
-                        )
-                            .toLowerCase();
+                        normalizarTextoAvulsaNFE(
+                            produto.nome
+                        );
 
 
                     const sku =
@@ -78204,11 +78266,9 @@ function pesquisarProdutoAvulsaNFE(
 
 
                     const categoria =
-                        String(
-                            produto.categoria ||
-                            ''
-                        )
-                            .toLowerCase();
+                        normalizarTextoAvulsaNFE(
+                            produto.categoria
+                        );
 
 
                     return (
@@ -78229,7 +78289,7 @@ function pesquisarProdutoAvulsaNFE(
             )
             .slice(
                 0,
-                20
+                40
             );
 
 
