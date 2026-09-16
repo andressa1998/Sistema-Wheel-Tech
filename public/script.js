@@ -6907,8 +6907,15 @@ function updateReembolsoCounters() {
     if (!currentUser) return;
 
     // A verificar: com reembolso em andamento + sem reembolso não resolvidas
-    const aVerificar = reembolsos.filter(r => 
-        (r.tipo_reclamacao === 'com_reembolso' && (r.status === 'a_verificar' || r.status_reembolso === 'em_andamento')) ||
+    // (o "&& r.status !== 'pendente'" tem que bater exatamente com o
+    // filtro usado em renderReembolsosTable() pro caso 'a_verificar' —
+    // sem isso, um reembolso com status 'pendente' entrava na CONTAGEM
+    // daqui mas não aparecia na LISTA de lá, deixando o número
+    // "A Verificar (N)" maior do que as linhas realmente mostradas.)
+    const aVerificar = reembolsos.filter(r =>
+        (r.tipo_reclamacao === 'com_reembolso' &&
+         (r.status === 'a_verificar' || r.status_reembolso === 'em_andamento') &&
+         r.status !== 'pendente') ||
         (r.tipo_reclamacao === 'sem_reembolso' && !r.resolvida)
     ).length;
 

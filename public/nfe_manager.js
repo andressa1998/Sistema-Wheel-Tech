@@ -1347,10 +1347,26 @@ async function selecionarFiltroPainelNFE(
 
         try {
 
+            // "Enviadas" tem histórico grande — por padrão só
+            // busca o último mês (obterPeriodoPadraoEnviadasNFE),
+            // pra não pesar o sistema. O usuário amplia o período
+            // pela caixa de datas da própria aba, quando precisar
+            // de vendas mais antigas (window.alterarPeriodoEnviadasNFE).
+            const periodoBusca =
+                filtro === 'enviadas' &&
+                typeof obterPeriodoPadraoEnviadasNFE ===
+                    'function'
+                    ? obterPeriodoPadraoEnviadasNFE()
+                    : null;
+
             const carregadas =
                 await carregarVendasCacheNFE(
-                    null,
-                    null,
+                    periodoBusca
+                        ? periodoBusca.inicio
+                        : null,
+                    periodoBusca
+                        ? periodoBusca.fim
+                        : null,
                     {
                         statusOperacionais: [
                             filtro
@@ -1719,6 +1735,266 @@ function vendaTemReclamacaoAbertaPainelNFE(
     );
 }
 
+// =========================================================
+// PERÍODO PADRÃO DO FILTRO "ENVIADAS"
+//
+// Calculado uma única vez (guardado em window) — do contrário,
+// "hoje" avançaria a cada re-render e os inputs nunca ficariam
+// parados no valor que o usuário está vendo.
+// =========================================================
+
+function obterPeriodoPadraoEnviadasNFE() {
+
+    if (
+        window._enviadasPeriodoInicioNFE &&
+        window._enviadasPeriodoFimNFE
+    ) {
+
+        return {
+            inicio: window._enviadasPeriodoInicioNFE,
+            fim: window._enviadasPeriodoFimNFE
+        };
+    }
+
+    const hoje =
+        new Date();
+
+    const umMesAtras =
+        new Date(
+            hoje
+        );
+
+    umMesAtras.setMonth(
+        umMesAtras.getMonth() -
+        1
+    );
+
+    window._enviadasPeriodoInicioNFE =
+        umMesAtras
+            .toISOString()
+            .slice(0, 10);
+
+    window._enviadasPeriodoFimNFE =
+        hoje
+            .toISOString()
+            .slice(0, 10);
+
+    return {
+        inicio: window._enviadasPeriodoInicioNFE,
+        fim: window._enviadasPeriodoFimNFE
+    };
+}
+
+
+// =========================================================
+// TROCAR O PERÍODO DE "ENVIADAS" E BUSCAR DE NOVO NO BANCO
+//
+// Diferente da busca por texto (só filtra o que já está em
+// memória), mudar o período precisa buscar no Supabase — o
+// carregamento inicial do filtro só traz o último mês.
+// =========================================================
+
+window.alterarPeriodoEnviadasNFE =
+    async function() {
+
+        const inputInicio =
+            document.getElementById(
+                'filtroEnviadasDataInicioNFE'
+            );
+
+        const inputFim =
+            document.getElementById(
+                'filtroEnviadasDataFimNFE'
+            );
+
+        if (
+            !inputInicio ||
+            !inputFim
+        ) {
+
+            return;
+        }
+
+        const inicio =
+            inputInicio.value ||
+            null;
+
+        const fim =
+            inputFim.value ||
+            null;
+
+        if (
+            inicio &&
+            fim &&
+            inicio > fim
+        ) {
+
+            showToast?.(
+                'A data inicial não pode ser depois da data final.',
+                'warning'
+            );
+
+            return;
+        }
+
+        window._enviadasPeriodoInicioNFE =
+            inicio;
+
+        window._enviadasPeriodoFimNFE =
+            fim;
+
+        const botao =
+            document.getElementById(
+                'btnAplicarPeriodoEnviadasNFE'
+            );
+
+        const htmlOriginal =
+            botao?.innerHTML ||
+            '';
+
+        if (botao) {
+
+            botao.disabled =
+                true;
+
+            botao.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                Buscando...
+            `;
+        }
+
+        const statusTela =
+            document.getElementById(
+                'statusAtualizacaoNFE'
+            );
+
+        if (statusTela) {
+
+            statusTela.textContent =
+                'Carregando enviadas do período selecionado...';
+        }
+
+        try {
+
+            const carregadas =
+                await carregarVendasCacheNFE(
+                    inicio,
+                    fim,
+                    {
+                        statusOperacionais: [
+                            'enviadas'
+                        ],
+
+                        forcar: true
+                    }
+                );
+
+            window._vendasPainelNFEBase =
+                mesclarVendasPainelNFE(
+                    window._vendasPainelNFEBase,
+                    carregadas
+                );
+
+            window
+                ._statusCarregadosPainelNFE
+                .add(
+                    'enviadas'
+                );
+
+            if (
+                window._filtroPainelNFE ===
+                'enviadas'
+            ) {
+
+                aplicarFiltroPainelNFE(
+                    'enviadas'
+                );
+            }
+
+            showToast?.(
+                `✅ ${carregadas.length} venda(s) enviada(s) carregadas do período selecionado.`,
+                'success'
+            );
+
+        } catch (error) {
+
+            console.error(
+                '❌ [NFE] Erro carregando período de enviadas:',
+                error
+            );
+
+            showToast?.(
+                `Erro ao carregar período: ${error.message}`,
+                'error'
+            );
+
+        } finally {
+
+            if (statusTela) {
+                statusTela.textContent = '';
+            }
+
+            if (botao) {
+
+                botao.disabled =
+                    false;
+
+                botao.innerHTML =
+                    htmlOriginal;
+            }
+        }
+    };
+
+
+// =========================================================
+// A VENDA BATE COM O TEXTO DIGITADO NA BUSCA DE "ENVIADAS"?
+// (número da venda OU nome/nickname do comprador)
+// =========================================================
+
+function vendaCorrespondeBuscaEnviadasNFE(
+    venda,
+    termoBusca
+) {
+
+    const termo =
+        String(
+            termoBusca ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+    if (!termo) {
+        return true;
+    }
+
+    const idVenda =
+        String(
+            venda?.id_venda_ml ||
+            venda?.id ||
+            ''
+        )
+            .toLowerCase();
+
+    const nomeCliente =
+        String(
+            venda?.buyer?.nickname ||
+            `${venda?.buyer?.first_name || ''} ${venda?.buyer?.last_name || ''}`
+        )
+            .trim()
+            .toLowerCase();
+
+    return (
+        idVenda.includes(
+            termo
+        ) ||
+        nomeCliente.includes(
+            termo
+        )
+    );
+}
+
+
 function filtrarVendasPainelNFE(
     vendas,
     filtro
@@ -1840,6 +2116,49 @@ function filtrarVendasPainelNFE(
                     venda
                 )
         );
+    }
+
+
+    // =====================================================
+    // ENVIADAS
+    //
+    // Além de classificar por status, aplica a busca por
+    // venda/cliente (caixa de texto da aba "Enviadas").
+    // =====================================================
+
+    if (
+        filtro ===
+        'enviadas'
+    ) {
+
+        let resultado =
+            vendas.filter(
+                venda =>
+                    classificarVendaPainelNFE(
+                        venda
+                    ) ===
+                    'enviadas'
+            );
+
+        const termoBusca =
+            window._enviadasBuscaNFE ||
+            '';
+
+        if (
+            termoBusca.trim()
+        ) {
+
+            resultado =
+                resultado.filter(
+                    venda =>
+                        vendaCorrespondeBuscaEnviadasNFE(
+                            venda,
+                            termoBusca
+                        )
+                );
+        }
+
+        return resultado;
     }
 
 
@@ -16881,6 +17200,151 @@ function garantirControlesVendasNFE() {
 
 
         <div
+            id="filtrosEnviadasNFE"
+
+            style="
+                display:none;
+                margin-top:10px;
+                padding-top:10px;
+                border-top:1px solid #dee2e6;
+                gap:8px;
+                align-items:flex-end;
+                flex-wrap:wrap;
+            "
+        >
+
+            <div
+                style="
+                    flex:1;
+                    min-width:220px;
+                "
+            >
+
+                <label
+                    style="
+                        font-size:10px;
+                        font-weight:700;
+                        display:block;
+                    "
+                >
+                    Buscar por venda ou cliente
+                </label>
+
+
+                <input
+                    type="text"
+
+                    id="filtroEnviadasBuscaNFE"
+
+                    class="form-control"
+
+                    placeholder="Nº da venda ou nome do cliente..."
+
+                    value="${
+                        window._enviadasBuscaNFE ||
+                        ''
+                    }"
+
+                    style="
+                        width:100%;
+                    "
+                >
+
+            </div>
+
+
+            <div>
+
+                <label
+                    style="
+                        font-size:10px;
+                        font-weight:700;
+                        display:block;
+                    "
+                >
+                    Enviadas de
+                </label>
+
+
+                <input
+                    type="date"
+
+                    id="filtroEnviadasDataInicioNFE"
+
+                    class="form-control"
+
+                    value="${
+                        obterPeriodoPadraoEnviadasNFE()
+                            .inicio
+                    }"
+
+                    style="
+                        width:160px;
+                    "
+                >
+
+            </div>
+
+
+            <div>
+
+                <label
+                    style="
+                        font-size:10px;
+                        font-weight:700;
+                        display:block;
+                    "
+                >
+                    até
+                </label>
+
+
+                <input
+                    type="date"
+
+                    id="filtroEnviadasDataFimNFE"
+
+                    class="form-control"
+
+                    value="${
+                        obterPeriodoPadraoEnviadasNFE()
+                            .fim
+                    }"
+
+                    style="
+                        width:160px;
+                    "
+                >
+
+            </div>
+
+
+            <button
+                type="button"
+
+                class="btn btn-primary"
+
+                id="btnAplicarPeriodoEnviadasNFE"
+            >
+                <i class="fas fa-search"></i>
+                Buscar período
+            </button>
+
+
+            <small
+                class="text-muted"
+
+                style="
+                    width:100%;
+                "
+            >
+                Por padrão só carrega o último mês, pra não pesar o sistema — mude as datas acima e clique em "Buscar período" pra trazer vendas mais antigas.
+            </small>
+
+        </div>
+
+
+        <div
             id="statusAtualizacaoNFE"
 
             style="
@@ -17020,6 +17484,89 @@ function garantirControlesVendasNFE() {
                 aplicarFiltroPainelNFE(
                     'todos'
                 );
+            }
+        );
+
+
+    // =====================================================
+    // BUSCA (VENDA / CLIENTE) NO FILTRO "ENVIADAS"
+    //
+    // Só filtra o que já está em memória — sem nova consulta
+    // ao banco, então pode reagir a cada tecla digitada.
+    // =====================================================
+
+    const inputBuscaEnviadas =
+        document.getElementById(
+            'filtroEnviadasBuscaNFE'
+        );
+
+
+    let timeoutBuscaEnviadasNFE =
+        null;
+
+
+    inputBuscaEnviadas
+        ?.addEventListener(
+            'input',
+            () => {
+
+                if (
+                    timeoutBuscaEnviadasNFE
+                ) {
+
+                    clearTimeout(
+                        timeoutBuscaEnviadasNFE
+                    );
+                }
+
+
+                timeoutBuscaEnviadasNFE =
+                    setTimeout(
+                        () => {
+
+                            window._enviadasBuscaNFE =
+                                inputBuscaEnviadas.value ||
+                                '';
+
+
+                            if (
+                                window._filtroPainelNFE ===
+                                'enviadas'
+                            ) {
+
+                                aplicarFiltroPainelNFE(
+                                    'enviadas'
+                                );
+                            }
+                        },
+                        250
+                    );
+            }
+        );
+
+
+    // =====================================================
+    // PERÍODO DO FILTRO "ENVIADAS"
+    //
+    // Ao contrário da busca por texto, mudar o período busca
+    // de novo no banco (o padrão só traz o último mês).
+    // =====================================================
+
+    document
+        .getElementById(
+            'btnAplicarPeriodoEnviadasNFE'
+        )
+        ?.addEventListener(
+            'click',
+            () => {
+
+                if (
+                    typeof window.alterarPeriodoEnviadasNFE ===
+                    'function'
+                ) {
+
+                    window.alterarPeriodoEnviadasNFE();
+                }
             }
         );
 
@@ -18624,6 +19171,21 @@ function atualizarEstadoVisualFiltroPainelNFE(
 
         datas.style.display =
             filtro === 'todos'
+                ? 'flex'
+                : 'none';
+    }
+
+
+    const filtrosEnviadas =
+        document.getElementById(
+            'filtrosEnviadasNFE'
+        );
+
+
+    if (filtrosEnviadas) {
+
+        filtrosEnviadas.style.display =
+            filtro === 'enviadas'
                 ? 'flex'
                 : 'none';
     }
@@ -21965,9 +22527,27 @@ function atualizarPainelNFEIncremental() {
     // simplesmente não são tocadas aqui (não são removidas nem
     // recriadas); trocar de página já refaz o render completo.
 
+    // IMPORTANTE: obterPaginaAtualVendasNFE grava a "assinatura" da
+    // lista atual em window._paginacaoVendasNFE pra saber quando
+    // resetar a página pra 1. O render completo (renderizarVendasNFETabela)
+    // calcula essa assinatura sobre a lista JÁ AGRUPADA em pacotes
+    // (agruparVendasEmPacksNFE) — se aqui usássemos a lista crua
+    // "filtradas", a assinatura ficaria diferente (tamanhos diferentes:
+    // agrupar mescla vendas do mesmo pack em uma linha só) e o próximo
+    // clique em "Próxima página" veria uma assinatura "nova", achando
+    // que a lista mudou, e voltaria pra página 1 sozinho. Por isso
+    // agrupamos aqui também, exatamente como o render completo faz.
+    const filtradasAgrupadasNFE =
+        typeof agruparVendasEmPacksNFE ===
+            'function'
+            ? agruparVendasEmPacksNFE(
+                filtradas
+            )
+            : filtradas;
+
     const idsPaginaAtualNFE =
         new Set(
-            obterPaginaAtualVendasNFE(filtradas)
+            obterPaginaAtualVendasNFE(filtradasAgrupadasNFE)
                 .map(
                     venda =>
                         normalizarOrderIdML(
@@ -21977,6 +22557,16 @@ function atualizarPainelNFEIncremental() {
                 )
                 .filter(Boolean)
         );
+
+    // O render incremental não redesenha a tabela inteira, mas os
+    // controles de paginação ("Mostrando X de Y", "Próxima") e a lista
+    // usada por irParaPaginaVendasNFE precisam refletir o total ATUAL
+    // (agrupado), senão ficam presos no valor do último render completo
+    // enquanto a sincronização em segundo plano já trouxe mais vendas.
+    window._vendasParaPaginarNFE = filtradasAgrupadasNFE;
+    if (typeof renderizarControlesPaginacaoNFE === 'function') {
+        renderizarControlesPaginacaoNFE(filtradasAgrupadasNFE.length);
+    }
 
 
     for (
@@ -40186,8 +40776,9 @@ window.consultarSituacaoMLBFullNFE =
     consultarSituacaoMLBFullNFE;
 
 
-window.verificarMonitorFullVendasNFE =
-    verificarMonitorFullVendasNFE;
+if (typeof verificarMonitorFullVendasNFE === 'function') {
+    window.verificarMonitorFullVendasNFE = verificarMonitorFullVendasNFE;
+}
 
 
 window.confirmarAjusteAnuncioFullNFE =
@@ -40198,12 +40789,13 @@ window.confirmarExposicaoFullNFE =
     confirmarExposicaoFullNFE;
 
 
-window.aplicarEstadosFullTabelaNFE =
-    aplicarEstadosFullTabelaNFE;
+if (typeof aplicarEstadosFullTabelaNFE === 'function') {
+    window.aplicarEstadosFullTabelaNFE = aplicarEstadosFullTabelaNFE;
+}
 
-
-window.inicializarMonitorFullNFE =
-    inicializarMonitorFullNFE;
+if (typeof inicializarMonitorFullNFE === 'function') {
+    window.inicializarMonitorFullNFE = inicializarMonitorFullNFE;
+}
 
     function vendaEstaCanceladaNFE(
     venda
@@ -52559,7 +53151,9 @@ window.buscarDetalhesCompletosVendaNFE = buscarDetalhesCompletosVendaNFE;
 // INICIALIZAR
 // =========================================================
 
-instalarDetalhesVendaNFE();
+if (typeof instalarDetalhesVendaNFE === 'function') {
+    instalarDetalhesVendaNFE();
+}
 
 async function sincronizarEstoqueVendaManual(
     vendaId
@@ -61561,10 +62155,24 @@ async function carregarVendasPendentes(
 
     // =====================================================
     // NÃO TROCAR FILTRO
+    //
+    // "filtroSelecionado" foi capturado no INÍCIO desta função,
+    // que é assíncrona e pode levar vários segundos (carrega
+    // milhares de vendas). Se o usuário trocou de aba enquanto
+    // isso rodava, window._filtroPainelNFE já reflete a aba NOVA
+    // e correta — sobrescrever aqui de volta pro valor antigo
+    // jogaria o usuário de volta pra aba que ele já saiu, sem
+    // avisar (foi o que quebrava a paginação da aba "Enviadas").
+    // Só reforça o padrão se, por algum motivo, ficou vazio.
     // =====================================================
 
-    window._filtroPainelNFE =
-        filtroSelecionado;
+    if (
+        !window._filtroPainelNFE
+    ) {
+
+        window._filtroPainelNFE =
+            filtroSelecionado;
+    }
 
 
     // =====================================================
@@ -61597,7 +62205,8 @@ async function carregarVendasPendentes(
         ) {
 
             aplicarFiltroPainelNFE(
-                filtroSelecionado,
+                window._filtroPainelNFE ||
+                    filtroSelecionado,
                 {
                     atualizarStatus:
                         false
@@ -61809,10 +62418,22 @@ async function carregarVendasPendentes(
 
         // =================================================
         // MANTER FILTRO
+        //
+        // Mesma ressalva do bloco "NÃO TROCAR FILTRO" acima:
+        // "filtroSelecionado" é uma captura antiga (do início
+        // desta função), e o await de sincronizarPainelOperacionalNFE
+        // acima pode levar vários segundos — se o usuário trocou de
+        // aba nesse meio tempo, window._filtroPainelNFE já é a aba
+        // nova e certa. Só usa o valor antigo se não tiver nada.
         // =================================================
 
-        window._filtroPainelNFE =
-            filtroSelecionado;
+        if (
+            !window._filtroPainelNFE
+        ) {
+
+            window._filtroPainelNFE =
+                filtroSelecionado;
+        }
 
 
         // =================================================
@@ -78884,7 +79505,9 @@ if (
         'DOMContentLoaded',
         () => {
 
-            inicializarMonitorFullNFE();
+            if (typeof inicializarMonitorFullNFE === 'function') {
+                inicializarMonitorFullNFE();
+            }
 
         },
         {
@@ -78896,7 +79519,9 @@ if (
 
 } else {
 
-    inicializarMonitorFullNFE();
+    if (typeof inicializarMonitorFullNFE === 'function') {
+        inicializarMonitorFullNFE();
+    }
 }
 
 // ===================== INICIALIZAR =====================

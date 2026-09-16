@@ -60,8 +60,12 @@
         const cli = sb();
         if (!cli) return [];
         try {
+            // mlb_codes não existe como coluna própria — vive dentro
+            // do jsonb dados_extra (ver mlbsDoProduto abaixo). Pedir
+            // ela direto no select faz o PostgREST rejeitar a query
+            // inteira com 400 (coluna inexistente).
             const { data, error } = await cli.from('produtos_estoque')
-                .select('id, sku, nome, categoria, quantidade, mlb_codes, dados_extra, ultimo_custo, custo_medio')
+                .select('id, sku, nome, categoria, quantidade, dados_extra, ultimo_custo, custo_medio')
                 .limit(20000);
             if (error) throw error;
             produtosMotorCache = data || [];

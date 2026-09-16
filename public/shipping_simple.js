@@ -4146,42 +4146,71 @@ async function salvarReclamacaoCompleta() {
 async function criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId) {
     try {
         if (!window.supabaseClient) return;
-        
+
+        // A tabela de verdade por trás da aba "Reclamações e Devoluções"
+        // é reembolsos_ml (confirmado em script.js -> loadReembolsos()/
+        // salvarReembolso()) — NÃO "reembolsos" (essa outra tabela existe
+        // mas não é lida por aquela tela; nada inserido nela aparece lá).
+        //
+        // A checagem de duplicidade é por ESTA reclamação de frete
+        // (reclamacao_frete_id), não pela venda. Se checássemos só por
+        // numero_venda, uma venda que já tivesse QUALQUER outro
+        // reembolso (ex.: devolução de produto, meses antes) faria essa
+        // função pular silenciosamente a criação do reembolso do frete
+        // — a coordenadora nunca veria esse dinheiro pra conferir.
         const { data: existente } = await window.supabaseClient
-            .from('reembolsos')
+            .from('reembolsos_ml')
             .select('id')
-            .eq('venda_id', vendaId)
+            .eq('reclamacao_frete_id', reclId)
             .maybeSingle();
 
         if (existente) {
-            console.log('📋 Reclamação já existe na aba Reembolsos');
+            console.log('📋 Reclamação de frete já existe na aba Reembolsos');
             return;
         }
 
         const nomeUsuario = getNomeUsuario();
 
+        // reembolsos_ml não tem coluna própria pra protocolo/nº de
+        // transação — junta essa informação em observações pra não
+        // se perder.
+        const observacoesCompletas =
+            [
+                dados.observacoes || '',
+                dados.numero_transacao ? `Nº transação: ${dados.numero_transacao}` : '',
+                Array.isArray(dados.protocolos) && dados.protocolos.length
+                    ? `Protocolos: ${dados.protocolos.join(', ')}`
+                    : ''
+            ]
+                .filter(Boolean)
+                .join(' — ') || null;
+
         const dadosReembolso = {
-            venda_id: vendaId,
-            numero_venda: dados.numero_reclamacao || vendaId,
-            numero_reclamacao: dados.numero_reclamacao,
-            numero_operacao: dados.numero_operacao,
-            valor: dados.valor || 0,
-            data_reclamacao: dados.data_reclamacao || new Date().toISOString(),
-            motivo: dados.motivo || 'Frete',
-            status: 'a_verificar',
+            numero_venda: vendaId,
+            numero_retirada: null,
             tipo_referencia: dados.tipo_referencia || 'venda',
+            numero_reclamacao: dados.numero_reclamacao || null,
+            numero_operacao: dados.numero_operacao || null,
+            valor: dados.valor || 0,
+            data_operacao: dados.data_reclamacao || new Date().toISOString(),
+            motivo: dados.motivo || 'Frete',
+            observacoes: observacoesCompletas,
             tipo_reclamacao: dados.tipo_reclamacao || 'com_reembolso',
-            observacoes: dados.observacoes || '',
-            protocolos: dados.protocolos || [],
-            numero_transacao: dados.numero_transacao || '',
+            responsabilidade: null,
+            cliente_bloqueado: null,
+            resolvida: false,
+            // 'a_verificar': a reclamação de frete foi marcada como
+            // resolvida no ML, e cai na fila "A Verificar" pra
+            // coordenadora conferir se o dinheiro realmente entrou.
+            status: 'a_verificar',
+            status_reembolso: 'em_andamento',
             criado_por: nomeUsuario,
-            criado_em: new Date().toISOString(),
-            atualizado_em: new Date().toISOString(),
+            data_atualizacao: new Date().toISOString(),
             reclamacao_frete_id: reclId
         };
 
         const { error } = await window.supabaseClient
-            .from('reembolsos')
+            .from('reembolsos_ml')
             .insert([dadosReembolso]);
 
         if (error) throw error;
@@ -6942,6 +6971,18 @@ async function buscarFretes() {
 // ============================================
 // FUNÇÕES DE RELATÓRIO COMPLETO
 // ============================================
+// IMPORTANTE: relDataInicio, relDataFim, relStatus e relUsuario
+// também existem em OUTROS relatórios do sistema (Caixa, etc.) com
+// os mesmos ids — um copiar-e-colar de template que ninguém trocou o
+// nome. document.getElementById() sempre pega a PRIMEIRA ocorrência
+// no documento inteiro, então sem esse escopo o relatório de frete
+// lia/escrevia campos de outro relatório (foi exatamente a causa do
+// relatório sempre voltar 0 reclamações, mesmo com dados existindo).
+// relEl() garante que a busca fica só dentro do modal de frete.
+function relEl(id) {
+    return document.getElementById('modalRelatorioFrete')?.querySelector('#' + id) || null;
+}
+
 function abrirModalRelatorioReclamacoes() {
     console.log('📊 Abrindo relatório de reclamações...');
     
@@ -6959,8 +7000,8 @@ function abrirModalRelatorioReclamacoes() {
     const umMesAtras = new Date();
     umMesAtras.setDate(hoje.getDate() - 30);
     
-    const dataInicio = document.getElementById('relDataInicio');
-    const dataFim = document.getElementById('relDataFim');
+    const dataInicio = relEl('relDataInicio');
+    const dataFim = relEl('relDataFim');
     if (dataInicio) dataInicio.value = umMesAtras.toISOString().split('T')[0];
     if (dataFim) dataFim.value = hoje.toISOString().split('T')[0];
     
@@ -7153,10 +7194,10 @@ function criarModalRelatorioCompleto() {
 // GERAR RELATÓRIO COMPLETO
 // ============================================
 async function gerarRelatorioCompleto() {
-    const dataInicio = document.getElementById('relDataInicio').value;
-    const dataFim = document.getElementById('relDataFim').value;
-    const statusFiltro = document.getElementById('relStatus').value;
-    const usuarioFiltro = document.getElementById('relUsuario').value;
+    const dataInicio = relEl('relDataInicio').value;
+    const dataFim = relEl('relDataFim').value;
+    const statusFiltro = relEl('relStatus').value;
+    const usuarioFiltro = relEl('relUsuario').value;
 
     if (dataInicio && dataFim && new Date(dataInicio) > new Date(dataFim)) {
         showToast('Data início não pode ser maior que data fim', 'warning');
@@ -7198,9 +7239,16 @@ async function gerarRelatorioCompleto() {
             .order('criado_em', { ascending: false });
         
         if (dataInicio && dataFim) {
+            // Usa criado_em (sempre preenchido) em vez de
+            // data_reclamacao (fica nulo em várias reclamações) —
+            // com data_reclamacao o relatório voltava 0 reclamações
+            // sempre que o filtro de data padrão (últimos 30 dias)
+            // estava ativo. Também estende o fim do dia até 23:59:59,
+            // senão reclamações criadas depois da meia-noite do dia
+            // final ficavam de fora.
             reclamacoesQuery = reclamacoesQuery
-                .gte('data_reclamacao', dataInicio)
-                .lte('data_reclamacao', dataFim);
+                .gte('criado_em', `${dataInicio}T00:00:00`)
+                .lte('criado_em', `${dataFim}T23:59:59`);
         }
         
         if (statusFiltro) {
@@ -7218,11 +7266,11 @@ async function gerarRelatorioCompleto() {
         const resolvidas = reclamacoes.filter(r => r.status === 'resolvido').length;
         const rejeitadas = reclamacoes.filter(r => r.status === 'rejeitado').length;
 
-        document.getElementById('relTotalFretes').textContent = fretesIncorretos.length;
-        document.getElementById('relReclamacoesAbertas').textContent = abertas;
-        document.getElementById('relReclamacoesResolvidas').textContent = resolvidas;
-        document.getElementById('relReclamacoesRejeitadas').textContent = rejeitadas;
-        document.getElementById('relTotalRegistros').textContent = `${reclamacoes.length} registros`;
+        relEl('relTotalFretes').textContent = fretesIncorretos.length;
+        relEl('relReclamacoesAbertas').textContent = abertas;
+        relEl('relReclamacoesResolvidas').textContent = resolvidas;
+        relEl('relReclamacoesRejeitadas').textContent = rejeitadas;
+        relEl('relTotalRegistros').textContent = `${reclamacoes.length} registros`;
 
         const tbody = document.getElementById('relatorioReclamacoesBody');
         tbody.innerHTML = '';
@@ -7255,7 +7303,13 @@ async function gerarRelatorioCompleto() {
             });
         }
 
-        atualizarGraficosRelatorioCompleto(fretesIncorretos, reclamacoes);
+        try {
+            atualizarGraficosRelatorioCompleto(fretesIncorretos, reclamacoes);
+        } catch (erroGrafico) {
+            // Uma falha ao desenhar os gráficos não pode derrubar o
+            // resto do relatório (resumo e tabela já preenchidos acima).
+            console.error('Erro ao atualizar gráficos do relatório:', erroGrafico);
+        }
 
         showToast(`✅ Relatório gerado: ${reclamacoes.length} reclamações`, 'success');
 
@@ -7277,32 +7331,36 @@ function atualizarGraficosRelatorioCompleto(fretes, reclamacoes) {
 
     const ctxPizza = document.getElementById('graficoPizzaReclamacoes');
     if (ctxPizza) {
-        if (window.graficoPizza) window.graficoPizza.destroy();
-        
-        const statusColors = {
-            'aberto': '#ffc107',
-            'em_andamento': '#17a2b8',
-            'rejeitado': '#dc3545',
-            'resolvido': '#28a745'
-        };
+        try {
+            if (window.graficoPizza && typeof window.graficoPizza.destroy === 'function') window.graficoPizza.destroy();
 
-        window.graficoPizza = new Chart(ctxPizza, {
-            type: 'pie',
-            data: {
-                labels: Object.keys(statusCount),
-                datasets: [{
-                    data: Object.values(statusCount),
-                    backgroundColor: Object.keys(statusCount).map(s => statusColors[s] || '#6c757d'),
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'bottom' }
+            const statusColors = {
+                'aberto': '#ffc107',
+                'em_andamento': '#17a2b8',
+                'rejeitado': '#dc3545',
+                'resolvido': '#28a745'
+            };
+
+            window.graficoPizza = new Chart(ctxPizza, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(statusCount),
+                    datasets: [{
+                        data: Object.values(statusCount),
+                        backgroundColor: Object.keys(statusCount).map(s => statusColors[s] || '#6c757d'),
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
                 }
-            }
-        });
+            });
+        } catch (erroPizza) {
+            console.error('Erro no gráfico de pizza do relatório:', erroPizza);
+        }
     }
 
     // Gráfico Barras por Usuário
@@ -7314,34 +7372,38 @@ function atualizarGraficosRelatorioCompleto(fretes, reclamacoes) {
 
     const ctxBarras = document.getElementById('graficoBarrasReclamacoes');
     if (ctxBarras) {
-        if (window.graficoBarras) window.graficoBarras.destroy();
-        
-        const sortedUsers = Object.keys(usuarioCount).sort((a, b) => usuarioCount[b] - usuarioCount[a]);
-        
-        window.graficoBarras = new Chart(ctxBarras, {
-            type: 'bar',
-            data: {
-                labels: sortedUsers,
-                datasets: [{
-                    label: 'Quantidade de Reclamações',
-                    data: sortedUsers.map(u => usuarioCount[u]),
-                    backgroundColor: 'rgba(0, 173, 238, 0.6)',
-                    borderColor: '#00ADEE',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        stepSize: 1,
-                        title: { display: true, text: 'Quantidade' }
-                    }
+        try {
+            if (window.graficoBarras && typeof window.graficoBarras.destroy === 'function') window.graficoBarras.destroy();
+
+            const sortedUsers = Object.keys(usuarioCount).sort((a, b) => usuarioCount[b] - usuarioCount[a]);
+
+            window.graficoBarras = new Chart(ctxBarras, {
+                type: 'bar',
+                data: {
+                    labels: sortedUsers,
+                    datasets: [{
+                        label: 'Quantidade de Reclamações',
+                        data: sortedUsers.map(u => usuarioCount[u]),
+                        backgroundColor: 'rgba(0, 173, 238, 0.6)',
+                        borderColor: '#00ADEE',
+                        borderWidth: 1
+                    }]
                 },
-                plugins: { legend: { display: false } }
-            }
-        });
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            stepSize: 1,
+                            title: { display: true, text: 'Quantidade' }
+                        }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        } catch (erroBarras) {
+            console.error('Erro no gráfico de barras do relatório:', erroBarras);
+        }
     }
 
     // Gráfico Comparativo
@@ -7366,45 +7428,49 @@ function atualizarGraficosRelatorioCompleto(fretes, reclamacoes) {
 
     const ctxComparativo = document.getElementById('graficoComparativo');
     if (ctxComparativo) {
-        if (window.graficoComparativo) window.graficoComparativo.destroy();
-        
-        const labels = Object.keys(meses).sort();
-        const dadosFretes = labels.map(l => meses[l].fretes);
-        const dadosReclamacoes = labels.map(l => meses[l].reclamacoes);
-        
-        window.graficoComparativo = new Chart(ctxComparativo, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'Fretes Incorretos',
-                        data: dadosFretes,
-                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    },
-                    {
-                        label: 'Reclamações',
-                        data: dadosReclamacoes,
-                        backgroundColor: 'rgba(255, 99, 132, 0.6)',
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        borderWidth: 1
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        stepSize: 1,
-                        title: { display: true, text: 'Quantidade' }
-                    }
+        try {
+            if (window.graficoComparativo && typeof window.graficoComparativo.destroy === 'function') window.graficoComparativo.destroy();
+
+            const labels = Object.keys(meses).sort();
+            const dadosFretes = labels.map(l => meses[l].fretes);
+            const dadosReclamacoes = labels.map(l => meses[l].reclamacoes);
+
+            window.graficoComparativo = new Chart(ctxComparativo, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Fretes Incorretos',
+                            data: dadosFretes,
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Reclamações',
+                            data: dadosReclamacoes,
+                            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        }
+                    ]
                 },
-                plugins: { legend: { position: 'top' } }
-            }
-        });
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            stepSize: 1,
+                            title: { display: true, text: 'Quantidade' }
+                        }
+                    },
+                    plugins: { legend: { position: 'top' } }
+                }
+            });
+        } catch (erroComparativo) {
+            console.error('Erro no gráfico comparativo do relatório:', erroComparativo);
+        }
     }
 }
 
@@ -7551,13 +7617,13 @@ function imprimirRelatorioCompleto() {
     const hoje = new Date().toLocaleDateString('pt-BR');
     const nomeUsuario = getNomeUsuario();
     
-    const dataInicio = document.getElementById('relDataInicio').value || '-';
-    const dataFim = document.getElementById('relDataFim').value || '-';
+    const dataInicio = relEl('relDataInicio').value || '-';
+    const dataFim = relEl('relDataFim').value || '-';
     
-    const totalFretes = document.getElementById('relTotalFretes').textContent;
-    const abertas = document.getElementById('relReclamacoesAbertas').textContent;
-    const resolvidas = document.getElementById('relReclamacoesResolvidas').textContent;
-    const rejeitadas = document.getElementById('relReclamacoesRejeitadas').textContent;
+    const totalFretes = relEl('relTotalFretes').textContent;
+    const abertas = relEl('relReclamacoesAbertas').textContent;
+    const resolvidas = relEl('relReclamacoesResolvidas').textContent;
+    const rejeitadas = relEl('relReclamacoesRejeitadas').textContent;
 
     const tbody = document.getElementById('relatorioReclamacoesBody');
     let tabelaHTML = '';
@@ -7749,7 +7815,7 @@ async function carregarUsuariosFiltro() {
         if (error) throw error;
         
         const usuarios = [...new Set(data.map(item => item.criado_por).filter(Boolean))].sort();
-        const select = document.getElementById('relUsuario');
+        const select = relEl('relUsuario');
         if (select) {
             select.innerHTML = '<option value="">Todos</option>';
             usuarios.forEach(user => {
