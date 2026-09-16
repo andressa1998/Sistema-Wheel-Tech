@@ -120,11 +120,6 @@ window.abrirSistemaFolgas = function() {
     const folgasSystem = document.getElementById('folgasSystem');
     if (folgasSystem) folgasSystem.classList.remove('hidden');
     
-    // Atualizar dados do usuário na aba
-    document.getElementById('folgasUserAvatar').textContent = currentUser.avatar || currentUser.name.charAt(0).toUpperCase();
-    document.getElementById('folgasUserName').textContent = currentUser.name;
-    document.getElementById('folgasUserRole').textContent = currentUser.role;
-    
     // Mostrar painel de pendentes apenas para admin
     const painelPendentes = document.getElementById('painelPendentes');
     if (painelPendentes) {

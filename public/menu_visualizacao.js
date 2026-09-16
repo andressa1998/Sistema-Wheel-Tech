@@ -485,6 +485,19 @@
         }
 
 
+        // Itens fixados (menu_favoritos.js) sempre vêm primeiro, na
+        // ordem em que foram fixados. Isto é lido aqui, dentro do
+        // comparador, para que ordenarMenuAlfabeticamente() continue
+        // sendo a ÚNICA função que reordena #menuSystem — se dois
+        // funções diferentes reordenassem o mesmo menu, o
+        // MutationObserver de uma desfaria o trabalho da outra a
+        // cada ciclo.
+        const pinosAtuais =
+            typeof window.obterOrdemFixadosMenu ===
+                'function'
+                ? window.obterOrdemFixadosMenu()
+                : [];
+
         const ordenados =
             [
                 ...cards
@@ -494,6 +507,53 @@
                         a,
                         b
                     ) => {
+
+                        const chaveA =
+                            obterChaveCardMenu(
+                                a
+                            );
+
+                        const chaveB =
+                            obterChaveCardMenu(
+                                b
+                            );
+
+                        const posA =
+                            pinosAtuais.indexOf(
+                                chaveA
+                            );
+
+                        const posB =
+                            pinosAtuais.indexOf(
+                                chaveB
+                            );
+
+                        const fixadoA =
+                            posA !== -1;
+
+                        const fixadoB =
+                            posB !== -1;
+
+                        if (
+                            fixadoA &&
+                            fixadoB
+                        ) {
+
+                            return posA - posB;
+
+                        }
+
+                        if (fixadoA) {
+
+                            return -1;
+
+                        }
+
+                        if (fixadoB) {
+
+                            return 1;
+
+                        }
 
                         const tituloA =
                             obterTituloCardMenu(

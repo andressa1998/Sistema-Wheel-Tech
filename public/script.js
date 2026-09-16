@@ -14918,11 +14918,6 @@ window.abrirSistemaOS = function() {
     const mainSystem = document.getElementById('mainSystem');
     if (mainSystem) mainSystem.classList.remove('hidden');
     
-    // Atualizar dados do usuário na interface OS
-    document.getElementById('userName').textContent = currentUser.name;
-    document.getElementById('userAvatar').textContent = currentUser.avatar;
-    document.getElementById('userRole').textContent = currentUser.role;
-    
     // Carrega somente ao entrar na aba OS.
     // Se a carga for recente, loadOrders usa o cache em memória.
     if (typeof loadOrders === 'function') {
@@ -17755,12 +17750,7 @@ window.abrirSistemaVendas = async function() {
     }
     
     salesSystem.classList.remove('hidden');
-    
-    // Atualizar informações do usuário
-    document.getElementById('salesUserName').textContent = currentUser.name;
-    document.getElementById('salesUserAvatar').textContent = currentUser.avatar;
-    document.getElementById('salesUserRole').textContent = currentUser.role;
-    
+
     showToast('🔄 Carregando sistema de vendas...', 'info');
     
     try {
@@ -18273,12 +18263,7 @@ window.abrirSistemaVendas = async function() {
     }
     
     salesSystem.classList.remove('hidden');
-    
-    // Atualizar informações do usuário
-    document.getElementById('salesUserName').textContent = currentUser.name;
-    document.getElementById('salesUserAvatar').textContent = currentUser.avatar;
-    document.getElementById('salesUserRole').textContent = currentUser.role;
-    
+
     showToast('🔄 Carregando sistema de vendas...', 'info');
     
     try {
@@ -19409,10 +19394,6 @@ window.abrirSistemaFrete = function() {
     const shippingSystem = document.getElementById('shippingSystem');
     if (shippingSystem) shippingSystem.classList.remove('hidden');
 
-    document.getElementById('shippingUserName').textContent = currentUser.name;
-    document.getElementById('shippingUserAvatar').textContent = currentUser.avatar;
-    document.getElementById('shippingUserRole').textContent = currentUser.role;
-
     // Carregar dados salvos imediatamente
     if (typeof window.carregarFretesSalvos === 'function') {
         window.carregarFretesSalvos();
@@ -19675,17 +19656,6 @@ window.abrirSistemaNFE = async function() {
                         <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                         <span id="caixaDateTitle">Emissão de NF-e</span>
                     </h1>
-                    <div class="user-info">
-                        <div class="user-avatar" id="nfeUserAvatar">U</div>
-                        <div>
-                            <div id="nfeUserName">Usuário</div>
-                            <div id="nfeUserRole"></div>
-                            <div class="d-flex gap-2 mt-2">
-                                <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </header>
@@ -25510,11 +25480,6 @@ window.abrirSistemaPrecificacao = function() {
     const precSystem = document.getElementById('precificacaoSystem');
     if (precSystem) precSystem.classList.remove('hidden');
 
-    // Atualizar dados do usuário
-    document.getElementById('precUserName').textContent = currentUser.name;
-    document.getElementById('precUserAvatar').textContent = currentUser.avatar;
-    document.getElementById('precUserRole').textContent = currentUser.role;
-
     // Carregar dados
     carregarPrecificacao();
     showToast('📋 Sistema de Precificação carregado', 'info');
@@ -30015,20 +29980,28 @@ window.setInterval(() => verificarEstoqueDasOSAguardando(), 5 * 60 * 1000);
 window.emitirNFEVenda = emitirNFEVenda;
 window.testMLConnection = testMLConnection;
 window.checkMLTokenStatus = checkMLTokenStatus;
-window.initializeMLAuth = initializeMLAuth;
+if (typeof initializeMLAuth === 'function') {
+    window.initializeMLAuth = initializeMLAuth;
+}
 window.testMLConnection = testMLConnection;
-window.abrirSistemaVendas = abrirSistemaVendas;
-window.carregarVendasML = carregarVendasML;
-window.verDetalhesVenda = verDetalhesVenda;
-window.verificarVenda = verificarVenda;
-window.desverificarVenda = desverificarVenda;
-window.configurarVendas = configurarVendas;
-window.fecharConfigVendas = fecharConfigVendas;
-window.salvarConfigVendas = salvarConfigVendas;
-window.exportarVendas = exportarVendas;
-window.fecharDetalhesVenda = fecharDetalhesVenda;
-window.imprimirDetalhesVenda = imprimirDetalhesVenda;
-window.verificarVendaAtual = verificarVendaAtual;
+// As funções abaixo já são exportadas diretamente (window.X = function
+// () {...}) em outros pontos deste arquivo. Estas linhas são exports
+// redundantes/antigos que tentam ler uma variável local que nunca
+// existiu — sem a guarda, isso lança ReferenceError e interrompe todo
+// o código que vem depois (inclusive a barra lateral global logo
+// abaixo), então cada uma só reatribui se a função já existir.
+if (typeof abrirSistemaVendas === 'function') window.abrirSistemaVendas = abrirSistemaVendas;
+if (typeof carregarVendasML === 'function') window.carregarVendasML = carregarVendasML;
+if (typeof verDetalhesVenda === 'function') window.verDetalhesVenda = verDetalhesVenda;
+if (typeof verificarVenda === 'function') window.verificarVenda = verificarVenda;
+if (typeof desverificarVenda === 'function') window.desverificarVenda = desverificarVenda;
+if (typeof configurarVendas === 'function') window.configurarVendas = configurarVendas;
+if (typeof fecharConfigVendas === 'function') window.fecharConfigVendas = fecharConfigVendas;
+if (typeof salvarConfigVendas === 'function') window.salvarConfigVendas = salvarConfigVendas;
+if (typeof exportarVendas === 'function') window.exportarVendas = exportarVendas;
+if (typeof fecharDetalhesVenda === 'function') window.fecharDetalhesVenda = fecharDetalhesVenda;
+if (typeof imprimirDetalhesVenda === 'function') window.imprimirDetalhesVenda = imprimirDetalhesVenda;
+if (typeof verificarVendaAtual === 'function') window.verificarVendaAtual = verificarVendaAtual;
 // ============================================
 // BARRA LATERAL GLOBAL NAS TELAS INTERNAS
 // Recolhida por padrão; expande ao passar o mouse.
@@ -30053,7 +30026,8 @@ window.verificarVendaAtual = verificarVendaAtual;
             #wtGlobalSidebar .wt-sidebar-brand { min-height:68px !important; padding:3px 8px 13px !important; display:flex !important; align-items:center !important; justify-content:center !important; }
             #wtGlobalSidebar .wt-sidebar-brand img { width:46px !important; max-height:52px !important; object-fit:contain !important; filter:brightness(0) invert(1); transition:width .22s ease !important; }
             #wtGlobalSidebar:hover .wt-sidebar-brand img, #wtGlobalSidebar:focus-within .wt-sidebar-brand img { width:145px !important; }
-            #wtGlobalSidebar .wt-module-nav { flex:1 !important; display:flex !important; flex-direction:column !important; gap:3px !important; overflow-y:auto !important; overflow-x:hidden !important; }
+            #wtGlobalSidebar .wt-module-nav { flex:1 !important; display:flex !important; flex-direction:column !important; gap:3px !important; overflow-y:hidden !important; overflow-x:hidden !important; }
+            #wtGlobalSidebar:hover .wt-module-nav, #wtGlobalSidebar:focus-within .wt-module-nav { overflow-y:auto !important; }
             #wtGlobalSidebar .wt-nav-item { min-width:252px !important; min-height:42px !important; padding:9px 14px !important; display:flex !important; align-items:center !important; gap:0 !important; color:rgba(255,255,255,.84) !important; background:transparent !important; border:0 !important; border-radius:10px !important; font-size:.82rem !important; text-align:left !important; cursor:pointer !important; white-space:nowrap !important; }
             #wtGlobalSidebar .wt-nav-item:hover, #wtGlobalSidebar .wt-nav-item.active { color:#fff !important; background:linear-gradient(90deg,#075fd8,#0878f6) !important; }
             #wtGlobalSidebar .wt-nav-item.wt-menu-hidden { display:none !important; }

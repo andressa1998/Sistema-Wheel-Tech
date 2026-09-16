@@ -336,17 +336,6 @@
                             <img src="logo.png" alt="Wheel Tech" style="height:35px;width:auto;">
                             <span>Regras de Exposição</span>
                         </h1>
-                        <div class="user-info">
-                            <div class="user-avatar" id="regrasExpoUserAvatar">R</div>
-                            <div>
-                                <div id="regrasExpoUserName">Usuário</div>
-                                <div id="regrasExpoUserRole"></div>
-                                <div class="d-flex gap-2 mt-2">
-                                    <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                    <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </header>

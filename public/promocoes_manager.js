@@ -132,40 +132,6 @@ function criarInterfaceBulk() {
                         >
                         <span>Gestão de Promoções em Lote</span>
                     </h1>
-
-                    <div class="user-info">
-                        <div class="user-avatar" id="bulkUserAvatar">U</div>
-
-                        <div>
-                            <div
-                                style="font-weight:600;"
-                                id="bulkUserName"
-                            >
-                                Usuário
-                            </div>
-
-                            <div
-                                style="font-size:12px; color:#6c757d;"
-                                id="bulkUserRole"
-                            ></div>
-
-                            <div class="d-flex gap-2 mt-2">
-                                <button
-                                    onclick="fecharGestaoPromocoesLote()"
-                                    class="btn btn-primary btn-sm"
-                                >
-                                    ← Voltar ao Menu
-                                </button>
-
-                                <button
-                                    onclick="handleLogout()"
-                                    class="btn btn-secondary btn-sm"
-                                >
-                                    Sair
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </header>

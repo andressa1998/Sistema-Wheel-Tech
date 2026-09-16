@@ -193,19 +193,6 @@ window.abrirSistemaEntradas = function() {
     }
 
 
-    // ========================================
-    // DADOS DO USUÁRIO
-    // ========================================
-
-    document.getElementById('entradasUserName').textContent =
-        currentUser.name;
-
-    document.getElementById('entradasUserAvatar').textContent =
-        currentUser.avatar;
-
-    document.getElementById('entradasUserRole').textContent =
-        currentUser.role;
-
 
     // ========================================
     // NOVAS REGRAS

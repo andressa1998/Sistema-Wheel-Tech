@@ -39,7 +39,8 @@
     #wtGlobalSidebar .wt-sidebar-brand{min-height:68px;padding:3px 8px 13px}
     #wtGlobalSidebar .wt-sidebar-brand img{width:46px;max-height:52px;transition:width .22s ease}
     #wtGlobalSidebar:hover .wt-sidebar-brand img,#wtGlobalSidebar:focus-within .wt-sidebar-brand img{width:145px}
-    #wtGlobalSidebar .wt-module-nav{gap:3px;overflow-x:hidden}
+    #wtGlobalSidebar .wt-module-nav{gap:3px;overflow-x:hidden;overflow-y:hidden}
+    #wtGlobalSidebar:hover .wt-module-nav,#wtGlobalSidebar:focus-within .wt-module-nav{overflow-y:auto}
     #wtGlobalSidebar .wt-nav-item{min-width:252px;min-height:42px;padding:9px 14px;white-space:nowrap}
     #wtGlobalSidebar .wt-nav-item i{flex:0 0 24px;margin-right:12px}
     #wtGlobalSidebar .wt-nav-item span{opacity:0;visibility:hidden;transition:opacity .14s ease}
@@ -1861,17 +1862,7 @@ body:has(#loginScreen:not(.hidden)) {
                         <span>Sistema de Ordem de Serviço</span>
                     </div>
                 </div>
-                <div class="user-info">
-                    <div class="user-avatar" id="userAvatar">U</div>
-                    <div>
-                        <div style="font-weight: 600;" id="userName">Usuário</div>
-                        <div style="font-size: 12px; color: #6c757d;" id="userRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </header>
         
@@ -2661,17 +2652,7 @@ body:has(#loginScreen:not(.hidden)) {
                         <span id="caixaDateTitle">Sistema de Vendas ML</span>
                     </h1>
 
-                    <div class="user-info">
-                        <div class="user-avatar" id="salesUserAvatar">V</div>
-                        <div>
-                            <div id="salesUserName">Usuário Vendas</div>
-                            <div id="salesUserRole"></div>
-                            <div class="d-flex gap-2 mt-2">
-                                <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                            </div>
-                        </div>
-                    </div>
+                    
                 </div>
             </div>
         </header>
@@ -2928,17 +2909,7 @@ body:has(#loginScreen:not(.hidden)) {
                     <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     <span id="caixaDateTitle">Reclamações e Devoluções</span>
                 </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="reembolsoUserAvatar">U</div>
-                    <div>
-                        <div id="reembolsoUserName">Usuário</div>
-                        <div id="reembolsoUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -3843,17 +3814,7 @@ body:has(#loginScreen:not(.hidden)) {
                         <span id="caixaDateTitle">Caixa Wheel Tech</span>
                     </h1>
                     
-                    <div class="user-info">
-                        <div class="user-avatar" id="caixaUserAvatar">C</div>
-                        <div>
-                            <div style="font-weight: 600;" id="caixaUserName">Usuário Caixa</div>
-                            <div style="font-size: 12px; color: #6c757d;" id="caixaUserRole"></div>
-                            <div class="d-flex gap-2 mt-2">
-                                <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                            </div>
-                        </div>
-                    </div>
+                    
                 </div>
             </div>
         </header>
@@ -4796,17 +4757,7 @@ body:has(#loginScreen:not(.hidden)) {
                     <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     Precificação Novos Anúncios
                 </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="precUserAvatar">U</div>
-                    <div>
-                        <div style="font-weight: 600;" id="precUserName">Usuário</div>
-                        <div style="font-size: 12px; color: #6c757d;" id="precUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -4938,17 +4889,7 @@ body:has(#loginScreen:not(.hidden)) {
                         <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                         <span id="caixaDateTitle">Feedback</span>
                     </h1>
-        <div class="user-info">
-          <div class="user-avatar" id="feedbackUserAvatar">U</div>
-          <div>
-            <div style="font-weight: 600;" id="feedbackUserName">Usuário</div>
-            <div style="font-size: 12px; color: #6c757d;" id="feedbackUserRole"></div>
-            <div class="d-flex gap-2 mt-2">
-              <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-              <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-            </div>
-          </div>
-        </div>
+        
       </div>
     </div>
   </header>
@@ -5159,17 +5100,7 @@ body:has(#loginScreen:not(.hidden)) {
                     Verificar Avaliações Mercado Livre
                 </h1>
                 
-                <div class="user-info">
-                    <div class="user-avatar" id="reviewsUserAvatar">A</div>
-                    <div>
-                        <div style="font-weight: 600;" id="reviewsUserName">Usuário</div>
-                        <div style="font-size: 12px; color: #6c757d;" id="reviewsUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -5249,17 +5180,7 @@ body:has(#loginScreen:not(.hidden)) {
                     </h1>
                 </div>
             </div>
-            <div class="user-info">
-                <div class="user-avatar" id="folgasUserAvatar">U</div>
-                <div>
-                    <div style="font-weight: 600;" id="folgasUserName">Usuário</div>
-                    <div style="font-size: 12px; color: #6c757d;" id="folgasUserRole"></div>
-                    <div class="d-flex gap-2 mt-2">
-                        <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                        <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                    </div>
-                </div>
-            </div>
+            
         </div>
     </header>
 
@@ -5430,17 +5351,7 @@ body:has(#loginScreen:not(.hidden)) {
                     <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     Custos de Frete – Mercado Livre
                 </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="shippingUserAvatar">F</div>
-                    <div>
-                        <div style="font-weight: 600;" id="shippingUserName">Usuário</div>
-                        <div style="font-size: 12px; color: #6c757d;" id="shippingUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -5932,17 +5843,7 @@ body:has(#loginScreen:not(.hidden)) {
                         <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                         <span id="caixaDateTitle">Perguntas do Mercado Livre</span>
                     </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="perguntasUserAvatar">U</div>
-                    <div>
-                        <div id="perguntasUserName">Usuário</div>
-                        <div id="perguntasUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -6043,17 +5944,7 @@ body:has(#loginScreen:not(.hidden)) {
                     <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     Emissão de NF-e para Vendas ML
                 </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="nfeUserAvatar">N</div>
-                    <div>
-                        <div id="nfeUserName">Usuário</div>
-                        <div id="nfeUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -6350,17 +6241,7 @@ body:has(#loginScreen:not(.hidden)) {
                     <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     <span id="entradasDateTitle">Entradas de Produtos</span>
                 </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="entradasUserAvatar">E</div>
-                    <div>
-                        <div style="font-weight: 600;" id="entradasUserName">Usuário</div>
-                        <div style="font-size: 12px; color: #6c757d;" id="entradasUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -6539,17 +6420,7 @@ body:has(#loginScreen:not(.hidden)) {
                     <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     Análise de Estoque FULL
                 </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="fullUserAvatar">U</div>
-                    <div>
-                        <div style="font-weight: 600;" id="fullUserName">Usuário</div>
-                        <div style="font-size: 12px; color: #6c757d;" id="fullUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -6808,17 +6679,7 @@ body:has(#loginScreen:not(.hidden)) {
                         <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                         <span id="caixaDateTitle">Gestão de Estoque</span>
                     </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="estoqueGestaoUserAvatar">E</div>
-                    <div>
-                        <div id="estoqueGestaoUserName">Usuário</div>
-                        <div id="estoqueGestaoUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -7089,17 +6950,7 @@ body:has(#loginScreen:not(.hidden)) {
                     <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     <span id="caixaDateTitle">Gerenciamento de Anúncios FULL</span>
                 </h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="gaUserAvatar">U</div>
-                    <div>
-                        <div style="font-weight: 600;" id="gaUserName">Usuário</div>
-                        <div style="font-size: 12px; color: #6c757d;" id="gaUserRole"></div>
-                        <div class="d-flex gap-2 mt-2">
-                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                        </div>
-                    </div>
-                </div>
+                
             </div>
         </div>
     </header>
@@ -7274,9 +7125,9 @@ body:has(#loginScreen:not(.hidden)) {
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="script.js?v=20260916-1"></script>
+    <script src="script.js?v=20260916-4"></script>
     <script src="ml_token_manager.js"></script>
-    <script src="folgas.js?v=20260915-3"></script>
+    <script src="folgas.js?v=20260915-4"></script>
     <script src="shipping_simple.js?v=20260916-7"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
@@ -7288,15 +7139,16 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
     <script src="entradas.js"></script>
-    <script src="promocoes_manager.js?v=20260915-1"></script>
+    <script src="promocoes_manager.js?v=20260915-2"></script>
     <script src="full_analysis.js"></script>
     <script src="gerenciamento_anuncios.js?v=20260915-9"></script>
-    <script src="chamados.js?v=20260915-2"></script>
-    <script src="reclamacoes_clientes.js?v=20260916-7"></script>
+    <script src="chamados.js?v=20260915-3"></script>
+    <script src="reclamacoes_clientes.js?v=20260916-8"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
+    <script src="menu_favoritos.js?v=20260916-1"></script>
     <script src="notificacoes_chamados.js"></script>
     <script src="coleta_ampulheta.js?v=20260915-2"></script>
-    <script src="regras_alertas_estoque.js?v=20260910-6"></script>
+    <script src="regras_alertas_estoque.js?v=20260910-7"></script>
     <script src="usuarios_gestao.js?v=20260915-1"></script>
     <script src="carrossel_menu.js?v=20260915-4"></script>
 

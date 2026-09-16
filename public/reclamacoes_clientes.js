@@ -107,17 +107,6 @@
                             <img src="logo.png" alt="Wheel Tech" style="height:35px;width:auto;">
                             <span>Reclamações de Clientes</span>
                         </h1>
-                        <div class="user-info">
-                            <div class="user-avatar" id="rcUserAvatar">U</div>
-                            <div>
-                                <div id="rcUserName">Usuário</div>
-                                <div id="rcUserRole"></div>
-                                <div class="d-flex gap-2 mt-2">
-                                    <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                    <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </header>

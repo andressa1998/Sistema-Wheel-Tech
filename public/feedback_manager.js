@@ -42,10 +42,6 @@ window.abrirSistemaFeedback = function() {
   const feedbackSystem = document.getElementById('feedbackSystem');
   if (feedbackSystem) feedbackSystem.classList.remove('hidden');
 
-  document.getElementById('feedbackUserName').textContent = window.currentUser.name;
-  document.getElementById('feedbackUserAvatar').textContent = window.currentUser.avatar;
-  document.getElementById('feedbackUserRole').textContent = window.currentUser.role;
-
   const btnNovo = document.getElementById('btnNovoFeedback');
   if (btnNovo) {
     btnNovo.style.display = (window.currentUser.role === 'Administrador') ? 'inline-flex' : 'none';
