@@ -103,6 +103,7 @@
         { id: 'titulo', nome: 'Título / SKU', style: 'min-width:200px;' },
         { id: 'deposito', nome: 'Depósito', style: 'width:110px; text-align:center;' },
         { id: 'full', nome: 'FULL', style: 'width:110px; text-align:center;' },
+        { id: 'ativoFull', nome: 'Ativo no Full', style: 'width:130px; text-align:center;' },
         { id: 'vendas30d', nome: 'Vendas FULL 30d', style: 'width:120px; text-align:center;' },
         { id: 'semVender', nome: 'Sem vender', style: 'width:140px; text-align:center;' },
         { id: 'tipo', nome: 'Tipo', style: 'width:100px;' },
@@ -1932,6 +1933,304 @@
         'fulfillment'
     );
 }
+
+
+    // ============================================================
+    // VERIFICAR "ATIVO NO FULL" DE TODOS OS ANÚNCIOS EM SEGUNDO PLANO
+    //
+    // Abrir a tela normalmente carrega os anúncios já salvos no
+    // Supabase (rápido, mas "ativo_no_full" pode estar desatualizado
+    // ou nunca ter sido verificado — fica null/"Verificando..."). Em
+    // vez de depender só do clique manual em "Sincronizar" (que
+    // recalcula TUDO — preço, estoque, etc., mais lento e pesado),
+    // isto busca só o campo de logística (shipping.logistic_type) de
+    // cada MLB já carregado, em lotes, e corrige a coluna sozinho.
+    //
+    // LIMITADOR: isso chama a API do Mercado Livre (não o banco —
+    // só grava no banco se algo realmente mudou), mas em lotes de 20,
+    // então com muitos anúncios são muitas chamadas. Pra não repetir
+    // isso toda vez que QUALQUER pessoa abrir a aba (o status de
+    // logística de um anúncio não muda de hora em hora), o horário da
+    // última verificação fica salvo em configuracoes_sistema — vale
+    // pra todo mundo, não só pra quem rodou. Só verifica de novo
+    // depois de passado o intervalo mínimo.
+    // ============================================================
+
+    const CHAVE_VERIFICACAO_FULL_GA =
+        'ga_ultima_verificacao_full';
+
+    const INTERVALO_VERIFICACAO_FULL_MS =
+        6 * 60 * 60 * 1000;
+
+    async function atualizarStatusFullTodosItensGA(
+        forcar = false
+    ) {
+
+        if (
+            !Array.isArray(GA.rows) ||
+            !GA.rows.length
+        ) {
+
+            return;
+        }
+
+
+        if (!forcar) {
+
+            try {
+
+                const { data } =
+                    await window.supabaseClient
+                        .from('configuracoes_sistema')
+                        .select('valor')
+                        .eq('chave', CHAVE_VERIFICACAO_FULL_GA)
+                        .maybeSingle();
+
+                const ultimaEm =
+                    Number(data?.valor?.em) ||
+                    0;
+
+                const passou =
+                    Date.now() - ultimaEm;
+
+                if (
+                    ultimaEm &&
+                    passou < INTERVALO_VERIFICACAO_FULL_MS
+                ) {
+
+                    console.log(
+                        `⏭️ [GA] Verificação de "ativo no full" pulada — rodou há ` +
+                        `${Math.round(passou / 60000)} min (intervalo mínimo: ` +
+                        `${INTERVALO_VERIFICACAO_FULL_MS / 60000} min).`
+                    );
+
+                    return;
+                }
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ [GA] Não foi possível checar a última verificação de Full (seguindo mesmo assim):',
+                    error
+                );
+            }
+        }
+
+        const idsUnicos =
+            [
+                ...new Set(
+                    GA.rows
+                        .map(row => row.itemId)
+                        .filter(Boolean)
+                )
+            ];
+
+        if (!idsUnicos.length) {
+            return;
+        }
+
+        console.log(
+            `🔎 [GA] Verificando status "ativo no full" de ${idsUnicos.length} anúncio(s) em segundo plano...`
+        );
+
+        const statusPorItem =
+            new Map();
+
+        for (
+            let i = 0;
+            i < idsUnicos.length;
+            i += 20
+        ) {
+
+            const grupo =
+                idsUnicos.slice(i, i + 20);
+
+            try {
+
+                const path =
+                    `/items?ids=${grupo.join(',')}` +
+                    `&attributes=${encodeURIComponent('id,shipping')}`;
+
+                const data =
+                    await mlComRetry(path, 3);
+
+                for (
+                    const resposta
+                    of data || []
+                ) {
+
+                    if (
+                        resposta?.code === 200 &&
+                        resposta?.body?.id
+                    ) {
+
+                        statusPorItem.set(
+                            resposta.body.id,
+                            isFull(resposta.body)
+                        );
+                    }
+                }
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ [GA] Erro verificando status Full em lote:',
+                    error
+                );
+            }
+
+            await sleep(80);
+        }
+
+        const linhasAlteradas =
+            [];
+
+        GA.rows.forEach(row => {
+
+            if (!statusPorItem.has(row.itemId)) {
+                return;
+            }
+
+            const novoStatus =
+                statusPorItem.get(row.itemId);
+
+            if (row.ativoNoFull !== novoStatus) {
+
+                row.ativoNoFull =
+                    novoStatus;
+
+                linhasAlteradas.push(row);
+            }
+        });
+
+        console.log(
+            `✅ [GA] Status "ativo no full" verificado. ${linhasAlteradas.length} linha(s) atualizada(s).`
+        );
+
+        if (linhasAlteradas.length) {
+
+            if (typeof render === 'function') {
+                render();
+            }
+
+            try {
+
+                await salvarAnunciosBanco(
+                    linhasAlteradas,
+                    false
+                );
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ [GA] Erro salvando status "ativo no full":',
+                    error
+                );
+            }
+        }
+
+
+        try {
+
+            await window.supabaseClient
+                .from('configuracoes_sistema')
+                .upsert(
+                    {
+                        chave: CHAVE_VERIFICACAO_FULL_GA,
+                        valor: { em: Date.now() }
+                    },
+                    { onConflict: 'chave' }
+                );
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ [GA] Não foi possível salvar o horário da verificação de Full:',
+                error
+            );
+        }
+    }
+
+    window.atualizarStatusFullTodosItensGA =
+        atualizarStatusFullTodosItensGA;
+
+
+    // ============================================================
+    // VERIFICAR FULL — BOTÃO MANUAL
+    //
+    // Ignora o limitador de 6h (chama com forcar=true) — pra quando
+    // alguém quer conferir na hora se a coluna "Ativo no Full" está
+    // batendo com a realidade, sem esperar o próximo ciclo automático.
+    // ============================================================
+
+    window.verificarStatusFullManualGA =
+        async function () {
+
+            const btn =
+                document.getElementById(
+                    'gaVerificarFullBtn'
+                );
+
+            const htmlOriginal =
+                btn?.innerHTML;
+
+            if (btn) {
+
+                btn.disabled =
+                    true;
+
+                btn.innerHTML =
+                    '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+            }
+
+            try {
+
+                await atualizarStatusFullTodosItensGA(
+                    true
+                );
+
+                if (
+                    typeof showToast ===
+                    'function'
+                ) {
+
+                    showToast(
+                        '✅ Status "Ativo no Full" verificado em todos os anúncios.',
+                        'success'
+                    );
+                }
+
+            } catch (error) {
+
+                console.error(
+                    '❌ [GA] Erro na verificação manual de Full:',
+                    error
+                );
+
+                if (
+                    typeof showToast ===
+                    'function'
+                ) {
+
+                    showToast(
+                        '❌ Erro ao verificar status Full: ' +
+                            error.message,
+                        'error'
+                    );
+                }
+
+            } finally {
+
+                if (btn) {
+
+                    btn.disabled =
+                        false;
+
+                    btn.innerHTML =
+                        htmlOriginal;
+                }
+            }
+        };
 
 
     // ============================================================
@@ -8720,6 +9019,20 @@ function render() {
                                         `
                                 }
 
+                            </td>
+
+
+                            <!-- ===================================== -->
+                            <!-- 5b. ATIVO NO FULL -->
+                            <!-- ===================================== -->
+
+                            <td
+                                data-coluna-ga="ativoFull"
+                                style="
+                                    text-align:center;
+                                "
+                            >
+
                                 ${gaRenderBadgeStatusFullGA(row)}
 
                             </td>
@@ -9208,7 +9521,11 @@ function gaRenderBadgeStatusFullGA(
         row.ativoNoFull === null
     ) {
 
-        return '';
+        return `
+            <div style="font-size:10px; font-weight:700; color:#adb5bd; margin-top:2px;">
+                <i class="fas fa-circle-notch fa-spin"></i> Verificando...
+            </div>
+        `;
     }
 
 
@@ -11599,6 +11916,25 @@ function exportarCSV() {
                 false
             );
         }
+
+
+        // =====================================================
+        // VERIFICAR "ATIVO NO FULL" EM SEGUNDO PLANO
+        //
+        // Não trava a tela — a tabela já está visível. Corrige a
+        // coluna sozinha em alguns segundos, sem precisar de
+        // "Sincronizar" manual.
+        // =====================================================
+
+        atualizarStatusFullTodosItensGA().catch(
+            error => {
+
+                console.warn(
+                    '⚠️ [GA] Falha ao verificar status Full em segundo plano:',
+                    error
+                );
+            }
+        );
     };
 
     window.limparFiltrosGerenciamentoAnuncios =

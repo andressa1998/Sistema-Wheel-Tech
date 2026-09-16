@@ -6979,6 +6979,14 @@ body:has(#loginScreen:not(.hidden)) {
                 >
                     <i class="fas fa-sync-alt"></i> Sincronizar Agora
                 </button>
+                <button
+                    id="gaVerificarFullBtn"
+                    class="btn btn-outline-primary"
+                    title="Confere de novo, na hora, se cada anúncio realmente está oferecendo envio FULL (ignora o limite de 6h entre verificações automáticas)"
+                    onclick="verificarStatusFullManualGA()"
+                >
+                    <i class="fas fa-truck-fast"></i> Verificar Full
+                </button>
                     <button class="btn btn-success" onclick="exportarGerenciamentoAnunciosExcel()">
                         <i class="fas fa-file-excel"></i> Exportar
                     </button>
@@ -7077,6 +7085,7 @@ body:has(#loginScreen:not(.hidden)) {
                             <th style="min-width: 200px;">Título / SKU</th>
                             <th style="width: 110px; text-align: center;">Depósito</th>
                             <th style="width: 110px; text-align: center;">FULL</th>
+                            <th style="width: 130px; text-align: center;">Ativo no Full</th>
                             <th style="width: 120px; text-align: center;">Vendas FULL 30d</th>
                             <th style="width: 140px; text-align: center;">Sem vender</th>
                             <th style="width: 100px;">Tipo</th>
@@ -7088,7 +7097,7 @@ body:has(#loginScreen:not(.hidden)) {
                     </thead>
                     <tbody id="gaTabelaBody">
                         <tr>
-                            <td colspan="11" class="text-center py-5">
+                            <td colspan="12" class="text-center py-5">
                                 <i class="fas fa-box-open fa-3x mb-3" style="color: #6c757d; opacity: 0.3;"></i>
                                 <h4 style="color: #6c757d;">Nenhum anúncio carregado</h4>
                                 <p style="color: #6c757d;">Clique em "Sincronizar Agora" para buscar os anúncios FULL do Mercado Livre.</p>
@@ -7132,7 +7141,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
-    <script src="nfe_manager.js?v=20260916-8"></script>
+    <script src="nfe_manager.js?v=20260916-9"></script>
     <script src="estoque_gestao.js?v=20260916-1"></script>
     <script src="estoque_analise.js?v=20260911-1"></script>
     <script src="regras_nivel_estoque.js?v=20260916-1"></script>
@@ -7141,7 +7150,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="entradas.js"></script>
     <script src="promocoes_manager.js?v=20260915-2"></script>
     <script src="full_analysis.js"></script>
-    <script src="gerenciamento_anuncios.js?v=20260915-9"></script>
+    <script src="gerenciamento_anuncios.js?v=20260916-3"></script>
     <script src="chamados.js?v=20260915-3"></script>
     <script src="reclamacoes_clientes.js?v=20260916-8"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>

@@ -25094,101 +25094,135 @@ async function abrirDevolucaoNFE(
         // =====================================================
         // SE O CLIENTE DA NF-E ANTIGA NÃO ESTIVER CADASTRADO,
         // CADASTRAR AUTOMATICAMENTE COM OS DADOS DO XML
+        //
+        // Isto fica dentro do seu PRÓPRIO try/catch: se a busca ou
+        // o auto-cadastro do cliente falhar (rede lenta, backend
+        // acordando, etc.), NÃO pode travar o resto da devolução —
+        // Natureza, itens e chave referenciada (mais abaixo) têm
+        // que continuar sendo preenchidos de qualquer forma. Sem
+        // isso, uma falha só no cliente fazia a tela parecer um
+        // formulário avulsa comum (Natureza voltava pro padrão
+        // "Venda"), sem indicar que era pra ser uma devolução.
         // =====================================================
 
         if (
             !clienteCadastro
         ) {
 
-            console.log(
-                '👤 Cliente não encontrado no cadastro. Criando automaticamente...',
-                clienteXML
-            );
+            try {
 
-
-            const responseCliente =
-                await fetch(
-                    `${window.API_BASE_URL}/nfe/clientes`,
-                    {
-                        method:
-                            'POST',
-
-                        headers: {
-                            'Content-Type':
-                                'application/json'
-                        },
-
-                        body:
-                            JSON.stringify(
-                                clienteXML
-                            )
-                    }
+                console.log(
+                    '👤 Cliente não encontrado no cadastro. Criando automaticamente...',
+                    clienteXML
                 );
 
 
-            const resultadoCliente =
-                await responseCliente
-                    .json()
-                    .catch(
-                        () => ({})
+                const responseCliente =
+                    await fetch(
+                        `${window.API_BASE_URL}/nfe/clientes`,
+                        {
+                            method:
+                                'POST',
+
+                            headers: {
+                                'Content-Type':
+                                    'application/json'
+                            },
+
+                            body:
+                                JSON.stringify(
+                                    clienteXML
+                                )
+                        }
                     );
 
 
-            if (
-                !responseCliente.ok ||
-                resultadoCliente.success ===
-                    false
+                const resultadoCliente =
+                    await responseCliente
+                        .json()
+                        .catch(
+                            () => ({})
+                        );
+
+
+                if (
+                    !responseCliente.ok ||
+                    resultadoCliente.success ===
+                        false
+                ) {
+
+                    throw new Error(
+                        resultadoCliente.error ||
+                        'Não foi possível cadastrar automaticamente o cliente da devolução'
+                    );
+                }
+
+
+                // Recarregar a lista local
+                await carregarClientesAvulsaNFE();
+
+
+                clientes =
+                    Array.isArray(
+                        window._clientesAvulsaNFE
+                    )
+                        ? window._clientesAvulsaNFE
+                        : [];
+
+
+                clienteCadastro =
+                    clientes.find(
+                        cliente =>
+
+                            String(
+                                cliente.documento ||
+                                ''
+                            )
+                                .replace(
+                                    /\D/g,
+                                    ''
+                                ) ===
+                            clienteXML.documento
+                    );
+
+
+                if (
+                    !clienteCadastro
+                ) {
+
+                    throw new Error(
+                        `Cliente ${clienteXML.nome} não pôde ser localizado no cadastro`
+                    );
+                }
+
+            } catch (
+                erroCliente
             ) {
 
-                throw new Error(
-                    resultadoCliente.error ||
-                    'Não foi possível cadastrar automaticamente o cliente da devolução'
+                console.warn(
+                    '⚠️ Não foi possível preencher o cliente automaticamente na devolução:',
+                    erroCliente
                 );
+
+                showToast(
+                    `⚠️ Não deu para preencher o cliente automaticamente (${erroCliente.message}). Selecione o cliente manualmente antes de emitir.`,
+                    'warning'
+                );
+
+                clienteCadastro =
+                    null;
             }
-
-
-            // Recarregar a lista local
-            await carregarClientesAvulsaNFE();
-
-
-            clientes =
-                Array.isArray(
-                    window._clientesAvulsaNFE
-                )
-                    ? window._clientesAvulsaNFE
-                    : [];
-
-
-            clienteCadastro =
-                clientes.find(
-                    cliente =>
-
-                        String(
-                            cliente.documento ||
-                            ''
-                        )
-                            .replace(
-                                /\D/g,
-                                ''
-                            ) ===
-                        clienteXML.documento
-                );
         }
 
 
         if (
-            !clienteCadastro
+            clienteCadastro
         ) {
 
-            throw new Error(
-                `Cliente ${clienteXML.nome} não pôde ser localizado no cadastro`
+            selecionarClienteAvulsaNFE(
+                clienteCadastro.id
             );
         }
-
-
-        selecionarClienteAvulsaNFE(
-            clienteCadastro.id
-        );
 
 
         // =====================================================

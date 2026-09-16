@@ -3421,13 +3421,28 @@ window.processarEntrada =
 
             // ------------------------------------
             // I = SKU
+            //
+            // "xx" (qualquer caixa) é o placeholder que a
+            // planilha usa pra dizer "sem SKU definido" — trata
+            // como coluna vazia, mas SEM bloquear a linha como
+            // erro (diferente de uma célula realmente em branco).
             // ------------------------------------
 
-            const sku =
+            const skuColado =
                 String(
                     partes[8] || ''
                 )
                     .trim();
+
+            const skuEraPlaceholderXX =
+                /^xx$/i.test(
+                    skuColado
+                );
+
+            const sku =
+                skuEraPlaceholderXX
+                    ? ''
+                    : skuColado;
 
 
             // ------------------------------------
@@ -3478,10 +3493,16 @@ window.processarEntrada =
 
             // ====================================
             // VALIDA SKU
+            //
+            // Célula "xx" já virou SKU vazio acima, mas não é
+            // erro — a linha segue normalmente, só sem SKU
+            // (fica pra combinar/preencher depois). Só bloqueia
+            // quando a célula realmente veio em branco.
             // ====================================
 
             if (
-                !sku
+                !sku &&
+                !skuEraPlaceholderXX
             ) {
 
                 erros.push(
