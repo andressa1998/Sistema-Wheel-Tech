@@ -51,6 +51,15 @@
         return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     }
 
+    // Número da venda (order_id do ML) como link direto para a venda
+    // no painel do Mercado Livre — evita ter que buscar manualmente.
+    function linkVendaRC(numeroVenda) {
+        const numero = String(numeroVenda || '').trim();
+        if (!numero) return '—';
+        const url = `https://vendedores.mercadolivre.com.br/vendas/${encodeURIComponent(numero)}/detalhe`;
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" title="Abrir venda no Mercado Livre"><code>${esc(numero)}</code> <i class="fas fa-external-link-alt" style="font-size:10px;"></i></a>`;
+    }
+
     function sb() { return window.supabaseClient || null; }
 
     function usuarioAtual() { return window.currentUser || null; }
@@ -316,7 +325,7 @@
             const st = cfgStatusRC(r.status);
             return `
                 <tr>
-                    <td><code>${esc(r.numero_venda || '—')}</code></td>
+                    <td>${linkVendaRC(r.numero_venda)}</td>
                     <td>${esc(r.comprador_nome || r.comprador_nickname || '—')}</td>
                     <td style="max-width:220px;">${esc(r.motivo || '—')}</td>
                     <td>${r.valor != null ? 'R$ ' + Number(r.valor).toFixed(2) : '—'}</td>
@@ -471,6 +480,34 @@
             };
         } catch (erro) {
             console.warn(`⚠️ [Reclamações ML] Pedido ${orderId} não encontrado:`, erro);
+            return null;
+        }
+    }
+
+    // Quando o recurso da claim é um "shipment" (ex.: cancelamentos,
+    // mediações), o resource_id é o ID do ENVIO — não da venda. Usar
+    // esse número direto no link "/vendas/.../detalhe" abre uma venda
+    // errada (ou nem abre). É preciso resolver o order_id real a
+    // partir do envio antes de montar o link e buscar os dados.
+    async function resolverOrderIdDeShipmentRC(shipmentId, token) {
+        if (!shipmentId) return null;
+
+        try {
+            const envio = await chamarMLProxy(
+                `https://api.mercadolibre.com/shipments/${encodeURIComponent(shipmentId)}`,
+                token
+            );
+
+            const orderId =
+                envio?.order_id ||
+                (Array.isArray(envio?.order_ids) ? envio.order_ids[0] : null) ||
+                (Array.isArray(envio?.orders) ? envio.orders[0]?.id : null) ||
+                null;
+
+            return orderId ? String(orderId) : null;
+
+        } catch (erro) {
+            console.warn(`⚠️ [Reclamações ML] Não foi possível resolver a venda do envio ${shipmentId}:`, erro);
             return null;
         }
     }
@@ -641,16 +678,29 @@
             .find(p => String(p?.role || '').toLowerCase() === 'complainant');
 
         // A claim não traz nome/valor — só busca a order quando o
-        // recurso da reclamação é realmente um pedido.
-        const dadosOrder = claim?.resource === 'order' && resourceId
-            ? await obterDadosOrderRC(resourceId, token)
-            : null;
+        // recurso da reclamação é realmente um pedido. Quando o
+        // recurso é um "shipment" (cancelamentos, mediações), o
+        // resource_id é o ID do ENVIO, não da venda — resolve o
+        // order_id real antes de usá-lo como número da venda.
+        let numeroVenda = resourceId ? String(resourceId) : null;
+        let dadosOrder = null;
+
+        if (claim?.resource === 'order' && resourceId) {
+            dadosOrder = await obterDadosOrderRC(resourceId, token);
+
+        } else if (claim?.resource === 'shipment' && resourceId) {
+            const orderIdResolvido = await resolverOrderIdDeShipmentRC(resourceId, token);
+            if (orderIdResolvido) {
+                numeroVenda = orderIdResolvido;
+                dadosOrder = await obterDadosOrderRC(orderIdResolvido, token);
+            }
+        }
 
         const motivo = await obterMotivoLegivelRC(claim?.reason_id, token);
 
         const dados = {
             ml_claim_id: claimId,
-            numero_venda: resourceId ? String(resourceId) : null,
+            numero_venda: numeroVenda,
             comprador_nome: dadosOrder?.comprador_nome || null,
             comprador_nickname: dadosOrder?.comprador_nickname || null,
             motivo,
@@ -782,7 +832,7 @@
         const r = reclamacaoAberta;
         if (!r) return;
 
-        document.getElementById('rcDetTitulo').textContent = r.numero_venda || `#${r.id}`;
+        document.getElementById('rcDetTitulo').innerHTML = r.numero_venda ? linkVendaRC(r.numero_venda) : `#${r.id}`;
         document.getElementById('rcDetSubtitulo').textContent =
             `${r.comprador_nome || r.comprador_nickname || 'Cliente não identificado'} · ${r.motivo || 'Motivo não informado'}`;
 
