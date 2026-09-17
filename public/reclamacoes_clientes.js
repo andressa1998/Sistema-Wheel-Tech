@@ -513,83 +513,72 @@
     }
 
     // ============================================================
-    // ESTRATÉGIA: BUSCAR POR VENDA (order_id), NÃO POR CONTA
+    // ESTRATÉGIA: BUSCAR DIRETO NAS RECLAMAÇÕES DA CONTA
     //
-    // O filtro em lote da API (players.user_id + players.role) é
-    // rejeitado por esta conta/app com "atLeastOneFilterProvided",
-    // mesmo formatado exatamente como a documentação do ML manda —
-    // testado com ponto, ponto escapado e colchetes, todos com o
-    // mesmo erro, enquanto um filtro simples (site_id) funciona
-    // normalmente. Reconectar o Mercado Livre resolveria (token
-    // novo já com o escopo de Post Purchase), mas isso derrubaria
-    // outras abas conectadas — então em vez disso, verificamos
-    // reclamação por VENDA, usando o filtro "order_id" (sem ponto,
-    // já confirmado que funciona), percorrendo as vendas que o
-    // sistema já tem sincronizadas em vendas_nfe_cache.
+    // Uma tentativa anterior de filtrar direto pela conta (em vez de
+    // percorrer venda por venda) usava os nomes de parâmetro errados
+    // ("players.user_id"/"players[user_id]") e por isso a API
+    // rejeitava com "atLeastOneFilterProvided". Os nomes corretos,
+    // revelados pela própria mensagem de erro do ML ao tentar outra
+    // combinação inválida, são "player_role" + "player_user_id" (sem
+    // ponto, sem colchetes) — com isso dá pra listar TODAS as
+    // reclamações da conta direto, sem depender de já termos a venda
+    // sincronizada em vendas_nfe_cache nem de adivinhar uma janela de
+    // dias (testado: a API não filtra por data nesse endpoint, e a
+    // ordenação retornada não é cronológica — nem os últimos 1000
+    // registros garantem cobrir o mais recente).
     // ============================================================
 
-    async function buscarOrderIdsRecentesRC(diasAtras = 90, maximo = 300) {
-        const cli = sb();
-        if (!cli) return [];
-
-        const desde = new Date();
-        desde.setDate(desde.getDate() - diasAtras);
-
-        const { data, error } = await cli
-            .from('vendas_nfe_cache')
-            .select('id_venda_ml, data_venda')
-            .gte('data_venda', desde.toISOString())
-            .order('data_venda', { ascending: false })
-            .limit(maximo);
-
-        if (error) {
-            console.warn('⚠️ [Reclamações ML] Erro buscando vendas para checar:', error);
-            return [];
-        }
-
-        return (data || [])
-            .map(r => r.id_venda_ml)
-            .filter(Boolean);
+    async function obterTotalClaimsContaRC(sellerId, token) {
+        const url = `https://api.mercadolibre.com/post-purchase/v1/claims/search?player_role=respondent&player_user_id=${encodeURIComponent(sellerId)}&limit=1`;
+        const resposta = await chamarMLProxy(url, token);
+        return Number(resposta?.paging?.total) || 0;
     }
 
-    async function buscarClaimsPorOrderRC(orderId, token) {
-        const url = `https://api.mercadolibre.com/post-purchase/v1/claims/search?order_id=${encodeURIComponent(orderId)}&limit=10`;
+    async function buscarPaginaClaimsContaRC(sellerId, token, offset, limite = 100) {
+        const url = `https://api.mercadolibre.com/post-purchase/v1/claims/search?player_role=respondent&player_user_id=${encodeURIComponent(sellerId)}&limit=${limite}&offset=${offset}`;
 
         try {
             const resposta = await chamarMLProxy(url, token);
             return Array.isArray(resposta?.data) ? resposta.data : [];
         } catch (erro) {
-            console.warn(`⚠️ [Reclamações ML] Falha verificando venda ${orderId}:`, erro.message);
+            console.warn(`⚠️ [Reclamações ML] Falha buscando página (offset ${offset}):`, erro.message);
             return [];
         }
     }
 
-    // Verifica as vendas recentes em pequenos lotes (concorrência
-    // limitada), reportando progresso no botão.
+    // Varre TODAS as páginas da conta (não é possível filtrar por data
+    // ou pular direto pras mais recentes — a única forma confiável de
+    // não perder nenhuma é passar por tudo). Como cada página já traz
+    // os dados completos da claim, isso é rápido (segundos, não
+    // minutos): o custo pesado de verdade é o enriquecimento por
+    // claim (pedido/comprador/motivo/mensagens), que fica a cargo de
+    // quem chama esta função decidir se precisa ou não.
     async function buscarTodasClaimsRC(sellerId, token, aoProgredir) {
-        const orderIds = await buscarOrderIdsRecentesRC();
+        const total = await obterTotalClaimsContaRC(sellerId, token);
+        if (total === 0) return [];
 
-        if (orderIds.length === 0) {
-            return [];
-        }
+        const TAMANHO_PAGINA = 100;
+        const CONCORRENCIA = 8;
+        const offsets = [];
+        for (let off = 0; off < total; off += TAMANHO_PAGINA) offsets.push(off);
 
-        const CONCORRENCIA = 4;
         const todas = [];
         let verificadas = 0;
 
-        for (let i = 0; i < orderIds.length; i += CONCORRENCIA) {
-            const lote = orderIds.slice(i, i + CONCORRENCIA);
+        for (let i = 0; i < offsets.length; i += CONCORRENCIA) {
+            const lote = offsets.slice(i, i + CONCORRENCIA);
 
             const resultadosLote = await Promise.all(
-                lote.map(orderId => buscarClaimsPorOrderRC(orderId, token))
+                lote.map(off => buscarPaginaClaimsContaRC(sellerId, token, off, TAMANHO_PAGINA))
             );
 
             for (const claims of resultadosLote) {
                 todas.push(...claims);
             }
 
-            verificadas += lote.length;
-            aoProgredir?.(verificadas, orderIds.length);
+            verificadas = Math.min(total, verificadas + lote.length * TAMANHO_PAGINA);
+            aoProgredir?.(verificadas, total);
         }
 
         return todas;
@@ -613,22 +602,71 @@
         try {
             const { token, sellerId } = await obterTokenESellerRC();
 
-            const claims = await buscarTodasClaimsRC(sellerId, token, (feitas, totalVendas) => {
+            btn && (btn.innerHTML = '<i class="fas fa-sync-alt rc-sync-spin"></i> Listando reclamações...');
+
+            const claims = await buscarTodasClaimsRC(sellerId, token, (feitas, totalClaims) => {
                 if (btn) {
-                    btn.innerHTML = `<i class="fas fa-sync-alt rc-sync-spin"></i> Verificando venda ${feitas}/${totalVendas}...`;
+                    btn.innerHTML = `<i class="fas fa-sync-alt rc-sync-spin"></i> Listando reclamações ${feitas}/${totalClaims}...`;
                 }
             });
 
             if (claims.length === 0) {
-                showToast?.('ℹ️ Nenhuma reclamação encontrada nas vendas recentes.', 'info');
+                showToast?.('ℹ️ Nenhuma reclamação encontrada na conta.', 'info');
                 await window.carregarReclamacoesClientes();
                 return;
             }
 
+            // A API não filtra por data neste endpoint (testado — o parâmetro
+            // é ignorado), então a listagem traz TODO o histórico da conta
+            // (milhares de reclamações desde 2019). Como o objetivo daqui é
+            // acompanhar reclamações recentes (não montar um arquivo
+            // histórico completo), filtra por data_created no lado do
+            // sistema, depois de já termos a lista completa e confiável.
+            const JANELA_DIAS = 90;
+            const limiteData = new Date(Date.now() - JANELA_DIAS * 24 * 60 * 60 * 1000);
+            const claimsRecentes = claims.filter(claim => {
+                const dataClaim = new Date(claim?.date_created || 0);
+                return !isNaN(dataClaim.getTime()) && dataClaim >= limiteData;
+            });
+
+            // Já temos, numa consulta só, a data de atualização (last_updated) de
+            // tudo que já está no banco. Reclamações sem mudança desde a última
+            // sincronização são puladas — só quem é nova ou mudou (ex.: status)
+            // passa pelo enriquecimento (que faz várias chamadas por claim).
+            // Paginado porque o Supabase corta em 1000 linhas por página —
+            // e essa tabela deve passar disso com o histórico completo.
+            const cli = sb();
+            const mapaExistentes = new Map();
+            {
+                const TAMANHO_PAGINA = 1000;
+                let inicio = 0;
+                while (true) {
+                    const { data: pagina, error } = await cli
+                        .from(CFG_RC.tabela)
+                        .select('ml_claim_id, ml_atualizado_em')
+                        .range(inicio, inicio + TAMANHO_PAGINA - 1);
+
+                    if (error || !pagina || pagina.length === 0) break;
+                    pagina.forEach(r => mapaExistentes.set(r.ml_claim_id, r.ml_atualizado_em));
+                    if (pagina.length < TAMANHO_PAGINA) break;
+                    inicio += TAMANHO_PAGINA;
+                }
+            }
+
+            const claimsParaProcessar = claimsRecentes.filter(claim => {
+                const claimId = String(claim?.id ?? '');
+                const atualEm = mapaExistentes.get(claimId);
+                return !atualEm || atualEm !== claim?.last_updated;
+            });
+
             let sincronizadas = 0;
             let comErro = 0;
 
-            for (const claim of claims) {
+            for (let i = 0; i < claimsParaProcessar.length; i++) {
+                const claim = claimsParaProcessar[i];
+                if (btn) {
+                    btn.innerHTML = `<i class="fas fa-sync-alt rc-sync-spin"></i> Sincronizando ${i + 1}/${claimsParaProcessar.length}...`;
+                }
                 try {
                     await sincronizarUmaClaimRC(claim, token);
                     sincronizadas++;
@@ -640,10 +678,11 @@
 
             await window.carregarReclamacoesClientes();
 
+            const puladas = claimsRecentes.length - claimsParaProcessar.length;
             showToast?.(
                 comErro > 0
                     ? `⚠️ ${sincronizadas} reclamação(ões) sincronizada(s), ${comErro} com erro (veja o console).`
-                    : `✅ ${sincronizadas} reclamação(ões) sincronizada(s) com sucesso.`,
+                    : `✅ ${sincronizadas} nova(s)/atualizada(s) sincronizada(s) — ${puladas} já estavam em dia (${claimsRecentes.length} nos últimos ${JANELA_DIAS} dias).`,
                 comErro > 0 ? 'warning' : 'success'
             );
 
