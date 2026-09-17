@@ -16826,6 +16826,12 @@ if (
                         <div class="info-label">Produto</div>
                         <div class="info-value" style="font-size: 18px; font-weight: 700; color: #8A2BE2;">${order.productName}</div>
                     </div>
+                    ${(Array.isArray(order.skus) ? order.skus.join(', ') : (order.skus || '')) ? `
+                    <div class="info-item">
+                        <div class="info-label">SKU(s)</div>
+                        <div class="info-value"><i class="fas fa-barcode"></i> ${Array.isArray(order.skus) ? order.skus.join(', ') : order.skus}</div>
+                    </div>
+                    ` : ''}
                     ${order.linkAnuncio ? `
                     <div class="info-item">
                         <div class="info-label">Link do Anúncio</div>
