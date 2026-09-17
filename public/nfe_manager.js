@@ -68297,6 +68297,77 @@ async function registrarMovimentacoesProdutosBaixaNFE(
     };
 }
 
+// =========================================================
+// REGISTRAR NO HISTÓRICO A VENDA DE UM PRODUTO NO FULL
+//
+// O Full tem estoque próprio, separado do estoque local — então
+// a venda NÃO deve baixar produtos_estoque.quantidade nem disparar
+// sincronização de anúncio. Mas ela precisa aparecer no histórico
+// do produto (estoque_movimentacoes, tipo_entrada='venda'), que é
+// a mesma fonte usada pela projeção de "quanto tempo o estoque
+// local vai durar" — sem isso a projeção fica incompleta.
+// =========================================================
+async function registrarHistoricoVendaFullSemBaixa(
+    vendaId,
+    detalhesEstoque = []
+) {
+    const detalhes = Array.isArray(detalhesEstoque) ? detalhesEstoque : [];
+
+    let registrados = 0;
+    const erros = [];
+
+    for (const item of detalhes) {
+
+        if (!item || item.encontrado === false || !item.produto_id) continue;
+
+        const quantidade = Number(item.quantidade_venda || 0);
+        if (quantidade <= 0) continue;
+
+        try {
+
+            // Saldo local não muda — usa a quantidade ATUAL do produto
+            // (consultada agora, não de um cache em memória que pode
+            // nem estar carregado nesta aba) pra não corromper o saldo
+            // acumulado exibido no histórico.
+            const { data: produtoAtual } = await window.supabaseClient
+                .from('produtos_estoque')
+                .select('quantidade')
+                .eq('id', item.produto_id)
+                .maybeSingle();
+
+            const numeroMov =
+                typeof gerarNumeroMovimentacao === 'function'
+                    ? await gerarNumeroMovimentacao()
+                    : `MOV-FULL-${Date.now()}`;
+
+            const { error: erroMov } = await window.supabaseClient
+                .from('estoque_movimentacoes')
+                .insert([{
+                    produto_id: item.produto_id,
+                    tipo: 'saida',
+                    quantidade,
+                    usuario: 'Sistema (venda Full)',
+                    numero_movimentacao: numeroMov,
+                    numero_documento: `FULL-${vendaId}`,
+                    tipo_entrada: 'venda',
+                    data_hora: new Date().toISOString(),
+                    saldo_apos: produtoAtual ? produtoAtual.quantidade : null
+                }]);
+
+            if (erroMov) {
+                erros.push(`${item.sku || item.produto_id}: ${erroMov.message}`);
+            } else {
+                registrados++;
+            }
+
+        } catch (error) {
+            erros.push(`${item.sku || item.produto_id}: ${error.message}`);
+        }
+    }
+
+    return { success: erros.length === 0, registrados, erros };
+}
+
 async function garantirBaixaEstoqueVenda(
     vendaId,
     origem = 'manual'
@@ -68420,6 +68491,11 @@ async function garantirBaixaEstoqueVenda(
 
         // =====================================================
         // 3. FULL
+        //
+        // Não baixa estoque local (o Full tem estoque próprio) e
+        // não sincroniza anúncio — mas registra a venda no
+        // histórico do produto, igual acontece pra vendas locais
+        // quando a NF-e é emitida, só que sem mexer na quantidade.
         // =====================================================
 
         if (
@@ -68427,16 +68503,73 @@ async function garantirBaixaEstoqueVenda(
             true
         ) {
 
-            return {
+            if (
+                vendaCache.estoque_baixado ===
+                true
+            ) {
 
-                success: true,
+                return {
+                    success: true,
+                    full: true,
+                    skipped: true,
+                    sincronizado: true
+                };
+            }
 
-                full: true,
+            try {
 
-                skipped: true,
+                const verificacaoFull =
+                    await garantirDetalhesEstoqueParaBaixaNFE(
+                        vendaId,
+                        vendaCache
+                    );
 
-                sincronizado: true
-            };
+                const detalhesFull =
+                    verificacaoFull.success
+                        ? verificacaoFull.detalhes
+                        : [];
+
+                const registroFull =
+                    await registrarHistoricoVendaFullSemBaixa(
+                        vendaId,
+                        detalhesFull
+                    );
+
+                await window.supabaseClient
+                    .from('vendas_nfe_cache')
+                    .update({
+                        estoque_baixado: true,
+                        estoque_status: 'full_historico_registrado',
+                        estoque_detalhes: detalhesFull,
+                        atualizado_em: new Date().toISOString()
+                    })
+                    .eq('id_venda_ml', vendaId);
+
+                console.log(
+                    `✅ [BAIXA] Venda Full ${vendaId}: ${registroFull.registrados} produto(s) registrado(s) no histórico (sem baixa local).`
+                );
+
+                return {
+                    success: true,
+                    full: true,
+                    registrados: registroFull.registrados,
+                    sincronizado: true
+                };
+
+            } catch (erroFull) {
+
+                console.warn(
+                    `⚠️ [BAIXA] Falha registrando histórico da venda Full ${vendaId}:`,
+                    erroFull
+                );
+
+                return {
+                    success: true,
+                    full: true,
+                    skipped: true,
+                    sincronizado: true
+                };
+            }
         }
 
 

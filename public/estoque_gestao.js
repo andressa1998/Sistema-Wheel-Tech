@@ -10822,6 +10822,27 @@ async function verHistoricoMovimentacoes(produtoId) {
                             Tudo
                         </button>
 
+
+                        <div
+                            style="
+                                width: 1px;
+                                height: 30px;
+                                background: #dee2e6;
+                                margin: 0 3px;
+                            "
+                        ></div>
+
+
+                        <button
+                            class="btn btn-sm"
+                            style="background:#6f1d91;color:#fff;"
+                            onclick="abrirModalRegistrarVendaFullEstoque()"
+                            title="Registra a venda no histórico (pra projeção) sem baixar estoque local nem sincronizar anúncios — use quando o produto vendeu no Full"
+                        >
+                            <i class="fas fa-warehouse"></i>
+                            Registrar Venda Full
+                        </button>
+
                     </div>
 
 
@@ -10877,6 +10898,135 @@ async function verHistoricoMovimentacoes(produtoId) {
             'error'
         );
 
+    }
+}
+
+// =========================================================
+// REGISTRAR VENDA FULL (SEM BAIXAR ESTOQUE / SEM SINCRONIZAR)
+//
+// O Mercado Livre Full mantém seu próprio estoque, separado do
+// estoque local. Quando um produto vende pelo Full, isso não deve
+// mexer no estoque local nem disparar sincronização de anúncio —
+// mas a venda precisa aparecer no histórico do produto, senão a
+// projeção de "quanto tempo o estoque local vai durar" fica
+// desatualizada (calculada só com base nas vendas locais).
+// =========================================================
+
+function abrirModalRegistrarVendaFullEstoque() {
+    const produto = window._historicoEstoqueProduto;
+    if (!produto) {
+        showToast('Abra o histórico de um produto primeiro.', 'warning');
+        return;
+    }
+
+    const modalAnterior = document.getElementById('modalRegistrarVendaFullEstoque');
+    if (modalAnterior) modalAnterior.remove();
+
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    const modal = document.createElement('div');
+    modal.id = 'modalRegistrarVendaFullEstoque';
+    modal.className = 'modal';
+    modal.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.5);
+        z-index: 100000;
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+    `;
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:480px; width:100%; background:white; padding:22px; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 4px; color:#6f1d91;">
+                <i class="fas fa-warehouse"></i> Registrar Venda no Full
+            </h3>
+            <p style="margin:0 0 16px; color:#6c757d; font-size:13px;">
+                ${escapeHtml(produto.nome)} — não altera o estoque local nem sincroniza o anúncio, só entra no histórico para a projeção.
+            </p>
+
+            <div class="form-group">
+                <label>Quantidade vendida *</label>
+                <input type="number" id="vfQuantidade" class="form-control" value="1" min="1" step="1">
+            </div>
+
+            <div class="form-group">
+                <label>Data da venda</label>
+                <input type="date" id="vfData" class="form-control" value="${hoje}" max="${hoje}">
+            </div>
+
+            <div class="form-group">
+                <label>Observação (nº do pedido no Full, opcional)</label>
+                <input type="text" id="vfObservacao" class="form-control" placeholder="Ex.: pedido 2000...">
+            </div>
+
+            <div class="d-flex justify-content-end gap-2" style="margin-top:18px;">
+                <button class="btn btn-secondary" onclick="fecharModalRegistrarVendaFullEstoque()">Cancelar</button>
+                <button class="btn" style="background:#6f1d91;color:#fff;" onclick="confirmarRegistroVendaFullEstoque()">
+                    <i class="fas fa-check"></i> Registrar
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function fecharModalRegistrarVendaFullEstoque() {
+    document.getElementById('modalRegistrarVendaFullEstoque')?.remove();
+}
+
+async function confirmarRegistroVendaFullEstoque() {
+    const produtoId = window._historicoEstoqueProdutoId;
+    const produto = window._historicoEstoqueProduto;
+    if (!produtoId || !produto) {
+        showToast('Produto não encontrado.', 'error');
+        return;
+    }
+
+    const quantidade = parseInt(document.getElementById('vfQuantidade').value, 10);
+    const data = document.getElementById('vfData').value;
+    const observacao = document.getElementById('vfObservacao').value.trim();
+
+    if (isNaN(quantidade) || quantidade <= 0) {
+        showToast('Quantidade inválida.', 'warning');
+        return;
+    }
+    if (!data) {
+        showToast('Informe a data da venda.', 'warning');
+        return;
+    }
+
+    try {
+        const numeroMov = await gerarNumeroMovimentacao();
+
+        const { error } = await window.supabaseClient
+            .from('estoque_movimentacoes')
+            .insert([{
+                produto_id: produtoId,
+                tipo: 'saida',
+                quantidade,
+                usuario: currentUser?.name || 'sistema',
+                numero_movimentacao: numeroMov,
+                numero_documento: observacao ? `FULL - ${observacao}` : 'FULL',
+                tipo_entrada: 'venda',
+                data_hora: `${data}T12:00:00-03:00`,
+                // Estoque local não muda — grava o saldo atual pra não
+                // corromper o saldo acumulado do restante do histórico.
+                saldo_apos: produto.quantidade
+            }]);
+
+        if (error) throw error;
+
+        showToast(`✅ Venda Full registrada: ${quantidade} un. de ${produto.sku}`, 'success');
+        fecharModalRegistrarVendaFullEstoque();
+
+        // Recarrega só o histórico deste produto (estoque local não mudou).
+        await verHistoricoMovimentacoes(produtoId);
+
+    } catch (error) {
+        console.error('Erro ao registrar venda Full:', error);
+        showToast('Erro ao registrar venda Full: ' + error.message, 'error');
     }
 }
 
