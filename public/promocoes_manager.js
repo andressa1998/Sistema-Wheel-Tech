@@ -5583,12 +5583,49 @@ async function consultarPromocaoAtivaNoML(
         }
 
         if (!response.ok) {
-            throw new Error(
+            const mensagemErro =
                 dados?.message ||
                 dados?.error ||
                 respostaTexto ||
-                `Erro HTTP ${response.status} ao consultar a promoção`
-            );
+                `Erro HTTP ${response.status} ao consultar a promoção`;
+
+            /*
+             * Quando o Mercado Livre encerra uma promoção antes da
+             * data prevista, este endpoint pode passar a responder
+             * com 404 (ou uma mensagem de "não encontrada") em vez
+             * de simplesmente não listar a promoção. Sem este
+             * tratamento, isso era considerado um erro genérico, o
+             * agendamento ficava travado em "erro_desativacao" e o
+             * aviso voltava a aparecer todos os dias — mesmo a
+             * promoção já não existindo mais. Trata como já
+             * desativada, assim como quando ela some da listagem.
+             */
+            const pareceNaoEncontrada =
+                response.status === 404 ||
+                /not[\s_-]?found|não encontrad|nao encontrad|invalid[\s_-]?promotion|promotion.*(not[\s_-]?exist|inv[aá]lid)/i.test(
+                    mensagemErro
+                );
+
+            if (pareceNaoEncontrada) {
+                log(
+                    `✅ ${itemId} / ${promotionId}: promoção não encontrada ` +
+                    `no Mercado Livre (HTTP ${response.status}). ` +
+                    `Provavelmente encerrada antecipadamente — ` +
+                    `considerado desativado.`,
+                    'success'
+                );
+
+                return {
+                    success: true,
+                    ativa: false,
+                    promocao: null,
+                    offerId: null,
+                    status: null,
+                    motivo: 'promocao_encerrada_pelo_ml'
+                };
+            }
+
+            throw new Error(mensagemErro);
         }
 
         const promocoes = Array.isArray(dados)
