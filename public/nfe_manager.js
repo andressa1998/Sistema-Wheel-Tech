@@ -44477,6 +44477,52 @@ function renderizarControlesPaginacaoNFE(totalItens) {
     `;
 }
 
+window.exportarVendasNFEExcel = function() {
+
+    const lista =
+        Array.isArray(window._vendasTabelaNFEBase)
+            ? window._vendasTabelaNFEBase
+            : [];
+
+    if (!lista.length) {
+        showToast('Nenhuma venda para exportar', 'warning');
+        return;
+    }
+
+    const dados = lista.map(venda => {
+
+        const cliente =
+            venda.cliente ||
+            venda.buyer?.nickname ||
+            `${venda.buyer?.first_name || ''} ${venda.buyer?.last_name || ''}`.trim() ||
+            'N/I';
+
+        let skus = [];
+        if (venda.eh_kit && Array.isArray(venda.skus_kit)) {
+            skus = venda.skus_kit.map(item => item.sku).filter(Boolean);
+        } else if (Array.isArray(venda.order_items)) {
+            skus = venda.order_items.map(item => item.item?.seller_sku).filter(Boolean);
+        }
+
+        return {
+            'Venda': venda.id_venda_ml || venda.id || '',
+            'Data': venda.date_created || '',
+            'Cliente': cliente,
+            'SKU': skus.join(', '),
+            'Valor': venda.total_amount ?? '',
+            'Método de Envio': venda._is_full ? 'FULL' : (venda._shipping_mode || venda._logistic_type || ''),
+            'Status NF-e': venda._tem_nfe ? 'Emitida' : 'Pendente',
+            'Cancelada': vendaEstaCanceladaNFE(venda) ? 'Sim' : 'Não'
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Vendas_NFE');
+    XLSX.writeFile(wb, `vendas_nfe_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+};
+
 function renderizarVendasNFETabela(vendas) {
 
     garantirEstiloAlertaExposicaoFullNFE();
@@ -69213,6 +69259,36 @@ async function garantirBaixaEstoqueVenda(
     }
 }
 
+window.exportarNFesEmitidasExcel = function() {
+
+    const lista =
+        Array.isArray(window.nfesEmitidasCache)
+            ? window.nfesEmitidasCache
+            : [];
+
+    if (!lista.length) {
+        showToast('Nenhuma NF-e para exportar. Clique em "Atualizar" primeiro.', 'warning');
+        return;
+    }
+
+    const dados = lista.map(nfe => ({
+        'Chave': nfe.chave_acesso || nfe.chave || '',
+        'Protocolo': nfe.protocolo || '',
+        'Cliente': nfe.cliente_nome || nfe.cliente?.nome || '',
+        'Natureza Operação': nfe.natureza_operacao || nfe.natureza || '',
+        'Produto': nfe.produto_nome || '',
+        'Valor Total': nfe.valor_total ?? '',
+        'Data Emissão': nfe.data_emissao || '',
+        'Cancelada': nfe.cancelada ? 'Sim' : 'Não'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'NFes_Emitidas');
+    XLSX.writeFile(wb, `nfes_emitidas_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+};
+
 async function carregarNFesEmitidas() {
 
     const tbody =
@@ -69274,6 +69350,10 @@ async function carregarNFesEmitidas() {
             )
                 ? data.notas
                 : [];
+
+
+        window.nfesEmitidasCache =
+            nfes;
 
                 // =====================================================
 // DESCOBRIR QUAIS NF-ES DE VENDA JÁ POSSUEM DEVOLUÇÃO
@@ -70916,6 +70996,19 @@ async function cancelarNFE(chaveAcesso) {
 }
 
 // ===================== TRANSPORTADORAS =====================
+window.exportarTransportadorasExcel = function() {
+    const tabela = document.getElementById('tabelaTransportadoras');
+    if (!tabela || !document.getElementById('transportadorasBody')?.querySelector('td button, td a')) {
+        showToast('Nenhuma transportadora para exportar', 'warning');
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Transportadoras');
+    XLSX.writeFile(wb, `transportadoras_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('✅ Exportado!', 'success');
+};
+
 async function carregarTransportadoras() {
     const tbody = document.getElementById('transportadorasBody');
     if (!tbody) return;
@@ -71490,6 +71583,19 @@ async function carregarTransportadorasSelect() {
         return false;
     }
 }
+
+window.exportarClientesNFEExcel = function() {
+    const tabela = document.getElementById('tabelaClientes');
+    if (!tabela || !document.getElementById('clientesBody')?.querySelector('td button, td a')) {
+        showToast('Nenhum cliente para exportar', 'warning');
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Clientes');
+    XLSX.writeFile(wb, `clientes_nfe_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('✅ Exportado!', 'success');
+};
 
 async function carregarClientes() {
 

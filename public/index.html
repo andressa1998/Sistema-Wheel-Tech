@@ -3004,6 +3004,9 @@ body:has(#loginScreen:not(.hidden)) {
                         <button onclick="atualizarReembolsos()" class="btn btn-primary">
                             <i class="fas fa-sync-alt"></i> Atualizar
                         </button>
+                        <button onclick="exportarReembolsosExcel()" class="btn btn-outline-success">
+                            <i class="fas fa-file-excel"></i> Exportar Excel
+                        </button>
                     </div>
                 </div>
             </div>
@@ -3084,6 +3087,9 @@ body:has(#loginScreen:not(.hidden)) {
                         </button>
                         <button onclick="carregarDevolucoes()" class="btn btn-primary">
                             <i class="fas fa-sync-alt"></i> Atualizar
+                        </button>
+                        <button onclick="exportarDevolucoesExcel()" class="btn btn-outline-success">
+                            <i class="fas fa-file-excel"></i> Exportar Excel
                         </button>
                     </div>
                 </div>
@@ -4908,6 +4914,9 @@ body:has(#loginScreen:not(.hidden)) {
                     <button class="btn btn-primary" onclick="carregarPrecificacao()">
                         <i class="fas fa-sync-alt"></i>
                     </button>
+                    <button class="btn btn-outline-success" onclick="exportarPrecificacaoExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar Excel
+                    </button>
                 </div>
             </div>
 
@@ -4959,6 +4968,9 @@ body:has(#loginScreen:not(.hidden)) {
           <button class="btn btn-success" onclick="carregarFeedbacks()">
             <i class="fas fa-sync-alt"></i> Atualizar
           </button>
+          <button class="btn btn-outline-success" onclick="exportarFeedbacksExcel()">
+            <i class="fas fa-file-excel"></i> Exportar Excel
+          </button>
         </div>
       </div>
     </div>
@@ -5007,6 +5019,9 @@ body:has(#loginScreen:not(.hidden)) {
           </button>
           <button class="btn btn-info btn-sm" onclick="carregarSugestoes()">
             <i class="fas fa-sync-alt"></i>
+          </button>
+          <button class="btn btn-outline-success btn-sm" onclick="exportarSugestoesExcel()">
+            <i class="fas fa-file-excel"></i> Exportar Excel
           </button>
         </div>
       </div>
@@ -5184,6 +5199,9 @@ body:has(#loginScreen:not(.hidden)) {
                 </h2>
                 <div>
                     <span class="badge badge-primary" id="totalReviews">0 avaliações</span>
+                    <button class="btn btn-sm btn-outline-success" onclick="exportarAvaliacoesExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar Excel
+                    </button>
                 </div>
             </div>
             
@@ -5298,7 +5316,12 @@ body:has(#loginScreen:not(.hidden)) {
                 <h2 class="card-title">
                     <i class="fas fa-clock"></i> Solicitações Pendentes
                 </h2>
-                <span class="badge badge-warning" id="contadorPendentes">0</span>
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge badge-warning" id="contadorPendentes">0</span>
+                    <button class="btn btn-sm btn-outline-success" onclick="exportarSolicitacoesFolgaExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar Excel
+                    </button>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table" id="tabelaSolicitacoes">
@@ -5900,9 +5923,14 @@ body:has(#loginScreen:not(.hidden)) {
         <div class="card mb-4">
             <div class="d-flex justify-content-between align-items-center">
                 <h3><i class="fas fa-question-circle"></i> Perguntas dos clientes</h3>
-                <button class="btn btn-primary" onclick="carregarPerguntasML()">
-                    <i class="fas fa-sync-alt"></i> Atualizar
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" onclick="carregarPerguntasML()">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                    <button class="btn btn-outline-success" onclick="exportarPerguntasExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar Excel
+                    </button>
+                </div>
             </div>
         </div>
         
@@ -7194,25 +7222,25 @@ body:has(#loginScreen:not(.hidden)) {
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="script.js?v=20260916-4"></script>
+    <script src="script.js?v=20260916-5"></script>
     <script src="ml_token_manager.js"></script>
     <script src="folgas.js?v=20260915-4"></script>
-    <script src="shipping_simple.js?v=20260916-7"></script>
+    <script src="shipping_simple.js?v=20260916-8"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
-    <script src="nfe_manager.js?v=20260916-9"></script>
+    <script src="nfe_manager.js?v=20260916-10"></script>
     <script src="estoque_gestao.js?v=20260916-1"></script>
     <script src="estoque_analise.js?v=20260911-1"></script>
     <script src="regras_nivel_estoque.js?v=20260916-1"></script>
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
     <script src="entradas.js"></script>
-    <script src="promocoes_manager.js?v=20260915-2"></script>
+    <script src="promocoes_manager.js?v=20260915-3"></script>
     <script src="full_analysis.js"></script>
     <script src="gerenciamento_anuncios.js?v=20260916-4"></script>
-    <script src="chamados.js?v=20260915-3"></script>
-    <script src="reclamacoes_clientes.js?v=20260916-8"></script>
+    <script src="chamados.js?v=20260915-4"></script>
+    <script src="reclamacoes_clientes.js?v=20260916-9"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
     <script src="menu_favoritos.js?v=20260916-1"></script>
     <script src="notificacoes_chamados.js"></script>

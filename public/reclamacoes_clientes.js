@@ -120,6 +120,9 @@
                             <button class="btn btn-primary" id="rcBtnSincronizar" onclick="window.sincronizarReclamacoesClientesML()">
                                 <i class="fas fa-sync-alt"></i> Sincronizar com o Mercado Livre
                             </button>
+                            <button class="btn btn-outline-success" onclick="window.exportarReclamacoesClientesExcel()">
+                                <i class="fas fa-file-excel"></i> Exportar Excel
+                            </button>
                         </div>
                     </div>
 
@@ -261,6 +264,27 @@
             });
         }
         renderizarReclamacoesClientes();
+    };
+
+    window.exportarReclamacoesClientesExcel = function() {
+        if (!Array.isArray(reclamacoesCache) || reclamacoesCache.length === 0) {
+            showToast('Nenhuma reclamação para exportar', 'warning');
+            return;
+        }
+        const dados = reclamacoesCache.map(r => ({
+            'Venda': r.numero_venda || '',
+            'Cliente': r.comprador_nome || r.comprador_nickname || '',
+            'Motivo': r.motivo || '',
+            'Valor': r.valor ?? '',
+            'Status': cfgStatusRC(r.status).texto,
+            'Responsável': r.responsavel || '',
+            'Aberta em': r.ml_criado_em || r.criado_em || ''
+        }));
+        const ws = XLSX.utils.json_to_sheet(dados);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Reclamacoes_Clientes');
+        XLSX.writeFile(wb, `reclamacoes_clientes_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
     };
 
     function renderizarReclamacoesClientes() {

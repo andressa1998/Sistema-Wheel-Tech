@@ -7020,6 +7020,35 @@ function setupReembolsoEventListeners() {
     }
 }
 
+window.exportarReembolsosExcel = function() {
+    if (!Array.isArray(reembolsos) || reembolsos.length === 0) {
+        showToast('Nenhuma reclamação para exportar', 'warning');
+        return;
+    }
+    const dados = reembolsos.map(r => ({
+        'Venda': r.numero_venda || '',
+        'Operação': r.numero_operacao || '',
+        'Valor': r.valor || 0,
+        'Data': r.data_operacao || '',
+        'Tipo': r.tipo || '',
+        'Motivo': r.motivo || '',
+        'Status': r.status || '',
+        'Status Reembolso': r.status_reembolso || '',
+        'Reclamação nº': r.numero_reclamacao || '',
+        'Retirada nº': r.numero_retirada || '',
+        'Resolvida': r.resolvida ? 'Sim' : 'Não',
+        'Responsabilidade': r.responsabilidade || '',
+        'Criado por': r.criado_por || '',
+        'Verificado por': r.verificado_por || '',
+        'Observações': r.observacoes || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(dados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Reclamacoes');
+    XLSX.writeFile(wb, `reclamacoes_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+};
+
 function renderReembolsosTable() {
     const tbody = document.getElementById('reembolsosTableBody');
     const emptyMsg = document.getElementById('reembolsosEmpty');
@@ -18161,6 +18190,19 @@ async function buscarReviewsML(itemId) {
 }
 
 // Renderizar as avaliações na tela
+window.exportarAvaliacoesExcel = function() {
+    const tabela = document.getElementById('reviewsTable');
+    if (!tabela || !document.querySelector('#reviewsTable tbody')?.children.length) {
+        showToast('Busque avaliações antes de exportar', 'warning');
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Avaliacoes');
+    XLSX.writeFile(wb, `avaliacoes_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('✅ Exportado!', 'success');
+};
+
 function renderizarReviews(data) {
     const card = document.getElementById('reviewsResultCard');
     card.classList.remove('hidden');
@@ -19686,6 +19728,9 @@ window.abrirSistemaNFE = async function() {
                         <button class="btn btn-info" onclick="sincronizarVendasML()">
                             <i class="fas fa-database"></i> Sincronizar Vendas (ML)
                         </button>
+                        <button class="btn btn-outline-success" onclick="exportarVendasNFEExcel()">
+                            <i class="fas fa-file-excel"></i> Exportar Excel
+                        </button>
                     </div>
                 </div>
                 <div class="table-responsive">
@@ -19713,7 +19758,12 @@ window.abrirSistemaNFE = async function() {
             <div id="abaEmitidas" class="card hidden">
                 <div class="card-header">
                     <h2 class="card-title"><i class="fas fa-list"></i> Notas Fiscais Emitidas</h2>
-                    <button class="btn btn-info" onclick="carregarNFesEmitidas()">Atualizar</button>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-info" onclick="carregarNFesEmitidas()">Atualizar</button>
+                        <button class="btn btn-outline-success" onclick="exportarNFesEmitidasExcel()">
+                            <i class="fas fa-file-excel"></i> Exportar Excel
+                        </button>
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table" id="tabelaNFesEmitidas">
@@ -19794,7 +19844,12 @@ window.abrirSistemaNFE = async function() {
             <div id="abaTransportadoras" class="card hidden">
                 <div class="card-header">
                     <h2 class="card-title"><i class="fas fa-truck"></i> Transportadoras</h2>
-                    <button class="btn btn-primary" onclick="abrirModalTransportadora()">Nova Transportadora</button>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary" onclick="abrirModalTransportadora()">Nova Transportadora</button>
+                        <button class="btn btn-outline-success" onclick="exportarTransportadorasExcel()">
+                            <i class="fas fa-file-excel"></i> Exportar Excel
+                        </button>
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table" id="tabelaTransportadoras">
@@ -19843,7 +19898,12 @@ window.abrirSistemaNFE = async function() {
             <div id="abaClientes" class="card hidden">
                 <div class="card-header">
                     <h2 class="card-title"><i class="fas fa-users"></i> Clientes</h2>
-                    <button class="btn btn-primary" onclick="abrirModalNovoCliente()">Novo Cliente</button>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary" onclick="abrirModalNovoCliente()">Novo Cliente</button>
+                        <button class="btn btn-outline-success" onclick="exportarClientesNFEExcel()">
+                            <i class="fas fa-file-excel"></i> Exportar Excel
+                        </button>
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table" id="tabelaClientes">
@@ -20403,9 +20463,14 @@ async function abrirHistoricoAcessos() {
                 <h2 style="margin: 0;">
                     <i class="fas fa-history"></i> Histórico de Acessos
                 </h2>
-                <button class="btn btn-secondary" onclick="voltarParaMenu()">
-                    <i class="fas fa-arrow-left"></i> Voltar
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-success" onclick="exportarHistoricoAcessosExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar Excel
+                    </button>
+                    <button class="btn btn-secondary" onclick="voltarParaMenu()">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </button>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table table-striped" id="historyTable">
@@ -20470,6 +20535,19 @@ async function abrirHistoricoAcessos() {
         showToast('❌ Erro ao carregar histórico de acessos', 'error');
     }
 }
+
+window.exportarHistoricoAcessosExcel = function() {
+    const tabela = document.getElementById('historyTable');
+    if (!tabela || !document.getElementById('historyTableBody')?.children.length) {
+        showToast('Nenhum registro para exportar', 'warning');
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Historico_Acessos');
+    XLSX.writeFile(wb, `historico_acessos_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('✅ Exportado!', 'success');
+};
 
 // Função auxiliar para escapar HTML (evita injeção)
 function escapeHtml(str) {
@@ -25520,6 +25598,29 @@ async function carregarPrecificacao(filtro = '') {
     }
 }
 
+window.exportarPrecificacaoExcel = function() {
+    if (!Array.isArray(precificacoes) || precificacoes.length === 0) {
+        showToast('Nenhuma solicitação para exportar', 'warning');
+        return;
+    }
+    const dados = precificacoes.map(p => ({
+        'Produto': p.nome_produto || '',
+        'Fornecedor': p.fornecedor || '',
+        'Sugestão de Título': p.sugestao_titulo || '',
+        'Urgência': p.urgencia || '',
+        'Status': p.status || '',
+        'Link': p.link || '',
+        'Observação': p.observacao || '',
+        'Criado em': p.criado_em || '',
+        'Finalizado em': p.finalizado_em || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(dados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Precificacao');
+    XLSX.writeFile(wb, `precificacao_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+};
+
 // Renderizar cards
 function renderizarPrecificacao() {
     const pendentesContainer = document.getElementById('precListaPendentes');
@@ -25840,6 +25941,27 @@ function atualizarVisibilidadeRelatorioColaborador() {
 }
 
 // ===== RENDERIZAR DEVOLUÇÕES =====
+window.exportarDevolucoesExcel = function() {
+    if (!Array.isArray(devolucoes) || devolucoes.length === 0) {
+        showToast('Nenhuma devolução para exportar', 'warning');
+        return;
+    }
+    const dados = devolucoes.map(d => ({
+        'Venda': d.venda_link || d.numero_venda || '',
+        'Produto': d.nome_produto || '',
+        'Data Abertura': d.data_abertura || '',
+        'Data Postagem': d.data_postagem || '',
+        'Status': d.status || '',
+        'Motivo': d.motivo || '',
+        'Observações': d.observacoes || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(dados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Devolucoes');
+    XLSX.writeFile(wb, `devolucoes_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+};
+
 function renderizarDevolucoes() {
     const tbody = document.getElementById('devolucoesTableBody');
     if (!tbody) return;

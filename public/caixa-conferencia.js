@@ -1652,6 +1652,19 @@ window.gerarRelatorioCaixa = async function() {
     container.innerHTML = '<p class="text-center">Gráfico gerado! (implementar com Chart.js depois)</p>';
 };
 
+window.exportarRelatorioCaixa = function() {
+    const tabela = document.getElementById('relatorioCaixaTable');
+    if (!tabela || !document.getElementById('relatorioCaixaTableBody')?.children.length) {
+        showToast('Gere o relatório antes de exportar', 'warning');
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Relatorio_Caixa');
+    XLSX.writeFile(wb, `relatorio_caixa_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('✅ Exportado!', 'success');
+};
+
 // ===== FUNÇÕES AUXILIARES =====
 function formatarMoeda(valor) {
     return 'R$ ' + parseFloat(valor || 0).toFixed(2).replace('.', ',');

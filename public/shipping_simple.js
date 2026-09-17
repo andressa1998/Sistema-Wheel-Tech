@@ -6983,6 +6983,20 @@ function relEl(id) {
     return document.getElementById('modalRelatorioFrete')?.querySelector('#' + id) || null;
 }
 
+window.exportarRelatorioReclamacoesFreteExcel = function() {
+    const tabela = relEl('relatorioReclamacoesTable');
+    const tbody = relEl('relatorioReclamacoesBody');
+    if (!tabela || !tbody || !tbody.querySelector('td:not([colspan])')) {
+        showToast('Gere o relatório antes de exportar', 'warning');
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Reclamacoes_Frete');
+    XLSX.writeFile(wb, `reclamacoes_frete_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('✅ Exportado!', 'success');
+};
+
 function abrirModalRelatorioReclamacoes() {
     console.log('📊 Abrindo relatório de reclamações...');
     
@@ -7154,7 +7168,12 @@ function criarModalRelatorioCompleto() {
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h5><i class="fas fa-list"></i> Histórico Detalhado</h5>
-                            <span id="relTotalRegistros" class="badge badge-primary">0 registros</span>
+                            <div class="d-flex gap-2 align-items-center">
+                                <span id="relTotalRegistros" class="badge badge-primary">0 registros</span>
+                                <button class="btn btn-sm btn-outline-success" onclick="exportarRelatorioReclamacoesFreteExcel()">
+                                    <i class="fas fa-file-excel"></i> Exportar Excel
+                                </button>
+                            </div>
                         </div>
                         <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                             <table class="table table-striped table-sm" id="relatorioReclamacoesTable">

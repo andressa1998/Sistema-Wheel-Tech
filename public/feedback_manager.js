@@ -100,6 +100,27 @@ async function carregarFeedbacks() {
 }
 
 // ===== RENDERIZAR FEEDBACKS =====
+window.exportarFeedbacksExcel = function() {
+  if (!Array.isArray(feedbacks) || feedbacks.length === 0) {
+    showToast('Nenhum feedback para exportar', 'warning');
+    return;
+  }
+  const dados = feedbacks.map(fb => ({
+    'Usuário': fb.usuario_nome || '',
+    'Tipo': fb.tipo === 'mensal' ? 'Mensal' : 'Pontual',
+    'Estrela': fb.estrela || '',
+    'Nota Média': fb.nota_media ?? '',
+    'Respondido': fb.respondido ? 'Sim' : 'Não',
+    'Comentário': fb.comentario || '',
+    'Data': fb.data_criacao || ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(dados);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Feedbacks');
+  XLSX.writeFile(wb, `feedbacks_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+};
+
 function renderizarFeedbacks() {
   const container = document.getElementById('feedbacksContainer');
   if (!container) return;
@@ -489,6 +510,26 @@ async function carregarSugestoes() {
     console.error('Erro ao carregar sugestões:', error);
   }
 }
+
+window.exportarSugestoesExcel = function() {
+  if (!Array.isArray(sugestoes) || sugestoes.length === 0) {
+    showToast('Nenhuma sugestão para exportar', 'warning');
+    return;
+  }
+  const dados = sugestoes.map(s => ({
+    'Usuário': s.usuario_nome || '',
+    'Sugestão': s.sugestao || '',
+    'Implementada': s.implementada ? 'Sim' : 'Não',
+    'Implementada por': s.implementada_por || '',
+    'Data Implementação': s.data_implementacao || '',
+    'Data': s.data_criacao || ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(dados);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sugestoes');
+  XLSX.writeFile(wb, `sugestoes_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+};
 
 function renderizarSugestoes() {
   const container = document.getElementById('sugestoesContainer');

@@ -3121,6 +3121,16 @@ window.excluirRecadoChamados =
 
                         </select>
 
+
+                        <button
+                            type="button"
+                            class="btn btn-outline-success"
+                            onclick="exportarChamadosExcel()"
+                        >
+                            <i class="fas fa-file-excel"></i>
+                            Exportar Excel
+                        </button>
+
                     </div>
 
 
@@ -6012,6 +6022,48 @@ await Promise.all([
     // ========================================================
 // RENDERIZAR LISTA
 // ========================================================
+
+window.exportarChamadosExcel =
+    function() {
+
+        if (
+            !Array.isArray(chamadosCache) ||
+            !chamadosCache.length
+        ) {
+
+            showToast(
+                'Nenhum chamado para exportar',
+                'warning'
+            );
+
+            return;
+        }
+
+        const dados =
+            chamadosCache.map(
+                chamado => ({
+                    'Chamado': numeroChamado(chamado.id),
+                    'Aberto por': chamado.criado_por_nome || chamado.criado_por_username || '',
+                    'Tipo': chamado.tipo || '',
+                    'Prioridade': chamado.prioridade || '',
+                    'Módulo': chamado.modulo || '',
+                    'Assunto': chamado.titulo || '',
+                    'Status': chamado.status || '',
+                    'Aberto em': chamado.criado_em || '',
+                    'Atualizado em': chamado.atualizado_em || ''
+                })
+            );
+
+        const ws = XLSX.utils.json_to_sheet(dados);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Chamados');
+        XLSX.writeFile(wb, `chamados_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+        showToast(
+            `✅ ${dados.length} registro(s) exportado(s)!`,
+            'success'
+        );
+    };
 
 window.renderizarChamados =
     function() {

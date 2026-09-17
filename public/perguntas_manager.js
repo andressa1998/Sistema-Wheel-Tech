@@ -396,6 +396,28 @@ async function enriquecerPerguntasComDadosComprador() {
 // ============================================
 // RENDERIZAR TABELA (COM CIDADE/ESTADO)
 // ============================================
+window.exportarPerguntasExcel = function() {
+    if (!Array.isArray(perguntas) || perguntas.length === 0) {
+        showToast('Nenhuma pergunta para exportar', 'warning');
+        return;
+    }
+    const dados = perguntas.map(p => ({
+        'Comprador': p.comprador_nome || '',
+        'Cidade/UF': [p.comprador_cidade, p.comprador_estado].filter(Boolean).join(' / '),
+        'Pergunta': p.pergunta || '',
+        'Resposta': p.resposta || '',
+        'Anúncio': p.item_titulo || '',
+        'MLB': p.item_id || '',
+        'Status': p.status === 'respondida' ? 'Respondida' : 'Aguardando',
+        'Data': p.data_pergunta || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(dados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Perguntas');
+    XLSX.writeFile(wb, `perguntas_ml_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+};
+
 function renderizarPerguntas() {
     const tbody = document.getElementById('perguntasTableBody');
     if (!tbody) return;

@@ -385,6 +385,14 @@ function criarInterfaceBulk() {
                             Canceladas
                         </option>
                     </select>
+
+                    <button
+                        class="btn btn-sm btn-outline-success"
+                        onclick="exportarAgendamentosPromocoesExcel()"
+                    >
+                        <i class="fas fa-file-excel"></i>
+                        Exportar Excel
+                    </button>
                 </div>
             </div>
 
@@ -4861,6 +4869,28 @@ function atualizarBotaoAtivacoesAgendadasHoje() {
         ? 'Ativa todas as promoções de hoje cujo horário programado já chegou'
         : 'Não há ativações de hoje com horário já alcançado';
 }
+
+    window.exportarAgendamentosPromocoesExcel = function() {
+        if (!Array.isArray(agendamentosPromocoes) || !agendamentosPromocoes.length) {
+            showToast('Nenhum agendamento para exportar', 'warning');
+            return;
+        }
+        const dados = agendamentosPromocoes.map(item => ({
+            'MLB': item.mlb || '',
+            'Promoção': item.promotion_name || item.promotion_id || '',
+            'Valor Final': item.valor_final || 0,
+            'Ativação': item.data_ativacao || '',
+            'Desativação': item.data_desativacao || '',
+            'Status': statusAgendaInfo(item.status)[0],
+            'Responsável': item.desativada_por || item.ativada_por || item.criada_por || '',
+            'Erro': item.erro_ativacao || item.erro_desativacao || ''
+        }));
+        const ws = XLSX.utils.json_to_sheet(dados);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Promocoes_Agendadas');
+        XLSX.writeFile(wb, `promocoes_agendadas_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+    };
 
     window.renderizarAgendamentosPromocoes = function() {
     const tbody = document.getElementById(

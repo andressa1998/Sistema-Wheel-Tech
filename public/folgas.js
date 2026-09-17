@@ -289,6 +289,19 @@ async function carregarSolicitacoesPendentes() {
     }
 }
 
+window.exportarSolicitacoesFolgaExcel = function() {
+    const tabela = document.getElementById('tabelaSolicitacoes');
+    if (!tabela || !document.getElementById('solicitacoesBody')?.querySelector('button')) {
+        showToast('Nenhuma solicitação pendente para exportar', 'warning');
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Solicitacoes_Folga');
+    XLSX.writeFile(wb, `solicitacoes_folga_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('✅ Exportado!', 'success');
+};
+
 // ============================================
 // MODAL NOVA FOLGA
 // ============================================
