@@ -1811,6 +1811,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="wt-nav-item" data-menu-visual-key="promocoes_em_lote" type="button" onclick="abrirGestaoPromocoesLote()"><i class="fas fa-layer-group"></i><span>Promoções em Lote</span></button>
             <button class="wt-nav-item" data-menu-visual-key="reclamacoes" type="button" onclick="abrirSistemaReembolsos()"><i class="fas fa-comment-dots"></i><span>Reclamações</span></button>
             <button class="wt-nav-item" data-menu-visual-key="reclamacoes_clientes" type="button" onclick="abrirSistemaReclamacoesClientes()"><i class="fas fa-user-shield"></i><span>Reclamações de Clientes</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="sugestoes_melhoria" type="button" onclick="abrirSistemaSugestoes()"><i class="fas fa-lightbulb"></i><span>Sugestões de Melhoria</span></button>
             <button class="wt-nav-item" data-menu-visual-key="vendas_ml" type="button" onclick="abrirSistemaVendas()"><i class="fas fa-store"></i><span>Vendas ML</span></button>
         </nav>
         <div class="wt-sidebar-footer">
@@ -1847,6 +1848,7 @@ body:has(#loginScreen:not(.hidden)) {
                 <button class="wt-nav-item" data-menu-visual-key="promocoes_em_lote" type="button" onclick="abrirGestaoPromocoesLote()"><i class="fas fa-layer-group"></i><span>Promoções em Lote</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="reclamacoes" type="button" onclick="abrirSistemaReembolsos()"><i class="fas fa-comment-dots"></i><span>Reclamações</span></button>
             <button class="wt-nav-item" data-menu-visual-key="reclamacoes_clientes" type="button" onclick="abrirSistemaReclamacoesClientes()"><i class="fas fa-user-shield"></i><span>Reclamações de Clientes</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="sugestoes_melhoria" type="button" onclick="abrirSistemaSugestoes()"><i class="fas fa-lightbulb"></i><span>Sugestões de Melhoria</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="vendas_ml" type="button" onclick="abrirSistemaVendas()"><i class="fas fa-store"></i><span>Vendas ML</span></button>
             </nav>
             <div class="wt-sidebar-footer">
@@ -5031,26 +5033,6 @@ body:has(#loginScreen:not(.hidden)) {
       </div>
     </div>
 
-    <!-- Sugestões de Melhoria -->
-    <div class="card mt-4">
-      <div class="card-header">
-        <h2 class="card-title"><i class="fas fa-lightbulb"></i> Sugestões de Melhoria</h2>
-        <div>
-          <button class="btn btn-success btn-sm" id="btnNovaSugestao" onclick="abrirModalSugestao()">
-            <i class="fas fa-plus"></i> Nova Sugestão
-          </button>
-          <button class="btn btn-info btn-sm" onclick="carregarSugestoes()">
-            <i class="fas fa-sync-alt"></i>
-          </button>
-          <button class="btn btn-outline-success btn-sm" onclick="exportarSugestoesExcel()">
-            <i class="fas fa-file-excel"></i> Exportar Excel
-          </button>
-        </div>
-      </div>
-      <div id="sugestoesContainer" class="p-3">
-        <div class="text-center py-5 text-muted">Carregando sugestões...</div>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -5153,24 +5135,6 @@ body:has(#loginScreen:not(.hidden)) {
     <div class="d-flex justify-content-end gap-2 mt-3">
       <button class="btn btn-secondary" onclick="fecharModalResponderFeedback()">Cancelar</button>
       <button class="btn btn-success" onclick="enviarRespostaFeedback()">Enviar Resposta</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: Nova Sugestão -->
-<div id="modalNovaSugestao" class="modal hidden">
-  <div class="modal-content" style="max-width: 600px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-      <h3><i class="fas fa-lightbulb"></i> Nova Sugestão de Melhoria</h3>
-      <button onclick="fecharModalNovaSugestao()" style="background:none; border:none; font-size:24px;">&times;</button>
-    </div>
-    <div class="form-group">
-      <label>Sua sugestão *</label>
-      <textarea id="sugestaoTexto" class="form-control" rows="4" placeholder="Descreva sua sugestão de melhoria..."></textarea>
-    </div>
-    <div class="d-flex justify-content-end gap-2 mt-3">
-      <button class="btn btn-secondary" onclick="fecharModalNovaSugestao()">Cancelar</button>
-      <button class="btn btn-success" onclick="enviarSugestao()">Enviar Sugestão</button>
     </div>
   </div>
 </div>
@@ -7244,7 +7208,7 @@ body:has(#loginScreen:not(.hidden)) {
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="script.js?v=20260917-4"></script>
+    <script src="script.js?v=20260917-5"></script>
     <script src="ml_token_manager.js"></script>
     <script src="folgas.js?v=20260915-4"></script>
     <script src="shipping_simple.js?v=20260916-8"></script>
@@ -7265,6 +7229,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="atividades.js?v=20260917-4"></script>
     <script src="projetos.js?v=20260917-3"></script>
     <script src="patrimonios.js?v=20260917-1"></script>
+    <script src="sugestoes.js?v=20260917-1"></script>
     <script src="reclamacoes_clientes.js?v=20260917-9"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
     <script src="menu_favoritos.js?v=20260916-1"></script>

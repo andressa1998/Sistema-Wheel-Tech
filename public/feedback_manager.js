@@ -5,7 +5,6 @@
 console.log('📝 feedback_manager.js carregado');
 
 let feedbacks = [];
-let sugestoes = [];
 let notasTopicos = {}; // { topico: nota (1-5) }
 
 // ===== LISTA COMPLETA DE TÓPICOS POR CATEGORIA =====
@@ -49,7 +48,6 @@ window.abrirSistemaFeedback = function() {
 
   popularSelectUsuarios();
   carregarFeedbacks();
-  carregarSugestoes();
   showToast('💬 Sistema de Feedback carregado', 'info');
 };
 
@@ -496,127 +494,7 @@ window.excluirFeedback = async function(feedbackId) {
   }
 };
 
-// ============================================
-// SUGESTÕES DE MELHORIA
-// ============================================
-async function carregarSugestoes() {
-  if (!window.supabaseClient) return;
-  try {
-    const { data, error } = await window.supabaseClient.from('feedback_sugestoes').select('*').order('data_criacao', { ascending: false });
-    if (error) throw error;
-    sugestoes = data || [];
-    renderizarSugestoes();
-  } catch (error) {
-    console.error('Erro ao carregar sugestões:', error);
-  }
-}
-
-window.exportarSugestoesExcel = function() {
-  if (!Array.isArray(sugestoes) || sugestoes.length === 0) {
-    showToast('Nenhuma sugestão para exportar', 'warning');
-    return;
-  }
-  const dados = sugestoes.map(s => ({
-    'Usuário': s.usuario_nome || '',
-    'Sugestão': s.sugestao || '',
-    'Implementada': s.implementada ? 'Sim' : 'Não',
-    'Implementada por': s.implementada_por || '',
-    'Data Implementação': s.data_implementacao || '',
-    'Data': s.data_criacao || ''
-  }));
-  const ws = XLSX.utils.json_to_sheet(dados);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sugestoes');
-  XLSX.writeFile(wb, `sugestoes_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
-};
-
-function renderizarSugestoes() {
-  const container = document.getElementById('sugestoesContainer');
-  if (!container) return;
-  const isAdmin = window.currentUser?.role === 'Administrador';
-  let lista = sugestoes;
-  if (!isAdmin) lista = lista.filter(s => s.usuario_nome === window.currentUser.name);
-  if (lista.length === 0) {
-    container.innerHTML = `<div class="text-center py-5 text-muted">Nenhuma sugestão enviada.</div>`;
-    return;
-  }
-  let html = '';
-  lista.forEach(s => {
-    const data = new Date(s.data_criacao).toLocaleString('pt-BR');
-    const implementada = s.implementada;
-    const badgeImplementada = implementada ? '<span class="badge badge-success"><i class="fas fa-check"></i> Implementada</span>' : '<span class="badge badge-warning">Pendente</span>';
-    html += `
-      <div class="card mb-2">
-        <div class="card-body d-flex justify-content-between align-items-center">
-          <div>
-            <div><strong>${escapeHtml(s.usuario_nome)}</strong> - ${data}</div>
-            <p class="mb-0">${escapeHtml(s.sugestao)}</p>
-            ${s.implementada_por ? `<small class="text-muted">Implementada por ${escapeHtml(s.implementada_por)} em ${new Date(s.data_implementacao).toLocaleString('pt-BR')}</small>` : ''}
-          </div>
-          <div class="text-right">
-            ${badgeImplementada}
-            ${isAdmin && !implementada ? `<button class="btn btn-sm btn-primary ml-2" onclick="marcarSugestaoImplementada('${s.id}')"><i class="fas fa-check"></i> Marcar como implementada</button>` : ''}
-            ${isAdmin ? `<button class="btn btn-sm btn-danger ml-2" onclick="excluirSugestao('${s.id}')"><i class="fas fa-trash"></i></button>` : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  });
-  container.innerHTML = html;
-}
-
-window.abrirModalSugestao = function() {
-  document.getElementById('sugestaoTexto').value = '';
-  document.getElementById('modalNovaSugestao').classList.remove('hidden');
-};
-window.fecharModalNovaSugestao = function() {
-  document.getElementById('modalNovaSugestao').classList.add('hidden');
-};
-window.enviarSugestao = async function() {
-  const texto = document.getElementById('sugestaoTexto').value.trim();
-  if (!texto) { showToast('Digite sua sugestão', 'warning'); return; }
-  try {
-    await window.supabaseClient.from('feedback_sugestoes').insert([{
-      usuario_nome: window.currentUser.name,
-      sugestao: texto,
-      data_criacao: new Date().toISOString(),
-      implementada: false
-    }]);
-    showToast('✅ Sugestão enviada!', 'success');
-    window.fecharModalNovaSugestao();
-    carregarSugestoes();
-  } catch (error) {
-    console.error('Erro ao enviar sugestão:', error);
-    showToast('Erro: ' + error.message, 'error');
-  }
-};
-window.marcarSugestaoImplementada = async function(id) {
-  if (!confirm('Confirmar que esta sugestão foi implementada?')) return;
-  try {
-    await window.supabaseClient.from('feedback_sugestoes').update({
-      implementada: true,
-      implementada_por: window.currentUser.name,
-      data_implementacao: new Date().toISOString()
-    }).eq('id', id);
-    showToast('✅ Sugestão implementada!', 'success');
-    carregarSugestoes();
-  } catch (error) {
-    console.error('Erro:', error);
-    showToast('Erro: ' + error.message, 'error');
-  }
-};
-window.excluirSugestao = async function(id) {
-  if (!confirm('Excluir esta sugestão?')) return;
-  try {
-    await window.supabaseClient.from('feedback_sugestoes').delete().eq('id', id);
-    showToast('🗑️ Sugestão excluída', 'success');
-    carregarSugestoes();
-  } catch (error) {
-    console.error('Erro:', error);
-    showToast('Erro: ' + error.message, 'error');
-  }
-};
+// Sugestões de Melhoria agora é um módulo próprio — ver sugestoes.js
 
 // ============================================
 // FILTROS
