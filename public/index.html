@@ -1785,6 +1785,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="wt-nav-item" data-menu-visual-key="calendario_de_folgas" type="button" onclick="abrirSistemaFolgas()"><i class="fas fa-calendar-alt"></i><span>Calendário</span></button>
             <button class="wt-nav-item" data-menu-visual-key="chamados" type="button" onclick="abrirSistemaChamados()"><i class="fas fa-headset"></i><span>Chamados</span></button>
             <button class="wt-nav-item" data-menu-visual-key="conferencia_caixa" type="button" onclick="abrirSistemaCaixa()"><i class="fas fa-cash-register"></i><span>Conferência Caixa</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="controle_de_atividades" type="button" onclick="abrirSistemaAtividades()"><i class="fas fa-list-check"></i><span>Controle de Atividades</span></button>
             <button class="wt-nav-item" data-menu-visual-key="emissao_nf_e" type="button" onclick="abrirSistemaNFE()"><i class="fas fa-boxes"></i><span>Emissão NF-e</span></button>
             <button class="wt-nav-item" data-menu-visual-key="entradas" type="button" onclick="abrirSistemaEntradas()"><i class="fas fa-right-to-bracket"></i><span>Entradas</span></button>
             <button class="wt-nav-item" data-menu-visual-key="feedback" type="button" onclick="abrirSistemaFeedback()"><i class="fas fa-face-smile"></i><span>Feedback</span></button>
@@ -1818,6 +1819,7 @@ body:has(#loginScreen:not(.hidden)) {
                 <button class="wt-nav-item" data-menu-visual-key="calendario_de_folgas" type="button" onclick="abrirSistemaFolgas()"><i class="fas fa-calendar-alt"></i><span>Calendário</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="chamados" type="button" onclick="abrirSistemaChamados()"><i class="fas fa-headset"></i><span>Chamados</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="conferencia_caixa" type="button" onclick="abrirSistemaCaixa()"><i class="fas fa-cash-register"></i><span>Conferência Caixa</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="controle_de_atividades" type="button" onclick="abrirSistemaAtividades()"><i class="fas fa-list-check"></i><span>Controle de Atividades</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="emissao_nf_e" id="menuCardNFE" type="button" onclick="abrirSistemaNFE()"><i class="fas fa-boxes"></i><span>Emissão NF-e</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="entradas" type="button" onclick="abrirSistemaEntradas()"><i class="fas fa-right-to-bracket"></i><span>Entradas</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="feedback" type="button" onclick="abrirSistemaFeedback()"><i class="fas fa-face-smile"></i><span>Feedback</span></button>
@@ -1895,7 +1897,7 @@ body:has(#loginScreen:not(.hidden)) {
             <section class="wt-bottom-grid">
                 <article class="wt-panel" data-menu-visual-depends="chamados"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-headset"></i> Últimos chamados</div><a class="wt-panel-link" href="#" onclick="abrirSistemaChamados();return false">Ver todos</a></div><div id="wtRecentTickets"><div class="wt-empty">Carregando chamados...</div></div></article>
                 <article class="wt-panel" data-menu-visual-depends="calendario_de_folgas"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-calendar-day"></i> Tarefas de hoje</div><a class="wt-panel-link" href="#" onclick="abrirSistemaFolgas();return false">Ver agenda</a></div><div id="wtUpcomingEvents"><div class="wt-empty">Carregando tarefas de hoje...</div></div></article>
-                <div class="wt-side-stack"><article class="wt-panel" data-menu-visual-depends="meta_ronald"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-star"></i> Meta Ronald</div><a class="wt-panel-link" href="#" onclick="abrirPainelMetaRonald();return false">Ver detalhes</a></div><div class="wt-goal"><div class="wt-goal-ring" id="wtGoalRing"><span id="wtGoalPercent">—</span></div><div><div class="wt-goal-value" id="wtGoalValue">Carregando...</div><div class="wt-goal-total" id="wtGoalTotal">Meta diária de conferências</div><div class="wt-progress"><span id="wtGoalProgress"></span></div></div></div></article><article class="wt-help-card" data-menu-visual-depends="chamados" onclick="abrirSistemaChamados()"><i class="fas fa-rocket"></i><div><strong>Precisa de ajuda?</strong><span>Abra um chamado para nossa equipe de suporte.</span></div><div class="wt-help-arrow"><i class="fas fa-chevron-right"></i></div></article></div>
+                <div class="wt-side-stack"><article class="wt-panel" data-menu-visual-depends="meta_ronald"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-star"></i> Meta Ronald</div><a class="wt-panel-link" href="#" onclick="abrirPainelMetaRonald();return false">Ver detalhes</a></div><div class="wt-goal"><div class="wt-goal-ring" id="wtGoalRing"><span id="wtGoalPercent">—</span></div><div><div class="wt-goal-value" id="wtGoalValue">Carregando...</div><div class="wt-goal-total" id="wtGoalTotal">Meta diária de conferências</div><div class="wt-progress"><span id="wtGoalProgress"></span></div></div></div></article><article class="wt-panel" id="wtAtividadesRelatorioCard" style="display:none;"><div class="wt-panel-head"><div class="wt-panel-title"><i class="fas fa-chart-pie"></i> Relatório de Atividades</div><a class="wt-panel-link" href="#" onclick="window.abrirRelatorioAtividades && window.abrirRelatorioAtividades();return false">Ver relatório completo</a></div><div class="wt-goal"><div class="wt-goal-ring" id="wtAtivGoalRing"><span id="wtAtivGoalPercent">—</span></div><div><div class="wt-goal-value" id="wtAtivGoalValue">Carregando...</div><div class="wt-goal-total" id="wtAtivGoalTotal">Conclusão geral da equipe</div><div class="wt-progress"><span id="wtAtivGoalProgress"></span></div></div></div></article><article class="wt-help-card" data-menu-visual-depends="chamados" onclick="abrirSistemaChamados()"><i class="fas fa-rocket"></i><div><strong>Precisa de ajuda?</strong><span>Abra um chamado para nossa equipe de suporte.</span></div><div class="wt-help-arrow"><i class="fas fa-chevron-right"></i></div></article></div>
             </section>
         </main>
     </div>
@@ -7222,7 +7224,7 @@ body:has(#loginScreen:not(.hidden)) {
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="script.js?v=20260916-5"></script>
+    <script src="script.js?v=20260917-1"></script>
     <script src="ml_token_manager.js"></script>
     <script src="folgas.js?v=20260915-4"></script>
     <script src="shipping_simple.js?v=20260916-8"></script>
@@ -7240,6 +7242,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="full_analysis.js"></script>
     <script src="gerenciamento_anuncios.js?v=20260916-4"></script>
     <script src="chamados.js?v=20260915-4"></script>
+    <script src="atividades.js?v=20260917-4"></script>
     <script src="reclamacoes_clientes.js?v=20260916-9"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
     <script src="menu_favoritos.js?v=20260916-1"></script>
