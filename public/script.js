@@ -30201,7 +30201,7 @@ if (typeof verificarVendaAtual === 'function') window.verificarVendaAtual = veri
         'fullSystem', 'estoqueGestaoSystem', 'gerenciamentoAnunciosSystem',
         'promocoesSystem', 'chamadosSystem', 'reclamacoesSystem',
         'historicoAcessosScreen', 'metaRonaldSystem', 'devolucoesSystem',
-        'reclamacoesClientesSystem', 'atividadesSystem'
+        'reclamacoesClientesSystem', 'atividadesSystem', 'projetosSystem'
     ];
 
     function elementoVisivel(el) {
