@@ -3857,6 +3857,32 @@ window.abrirGestaoEstoque = function() {
 };
 
 // =========================================================
+// BUSCA RÁPIDA A PARTIR DO MENU PRINCIPAL
+// Abre a Gestão de Estoque já com a pesquisa aplicada.
+// =========================================================
+
+window.pesquisarNoEstoqueDoMenuPrincipal = function (termo) {
+    const termoLimpo = String(termo || '').trim();
+    if (!termoLimpo) {
+        if (window.showToast) showToast('Digite algo para buscar.', 'warning');
+        return;
+    }
+
+    // Pré-carrega o termo no estado compartilhado da tela de estoque para que,
+    // quando carregarProdutosEstoque() restaurar os filtros ao final do carregamento,
+    // ele já restaure com essa busca (evita corrida com o carregamento interno da aba).
+    estadoFiltrosEstoque.termo = termoLimpo;
+    estadoFiltrosEstoque.pagina = 1;
+
+    const input = document.getElementById('buscaEstoqueInput');
+    if (input) input.value = termoLimpo;
+
+    if (typeof window.abrirGestaoEstoque === 'function') {
+        window.abrirGestaoEstoque();
+    }
+};
+
+// =========================================================
 // CARREGAR TODOS OS PRODUTOS DO SUPABASE
 // COM PAGINAÇÃO PARA NÃO PERDER REGISTROS
 // =========================================================
