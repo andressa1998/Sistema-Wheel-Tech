@@ -212,13 +212,14 @@ function criarInterfaceBulk() {
 
                     <div class="col-md-5">
                         <div class="form-group">
-                            <label>Data e hora de desativação *</label>
+                            <label>Data e hora de desativação <small class="text-muted">(opcional)</small></label>
 
                             <input
                                 type="datetime-local"
                                 id="agendaDataDesativacao"
                                 class="form-control"
                             >
+                            <small class="text-muted">Deixe em branco pra manter ativa até o fim da própria promoção.</small>
                         </div>
                     </div>
 
@@ -303,13 +304,14 @@ function criarInterfaceBulk() {
 
             <div class="col-md-5">
                 <div class="form-group">
-                    <label>Data e hora de desativação *</label>
+                    <label>Data e hora de desativação <small class="text-muted">(opcional)</small></label>
 
                     <input
                         type="datetime-local"
                         id="agendaMassaDataDesativacao"
                         class="form-control"
                     >
+                    <small class="text-muted">Deixe em branco pra manter ativa até o fim da própria promoção.</small>
                 </div>
             </div>
 
@@ -3520,8 +3522,30 @@ async function buscarOfferIdDoItemAlternativo(itemId, promotionId, token) {
             promocao.price
         ];
         let valor = Number(candidatos.find(v => Number(v) > 0) || 0);
+
+        // Promoções de preço fixado pelo ML (ex.: "Acelere suas vendas
+        // do Full" / UNHEALTHY_STOCK) não trazem nenhum dos campos
+        // acima — o desconto vem como percentual (meli_percentage +
+        // seller_percentage) sobre original_price, e o vendedor não
+        // escolhe o valor, só fica sabendo dele. Confirmado batendo
+        // com o min_discounted_price que o próprio ML sugere pro
+        // mesmo item nesse caso (mesma conta, mesmo resultado).
+        if (!valor && Number(promocao.original_price) > 0 &&
+            (promocao.seller_percentage != null || promocao.meli_percentage != null)) {
+            const percentualTotal = (Number(promocao.meli_percentage) || 0) + (Number(promocao.seller_percentage) || 0);
+            if (percentualTotal > 0) {
+                valor = Number(promocao.original_price) * (1 - percentualTotal / 100);
+            }
+        }
+
         if (valor > 1000) valor /= 100;
         return Number(valor.toFixed(2));
+    }
+
+    // Promoções onde o valor final é definido pelo ML (não pelo
+    // vendedor) — o campo fica travado, só pra consulta.
+    function precoFixadoPeloMl(promocao) {
+        return promocao.type === 'UNHEALTHY_STOCK';
     }
 
     function definirDatasPadraoAgenda() {
@@ -3984,6 +4008,18 @@ function(
             const promocoesItem = await buscarPromocoesDoItem(mlb, tokenData.access_token);
             if (!Array.isArray(promocoesItem)) throw new Error('Não foi possível consultar as promoções deste MLB');
 
+            const supabaseConsultaAgenda = obterSupabasePromocoes();
+            const agendamentosDoMlbAgenda = supabaseConsultaAgenda
+                ? await supabaseConsultaAgenda
+                    .from('promocoes_agendadas')
+                    .select('promotion_id')
+                    .eq('mlb', mlb)
+                    .not('status', 'in', '(concluida,cancelada)')
+                : { data: [] };
+            const idsProgramadosAndraAgenda = new Set(
+                (agendamentosDoMlbAgenda?.data || []).map(r => String(r.promotion_id))
+            );
+
             promocoesEncontradasAgendamento = promocoesItem
                 .filter(p => ['candidate', 'pending', 'started'].includes(p.status))
                 .map(p => ({
@@ -3991,7 +4027,9 @@ function(
                     name: p.name || p.id || 'Promoção sem nome',
                     type: p.type || '',
                     status: p.status || 'unknown',
-                    valor: valorPromocaoEmReais(p)
+                    valor: valorPromocaoEmReais(p),
+                    fixadoPeloMl: precoFixadoPeloMl(p),
+                    programadaAndra: p.status === 'candidate' && idsProgramadosAndraAgenda.has(String(p.id || ''))
                 }))
                 .filter(p => p.id && p.type);
 
@@ -4006,14 +4044,16 @@ function(
                     <div class="table-responsive"><table class="table table-sm table-bordered">
                         <thead><tr><th style="width:45px;"></th><th>Promoção</th><th>Status atual</th><th style="width:210px;">Valor final desejado</th></tr></thead>
                         <tbody>${promocoesEncontradasAgendamento.map((p, index) => {
-                            const candidato = p.status === 'candidate';
-                            const status = p.status === 'candidate' ? 'Candidata' : p.status === 'pending' ? 'Já programada no ML' : 'Já ativa';
+                            const candidato = p.status === 'candidate' && !p.programadaAndra;
+                            const status = p.programadaAndra
+                                ? 'Programada'
+                                : p.status === 'candidate' ? 'Candidata' : p.status === 'pending' ? 'Já programada no ML' : 'Já ativa';
                             return `<tr>
                                 <td style="text-align:center;"><input type="checkbox" class="agenda-promo-check" data-index="${index}" ${candidato ? '' : 'disabled'}></td>
                                 <td><strong>${escaparHtmlAgenda(p.name)}</strong><br><small>${escaparHtmlAgenda(p.type)} • ${escaparHtmlAgenda(p.id)}</small></td>
                                 <td>${escaparHtmlAgenda(status)}</td>
                                 <td><input type="number" min="0.01" step="0.01" class="form-control form-control-sm agenda-promo-valor"
-                                    data-index="${index}" value="${p.valor > 0 ? p.valor.toFixed(2) : ''}" ${candidato ? '' : 'disabled'}></td>
+                                    data-index="${index}" value="${p.valor > 0 ? p.valor.toFixed(2) : ''}" ${candidato ? '' : 'disabled'} ${p.fixadoPeloMl ? 'readonly' : ''}></td>
                             </tr>`;
                         }).join('')}</tbody>
                     </table></div>
@@ -4331,12 +4371,17 @@ async function() {
         const selecionados = [...document.querySelectorAll('.agenda-promo-check:checked:not(:disabled)')];
 
         if (!selecionados.length) return showToast('⚠️ Selecione ao menos uma promoção', 'warning');
-        if (!inicioValor || !fimValor) return showToast('⚠️ Informe as datas de ativação e desativação', 'warning');
+        if (!inicioValor) return showToast('⚠️ Informe a data de ativação', 'warning');
 
         const inicio = new Date(inicioValor);
-        const fim = new Date(fimValor);
-        if (!Number.isFinite(inicio.getTime()) || !Number.isFinite(fim.getTime())) return showToast('⚠️ Datas inválidas', 'warning');
-        if (fim <= inicio) return showToast('⚠️ A desativação deve ser posterior à ativação', 'warning');
+        if (!Number.isFinite(inicio.getTime())) return showToast('⚠️ Data de ativação inválida', 'warning');
+
+        let fim = null;
+        if (fimValor) {
+            fim = new Date(fimValor);
+            if (!Number.isFinite(fim.getTime())) return showToast('⚠️ Data de desativação inválida', 'warning');
+            if (fim <= inicio) return showToast('⚠️ A desativação deve ser posterior à ativação', 'warning');
+        }
 
         const registros = [];
         for (const checkbox of selecionados) {
@@ -4354,7 +4399,7 @@ async function() {
                 promotion_type: promocao.type,
                 valor_final: Number(valor.toFixed(2)),
                 data_ativacao: inicio.toISOString(),
-                data_desativacao: fim.toISOString(),
+                data_desativacao: fim ? fim.toISOString() : null,
                 status: 'agendada',
                 criada_por: nomeUsuarioAgenda()
             });
@@ -4416,9 +4461,9 @@ async function() {
         return;
     }
 
-    if (!inicioValor || !fimValor) {
+    if (!inicioValor) {
         showToast(
-            '⚠️ Informe as datas de ativação e desativação',
+            '⚠️ Informe a data de ativação',
             'warning'
         );
 
@@ -4428,28 +4473,39 @@ async function() {
     const inicio =
         new Date(inicioValor);
 
-    const fim =
-        new Date(fimValor);
-
-    if (
-        !Number.isFinite(inicio.getTime()) ||
-        !Number.isFinite(fim.getTime())
-    ) {
+    if (!Number.isFinite(inicio.getTime())) {
         showToast(
-            '⚠️ Datas inválidas',
+            '⚠️ Data de ativação inválida',
             'warning'
         );
 
         return;
     }
 
-    if (fim <= inicio) {
-        showToast(
-            '⚠️ A desativação deve ser posterior à ativação',
-            'warning'
-        );
+    // Desativação é opcional — algumas promoções devem ficar ativas
+    // até o fim da própria promoção, sem data fixa.
+    let fim = null;
 
-        return;
+    if (fimValor) {
+        fim = new Date(fimValor);
+
+        if (!Number.isFinite(fim.getTime())) {
+            showToast(
+                '⚠️ Data de desativação inválida',
+                'warning'
+            );
+
+            return;
+        }
+
+        if (fim <= inicio) {
+            showToast(
+                '⚠️ A desativação deve ser posterior à ativação',
+                'warning'
+            );
+
+            return;
+        }
     }
 
     const registros = [];
@@ -4508,7 +4564,7 @@ async function() {
             data_ativacao:
                 inicio.toISOString(),
             data_desativacao:
-                fim.toISOString(),
+                fim ? fim.toISOString() : null,
             status: 'agendada',
             criada_por:
                 nomeUsuarioAgenda()
@@ -6823,8 +6879,10 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
                     <thead><tr><th style="width:36px;"></th><th>Promoção</th><th>Status</th></tr></thead>
                     <tbody>
                         ${promocoes.map((p, index) => {
-                            const candidato = p.status === 'candidate';
-                            const status = candidato ? 'Candidata' : p.status === 'pending' ? 'Já programada no ML' : 'Já ativa';
+                            const candidato = p.status === 'candidate' && !p.programadaAndra;
+                            const status = p.programadaAndra
+                                ? 'Programada'
+                                : p.status === 'candidate' ? 'Candidata' : p.status === 'pending' ? 'Já programada no ML' : 'Já ativa';
                             return `
                                 <tr style="${candidato ? 'cursor:pointer;' : 'opacity:.6;'}" ${candidato ? `onclick="selecionarPromocaoModalItem(${index})"` : ''}>
                                     <td style="text-align:center;">
@@ -6846,9 +6904,17 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
                 </div>
             ` : `
                 <div class="form-group" style="margin-top:12px;">
-                    <label>Valor final desejado (R$)</label>
+                    <label>${selecionada.fixadoPeloMl ? 'Valor final (fixado pelo Mercado Livre)' : 'Valor final desejado (R$)'}</label>
                     <input type="number" id="promoItemValor" class="form-control" min="0.01" step="0.01"
-                        value="${selecionada.valor > 0 ? selecionada.valor.toFixed(2) : ''}">
+                        value="${selecionada.valor > 0 ? selecionada.valor.toFixed(2) : ''}"
+                        ${selecionada.fixadoPeloMl ? 'readonly style="background:#f1f3f5;"' : ''}>
+                    ${selecionada.fixadoPeloMl ? `
+                        <small class="text-muted">
+                            ${selecionada.valor > 0
+                                ? 'Esta promoção não deixa o vendedor escolher o valor — o Mercado Livre já define o preço final. Use esse valor pra avaliar se vale a pena programar.'
+                                : '⚠️ Não foi possível calcular o valor final desta promoção fixada pelo ML — confira direto no Mercado Livre antes de programar.'}
+                        </small>
+                    ` : ''}
                 </div>
 
                 <div class="form-group" style="margin-top:12px;">
@@ -6869,14 +6935,15 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
                     <div class="row" style="margin-top:10px;">
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label>Ativar em</label>
+                                <label>Ativar em *</label>
                                 <input type="datetime-local" id="promoItemDataAtivacao" class="form-control">
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label>Desativar em</label>
+                                <label>Desativar em <small class="text-muted">(opcional)</small></label>
                                 <input type="datetime-local" id="promoItemDataDesativacao" class="form-control">
+                                <small class="text-muted">Deixe em branco pra manter ativa até o fim da própria promoção.</small>
                             </div>
                         </div>
                     </div>
@@ -6959,12 +7026,29 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
             const tokenData = await window.getValidToken?.();
             if (!tokenData?.access_token) throw new Error('Token do Mercado Livre não disponível');
 
-            const [promocoesItem, regras] = await Promise.all([
+            const supabaseConsulta = obterSupabasePromocoes();
+
+            const [promocoesItem, regras, agendamentosDoMlb] = await Promise.all([
                 buscarPromocoesDoItem(mlb, tokenData.access_token),
-                carregarRegrasPendentesPromocaoFull(chave)
+                carregarRegrasPendentesPromocaoFull(chave),
+                supabaseConsulta
+                    ? supabaseConsulta
+                        .from('promocoes_agendadas')
+                        .select('promotion_id')
+                        .eq('mlb', mlb)
+                        .not('status', 'in', '(concluida,cancelada)')
+                    : Promise.resolve({ data: [] })
             ]);
 
             if (!Array.isArray(promocoesItem)) throw new Error('Não foi possível consultar as promoções deste item.');
+
+            // Promoção já tem um agendamento nosso (ainda não concluído/cancelado)?
+            // O ML só passa a refletir isso no status dela quando a ativação
+            // realmente acontece — até lá, continua aparecendo como "candidate"
+            // mesmo já estando programada aqui no Andra.
+            const idsProgramadosAndra = new Set(
+                (agendamentosDoMlb?.data || []).map(r => String(r.promotion_id))
+            );
 
             promoItemEstado.promocoes = promocoesItem
                 .filter(p => ['candidate', 'pending', 'started'].includes(p.status))
@@ -6973,7 +7057,9 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
                     name: p.name || p.id || 'Promoção sem nome',
                     type: p.type || '',
                     status: p.status || 'unknown',
-                    valor: valorPromocaoEmReais(p)
+                    valor: valorPromocaoEmReais(p),
+                    fixadoPeloMl: precoFixadoPeloMl(p),
+                    programadaAndra: p.status === 'candidate' && idsProgramadosAndra.has(String(p.id || ''))
                 }))
                 .filter(p => p.id && p.type);
 
@@ -7042,20 +7128,30 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
             } else {
                 const inicioValor = document.getElementById('promoItemDataAtivacao')?.value;
                 const fimValor = document.getElementById('promoItemDataDesativacao')?.value;
-                if (!inicioValor || !fimValor) {
-                    showToast('⚠️ Informe as datas de ativação e desativação', 'warning');
+                if (!inicioValor) {
+                    showToast('⚠️ Informe a data de ativação', 'warning');
                     return;
                 }
 
                 const inicio = new Date(inicioValor);
-                const fim = new Date(fimValor);
-                if (!Number.isFinite(inicio.getTime()) || !Number.isFinite(fim.getTime())) {
-                    showToast('⚠️ Datas inválidas', 'warning');
+                if (!Number.isFinite(inicio.getTime())) {
+                    showToast('⚠️ Data de ativação inválida', 'warning');
                     return;
                 }
-                if (fim <= inicio) {
-                    showToast('⚠️ A desativação deve ser posterior à ativação', 'warning');
-                    return;
+
+                // Desativação é opcional — algumas promoções devem ficar
+                // ativas até o fim da própria promoção, sem data fixa.
+                let fim = null;
+                if (fimValor) {
+                    fim = new Date(fimValor);
+                    if (!Number.isFinite(fim.getTime())) {
+                        showToast('⚠️ Data de desativação inválida', 'warning');
+                        return;
+                    }
+                    if (fim <= inicio) {
+                        showToast('⚠️ A desativação deve ser posterior à ativação', 'warning');
+                        return;
+                    }
                 }
 
                 const registro = {
@@ -7065,7 +7161,7 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
                     promotion_type: promo.type,
                     valor_final: Number(valor.toFixed(2)),
                     data_ativacao: inicio.toISOString(),
-                    data_desativacao: fim.toISOString(),
+                    data_desativacao: fim ? fim.toISOString() : null,
                     status: 'agendada',
                     criada_por: nomeUsuarioAgenda()
                 };
