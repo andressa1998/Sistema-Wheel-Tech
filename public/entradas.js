@@ -928,40 +928,16 @@ window.salvarObservacaoModal = async function() {
 
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
-        
-        // Adiciona um prefixo com a data e usuário se já tiver observação
-        let novaObservacao = texto || '';
-        if (item.observacao && item.observacao.trim() !== '' && novaObservacao !== item.observacao) {
-            // Se já tinha observação, adiciona um histórico
-            const dataHora = new Date().toLocaleString('pt-BR', {
-                timeZone: 'America/Sao_Paulo',
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            novaObservacao = `${item.observacao}\n\n--- EDITADO POR ${currentUser.name} em ${dataHora} ---\n${novaObservacao}`;
-        } else if (!item.observacao || item.observacao.trim() === '') {
-            // Se não tinha observação, adiciona com data
-            const dataHora = new Date().toLocaleString('pt-BR', {
-                timeZone: 'America/Sao_Paulo',
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            novaObservacao = `[${dataHora} - ${currentUser.name}]\n${novaObservacao}`;
-        }
+
+        // Salva exatamente o que está no campo — o usuário pode
+        // adicionar, editar ou apagar o conteúdo livremente. Antes,
+        // o texto antigo era sempre prefixado de volta, o que tornava
+        // impossível remover ou reescrever uma observação.
+        const novaObservacao = texto || '';
 
         const { error } = await window.supabaseClient
             .from('entrada_items')
-            .update({ 
-                observacao: novaObservacao,
-                // Atualiza também a data de modificação (se tiver campo)
-                // data_modificacao: getDataHoraLocalISO()
-            })
+            .update({ observacao: novaObservacao })
             .eq('id', itemId);
         
         if (error) throw error;
