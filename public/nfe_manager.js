@@ -6982,6 +6982,11 @@ async function abrirModalEdicaoProdutos(orderId) {
 
         // =====================================================
         // PRODUTOS EDITÁVEIS
+        //
+        // O SKU Composto já tem seu próprio anúncio real no
+        // Mercado Livre — o nome exibido na NF-e é sempre o do
+        // anúncio (item.item.title), igual a qualquer outro
+        // produto. Não precisa de nenhum nome alternativo.
         // =====================================================
 
         produtosEditados =
@@ -23456,10 +23461,80 @@ async function verificarEstoqueVenda(
 
 
         // =====================================================
+        // 0. SKU COMPOSTO cadastrado no produto (produtos_estoque.
+        //    eh_sku_composto + produto_sku_composto_partes — tabela
+        //    PRÓPRIA, sem nenhuma relação com produto_skus_kit,
+        //    que é o esquema de SKU Filho/variação no Mercado
+        //    Livre). Tem prioridade sobre o kit manual da aba
+        //    Vendas ML e sobre a heurística de SKU com pontos —
+        //    mas só entra em ação quando o SKU vendido é, de fato,
+        //    um composto marcado assim; os outros dois caminhos
+        //    continuam existindo exatamente como antes para todo
+        //    o resto.
+        // =====================================================
+
+        let resolvidoComoSkuComposto = false;
+
+        if (
+            venda.sku &&
+            venda.sku !== 'SEM_SKU' &&
+            window.supabaseClient
+        ) {
+
+            try {
+
+                const { data: produtoPaiComposto } =
+                    await window.supabaseClient
+                        .from('produtos_estoque')
+                        .select('sku')
+                        .eq('sku', venda.sku)
+                        .eq('eh_sku_composto', true)
+                        .maybeSingle();
+
+                if (produtoPaiComposto) {
+
+                    const { data: partesComposto } =
+                        await window.supabaseClient
+                            .from('produto_sku_composto_partes')
+                            .select('sku_parte, quantidade')
+                            .eq('sku_composto', produtoPaiComposto.sku);
+
+                    if (Array.isArray(partesComposto) && partesComposto.length > 0) {
+
+                        const quantidadeVendidaComposto =
+                            Number(venda.quantidade || venda.quantity || 1);
+
+                        for (const parteComposto of partesComposto) {
+                            adicionarSku(
+                                parteComposto.sku_parte,
+                                Number(parteComposto.quantidade || 1) * quantidadeVendidaComposto
+                            );
+                        }
+
+                        resolvidoComoSkuComposto = true;
+
+                        console.log(
+                            `🧩 [NFE] ${venda.sku} é um SKU Composto — resolvido em ${partesComposto.length} parte(s) cadastrada(s).`
+                        );
+                    }
+                }
+
+            } catch (erroSkuComposto) {
+                console.warn('⚠️ [NFE] Erro verificando SKU Composto:', erroSkuComposto);
+            }
+        }
+
+        // =====================================================
         // 1. KIT JÁ CONFIGURADO NA ABA VENDAS ML
         // =====================================================
 
         if (
+            resolvidoComoSkuComposto
+        ) {
+
+            // Já resolvido acima — não passa pelos outros caminhos.
+
+        } else if (
             venda.eh_kit &&
             Array.isArray(
                 venda.skus_kit

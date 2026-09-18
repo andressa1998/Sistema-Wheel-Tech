@@ -6692,8 +6692,46 @@ body:has(#loginScreen:not(.hidden)) {
     </div>
 </div>
 
-            <!-- Área para composição do Kit -->
-            <div id="kitComposicaoContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px; display: none;">
+            <!-- SKU Composto -->
+            <div style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px;">
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; margin:0;">
+                        <input type="checkbox" id="produtoEhSkuComposto" style="width:18px;height:18px;" onchange="window.alternarSkuCompostoModalProduto()">
+                        <i class="fas fa-boxes-packing"></i> Este produto é um SKU Composto (montado a partir de outros SKUs)
+                    </label>
+                    <small class="text-muted">Ex.: um cubo vendido inteiro, montado a partir de eixo, corpo, catraca etc. cadastrados separadamente.</small>
+                </div>
+            </div>
+
+            <!-- Peças que compõem o SKU Composto (tabela própria, nada a ver com SKU Filho/Kit) -->
+            <div id="compostoPartesContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px; display: none;">
+                <h5><i class="fas fa-layer-group"></i> SKUs que compõem este SKU Composto</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered" id="compostoPartesTable">
+                        <thead>
+                            <tr>
+                                <th>SKU da peça</th>
+                                <th style="width: 100px;">Quantidade por unidade</th>
+                                <th style="width: 40px;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="compostoPartesBody">
+                            <tr><td colspan="3" class="text-center text-muted">Nenhuma peça adicionada.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                    <button type="button" id="addCompostoParteBtn" class="btn btn-sm btn-secondary">
+                        <i class="fas fa-plus"></i> Adicionar peça
+                    </button>
+                    <button type="button" id="clearCompostoPartesBtn" class="btn btn-sm btn-outline-danger">
+                        <i class="fas fa-trash"></i> Limpar Todos
+                    </button>
+                </div>
+            </div>
+
+            <!-- Área para composição do Kit (SKU Filho — pai e filho juntos numa variação do anúncio no ML) -->
+            <div id="kitComposicaoContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px;">
                 <h5><i class="fas fa-puzzle-piece"></i> Composição do Kit</h5>
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered" id="kitSkusTable">
@@ -6718,6 +6756,42 @@ body:has(#loginScreen:not(.hidden)) {
                     </button>
                 </div>
             </div>
+
+            <!-- SKU Primo (substitutos) -->
+            <div style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px;">
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; margin:0;">
+                        <input type="checkbox" id="produtoTemSkuPrimo" style="width:18px;height:18px;" onchange="window.alternarSkuPrimoModalProduto()">
+                        <i class="fas fa-people-arrows"></i> Este produto tem substitutos (SKU Primo) caso o estoque acabe
+                    </label>
+                </div>
+            </div>
+
+            <div id="primosComposicaoContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px; display: none;">
+                <h5><i class="fas fa-people-arrows"></i> SKU Primo (substitutos)</h5>
+                <small class="text-muted d-block mb-2">Quando este produto zerar o estoque, o sistema troca automaticamente o SKU do(s) anúncio(s) dele pelo SKU primo cadastrado aqui que tiver mais estoque disponível — e reverte sozinho (SKU e referência de estoque voltam ao normal) quando este produto voltar a ter estoque.</small>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered" id="primosSkusTable">
+                        <thead>
+                            <tr>
+                                <th>SKU Primo (substituto)</th>
+                                <th style="width: 40px;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="primosSkusBody">
+                            <tr><td colspan="2" class="text-center text-muted">Nenhum SKU primo cadastrado.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                    <button type="button" id="addPrimoSkuBtn" class="btn btn-sm btn-secondary">
+                        <i class="fas fa-plus"></i> Adicionar SKU Primo
+                    </button>
+                    <button type="button" id="clearPrimosSkusBtn" class="btn btn-sm btn-outline-danger">
+                        <i class="fas fa-trash"></i> Limpar Todos
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div class="form-group">
@@ -6729,6 +6803,18 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="btn btn-secondary" onclick="fecharModalProdutoEstoque()">Cancelar</button>
             <button class="btn btn-success" id="salvarProdutoEstoqueBtn" onclick="salvarProdutoEstoque()">Salvar</button>
         </div>
+    </div>
+</div>
+
+<!-- ===== MODAL: ALERTAS DE ÚLTIMA UNIDADE (SKU COMPOSTO) ===== -->
+<div id="modalAlertasUltimaUnidade" class="modal hidden">
+    <div class="modal-content" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
+            <h3 style="margin: 0; color: #f0ad4e;"><i class="fas fa-exclamation-triangle"></i> Peças de SKU Composto com última unidade</h3>
+            <button onclick="window.fecharModalAlertasUltimaUnidade()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6c757d;">&times;</button>
+        </div>
+        <p class="text-muted" style="margin-top:0;">Estas peças fazem parte de um SKU Composto e ficaram com apenas 1 unidade em estoque. Decida se o anúncio individual da peça continua ativo ou se ela passa a ficar disponível só dentro do kit.</p>
+        <div id="listaAlertasUltimaUnidade"></div>
     </div>
 </div>
 
@@ -6783,6 +6869,13 @@ body:has(#loginScreen:not(.hidden)) {
                 <i class="fas fa-file-excel"></i> Exportar
             </button>
         </div>
+    </div>
+
+    <div id="alertaUltimaUnidadeBanner" style="display:none; background:#fff3cd; border:1px solid #ffe08a; border-left:4px solid #f0ad4e; padding:10px 14px; margin:0 0 15px 0; border-radius:6px; align-items:center; justify-content:space-between; gap:10px;">
+        <span><i class="fas fa-exclamation-triangle" style="color:#f0ad4e;"></i> <span id="alertaUltimaUnidadeTexto"></span></span>
+        <button class="btn btn-sm btn-warning" onclick="window.abrirModalAlertasUltimaUnidade()">
+            <i class="fas fa-list"></i> Ver e decidir
+        </button>
     </div>
 
     <div
@@ -7215,10 +7308,10 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
-    <script src="nfe_manager.js?v=20260917-1"></script>
-    <script src="estoque_gestao.js?v=20260917-3"></script>
+    <script src="nfe_manager.js?v=20260918-3"></script>
+    <script src="estoque_gestao.js?v=20260918-9"></script>
     <script src="estoque_analise.js?v=20260911-1"></script>
-    <script src="regras_nivel_estoque.js?v=20260916-1"></script>
+    <script src="regras_nivel_estoque.js?v=20260918-1"></script>
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
     <script src="entradas.js"></script>

@@ -4184,6 +4184,77 @@ async function carregarProdutosEstoque() {
         );
 
 
+        // =====================================================
+        // SKU COMPOSTO
+        //
+        // Recalcula em segundo plano (não trava o carregamento)
+        // e re-renderiza a tabela quando terminar, pra quantidade
+        // exibida dos SKUs Compostos ficar sempre em dia com o
+        // estoque atual das partes.
+        // =====================================================
+
+        if (
+            typeof recalcularTodosSkusCompostos ===
+            'function'
+        ) {
+
+            recalcularTodosSkusCompostos()
+                .then(() => {
+                    if (typeof aplicarFiltrosEOrdenacao === 'function') {
+                        aplicarFiltrosEOrdenacao();
+                    }
+                })
+                .catch(error => {
+                    console.warn('⚠️ Não foi possível recalcular SKUs Compostos:', error);
+                });
+
+        }
+
+        // =====================================================
+        // SKU PRIMO
+        //
+        // Verifica em segundo plano se algum SKU com primo
+        // cadastrado zerou (ativa a substituição no anúncio) ou
+        // voltou a ter estoque (reverte a substituição).
+        // =====================================================
+
+        if (
+            typeof verificarSubstituicoesSkuPrimo ===
+            'function'
+        ) {
+
+            verificarSubstituicoesSkuPrimo()
+                .catch(error => {
+                    console.warn('⚠️ Não foi possível verificar substituições de SKU Primo:', error);
+                });
+
+        }
+
+        // =====================================================
+        // ALERTA DE ÚLTIMA UNIDADE
+        // =====================================================
+
+        if (
+            typeof verificarAlertasUltimaUnidade ===
+            'function'
+        ) {
+
+            verificarAlertasUltimaUnidade()
+                .catch(error => {
+                    console.warn('⚠️ Não foi possível verificar alertas de última unidade:', error);
+                });
+
+        } else if (
+            typeof atualizarBannerAlertaUltimaUnidade ===
+            'function'
+        ) {
+
+            atualizarBannerAlertaUltimaUnidade()
+                .catch(() => {});
+
+        }
+
+
         return produtosEstoque;
 
 
@@ -15275,6 +15346,64 @@ async function salvarProdutoEstoque() {
 
 
     // =====================================================
+    // SKU COMPOSTO
+    // =====================================================
+
+    const ehSkuComposto =
+        document.getElementById('produtoEhSkuComposto')?.checked === true;
+
+
+    // =====================================================
+    // PEÇAS DO SKU COMPOSTO (tabela própria, nada a ver com
+    // SKUs DO KIT / SKU Filho acima)
+    // =====================================================
+
+    let partesComposto = [];
+
+    const tbodyPartesComposto =
+        document.getElementById('compostoPartesBody');
+
+    if (ehSkuComposto && tbodyPartesComposto) {
+        tbodyPartesComposto.querySelectorAll('tr').forEach(row => {
+            if (row.querySelector('.text-muted')) return;
+            const skuParteInput = row.querySelector('.composto-sku-parte');
+            const quantidadeInput = row.querySelector('.composto-quantidade');
+            if (!skuParteInput || !quantidadeInput) return;
+            const skuParte = skuParteInput.value.trim();
+            const quantidade = parseInt(quantidadeInput.value) || 1;
+            if (skuParte) {
+                partesComposto.push({ sku_parte: skuParte, quantidade: quantidade });
+            }
+        });
+    }
+
+
+    // =====================================================
+    // SKUs PRIMOS (substitutos)
+    // =====================================================
+
+    let skusPrimos = [];
+
+    const temSkuPrimo =
+        document.getElementById('produtoTemSkuPrimo')?.checked === true;
+
+    const tbodyPrimos =
+        document.getElementById('primosSkusBody');
+
+    if (temSkuPrimo && tbodyPrimos) {
+        tbodyPrimos.querySelectorAll('tr').forEach(row => {
+            if (row.querySelector('.text-muted')) return;
+            const skuPrimoInput = row.querySelector('.primo-sku');
+            if (!skuPrimoInput) return;
+            const skuPrimo = skuPrimoInput.value.trim();
+            if (skuPrimo) {
+                skusPrimos.push({ sku_primo: skuPrimo });
+            }
+        });
+    }
+
+
+    // =====================================================
     // SUBCATEGORIA ATUAL
     //
     // ÚNICA PEQUENA CORREÇÃO NO BULK:
@@ -15878,7 +16007,10 @@ async function salvarProdutoEstoque() {
         bloquear_sync_ml:
             podeModificarSync
                 ? bloquearSync
-                : bloquearSyncExistente
+                : bloquearSyncExistente,
+
+        eh_sku_composto:
+            ehSkuComposto
 
     };
 
@@ -16094,6 +16226,77 @@ async function salvarProdutoEstoque() {
             await excluirSkusKit(
                 sku
             );
+
+        }
+
+
+        // =================================================
+        // PEÇAS DO SKU COMPOSTO (tabela própria)
+        // =================================================
+
+        if (
+            sku &&
+            ehSkuComposto &&
+            partesComposto.length > 0
+        ) {
+
+            const resultPartesComposto =
+                await salvarPartesComposto(
+                    sku,
+                    partesComposto
+                );
+
+            if (!resultPartesComposto.success) {
+                console.error(
+                    'Erro ao salvar peças do SKU Composto:',
+                    resultPartesComposto.error
+                );
+
+                showToast(
+                    'Erro ao salvar peças do SKU Composto: ' +
+                    resultPartesComposto.error,
+                    'warning'
+                );
+            }
+
+        } else if (sku) {
+
+            await excluirPartesComposto(sku);
+
+        }
+
+
+        // =================================================
+        // SKU PRIMO (substitutos)
+        // =================================================
+
+        if (
+            sku &&
+            skusPrimos.length > 0
+        ) {
+
+            const resultPrimos =
+                await salvarSkusPrimos(
+                    sku,
+                    skusPrimos
+                );
+
+            if (!resultPrimos.success) {
+                console.error(
+                    'Erro ao salvar SKUs primos:',
+                    resultPrimos.error
+                );
+
+                showToast(
+                    'Erro ao salvar SKUs primos: ' +
+                    resultPrimos.error,
+                    'warning'
+                );
+            }
+
+        } else if (sku) {
+
+            await excluirSkusPrimos(sku);
 
         }
 
@@ -16471,28 +16674,39 @@ function gerarCamposDinamicos(
         // KIT
         // =============================================
 
-        const kitContainer =
-            document.getElementById(
-                'kitComposicaoContainer'
-            );
-
-
         if (
-            kitContainer
+            typeof configurarEventosKit ===
+            'function'
         ) {
 
-            kitContainer.style.display =
-                'block';
+            configurarEventosKit();
 
+        }
 
-            if (
-                typeof configurarEventosKit ===
-                'function'
-            ) {
+        if (
+            typeof window.alternarSkuCompostoModalProduto ===
+            'function'
+        ) {
 
-                configurarEventosKit();
+            window.alternarSkuCompostoModalProduto();
 
-            }
+        }
+
+        if (
+            typeof configurarEventosPrimos ===
+            'function'
+        ) {
+
+            configurarEventosPrimos();
+
+        }
+
+        if (
+            typeof configurarEventosCompostoPartes ===
+            'function'
+        ) {
+
+            configurarEventosCompostoPartes();
 
         }
 
@@ -18043,31 +18257,42 @@ function prepararCamposCondicionaisParaSalvar() {
 
 
     // =====================================================
-    // KIT DE PRODUTOS
+    // KIT DE PRODUTOS / SKU COMPOSTO
     // =====================================================
 
-    const kitContainer =
-        document.getElementById(
-            'kitComposicaoContainer'
-        );
-
-
     if (
-        kitContainer
+        typeof configurarEventosKit ===
+        'function'
     ) {
 
-        kitContainer.style.display =
-            'block';
+        configurarEventosKit();
 
+    }
 
-        if (
-            typeof configurarEventosKit ===
-            'function'
-        ) {
+    if (
+        typeof window.alternarSkuCompostoModalProduto ===
+        'function'
+    ) {
 
-            configurarEventosKit();
+        window.alternarSkuCompostoModalProduto();
 
-        }
+    }
+
+    if (
+        typeof configurarEventosPrimos ===
+        'function'
+    ) {
+
+        configurarEventosPrimos();
+
+    }
+
+    if (
+        typeof configurarEventosCompostoPartes ===
+        'function'
+    ) {
+
+        configurarEventosCompostoPartes();
 
     }
 
@@ -19473,6 +19698,613 @@ async function salvarRegrasIndividuais(regras) {
 }
 
 // =========================================================
+// SKU COMPOSTO — quantidade calculada, baixa, entrada
+// =========================================================
+//
+// A "quantidade em estoque" de um SKU Composto não é digitada
+// por ninguém — é sempre recalculada a partir do estoque das
+// partes cadastradas na composição (produto_skus_kit): quantos
+// kits completos dá pra montar agora, considerando a parte que
+// menos tem estoque. O valor calculado é gravado direto em
+// produtos_estoque.quantidade do próprio composto, pra tudo
+// mais no sistema (tabela, exportação, sincronização com ML,
+// alertas) continuar funcionando sem precisar de tratamento
+// especial em cada lugar.
+
+async function recalcularQuantidadeSkuComposto(skuPai) {
+    if (!window.supabaseClient || !skuPai) return null;
+
+    try {
+        const { data: partes, error: errPartes } = await window.supabaseClient
+            .from('produto_sku_composto_partes')
+            .select('sku_parte, quantidade')
+            .eq('sku_composto', skuPai);
+
+        if (errPartes) {
+            console.warn('⚠️ [SKU Composto] Erro buscando partes:', errPartes);
+            return null;
+        }
+
+        if (!Array.isArray(partes) || partes.length === 0) {
+            return null;
+        }
+
+        const skusPartes = partes.map(p => p.sku_parte);
+
+        const { data: produtosPartes, error: errPartesProdutos } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('sku, quantidade')
+            .in('sku', skusPartes);
+
+        if (errPartesProdutos) {
+            console.warn('⚠️ [SKU Composto] Erro buscando produtos das partes:', errPartesProdutos);
+            return null;
+        }
+
+        const mapaQuantidades = new Map(
+            (produtosPartes || []).map(p => [p.sku, Number(p.quantidade) || 0])
+        );
+
+        let quantidadeComposta = Infinity;
+
+        for (const parte of partes) {
+            const disponivel = mapaQuantidades.get(parte.sku_parte);
+
+            if (disponivel == null) {
+                // Parte não encontrada no cadastro — não dá pra montar nenhum kit.
+                quantidadeComposta = 0;
+                break;
+            }
+
+            const multiplicador = Number(parte.quantidade) || 1;
+            const porEstaParte = Math.floor(disponivel / multiplicador);
+            quantidadeComposta = Math.min(quantidadeComposta, porEstaParte);
+        }
+
+        if (!Number.isFinite(quantidadeComposta) || quantidadeComposta < 0) {
+            quantidadeComposta = 0;
+        }
+
+        const { error: errUpdate } = await window.supabaseClient
+            .from('produtos_estoque')
+            .update({ quantidade: quantidadeComposta })
+            .eq('sku', skuPai)
+            .eq('eh_sku_composto', true);
+
+        if (errUpdate) {
+            console.warn('⚠️ [SKU Composto] Erro salvando quantidade calculada:', errUpdate);
+            return null;
+        }
+
+        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+            const produtoLocal = produtosEstoque.find(p => p.sku === skuPai);
+            if (produtoLocal) produtoLocal.quantidade = quantidadeComposta;
+        }
+
+        return quantidadeComposta;
+
+    } catch (error) {
+        console.warn('⚠️ [SKU Composto] Erro recalculando quantidade:', error);
+        return null;
+    }
+}
+window.recalcularQuantidadeSkuComposto = recalcularQuantidadeSkuComposto;
+
+// Recalcula TODOS os SKUs Compostos cadastrados — chamado sempre
+// que a lista de produtos é carregada, pra manter a quantidade
+// exibida sempre correta sem depender de cada tela lembrar de
+// avisar sobre toda mudança de estoque de uma parte.
+async function recalcularTodosSkusCompostos() {
+    if (!window.supabaseClient) return;
+
+    try {
+        const { data: compostos, error } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('sku')
+            .eq('eh_sku_composto', true);
+
+        if (error || !Array.isArray(compostos) || compostos.length === 0) return;
+
+        const CONCORRENCIA = 5;
+        for (let i = 0; i < compostos.length; i += CONCORRENCIA) {
+            const lote = compostos.slice(i, i + CONCORRENCIA);
+            await Promise.all(lote.map(p => recalcularQuantidadeSkuComposto(p.sku)));
+        }
+
+    } catch (error) {
+        console.warn('⚠️ [SKU Composto] Erro recalculando todos os compostos:', error);
+    }
+}
+window.recalcularTodosSkusCompostos = recalcularTodosSkusCompostos;
+
+// =========================================================
+// SKU PRIMO — substituição automática de anúncio quando o
+// SKU principal zera o estoque, e reversão automática quando
+// ele volta a ter estoque.
+//
+// Roda junto com o recálculo dos SKUs Compostos, sempre que a
+// lista de produtos é carregada — não depende de nenhuma tela
+// específica lembrar de chamar isso.
+// =========================================================
+
+async function atualizarSellerSkuAnuncioML(mlbCode, skuAntigo, skuNovo, token, workerUrl) {
+    try {
+        const urlItem = `https://api.mercadolibre.com/items/${encodeURIComponent(mlbCode)}`;
+        const proxyGet = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(urlItem)}&token=${encodeURIComponent(token)}`;
+
+        const respItem = await fetch(proxyGet);
+        if (!respItem.ok) {
+            return { success: false, mlb: mlbCode, error: `HTTP ${respItem.status} ao buscar item` };
+        }
+        const item = await respItem.json();
+
+        const extrairSkuLocal = (obj) => {
+            if (!obj) return null;
+            if (obj.seller_custom_field) return obj.seller_custom_field;
+            if (Array.isArray(obj.attributes)) {
+                const attr = obj.attributes.find(a => a.id === 'SELLER_SKU');
+                if (attr?.value_name) return attr.value_name;
+            }
+            if (obj.sku) return obj.sku;
+            return null;
+        };
+
+        let variacaoAlvo = null;
+        if (Array.isArray(item.variations) && item.variations.length > 0) {
+            variacaoAlvo = item.variations.find(v => extrairSkuLocal(v) === skuAntigo) || null;
+        }
+
+        const urlAlvo = variacaoAlvo?.id
+            ? `https://api.mercadolibre.com/items/${encodeURIComponent(mlbCode)}/variations/${encodeURIComponent(variacaoAlvo.id)}`
+            : urlItem;
+
+        const proxyPut = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(urlAlvo)}&token=${encodeURIComponent(token)}`;
+
+        const respPut = await fetch(proxyPut, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ seller_custom_field: skuNovo })
+        });
+
+        if (!respPut.ok) {
+            const texto = await respPut.text().catch(() => '');
+            return { success: false, mlb: mlbCode, error: `HTTP ${respPut.status} ${texto}` };
+        }
+
+        return { success: true, mlb: mlbCode, variation_id: variacaoAlvo?.id || null };
+
+    } catch (error) {
+        return { success: false, mlb: mlbCode, error: error.message };
+    }
+}
+
+async function ativarSubstituicaoSkuPrimo(produtoPrincipal, skuPrimoEscolhido) {
+    const skuPrincipal = produtoPrincipal.sku;
+
+    let mlbCodes = produtoPrincipal.dados_extra?.mlb_codes;
+    mlbCodes = Array.isArray(mlbCodes)
+        ? mlbCodes
+        : (mlbCodes ? String(mlbCodes).split(',').map(s => s.trim()).filter(Boolean) : []);
+
+    const token = localStorage.getItem('ml_access_token');
+    const WORKER_URL = window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
+    if (mlbCodes.length > 0 && token) {
+        for (const mlb of mlbCodes) {
+            const resultado = await atualizarSellerSkuAnuncioML(mlb, skuPrincipal, skuPrimoEscolhido, token, WORKER_URL);
+            if (resultado.success) {
+                console.log(`🔄 [SKU Primo] ${mlb}: SKU trocado de ${skuPrincipal} para ${skuPrimoEscolhido} (estoque do principal zerou).`);
+            } else {
+                console.warn(`⚠️ [SKU Primo] Falha trocando SKU do anúncio ${mlb}:`, resultado.error);
+            }
+        }
+    } else if (mlbCodes.length > 0 && !token) {
+        console.warn(`⚠️ [SKU Primo] ${skuPrincipal} zerou e tem primo disponível (${skuPrimoEscolhido}), mas não há token ML disponível agora pra trocar o SKU dos anúncios.`);
+    }
+
+    const { error: erroUpsert } = await window.supabaseClient
+        .from('produto_substituicoes_ativas')
+        .upsert({
+            sku_principal: skuPrincipal,
+            sku_primo_ativo: skuPrimoEscolhido,
+            mlb_codes: mlbCodes,
+            sku_original_nos_anuncios: skuPrincipal,
+            ativado_por: (typeof currentUser !== 'undefined' && currentUser?.name) || 'sistema',
+            ativado_em: new Date().toISOString(),
+            revertido_em: null
+        }, { onConflict: 'sku_principal' });
+
+    if (erroUpsert) {
+        console.warn('⚠️ [SKU Primo] Erro registrando substituição ativa:', erroUpsert);
+        return;
+    }
+
+    if (!window._substituicoesSkuPrimoAtivas) window._substituicoesSkuPrimoAtivas = {};
+    window._substituicoesSkuPrimoAtivas[skuPrincipal] = skuPrimoEscolhido;
+
+    if (typeof showToast === 'function') {
+        showToast(`🔄 ${skuPrincipal} zerou o estoque — anúncios substituídos automaticamente pelo SKU primo ${skuPrimoEscolhido}.`, 'warning');
+    }
+}
+
+async function reverterSubstituicaoSkuPrimo(substituicaoAtiva) {
+    const skuPrincipal = substituicaoAtiva.sku_principal;
+    const skuPrimoAtivo = substituicaoAtiva.sku_primo_ativo;
+    const mlbCodes = Array.isArray(substituicaoAtiva.mlb_codes) ? substituicaoAtiva.mlb_codes : [];
+
+    const token = localStorage.getItem('ml_access_token');
+    const WORKER_URL = window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
+    if (mlbCodes.length > 0 && token) {
+        for (const mlb of mlbCodes) {
+            const resultado = await atualizarSellerSkuAnuncioML(mlb, skuPrimoAtivo, skuPrincipal, token, WORKER_URL);
+            if (resultado.success) {
+                console.log(`↩️ [SKU Primo] ${mlb}: SKU revertido de ${skuPrimoAtivo} para ${skuPrincipal} (estoque do principal voltou).`);
+            } else {
+                console.warn(`⚠️ [SKU Primo] Falha revertendo SKU do anúncio ${mlb}:`, resultado.error);
+            }
+        }
+    } else if (mlbCodes.length > 0 && !token) {
+        console.warn(`⚠️ [SKU Primo] ${skuPrincipal} voltou ao estoque, mas não há token ML disponível agora pra reverter o SKU dos anúncios.`);
+    }
+
+    const { error: erroUpdate } = await window.supabaseClient
+        .from('produto_substituicoes_ativas')
+        .update({ revertido_em: new Date().toISOString() })
+        .eq('sku_principal', skuPrincipal)
+        .is('revertido_em', null);
+
+    if (erroUpdate) {
+        console.warn('⚠️ [SKU Primo] Erro marcando substituição como revertida:', erroUpdate);
+        return;
+    }
+
+    if (window._substituicoesSkuPrimoAtivas) delete window._substituicoesSkuPrimoAtivas[skuPrincipal];
+
+    if (typeof showToast === 'function') {
+        showToast(`↩️ ${skuPrincipal} voltou ao estoque — anúncios revertidos automaticamente do SKU primo ${skuPrimoAtivo} para o original.`, 'success');
+    }
+}
+
+async function avaliarSubstituicaoSku(skuPrincipal, candidatosPrimos) {
+    if (!window.supabaseClient || !skuPrincipal) return;
+
+    try {
+        const { data: produtoPrincipal } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('sku, quantidade, dados_extra')
+            .eq('sku', skuPrincipal)
+            .maybeSingle();
+
+        if (!produtoPrincipal) return;
+
+        const { data: substituicaoAtiva } = await window.supabaseClient
+            .from('produto_substituicoes_ativas')
+            .select('*')
+            .eq('sku_principal', skuPrincipal)
+            .is('revertido_em', null)
+            .maybeSingle();
+
+        const quantidadePrincipal = Number(produtoPrincipal.quantidade) || 0;
+
+        // Principal voltou a ter estoque -> reverte.
+        if (quantidadePrincipal > 0 && substituicaoAtiva) {
+            await reverterSubstituicaoSkuPrimo(substituicaoAtiva);
+            return;
+        }
+
+        // Já zerado e já substituído -> mantém o primo já ativado
+        // (evita ficar trocando o SKU do anúncio toda hora).
+        if (quantidadePrincipal <= 0 && substituicaoAtiva) return;
+
+        // Zerado e sem substituição ativa -> tenta ativar pelo
+        // primo com mais estoque disponível.
+        if (quantidadePrincipal <= 0 && !substituicaoAtiva) {
+            if (!Array.isArray(candidatosPrimos) || candidatosPrimos.length === 0) return;
+
+            const { data: produtosPrimos } = await window.supabaseClient
+                .from('produtos_estoque')
+                .select('sku, quantidade')
+                .in('sku', candidatosPrimos);
+
+            if (!Array.isArray(produtosPrimos) || produtosPrimos.length === 0) return;
+
+            const melhorPrimo = produtosPrimos
+                .filter(p => (Number(p.quantidade) || 0) > 0)
+                .sort((a, b) => (Number(b.quantidade) || 0) - (Number(a.quantidade) || 0))[0];
+
+            if (!melhorPrimo) return;
+
+            await ativarSubstituicaoSkuPrimo(produtoPrincipal, melhorPrimo.sku);
+        }
+
+    } catch (error) {
+        console.warn(`⚠️ [SKU Primo] Erro avaliando substituição de ${skuPrincipal}:`, error);
+    }
+}
+
+async function verificarSubstituicoesSkuPrimo() {
+    if (!window.supabaseClient) return;
+
+    try {
+
+        // Mantém o cache síncrono (usado por calcularQuantidadeComRegras,
+        // que não pode esperar uma consulta ao banco) sempre em dia.
+        const { data: ativas } = await window.supabaseClient
+            .from('produto_substituicoes_ativas')
+            .select('sku_principal, sku_primo_ativo')
+            .is('revertido_em', null);
+
+        window._substituicoesSkuPrimoAtivas = {};
+        (ativas || []).forEach(a => {
+            window._substituicoesSkuPrimoAtivas[a.sku_principal] = a.sku_primo_ativo;
+        });
+
+        const { data: relacoes, error } = await window.supabaseClient
+            .from('produto_skus_primos')
+            .select('sku_principal, sku_primo');
+
+        if (error || !Array.isArray(relacoes) || relacoes.length === 0) return;
+
+        const principaisUnicos = [...new Set(relacoes.map(r => r.sku_principal))];
+
+        for (const skuPrincipal of principaisUnicos) {
+            await avaliarSubstituicaoSku(
+                skuPrincipal,
+                relacoes.filter(r => r.sku_principal === skuPrincipal).map(r => r.sku_primo)
+            );
+        }
+
+    } catch (error) {
+        console.warn('⚠️ [SKU Primo] Erro verificando substituições:', error);
+    }
+}
+window.verificarSubstituicoesSkuPrimo = verificarSubstituicoesSkuPrimo;
+
+// =========================================================
+// ALERTA DE ÚLTIMA UNIDADE
+//
+// Quando uma peça de um SKU Composto cai pra exatamente 1
+// unidade em estoque, sinaliza pra alguém decidir se o
+// anúncio individual dela continua ativo ou se passa a ficar
+// disponível só dentro do kit.
+// =========================================================
+
+async function verificarAlertasUltimaUnidade() {
+    if (!window.supabaseClient) return;
+
+    try {
+        const { data: compostos, error: errCompostos } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('sku')
+            .eq('eh_sku_composto', true);
+
+        if (errCompostos || !Array.isArray(compostos) || compostos.length === 0) return;
+
+        for (const composto of compostos) {
+
+            const { data: partes } = await window.supabaseClient
+                .from('produto_sku_composto_partes')
+                .select('sku_parte')
+                .eq('sku_composto', composto.sku);
+
+            if (!Array.isArray(partes) || partes.length === 0) continue;
+
+            const skusPartes = partes.map(p => p.sku_parte);
+
+            const { data: produtosPartes } = await window.supabaseClient
+                .from('produtos_estoque')
+                .select('sku, quantidade')
+                .in('sku', skusPartes);
+
+            if (!Array.isArray(produtosPartes)) continue;
+
+            for (const parte of produtosPartes) {
+
+                const quantidade = Number(parte.quantidade) || 0;
+
+                if (quantidade === 1) {
+
+                    // Só cria se ainda não existir um alerta PENDENTE
+                    // pra este par (peça, composto) — não duplica.
+                    const { data: existente } = await window.supabaseClient
+                        .from('produto_alertas_ultima_unidade')
+                        .select('id')
+                        .eq('sku', parte.sku)
+                        .eq('sku_pai_composto', composto.sku)
+                        .eq('status', 'pendente')
+                        .maybeSingle();
+
+                    if (!existente) {
+                        await window.supabaseClient
+                            .from('produto_alertas_ultima_unidade')
+                            .insert([{
+                                sku: parte.sku,
+                                sku_pai_composto: composto.sku,
+                                status: 'pendente'
+                            }]);
+                    }
+
+                } else {
+
+                    // Não está mais em 1 unidade — o alerta pendente
+                    // (se existir) perdeu o sentido.
+                    await window.supabaseClient
+                        .from('produto_alertas_ultima_unidade')
+                        .delete()
+                        .eq('sku', parte.sku)
+                        .eq('sku_pai_composto', composto.sku)
+                        .eq('status', 'pendente');
+                }
+            }
+        }
+
+        if (typeof atualizarBannerAlertaUltimaUnidade === 'function') {
+            await atualizarBannerAlertaUltimaUnidade();
+        }
+
+    } catch (error) {
+        console.warn('⚠️ [Alerta Última Unidade] Erro verificando alertas:', error);
+    }
+}
+window.verificarAlertasUltimaUnidade = verificarAlertasUltimaUnidade;
+
+async function atualizarBannerAlertaUltimaUnidade() {
+    const banner = document.getElementById('alertaUltimaUnidadeBanner');
+    const texto = document.getElementById('alertaUltimaUnidadeTexto');
+    if (!banner || !texto || !window.supabaseClient) return;
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('produto_alertas_ultima_unidade')
+            .select('id')
+            .eq('status', 'pendente');
+
+        const total = (!error && Array.isArray(data)) ? data.length : 0;
+
+        if (total > 0) {
+            texto.textContent = `${total} peça(s) de SKU Composto com apenas 1 unidade em estoque — decida se o anúncio individual continua ativo.`;
+            banner.style.display = 'flex';
+        } else {
+            banner.style.display = 'none';
+        }
+    } catch (error) {
+        console.warn('⚠️ [Alerta Última Unidade] Erro atualizando banner:', error);
+    }
+}
+window.atualizarBannerAlertaUltimaUnidade = atualizarBannerAlertaUltimaUnidade;
+
+window.abrirModalAlertasUltimaUnidade = async function () {
+    const modal = document.getElementById('modalAlertasUltimaUnidade');
+    const lista = document.getElementById('listaAlertasUltimaUnidade');
+    if (!modal || !lista) return;
+
+    lista.innerHTML = '<p class="text-muted">Carregando...</p>';
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+    modal.style.zIndex = '10000';
+
+    try {
+        const { data: alertas, error } = await window.supabaseClient
+            .from('produto_alertas_ultima_unidade')
+            .select('*')
+            .eq('status', 'pendente')
+            .order('criado_em', { ascending: false });
+
+        if (error) throw error;
+
+        if (!alertas || alertas.length === 0) {
+            lista.innerHTML = '<p class="text-muted">Nenhum alerta pendente no momento.</p>';
+            return;
+        }
+
+        const skusEnvolvidos = [
+            ...new Set(alertas.flatMap(a => [a.sku, a.sku_pai_composto]))
+        ];
+
+        const { data: produtosInfo } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('sku, nome, quantidade')
+            .in('sku', skusEnvolvidos);
+
+        const infoPorSku = new Map((produtosInfo || []).map(p => [p.sku, p]));
+
+        lista.innerHTML = alertas.map(alerta => {
+            const peca = infoPorSku.get(alerta.sku);
+            const composto = infoPorSku.get(alerta.sku_pai_composto);
+            return `
+                <div style="border:1px solid #eee; border-radius:8px; padding:12px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <div>
+                        <strong>${escapeHtml(peca?.nome || alerta.sku)}</strong> <span class="text-muted">(SKU: ${escapeHtml(alerta.sku)})</span><br>
+                        <small class="text-muted">Estoque atual: ${peca?.quantidade ?? '?'} | Parte do composto: ${escapeHtml(composto?.nome || alerta.sku_pai_composto)} (${escapeHtml(alerta.sku_pai_composto)})</small>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary" onclick="window.decidirAlertaUltimaUnidade(${alerta.id}, 'manter_individual')">
+                            Manter anúncio individual
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="window.decidirAlertaUltimaUnidade(${alerta.id}, 'somente_kit')">
+                            Deixar só no kit
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (error) {
+        console.error('❌ Erro carregando alertas de última unidade:', error);
+        lista.innerHTML = '<p class="text-danger">Erro ao carregar alertas.</p>';
+    }
+};
+
+window.fecharModalAlertasUltimaUnidade = function () {
+    const modal = document.getElementById('modalAlertasUltimaUnidade');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+};
+
+window.decidirAlertaUltimaUnidade = async function (alertaId, decisao) {
+    if (!window.supabaseClient || !alertaId) return;
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('produto_alertas_ultima_unidade')
+            .update({
+                status: decisao,
+                decidido_por: (typeof currentUser !== 'undefined' && currentUser?.name) || 'sistema',
+                decidido_em: new Date().toISOString()
+            })
+            .eq('id', alertaId);
+
+        if (error) throw error;
+
+        showToast(
+            decisao === 'somente_kit'
+                ? '✅ Marcado: peça passa a ficar disponível só no kit.'
+                : '✅ Marcado: anúncio individual continua ativo.',
+            'success'
+        );
+
+        await window.abrirModalAlertasUltimaUnidade();
+        await atualizarBannerAlertaUltimaUnidade();
+
+    } catch (error) {
+        console.error('❌ Erro decidindo alerta de última unidade:', error);
+        showToast('Erro ao salvar decisão: ' + error.message, 'error');
+    }
+};
+
+// =========================================================
+// SKU COMPOSTO — mostrar/esconder a composição do kit
+// conforme o checkbox "Este produto é um SKU Composto"
+// =========================================================
+
+window.alternarSkuCompostoModalProduto = function () {
+    const checkbox = document.getElementById('produtoEhSkuComposto');
+    const partesContainer = document.getElementById('compostoPartesContainer');
+
+    const ehComposto = !!checkbox?.checked;
+
+    // A Composição do Kit (SKU Filho — pai/filho juntos numa
+    // variação do anúncio no ML) é um esquema totalmente à parte,
+    // não tem NADA a ver com SKU Composto e não é afetado por este
+    // checkbox. O SKU Composto tem sua própria seção/tabela.
+    if (partesContainer) partesContainer.style.display = ehComposto ? 'block' : 'none';
+};
+
+window.alternarSkuPrimoModalProduto = function () {
+    const checkbox = document.getElementById('produtoTemSkuPrimo');
+    const primoContainer = document.getElementById('primosComposicaoContainer');
+
+    const temPrimo = !!checkbox?.checked;
+
+    if (primoContainer) primoContainer.style.display = temPrimo ? 'block' : 'none';
+};
+
+// =========================================================
 // FUNÇÕES DE KIT
 // =========================================================
 
@@ -19590,6 +20422,291 @@ async function excluirSkusKit(skuPai) {
         return { success: true };
     } catch (error) {
         console.error('Erro ao excluir SKUs do kit:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// =========================================================
+// FUNÇÕES DE SKU COMPOSTO (peças) — tabela própria
+// produto_sku_composto_partes, SEM relação nenhuma com
+// produto_skus_kit (esquema de SKU Filho/variação no ML).
+// =========================================================
+
+function configurarEventosCompostoPartes() {
+    const addBtn = document.getElementById('addCompostoParteBtn');
+    const clearBtn = document.getElementById('clearCompostoPartesBtn');
+
+    if (addBtn) {
+        addBtn.onclick = function() {
+            const tbody = document.getElementById('compostoPartesBody');
+            const emptyRow = tbody.querySelector('.text-muted');
+            if (emptyRow) emptyRow.remove();
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>
+                    <input type="text" class="form-control form-control-sm composto-sku-parte" placeholder="SKU da peça">
+                </td>
+                <td>
+                    <input type="number" class="form-control form-control-sm composto-quantidade" value="1" min="1" step="1">
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-danger remove-composto-parte">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+
+            row.querySelector('.remove-composto-parte').addEventListener('click', function() {
+                row.remove();
+                if (document.querySelectorAll('#compostoPartesBody tr').length === 0) {
+                    document.getElementById('compostoPartesBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhuma peça adicionada.</td></tr>';
+                }
+            });
+        };
+    }
+
+    if (clearBtn) {
+        clearBtn.onclick = function() {
+            if (confirm('Remover todas as peças deste SKU Composto?')) {
+                document.getElementById('compostoPartesBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhuma peça adicionada.</td></tr>';
+            }
+        };
+    }
+}
+
+async function carregarPartesComposto(skuComposto) {
+    if (!skuComposto || !window.supabaseClient) return [];
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('produto_sku_composto_partes')
+            .select('*')
+            .eq('sku_composto', skuComposto);
+        if (error) throw error;
+        return data || [];
+    } catch (error) {
+        console.error('Erro ao carregar peças do SKU Composto:', error);
+        return [];
+    }
+}
+
+async function salvarPartesComposto(skuComposto, partes) {
+    if (!skuComposto || !window.supabaseClient) {
+        return { success: false, error: 'Dados inválidos' };
+    }
+    try {
+        const { data: existentes, error: fetchError } = await window.supabaseClient
+            .from('produto_sku_composto_partes')
+            .select('sku_parte, quantidade')
+            .eq('sku_composto', skuComposto);
+
+        if (fetchError) throw fetchError;
+
+        const partesExistentes = existentes.map(item => item.sku_parte);
+        const partesNovas = partes.map(item => item.sku_parte);
+        const partesParaRemover = partesExistentes.filter(sku => !partesNovas.includes(sku));
+
+        for (const sku of partesParaRemover) {
+            const { error: delError } = await window.supabaseClient
+                .from('produto_sku_composto_partes')
+                .delete()
+                .eq('sku_composto', skuComposto)
+                .eq('sku_parte', sku);
+            if (delError) throw delError;
+        }
+
+        for (const item of partes) {
+            if (!item.sku_parte) continue;
+            const { error: upsertError } = await window.supabaseClient
+                .from('produto_sku_composto_partes')
+                .upsert({
+                    sku_composto: skuComposto,
+                    sku_parte: item.sku_parte,
+                    quantidade: item.quantidade || 1,
+                    atualizado_em: new Date().toISOString()
+                }, { onConflict: 'sku_composto, sku_parte' });
+            if (upsertError) throw upsertError;
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Erro ao salvar peças do SKU Composto:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function excluirPartesComposto(skuComposto) {
+    if (!skuComposto || !window.supabaseClient) return { success: false, error: 'Dados inválidos' };
+    try {
+        const { error } = await window.supabaseClient
+            .from('produto_sku_composto_partes')
+            .delete()
+            .eq('sku_composto', skuComposto);
+        if (error) throw error;
+        return { success: true };
+    } catch (error) {
+        console.error('Erro ao excluir peças do SKU Composto:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+function renderizarPartesComposto(partes) {
+    const tbody = document.getElementById('compostoPartesBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    if (!partes || partes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhuma peça adicionada.</td></tr>';
+        return;
+    }
+
+    partes.forEach((item) => {
+        const row = document.createElement('tr');
+        const skuParte = item.sku_parte || '';
+        const quantidade = item.quantidade || 1;
+
+        row.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm composto-sku-parte" value="${escapeHtml(skuParte)}" placeholder="SKU da peça">
+            </td>
+            <td>
+                <input type="number" class="form-control form-control-sm composto-quantidade" value="${quantidade}" min="1" step="1">
+            </td>
+            <td>
+                <button type="button" class="btn btn-sm btn-danger remove-composto-parte">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+
+        row.querySelector('.remove-composto-parte').addEventListener('click', function() {
+            row.remove();
+            const rows = document.querySelectorAll('#compostoPartesBody tr:not(.text-muted)');
+            if (rows.length === 0) {
+                document.getElementById('compostoPartesBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhuma peça adicionada.</td></tr>';
+            }
+        });
+    });
+}
+
+// =========================================================
+// FUNÇÕES DE SKU PRIMO (substitutos)
+// =========================================================
+
+function configurarEventosPrimos() {
+    const addBtn = document.getElementById('addPrimoSkuBtn');
+    const clearBtn = document.getElementById('clearPrimosSkusBtn');
+
+    if (addBtn) {
+        addBtn.onclick = function() {
+            const tbody = document.getElementById('primosSkusBody');
+            const emptyRow = tbody.querySelector('.text-muted');
+            if (emptyRow) emptyRow.remove();
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>
+                    <input type="text" class="form-control form-control-sm primo-sku" placeholder="SKU primo (substituto)">
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-danger remove-primo-sku">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+
+            row.querySelector('.remove-primo-sku').addEventListener('click', function() {
+                row.remove();
+                if (document.querySelectorAll('#primosSkusBody tr').length === 0) {
+                    document.getElementById('primosSkusBody').innerHTML = '<tr><td colspan="2" class="text-center text-muted">Nenhum SKU primo cadastrado.</td></tr>';
+                }
+            });
+        };
+    }
+
+    if (clearBtn) {
+        clearBtn.onclick = function() {
+            if (confirm('Remover todos os SKUs primos?')) {
+                document.getElementById('primosSkusBody').innerHTML = '<tr><td colspan="2" class="text-center text-muted">Nenhum SKU primo cadastrado.</td></tr>';
+            }
+        };
+    }
+}
+
+async function carregarSkusPrimos(skuPrincipal) {
+    if (!skuPrincipal || !window.supabaseClient) return [];
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('produto_skus_primos')
+            .select('*')
+            .eq('sku_principal', skuPrincipal);
+        if (error) throw error;
+        return data || [];
+    } catch (error) {
+        console.error('Erro ao carregar SKUs primos:', error);
+        return [];
+    }
+}
+
+async function salvarSkusPrimos(skuPrincipal, primos) {
+    if (!skuPrincipal || !window.supabaseClient) {
+        return { success: false, error: 'Dados inválidos' };
+    }
+    try {
+        const { data: existentes, error: fetchError } = await window.supabaseClient
+            .from('produto_skus_primos')
+            .select('sku_primo')
+            .eq('sku_principal', skuPrincipal);
+
+        if (fetchError) throw fetchError;
+
+        const primosExistentes = existentes.map(item => item.sku_primo);
+        const primosNovos = primos.map(item => item.sku_primo);
+        const primosParaRemover = primosExistentes.filter(sku => !primosNovos.includes(sku));
+
+        for (const sku of primosParaRemover) {
+            const { error: delError } = await window.supabaseClient
+                .from('produto_skus_primos')
+                .delete()
+                .eq('sku_principal', skuPrincipal)
+                .eq('sku_primo', sku);
+            if (delError) throw delError;
+        }
+
+        for (const item of primos) {
+            if (!item.sku_primo) continue;
+            const { error: upsertError } = await window.supabaseClient
+                .from('produto_skus_primos')
+                .upsert({
+                    sku_principal: skuPrincipal,
+                    sku_primo: item.sku_primo,
+                    criado_por: (typeof currentUser !== 'undefined' && currentUser?.name) || null
+                }, { onConflict: 'sku_principal, sku_primo' });
+            if (upsertError) throw upsertError;
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Erro ao salvar SKUs primos:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function excluirSkusPrimos(skuPrincipal) {
+    if (!skuPrincipal || !window.supabaseClient) return { success: false, error: 'Dados inválidos' };
+    try {
+        const { error } = await window.supabaseClient
+            .from('produto_skus_primos')
+            .delete()
+            .eq('sku_principal', skuPrincipal);
+        if (error) throw error;
+        return { success: true };
+    } catch (error) {
+        console.error('Erro ao excluir SKUs primos:', error);
         return { success: false, error: error.message };
     }
 }
@@ -21507,8 +22624,38 @@ async function sincronizarEstoqueML(produto) {
 
     const WORKER_URL = window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
     const results = [];
-    const quantidadeReal = produto.quantidade;
+    let quantidadeReal = produto.quantidade;
     const skuProduto = produto.sku;
+
+    // =====================================================
+    // SKU PRIMO: se este produto está com uma substituição
+    // ativa (estoque zerado, coberto por um primo), a
+    // quantidade enviada pro Mercado Livre passa a ser a do
+    // primo — não a do produto original, que está em 0.
+    // =====================================================
+    try {
+        const { data: substituicaoAtiva } = await window.supabaseClient
+            .from('produto_substituicoes_ativas')
+            .select('sku_primo_ativo')
+            .eq('sku_principal', skuProduto)
+            .is('revertido_em', null)
+            .maybeSingle();
+
+        if (substituicaoAtiva?.sku_primo_ativo) {
+            const { data: produtoPrimo } = await window.supabaseClient
+                .from('produtos_estoque')
+                .select('quantidade')
+                .eq('sku', substituicaoAtiva.sku_primo_ativo)
+                .maybeSingle();
+
+            if (produtoPrimo) {
+                quantidadeReal = produtoPrimo.quantidade;
+                console.log(`🔁 [SKU Primo] ${skuProduto} substituído por ${substituicaoAtiva.sku_primo_ativo} — sincronizando com a referência de estoque do primo (${quantidadeReal}).`);
+            }
+        }
+    } catch (erroSubstituicaoSync) {
+        console.warn('⚠️ [SKU Primo] Erro verificando substituição ativa em sincronizarEstoqueML:', erroSubstituicaoSync);
+    }
     const categoria = produto.categoria;
     const marcaProduto = produto.dados_extra?.marca || '';
     const modeloProduto = produto.dados_extra?.modelo || '';
@@ -22178,13 +23325,47 @@ function calcularQuantidadeComRegras(
             );
 
 
-        const produtoEstoque =
+        let produtoEstoque =
             info.produtoEstoque ||
             encontrarProdutoEstoquePorSkuReal(
                 skuProduto
             ) ||
             produto ||
             null;
+
+
+        // =================================================
+        // SKU PRIMO: se este produto está com uma
+        // substituição ativa (estoque zerado, coberto por um
+        // primo), a referência de estoque passa a ser a do
+        // primo — o próprio SKU do anúncio já foi trocado.
+        // =================================================
+
+        if (
+            produtoEstoque &&
+            window._substituicoesSkuPrimoAtivas &&
+            window._substituicoesSkuPrimoAtivas[produtoEstoque.sku]
+        ) {
+
+            const skuPrimoAtivo =
+                window._substituicoesSkuPrimoAtivas[produtoEstoque.sku];
+
+            const produtoPrimo =
+                encontrarProdutoEstoquePorSkuReal(
+                    skuPrimoAtivo
+                );
+
+            if (produtoPrimo) {
+
+                console.log(
+                    `🔁 [SKU Primo] ${produtoEstoque.sku} substituído por ${skuPrimoAtivo} — usando estoque do primo como referência.`
+                );
+
+                produtoEstoque = produtoPrimo;
+
+            }
+
+        }
 
 
         if (!produtoEstoque) {
@@ -24282,6 +25463,11 @@ async function confirmarMovimentacaoEstoque() {
 
     const produto = produtosEstoque.find(p => p.id == id);
     if (!produto) return;
+
+    if (produto.eh_sku_composto === true) {
+        if (window.showToast) showToast('⚠️ A quantidade de um SKU Composto é calculada automaticamente a partir das partes — movimente o estoque das peças, não do composto.', 'warning');
+        return;
+    }
 
     let novaQuantidade = produto.quantidade;
     let tipoEntrada = null;
@@ -26716,6 +27902,61 @@ async function abrirModalProdutoEstoque(
 
 
         // =================================================
+        // SKU COMPOSTO
+        // =================================================
+
+        const checkboxSkuComposto =
+            document.getElementById(
+                'produtoEhSkuComposto'
+            );
+
+        if (checkboxSkuComposto) {
+            checkboxSkuComposto.checked =
+                produto.eh_sku_composto === true;
+        }
+
+        if (
+            typeof window.alternarSkuCompostoModalProduto ===
+            'function'
+        ) {
+            window.alternarSkuCompostoModalProduto();
+        }
+
+        // =================================================
+        // SKU COMPOSTO — carrega as peças já cadastradas
+        // (tabela própria, produto_sku_composto_partes)
+        // =================================================
+
+        try {
+            const partesExistentes = await carregarPartesComposto(produto.sku);
+            renderizarPartesComposto(partesExistentes);
+        } catch (erroPartesComposto) {
+            console.error('❌ Erro ao carregar peças do SKU Composto:', erroPartesComposto);
+            renderizarPartesComposto([]);
+        }
+
+        // =================================================
+        // SKU PRIMO (substitutos) — carrega lista existente
+        // =================================================
+
+        try {
+            const primosExistentes = await carregarSkusPrimos(produto.sku);
+            renderizarSkusPrimos(primosExistentes);
+
+            const checkboxTemPrimo = document.getElementById('produtoTemSkuPrimo');
+            if (checkboxTemPrimo) {
+                checkboxTemPrimo.checked = primosExistentes.length > 0;
+            }
+            if (typeof window.alternarSkuPrimoModalProduto === 'function') {
+                window.alternarSkuPrimoModalProduto();
+            }
+        } catch (erroPrimos) {
+            console.error('❌ Erro ao carregar SKUs primos:', erroPrimos);
+            renderizarSkusPrimos([]);
+        }
+
+
+        // =================================================
         // DADOS EXTRA
         // =================================================
 
@@ -27130,6 +28371,36 @@ async function abrirModalProdutoEstoque(
 
         categoriaSelect.value =
             '';
+
+
+        // =================================================
+        // SKU COMPOSTO — reseta pra produto novo
+        // =================================================
+
+        const checkboxSkuCompostoNovo =
+            document.getElementById(
+                'produtoEhSkuComposto'
+            );
+
+        if (checkboxSkuCompostoNovo) {
+            checkboxSkuCompostoNovo.checked = false;
+        }
+
+        if (
+            typeof window.alternarSkuCompostoModalProduto ===
+            'function'
+        ) {
+            window.alternarSkuCompostoModalProduto();
+        }
+
+        renderizarPartesComposto([]);
+
+        renderizarSkusPrimos([]);
+        const checkboxTemPrimoNovo = document.getElementById('produtoTemSkuPrimo');
+        if (checkboxTemPrimoNovo) checkboxTemPrimoNovo.checked = false;
+        if (typeof window.alternarSkuPrimoModalProduto === 'function') {
+            window.alternarSkuPrimoModalProduto();
+        }
 
 
         // =================================================
@@ -29498,6 +30769,43 @@ function renderizarSkusKit(skus) {
     });
 }
 
+function renderizarSkusPrimos(primos) {
+    const tbody = document.getElementById('primosSkusBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    if (!primos || primos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Nenhum SKU primo cadastrado.</td></tr>';
+        return;
+    }
+
+    primos.forEach((item) => {
+        const row = document.createElement('tr');
+        const skuPrimo = typeof item === 'string' ? item : (item.sku_primo || '');
+
+        row.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm primo-sku" value="${escapeHtml(skuPrimo)}" placeholder="SKU primo (substituto)">
+            </td>
+            <td>
+                <button type="button" class="btn btn-sm btn-danger remove-primo-sku">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+
+        row.querySelector('.remove-primo-sku').addEventListener('click', function() {
+            row.remove();
+            const rows = document.querySelectorAll('#primosSkusBody tr:not(.text-muted)');
+            if (rows.length === 0) {
+                document.getElementById('primosSkusBody').innerHTML = '<tr><td colspan="2" class="text-center text-muted">Nenhum SKU primo cadastrado.</td></tr>';
+            }
+        });
+    });
+}
+
 // =========================================================
 // INICIALIZAÇÃO
 // =========================================================
@@ -29569,6 +30877,8 @@ document.addEventListener(
 
 
         configurarEventosKit();
+        if (typeof configurarEventosPrimos === 'function') configurarEventosPrimos();
+        if (typeof configurarEventosCompostoPartes === 'function') configurarEventosCompostoPartes();
 
 
         paginaAtualEstoque =

@@ -4601,7 +4601,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
                 )
 
                 .select(
-                    'quantidade, dados_extra, historico_custos, bloquear_sync_ml, sku, nome'
+                    'quantidade, dados_extra, historico_custos, bloquear_sync_ml, sku, nome, eh_sku_composto'
                 )
 
                 .eq(
@@ -4613,6 +4613,107 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errProd) {
             throw errProd;
+        }
+
+        // =================================================
+        // SKU COMPOSTO: a entrada não vai pra linha do
+        // composto em si — ela é distribuída entre as peças
+        // que compõem ele (ex.: dar entrada de 1 "Cubo" dá
+        // entrada de verdade em 1 eixo + 1 corpo + 1 catraca,
+        // conforme cadastrado em produto_sku_composto_partes —
+        // tabela própria, sem relação com produto_skus_kit).
+        // =================================================
+
+        if (produto.eh_sku_composto === true) {
+
+            const { data: partesComposto, error: errPartes } =
+                await window.supabaseClient
+                    .from('produto_sku_composto_partes')
+                    .select('sku_parte, quantidade')
+                    .eq('sku_composto', produto.sku);
+
+            if (errPartes) throw errPartes;
+
+            if (!Array.isArray(partesComposto) || partesComposto.length === 0) {
+                showToast('⚠️ Este SKU Composto não tem partes cadastradas. Cadastre a composição no produto antes de dar entrada.', 'warning');
+                return;
+            }
+
+            for (const parte of partesComposto) {
+                const { data: produtoFilho, error: errFilho } =
+                    await window.supabaseClient
+                        .from('produtos_estoque')
+                        .select('id, quantidade')
+                        .eq('sku', parte.sku_parte)
+                        .maybeSingle();
+
+                if (errFilho || !produtoFilho) {
+                    console.warn(`⚠️ [SKU Composto] Parte ${parte.sku_parte} não encontrada no estoque — entrada dela foi pulada.`);
+                    continue;
+                }
+
+                const quantidadeParte = Number(parte.quantidade || 1) * quantidade;
+                const novaQuantidadeParte = (produtoFilho.quantidade || 0) + quantidadeParte;
+
+                await window.supabaseClient
+                    .from('produtos_estoque')
+                    .update({ quantidade: novaQuantidadeParte })
+                    .eq('id', produtoFilho.id);
+
+                await registrarMovimentacao(
+                    produtoFilho.id,
+                    'entrada',
+                    quantidadeParte,
+                    `ENT-${card.numero_entrada} (via composto ${produto.sku})`,
+                    'nova'
+                );
+            }
+
+            if (typeof recalcularQuantidadeSkuComposto === 'function') {
+                await recalcularQuantidadeSkuComposto(produto.sku);
+            }
+
+            // ---- ITEM ----
+            const { error: errItemComposto } = await window.supabaseClient
+                .from('entrada_items')
+                .update({
+                    status: 'entrada_realizada',
+                    acao: 'entrada',
+                    quantidade_entrada: quantidade,
+                    responsavel: currentUser.name,
+                    data_acao: getDataHoraLocalISO()
+                })
+                .eq('id', itemId);
+
+            if (errItemComposto) throw errItemComposto;
+
+            // ---- STATUS DO CARD ----
+            const concluidosComposto = card.itens.filter(i =>
+                i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
+            ).length + 1;
+
+            const totalComposto = card.itens.filter(i => i.status !== 'ignorado').length;
+            const novoStatusComposto = concluidosComposto === totalComposto ? 'finalizado' : 'pendente';
+
+            const { error: errCardComposto } = await window.supabaseClient
+                .from('entradas_cards')
+                .update({
+                    items_concluidos: concluidosComposto,
+                    status: novoStatusComposto,
+                    finalizado_em: novoStatusComposto === 'finalizado' ? getDataHoraLocalISO() : null,
+                    finalizado_por: novoStatusComposto === 'finalizado' ? currentUser.name : null
+                })
+                .eq('id', cardId);
+
+            if (errCardComposto) throw errCardComposto;
+
+            showToast(
+                `✅ Entrada de ${quantidade} unidade(s) de "${produto.sku}" distribuída entre ${partesComposto.length} parte(s) do SKU Composto!`,
+                'success'
+            );
+
+            await carregarEntradas();
+            return;
         }
 
         const novaQuantidade =

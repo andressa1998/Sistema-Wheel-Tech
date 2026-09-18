@@ -263,7 +263,8 @@
         regrasCache = (data || []).map(r => ({
             ...r,
             escada: Array.isArray(r.escada) ? r.escada : (r.escada ? JSON.parse(r.escada) : []),
-            overrides: (r.overrides && typeof r.overrides === 'object') ? r.overrides : (r.overrides ? JSON.parse(r.overrides) : {})
+            overrides: (r.overrides && typeof r.overrides === 'object') ? r.overrides : (r.overrides ? JSON.parse(r.overrides) : {}),
+            precos_base: (r.precos_base && typeof r.precos_base === 'object') ? r.precos_base : (r.precos_base ? JSON.parse(r.precos_base) : {})
         }));
         return regrasCache;
     }
@@ -328,11 +329,21 @@
 
                     if (!token) token = await obterTokenML();
 
-                    // captura preços base na 1ª vez
+                    // captura preços base na 1ª vez — usa a referência
+                    // que já foi salva NA REGRA quando ela foi criada
+                    // (r.precos_base). Só busca o preço atual do ML se
+                    // essa referência não existir pra este mlb (regra
+                    // antiga de antes desta correção, ou mlb adicionado
+                    // ao produto depois da regra já criada).
                     let base = (estado && estado.precos_base && Object.keys(estado.precos_base).length) ? estado.precos_base : null;
                     if (!base) {
                         base = {};
                         for (const mlb of mlbs) {
+                            const refSalva = r.precos_base && r.precos_base[mlb];
+                            if (refSalva != null) {
+                                base[mlb] = refSalva;
+                                continue;
+                            }
                             const pr = token ? await precoAtualMLB(mlb, token) : null;
                             base[mlb] = pr != null ? pr : 0;
                         }
@@ -385,6 +396,25 @@
             row.disparado_em = new Date().toISOString();
             await cli.from('regras_nivel_disparos').insert([row]);
         }
+    }
+
+    // Captura o preço ATUAL de cada mlb dos produtos do escopo — usada
+    // como referência fixa da regra a partir de agora. Só é chamada no
+    // momento de criar a regra (ou ao ajustar uma regra antiga que
+    // ainda não tinha essa referência salva); depois disso, os
+    // disparos usam sempre este valor salvo, não o preço do anúncio
+    // no momento em que o estoque cruza o nível.
+    async function capturarPrecosBaseEscopo(produtos, token) {
+        const precos = {};
+        if (!token) return precos;
+        for (const p of produtos) {
+            for (const mlb of mlbsDoProduto(p)) {
+                if (precos[mlb] != null) continue;
+                const pr = await precoAtualMLB(mlb, token);
+                if (pr != null) precos[mlb] = pr;
+            }
+        }
+        return precos;
     }
 
     async function aplicarPreco(mlb, novoPreco, token) {
@@ -832,13 +862,27 @@
 
         // ---- editando uma regra que já existe ----
         if (regraExistente) {
-            const { error } = await cli.from('regras_nivel_estoque').update({
+            const updatePayload = {
                 gatilho_qtd: gatilho,
                 escada: escadaFinal,
                 overrides: overridesFinal,
                 nome: nomeInformado || regraExistente.nome,
                 atualizado_em: new Date().toISOString()
-            }).eq('id', regraExistente.id);
+            };
+
+            // Regra antiga (de antes desta correção) sem referência de
+            // preço salva ainda — aproveita este salvamento pra
+            // capturar a referência agora, uma única vez. Regra que já
+            // tem referência salva NÃO é re-capturada aqui, só na
+            // criação — editar degraus não deve mudar a base.
+            if (!regraExistente.precos_base || !Object.keys(regraExistente.precos_base).length) {
+                if (!previewToken) previewToken = await obterTokenML();
+                if (previewToken) {
+                    updatePayload.precos_base = await capturarPrecosBaseEscopo(produtosDoEscopo(regraExistente), previewToken);
+                }
+            }
+
+            const { error } = await cli.from('regras_nivel_estoque').update(updatePayload).eq('id', regraExistente.id);
             if (error) { toast('Erro ao salvar: ' + error.message, 'error'); return; }
             toast('✅ Regra atualizada. Verificando os produtos…', 'success');
             regraEditandoId = null;
@@ -855,9 +899,18 @@
 
         const nome = nomeInformado || `${descreverEscopoObj(escopo)} · gatilho ${gatilho}`.slice(0, 90);
 
-        const jaNoGatilho = produtosDoEscopo(escopo).filter(p => (Number(p.quantidade) || 0) <= gatilho);
+        const produtosEscopo = produtosDoEscopo(escopo);
+        const jaNoGatilho = produtosEscopo.filter(p => (Number(p.quantidade) || 0) <= gatilho);
         if (jaNoGatilho.length && !confirm(
             `${jaNoGatilho.length} produto(s) já estão com estoque ≤ ${gatilho}.\nAo criar a regra, os preços dos anúncios deles vão ser alterados AGORA. Confirmar?`)) return;
+
+        // Referência de preço fixada AGORA, no momento de criar a
+        // regra — os disparos futuros (mesmo dias/semanas depois,
+        // quando o estoque realmente cruzar o nível) sempre partem
+        // deste valor salvo, não do preço que o anúncio tiver no
+        // instante do disparo.
+        if (!previewToken) previewToken = await obterTokenML();
+        const precosBase = previewToken ? await capturarPrecosBaseEscopo(produtosEscopo, previewToken) : {};
 
         const { error } = await cli.from('regras_nivel_estoque').insert([{
             nome, ativo: true,
@@ -869,6 +922,7 @@
             gatilho_qtd: gatilho,
             escada: escadaFinal,
             overrides: overridesFinal,
+            precos_base: precosBase,
             criado_por: (window.currentUser && window.currentUser.name) || 'admin'
         }]);
         if (error) { toast('Erro ao criar: ' + error.message, 'error'); return; }
