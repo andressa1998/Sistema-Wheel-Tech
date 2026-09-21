@@ -73921,16 +73921,43 @@ async function carregarCadastroClientesNFE() {
                     </div>
 
 
-                    <button
-                        type="button"
-                        class="btn btn-success"
-                        onclick="abrirModalCadastroClienteNFE()"
-                    >
-                        <i class="fas fa-user-plus"></i>
-                        Novo Cliente
-                    </button>
+                    <div class="d-flex gap-2">
+
+                        ${
+                            window.currentUser?.username === 'andressamiotto'
+                                ? `
+                                    <button
+                                        type="button"
+                                        class="btn btn-warning"
+                                        onclick="abrirModalImportarClientesPlanilhaNFE()"
+                                        title="Importar clientes de uma planilha (só andressamiotto)"
+                                    >
+                                        <i class="fas fa-file-import"></i>
+                                        Importar Planilha
+                                    </button>
+                                `
+                                : ''
+                        }
+
+                        <button
+                            type="button"
+                            class="btn btn-success"
+                            onclick="abrirModalCadastroClienteNFE()"
+                        >
+                            <i class="fas fa-user-plus"></i>
+                            Novo Cliente
+                        </button>
+
+                    </div>
 
                 </div>
+
+
+                ${
+                    window.currentUser?.username === 'andressamiotto'
+                        ? await gerarSecaoContatosImportadosNFE()
+                        : ''
+                }
 
 
                 <div class="table-responsive">
@@ -74151,6 +74178,396 @@ async function carregarCadastroClientesNFE() {
         `;
     }
 }
+
+
+// =========================================================
+// IMPORTAÇÃO DE CLIENTES POR PLANILHA (só andressamiotto)
+//
+// O cadastro oficial de cliente de NF-e (API externa) exige
+// CPF/CNPJ obrigatório. A planilha que a Andressa importa de outro
+// sistema não tem essa coluna — então os contatos ficam guardados
+// numa tabela própria (Supabase, local) até alguém completar o
+// documento e "promover" pra cliente oficial.
+// =========================================================
+
+function usuarioPodeImportarClientesPlanilhaNFE() {
+    return window.currentUser?.username === 'andressamiotto';
+}
+
+async function gerarSecaoContatosImportadosNFE() {
+
+    if (!usuarioPodeImportarClientesPlanilhaNFE()) {
+        return '';
+    }
+
+    if (!window.supabaseClient) {
+        return '';
+    }
+
+    let contatos = [];
+
+    try {
+
+        const { data, error } =
+            await window.supabaseClient
+                .from('clientes_planilha_importados')
+                .select('*')
+                .is('cliente_nfe_id', null)
+                .order('importado_em', { ascending: false })
+                .limit(500);
+
+        if (error) throw error;
+
+        contatos = data || [];
+
+    } catch (erroContatos) {
+
+        console.error('❌ Erro carregando contatos importados:', erroContatos);
+        return '';
+    }
+
+    if (contatos.length === 0) {
+        return '';
+    }
+
+    return `
+        <div class="card mb-3" style="border: 1px solid #ffe08a; background: #fffaf0;">
+            <div class="card-header" style="background: #fff3cd; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                <div>
+                    <strong style="color:#8a6d00;"><i class="fas fa-address-book"></i> Contatos importados sem CPF/CNPJ (${contatos.length})</strong>
+                    <br>
+                    <small style="color:#8a6d00;">Vieram da planilha, mas ainda não têm documento — não dá pra emitir nota pra eles até alguém completar isso. Use "Cadastrar oficial" quando tiver o CPF/CNPJ em mãos.</small>
+                </div>
+            </div>
+            <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                <table class="table table-sm table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>Nome / Razão Social</th>
+                            <th>Tipo</th>
+                            <th>Celular</th>
+                            <th>Telefone</th>
+                            <th>E-mail</th>
+                            <th>Cidade / UF</th>
+                            <th style="width:170px;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${contatos.map(contato => `
+                            <tr>
+                                <td>${escaparHTMLCadastroNFE(contato.nome || contato.razao_social || '-')}</td>
+                                <td>${escaparHTMLCadastroNFE(contato.tipo_pessoa || '-')}</td>
+                                <td>${escaparHTMLCadastroNFE(contato.celular || '-')}</td>
+                                <td>${escaparHTMLCadastroNFE(contato.telefone || '-')}</td>
+                                <td>${escaparHTMLCadastroNFE(contato.email || '-')}</td>
+                                <td>${escaparHTMLCadastroNFE(contato.cidade || '-')} ${contato.estado ? '/ ' + escaparHTMLCadastroNFE(contato.estado) : ''}</td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-success" onclick="promoverContatoImportadoNFE(${Number(contato.id)})" title="Cadastrar como cliente oficial de NF-e">
+                                        <i class="fas fa-user-check"></i> Cadastrar oficial
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-danger" onclick="excluirContatoImportadoNFE(${Number(contato.id)})" title="Excluir este contato importado">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+window.promoverContatoImportadoNFE = async function(id) {
+
+    if (!usuarioPodeImportarClientesPlanilhaNFE()) {
+        showToast('⛔ Função disponível apenas para Andressa.', 'warning');
+        return;
+    }
+
+    try {
+
+        const { data: contato, error } =
+            await window.supabaseClient
+                .from('clientes_planilha_importados')
+                .select('*')
+                .eq('id', id)
+                .single();
+
+        if (error) throw error;
+
+        abrirModalCadastroClienteNFE();
+
+        setTimeout(() => {
+
+            const nomeInput = document.getElementById('cadClienteNome');
+            const cidadeInput = document.getElementById('cadClienteCidade');
+            const ufInput = document.getElementById('cadClienteUF');
+
+            if (nomeInput) nomeInput.value = contato.nome || contato.razao_social || '';
+            if (cidadeInput) cidadeInput.value = contato.cidade || '';
+            if (ufInput) ufInput.value = contato.estado || '';
+
+            showToast('📋 Dados pré-preenchidos — falta só o CPF/CNPJ pra salvar.', 'info');
+
+        }, 200);
+
+    } catch (erroPromover) {
+
+        console.error('❌ Erro ao promover contato importado:', erroPromover);
+        showToast('❌ Erro: ' + erroPromover.message, 'error');
+    }
+};
+
+window.excluirContatoImportadoNFE = async function(id) {
+
+    if (!usuarioPodeImportarClientesPlanilhaNFE()) {
+        showToast('⛔ Função disponível apenas para Andressa.', 'warning');
+        return;
+    }
+
+    if (!confirm('Excluir este contato importado? Isso não afeta nenhum cliente oficial de NF-e.')) {
+        return;
+    }
+
+    try {
+
+        const { error } =
+            await window.supabaseClient
+                .from('clientes_planilha_importados')
+                .delete()
+                .eq('id', id);
+
+        if (error) throw error;
+
+        showToast('🗑️ Contato removido.', 'success');
+        await carregarCadastroClientesNFE();
+
+    } catch (erroExcluir) {
+
+        console.error('❌ Erro ao excluir contato importado:', erroExcluir);
+        showToast('❌ Erro: ' + erroExcluir.message, 'error');
+    }
+};
+
+window.abrirModalImportarClientesPlanilhaNFE = function() {
+
+    if (!usuarioPodeImportarClientesPlanilhaNFE()) {
+        showToast('⛔ Função disponível apenas para Andressa.', 'warning');
+        return;
+    }
+
+    fecharModalImportarClientesPlanilhaNFE();
+
+    const modal = document.createElement('div');
+    modal.id = 'modalImportarClientesPlanilhaNFE';
+    modal.className = 'modal';
+    modal.style.cssText = `
+        display:flex;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.55);
+        z-index:11000;
+        align-items:center;
+        justify-content:center;
+        padding:20px;
+    `;
+
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:520px; width:100%; background:#fff; padding:25px; border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3 style="margin:0;"><i class="fas fa-file-import"></i> Importar Clientes (planilha)</h3>
+                <button type="button" onclick="fecharModalImportarClientesPlanilhaNFE()" style="background:none; border:none; font-size:22px; cursor:pointer; color:#6c757d;">&times;</button>
+            </div>
+
+            <p style="font-size:13px; color:#6c757d;">
+                Aceita um arquivo .xlsx com as colunas <strong>Tipo, Nome, Razão Social, Telefone, Celular, E-mail, Cidade, Estado</strong>
+                (não precisa ter todas — o que não tiver fica em branco). Como não tem CPF/CNPJ, esses contatos entram como
+                "aguardando documento" e não aparecem ainda na lista oficial de clientes de NF-e.
+            </p>
+
+            <div class="form-group">
+                <input type="file" id="inputImportarClientesPlanilhaNFE" class="form-control" accept=".xlsx,.xls">
+            </div>
+
+            <div id="statusImportarClientesPlanilhaNFE" style="font-size:13px; margin-top:10px;"></div>
+
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:20px;">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalImportarClientesPlanilhaNFE()">Cancelar</button>
+                <button type="button" class="btn btn-warning" id="btnProcessarImportarClientesPlanilhaNFE" onclick="processarImportacaoClientesPlanilhaNFE()">
+                    <i class="fas fa-upload"></i> Importar
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+};
+
+window.fecharModalImportarClientesPlanilhaNFE = function() {
+    const modal = document.getElementById('modalImportarClientesPlanilhaNFE');
+    if (modal) modal.remove();
+};
+
+window.processarImportacaoClientesPlanilhaNFE = async function() {
+
+    if (!usuarioPodeImportarClientesPlanilhaNFE()) {
+        showToast('⛔ Função disponível apenas para Andressa.', 'warning');
+        return;
+    }
+
+    const fileInput = document.getElementById('inputImportarClientesPlanilhaNFE');
+    const statusEl = document.getElementById('statusImportarClientesPlanilhaNFE');
+    const botao = document.getElementById('btnProcessarImportarClientesPlanilhaNFE');
+
+    const arquivo = fileInput?.files?.[0];
+
+    if (!arquivo) {
+        showToast('⚠️ Selecione um arquivo primeiro.', 'warning');
+        return;
+    }
+
+    if (typeof XLSX === 'undefined') {
+        showToast('❌ Biblioteca de planilha não carregada.', 'error');
+        return;
+    }
+
+    if (botao) {
+        botao.disabled = true;
+        botao.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importando...';
+    }
+
+    if (statusEl) statusEl.textContent = 'Lendo planilha...';
+
+    try {
+
+        const buffer = await arquivo.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const primeiraAba = workbook.SheetNames[0];
+        const planilha = workbook.Sheets[primeiraAba];
+
+        const linhas = XLSX.utils.sheet_to_json(planilha, { defval: '' });
+
+        if (!linhas.length) {
+            throw new Error('A planilha está vazia.');
+        }
+
+        // Mapeia as colunas pelo NOME do cabeçalho (não pela posição),
+        // ignorando maiúsculas/minúsculas e espaços — assim funciona
+        // mesmo se a ordem das colunas mudar de uma planilha pra outra.
+        const normalizarCabecalho = (texto) =>
+            String(texto || '').trim().toLowerCase();
+
+        const primeiraLinha = linhas[0];
+        const mapaColunas = {};
+
+        Object.keys(primeiraLinha).forEach(coluna => {
+            const chave = normalizarCabecalho(coluna);
+            if (chave.includes('tipo')) mapaColunas.tipo = coluna;
+            else if (chave === 'nome') mapaColunas.nome = coluna;
+            else if (chave.includes('razão') || chave.includes('razao')) mapaColunas.razaoSocial = coluna;
+            else if (chave.includes('telefone')) mapaColunas.telefone = coluna;
+            else if (chave.includes('celular')) mapaColunas.celular = coluna;
+            else if (chave.includes('mail')) mapaColunas.email = coluna;
+            else if (chave.includes('cidade')) mapaColunas.cidade = coluna;
+            else if (chave.includes('estado') || chave === 'uf') mapaColunas.estado = coluna;
+        });
+
+        if (statusEl) statusEl.textContent = 'Verificando contatos já importados...';
+
+        const { data: existentes, error: erroExistentes } =
+            await window.supabaseClient
+                .from('clientes_planilha_importados')
+                .select('nome')
+                .limit(20000);
+
+        if (erroExistentes) throw erroExistentes;
+
+        const nomesJaImportados = new Set(
+            (existentes || []).map(c => String(c.nome || '').trim().toLowerCase())
+        );
+
+        const paraInserir = [];
+        let ignoradosVazios = 0;
+        let ignoradosDuplicados = 0;
+
+        linhas.forEach(linha => {
+
+            const nome =
+                String(linha[mapaColunas.nome] || '').trim() ||
+                String(linha[mapaColunas.razaoSocial] || '').trim();
+
+            if (!nome) {
+                ignoradosVazios++;
+                return;
+            }
+
+            const chave = nome.toLowerCase();
+
+            if (nomesJaImportados.has(chave)) {
+                ignoradosDuplicados++;
+                return;
+            }
+
+            nomesJaImportados.add(chave);
+
+            paraInserir.push({
+                tipo_pessoa: String(linha[mapaColunas.tipo] || '').trim() || null,
+                nome: nome,
+                razao_social: String(linha[mapaColunas.razaoSocial] || '').trim() || null,
+                telefone: String(linha[mapaColunas.telefone] || '').trim() || null,
+                celular: String(linha[mapaColunas.celular] || '').trim() || null,
+                email: String(linha[mapaColunas.email] || '').trim() || null,
+                cidade: String(linha[mapaColunas.cidade] || '').trim() || null,
+                estado: String(linha[mapaColunas.estado] || '').trim() || null,
+                importado_por: currentUser?.name || 'Andressa'
+            });
+        });
+
+        if (paraInserir.length === 0) {
+            if (statusEl) statusEl.textContent = '';
+            showToast(`⚠️ Nada pra importar (${ignoradosVazios} sem nome, ${ignoradosDuplicados} já importados antes).`, 'warning');
+            return;
+        }
+
+        if (statusEl) statusEl.textContent = `Salvando ${paraInserir.length} contato(s)...`;
+
+        // Insere em lotes de 500 pra não estourar limite de payload.
+        const TAMANHO_LOTE = 500;
+
+        for (let i = 0; i < paraInserir.length; i += TAMANHO_LOTE) {
+            const lote = paraInserir.slice(i, i + TAMANHO_LOTE);
+            const { error: erroInsert } =
+                await window.supabaseClient
+                    .from('clientes_planilha_importados')
+                    .insert(lote);
+            if (erroInsert) throw erroInsert;
+        }
+
+        showToast(
+            `✅ ${paraInserir.length} contato(s) importado(s)! ${ignoradosDuplicados} já existiam, ${ignoradosVazios} sem nome foram ignorados.`,
+            'success'
+        );
+
+        fecharModalImportarClientesPlanilhaNFE();
+        await carregarCadastroClientesNFE();
+
+    } catch (erroImportacao) {
+
+        console.error('❌ Erro importando clientes da planilha:', erroImportacao);
+
+        if (statusEl) statusEl.textContent = '';
+
+        showToast('❌ Erro ao importar: ' + erroImportacao.message, 'error');
+
+    } finally {
+
+        if (botao) {
+            botao.disabled = false;
+            botao.innerHTML = '<i class="fas fa-upload"></i> Importar';
+        }
+    }
+};
 
 
 // =========================================================

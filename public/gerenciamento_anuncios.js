@@ -37,6 +37,12 @@
 
         productBySku: new Map(),
 
+        // Índice pelo SKU INTEIRO (sem truncar pra 8 caracteres) —
+        // consultado primeiro, pra evitar que dois produtos
+        // diferentes com os mesmos 8 primeiros caracteres colidam
+        // no índice truncado (ver warehouseStock).
+        productBySkuExato: new Map(),
+
         productsByMlb: new Map(),
 
         listingTypeNames: new Map(),
@@ -989,6 +995,25 @@
             }
 
 
+            const skuExato =
+                produto.sku
+                    ? String(produto.sku).trim().toUpperCase()
+                    : '';
+
+            if (
+                skuExato &&
+                !GA.productBySkuExato.has(
+                    skuExato
+                )
+            ) {
+
+                GA.productBySkuExato.set(
+                    skuExato,
+                    produto
+                );
+            }
+
+
             const mlbCodesRaw =
 
                 produto.mlb_codes ??
@@ -1214,7 +1239,17 @@
                     );
 
 
+                // Tenta o SKU EXATO primeiro — só cai pro índice
+                // truncado (8 caracteres) se não achar, porque o
+                // truncado pode colidir entre produtos diferentes
+                // com prefixo parecido (ex.: peças pequenas tipo
+                // "Emenda Corrente" / "Abraçadeira").
                 const produto =
+                    GA.productBySkuExato.get(
+                        String(skuProduto)
+                            .trim()
+                            .toUpperCase()
+                    ) ||
                     GA.productBySku.get(
                         skuBusca
                     );
@@ -1289,10 +1324,25 @@
 
             // =================================================
             // SÓ RETORNAR SE ENCONTROU TODOS OS COMPONENTES
+            //
+            // Se algum componente do SKU do anúncio não foi achado
+            // no estoque interno, NÃO cai no fallback por MLB
+            // abaixo — isso podia devolver o estoque de um produto
+            // totalmente diferente (só porque está associado ao
+            // mesmo MLB), fazendo o sistema achar que "tem estoque
+            // disponível" quando na verdade o produto certo está
+            // zerado ou nem cadastrado. Retorna 0 (indisponível)
+            // direto.
             // =================================================
 
             if (
-                !algumProdutoNaoEncontrado &&
+                algumProdutoNaoEncontrado
+            ) {
+
+                return 0;
+            }
+
+            if (
                 Number.isFinite(
                     quantidadePossivel
                 )
@@ -1310,6 +1360,9 @@
     // =========================================================
     // FALLBACK POR MLB
     //
+    // Só chega aqui quando o SKU do anúncio estava vazio/não deu
+    // pra tentar nenhuma parte (não é o caso de "achou algumas
+    // partes mas faltou uma" — esse caso já retornou 0 acima).
     // Só usar quando houver exatamente um produto associado.
     // =========================================================
 
@@ -8038,6 +8091,16 @@ function gaPrecisaCorrigirTipo(
         return false;
     }
 
+    // Variação zerada no full não tem como vender de qualquer jeito —
+    // "não vende há 30+ dias" não é sinal de que precisa de mais
+    // exposição, é sinal de falta de estoque (outro alerta já cobre
+    // isso). Não sugere Premium aqui.
+    if (
+        row?._fullAtivoSemEstoqueReal
+    ) {
+        return false;
+    }
+
     return (
         (
             gaMaisDe30DiasSemVender(
@@ -8545,11 +8608,20 @@ function aplicarAlertasPorVariacaoGA() {
 
                 if (todasZeradas) {
 
-                    linhas.forEach(
-                        row => {
-                            row._fullAtivoSemEstoqueReal = true;
-                        }
-                    );
+                    // Só marca a(s) variação(ões) que ELA MESMA está
+                    // ativa no full — antes marcava o item inteiro,
+                    // inclusive variações-irmãs que nunca ofereceram
+                    // full (têm full=0 naturalmente, não é um erro
+                    // delas).
+                    linhas
+                        .filter(
+                            row => row.ativoNoFull === true
+                        )
+                        .forEach(
+                            row => {
+                                row._fullAtivoSemEstoqueReal = true;
+                            }
+                        );
                 }
             }
 
@@ -9990,10 +10062,11 @@ function gaRenderBadgeStatusFullGA(
         row._fullAtivoSemEstoqueReal
     ) {
 
+        // Zerado mas ainda ativo no FULL: manda pra tela de gestão
+        // de espaço do Fulfillment (é lá que se resolve isso), não
+        // pra edição normal do anúncio.
         const url =
-            gaUrlModificarAnuncio(
-                row.itemId
-            );
+            'https://vendedores.mercadolivre.com.br/anuncios/lista/space_management';
 
         return `
             <div style="font-size:10px; font-weight:700; color:#fd7e14; margin-top:2px;">
@@ -10010,9 +10083,9 @@ function gaRenderBadgeStatusFullGA(
                     style="color:#fd7e14;"
                 >
 
-                    <i class="fas fa-edit"></i>
+                    <i class="fas fa-boxes-stacked"></i>
 
-                    Conferir anúncio
+                    Gerenciar no Full
 
                 </a>
 

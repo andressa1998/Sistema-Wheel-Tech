@@ -9072,6 +9072,7 @@ async function loadOrders(forcarAtualizacao = false) {
                             criado_por,
                             data_criacao,
                             data_inicio,
+                            data_inicio_revisao,
                             data_conclusao,
                             ultima_atualizacao,
                             conferido,
@@ -9288,6 +9289,10 @@ async function loadOrders(forcarAtualizacao = false) {
 
                                 startedAt:
                                     order.data_inicio ||
+                                    null,
+
+                                dataInicioRevisao:
+                                    order.data_inicio_revisao ||
                                     null,
 
                                 completionDate:
@@ -12473,6 +12478,67 @@ function calcularTempoExecucaoOS(
 
 
 // ============================================
+// TEMPO DE CORREÇÃO (REVISÃO)
+//
+// Igual calcularTempoExecucaoOS, mas conta a partir de
+// dataInicioRevisao (quando a pessoa deu play na OS depois dela
+// voltar rejeitada) em vez do início original — assim o tempo de
+// correção não fica misturado com o tempo da execução nova.
+// ============================================
+function calcularTempoRevisaoOS(
+    order,
+    dataReferencia = new Date()
+) {
+
+    if (
+        !order ||
+        !order.motivo_rejeicao ||
+        !order.dataInicioRevisao
+    ) {
+        return 0;
+    }
+
+
+    const inicio =
+        order.dataInicioRevisao;
+
+
+    let fim = null;
+
+
+    if (
+        order.status === 'concluida' &&
+        order.completionDate
+    ) {
+
+        fim =
+            new Date(
+                order.completionDate
+            );
+
+    } else if (
+        order.status === 'andamento'
+    ) {
+
+        fim =
+            new Date(
+                dataReferencia
+            );
+
+    } else {
+
+        return 0;
+    }
+
+
+    return calcularMinutosUteisOS(
+        inicio,
+        fim
+    );
+}
+
+
+// ============================================
 // MÉDIA DE TEMPO POR FOTO
 // ============================================
 function calcularMediaTempoPorFotoOS(
@@ -14395,15 +14461,18 @@ if (
 
                 if (
                     order.status ===
-                        'pendente' &&
-                    !order.motivo_rejeicao
+                        'pendente'
                 ) {
 
                     actionButtons += `
                         <button
                             class="btn btn-success btn-sm"
                             onclick="startOrder('${order.id}')"
-                            title="Iniciar OS"
+                            title="${
+                                order.motivo_rejeicao
+                                    ? 'Iniciar correção (revisão)'
+                                    : 'Iniciar OS'
+                            }"
                         >
                             <i class="fas fa-play"></i>
                         </button>
@@ -15281,6 +15350,25 @@ window.startOrder =
             }
 
 
+            // OS em revisão (voltou pendente com motivo_rejeicao) —
+            // marca o início DESTA correção separado do início
+            // original, pra medir o tempo de correção à parte do
+            // tempo da execução nova (ver gerarRelatorioOS).
+            let inicioRevisao =
+                null;
+
+            if (
+                order.motivo_rejeicao
+            ) {
+
+                inicioRevisao =
+                    agoraISO;
+
+                updateData.data_inicio_revisao =
+                    inicioRevisao;
+            }
+
+
             if (supabaseClient) {
 
                 const {
@@ -15315,6 +15403,15 @@ window.startOrder =
 
             order.startedAt =
                 inicioExecucao;
+
+
+            if (
+                inicioRevisao
+            ) {
+
+                order.dataInicioRevisao =
+                    inicioRevisao;
+            }
 
 
             order.updatedAt =
@@ -21821,13 +21918,16 @@ async function buscarTodasOSParaRelatorio(
                         criado_por,
                         data_criacao,
                         data_inicio,
+                        data_inicio_revisao,
                         data_conclusao,
                         ultima_atualizacao,
                         conferido,
                         conferido_por,
                         data_conferencia,
                         prazo_horas,
-                        prazo_esperado
+                        prazo_esperado,
+                        motivo_rejeicao,
+                        data_rejeicao
                     `)
                     .order(
                         'data_criacao',
@@ -21981,6 +22081,10 @@ async function buscarTodasOSParaRelatorio(
                         order.data_inicio ||
                         null,
 
+                    dataInicioRevisao:
+                        order.data_inicio_revisao ||
+                        null,
+
                     completionDate:
                         order.data_conclusao ||
                         null,
@@ -22008,6 +22112,14 @@ async function buscarTodasOSParaRelatorio(
 
                     prazo_esperado:
                         order.prazo_esperado ||
+                        null,
+
+                    motivo_rejeicao:
+                        order.motivo_rejeicao ||
+                        null,
+
+                    data_rejeicao:
+                        order.data_rejeicao ||
                         null
                 })
             );
@@ -23987,6 +24099,72 @@ function atualizarResumoRelatorioOS(
             ? formatarDuracaoOS(
                 mediaFoto
             )
+            : '-'
+    );
+
+
+    // =====================================================
+    // TEMPO MÉDIO: OS NOVAS x CORREÇÕES (REVISÃO)
+    //
+    // "Nova" = nunca foi rejeitada (motivo_rejeicao vazio).
+    // "Revisão" = foi rejeitada em algum momento — o tempo
+    // contado é só o da correção (dataInicioRevisao até a
+    // conclusão), não o ciclo inteiro desde a criação.
+    // =====================================================
+
+    const concluidasNovas =
+        concluidas.filter(
+            order => !order.motivo_rejeicao
+        );
+
+    const concluidasRevisao =
+        dados.filter(
+            order =>
+                order.status === 'concluida' &&
+                order.completionDate &&
+                order.motivo_rejeicao &&
+                order.dataInicioRevisao
+        );
+
+    let totalMinutosNovas = 0;
+
+    concluidasNovas.forEach(
+        order => {
+            totalMinutosNovas +=
+                calcularTempoExecucaoOS(order);
+        }
+    );
+
+    let totalMinutosRevisao = 0;
+
+    concluidasRevisao.forEach(
+        order => {
+            totalMinutosRevisao +=
+                calcularTempoRevisaoOS(order);
+        }
+    );
+
+    const mediaNovas =
+        concluidasNovas.length > 0
+            ? totalMinutosNovas / concluidasNovas.length
+            : 0;
+
+    const mediaRevisao =
+        concluidasRevisao.length > 0
+            ? totalMinutosRevisao / concluidasRevisao.length
+            : 0;
+
+    setText(
+        'relResumoTempoMedioNovas',
+        concluidasNovas.length > 0
+            ? formatarDuracaoOS(mediaNovas)
+            : '-'
+    );
+
+    setText(
+        'relResumoTempoMedioRevisao',
+        concluidasRevisao.length > 0
+            ? formatarDuracaoOS(mediaRevisao)
             : '-'
     );
 }
