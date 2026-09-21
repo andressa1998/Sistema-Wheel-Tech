@@ -1096,6 +1096,14 @@ async function renderizarEntradas() {
             cardsFiltrados.filter(
                 c => c.status === 'finalizado'
             );
+
+    } else if (
+        filtroEntradasAtual === 'a_caminho'
+    ) {
+        cardsFiltrados =
+            cardsFiltrados.filter(
+                c => c.status === 'a_caminho'
+            );
     }
 
     // =====================================================
@@ -1176,6 +1184,9 @@ async function renderizarEntradas() {
                         filtroEntradasAtual === 'finalizado'
                             ? 'Nenhuma entrada finalizada ainda.'
                             :
+                        filtroEntradasAtual === 'a_caminho'
+                            ? 'Nenhuma entrada a caminho no momento.'
+                            :
                         somenteXML
                             ? 'Envie um XML para começar uma nova entrada.'
                             : 'Cole os dados acima ou envie um XML e clique em "Processar Entrada" para começar.'
@@ -1252,6 +1263,9 @@ async function renderizarEntradas() {
         const isFinalizado =
             card.status === 'finalizado';
 
+        const isACaminho =
+            card.status === 'a_caminho';
+
         const criadoEm =
             formatarDataHora(
                 card.criado_em
@@ -1320,14 +1334,18 @@ async function renderizarEntradas() {
                                 class="badge ${
                                     isFinalizado
                                         ? 'badge-success'
-                                        : 'badge-warning'
+                                        : isACaminho
+                                            ? 'badge-info'
+                                            : 'badge-warning'
                                 } ml-2"
                             >
 
                                 ${
                                     isFinalizado
                                         ? '✅ Finalizado'
-                                        : '⏳ Pendente'
+                                        : isACaminho
+                                            ? '🚚 A caminho'
+                                            : '⏳ Pendente'
                                 }
 
                             </span>
@@ -1430,6 +1448,21 @@ async function renderizarEntradas() {
                             </small>
 
                         </div>
+
+                        ${
+                            isACaminho
+                                ? `
+                                    <button
+                                        class="btn btn-warning"
+                                        onclick="marcarEntradaChegou('${card.id}')"
+                                        title="Marcar toda a entrada como chegada"
+                                    >
+                                        <i class="fas fa-truck-loading"></i>
+                                        Chegou
+                                    </button>
+                                `
+                                : ''
+                        }
 
                         ${
                             !isFinalizado
@@ -1669,6 +1702,7 @@ async function renderizarEntradas() {
                 }
 
                 const entradaUrgente =
+                    !isACaminho &&
                     !!produtoExistente &&
                     !isConcluido &&
                     quantidadeAtualProduto !== null &&
@@ -1694,8 +1728,21 @@ async function renderizarEntradas() {
 
                 let acaoHtml = '';
 
+                // ENTRADA "A CAMINHO" — nenhum botão de ação por
+                // item aqui. Só quando alguém clicar "Chegou" (no
+                // cabeçalho do card) é que a entrada vira "pendente"
+                // e os botões normais (Dar Entrada/Cadastrar/etc.)
+                // voltam a aparecer.
+                if (isACaminho) {
+
+                    acaoHtml = `
+                        <span class="badge badge-info">
+                            🚚 Aguardando chegada
+                        </span>
+                    `;
+
                 // ITEM JÁ CONCLUÍDO
-                if (
+                } else if (
                     isConcluido &&
                     !isIgnorado
                 ) {
@@ -2739,6 +2786,204 @@ async function verificarDuplicidadeEntrada(referencia, sku) {
 }
 
 // ============================================
+// CRIAR ENTRADA(S) COM MESCLAGEM AUTOMÁTICA POR RASTREIO
+//
+// Antes de criar uma entrada nova, verifica se algum dos itens tem
+// o mesmo "rastreio" de um item que já existe em OUTRA entrada
+// (independente do status dela — pendente, a_caminho ou já
+// finalizada). Se achar, esses itens entram DIRETO naquela entrada
+// já existente (sem criar entrada nova pra eles), e a entrada
+// existente volta pra "pendente" — mantendo os itens que já
+// tinham sido processados exatamente como estavam. Só os itens
+// que realmente não batem com nada viram uma entrada nova, com
+// status "a_caminho".
+//
+// dadosCardBase: os campos fixos do card (numero_entrada,
+// dados_brutos, criado_por, criado_em, tipo_entrada, fornecedor,
+// nf_numero, nf_data) — tudo que NÃO depende de qual card os itens
+// acabam entrando.
+//
+// Retorna { cardsAfetados: [{cardId, tipo: 'mesclado'|'novo',
+// quantidadeItens, numeroEntrada}], totalMesclados, totalNovos }.
+// ============================================
+async function criarOuMesclarEntradaPorRastreio(itensNovos, dadosCardBase) {
+
+    if (!window.supabaseClient) {
+        throw new Error('Supabase não conectado');
+    }
+
+    const rastreiosDoLote =
+        [...new Set(
+            itensNovos
+                .map(item => (item.rastreio || '').trim())
+                .filter(Boolean)
+        )];
+
+    let itemsExistentes = [];
+
+    if (rastreiosDoLote.length > 0) {
+
+        const { data, error } = await window.supabaseClient
+            .from('entrada_items')
+            .select('entrada_id, rastreio')
+            .in('rastreio', rastreiosDoLote);
+
+        if (error) throw error;
+
+        itemsExistentes = data || [];
+    }
+
+    // Pra cada rastreio já visto, guarda em qual entrada ele mora.
+    // "Primeiro achado, primeiro servido" — se por algum motivo
+    // o mesmo rastreio já morasse em mais de uma entrada antiga
+    // (não deveria acontecer), todos os itens novos vão pra
+    // mesma, evitando espalhar ainda mais.
+    const cardIdPorRastreio = new Map();
+
+    itemsExistentes.forEach(item => {
+        if (!cardIdPorRastreio.has(item.rastreio)) {
+            cardIdPorRastreio.set(item.rastreio, item.entrada_id);
+        }
+    });
+
+    const itensParaMesclar = new Map(); // cardId -> [itens]
+    const itensGenuinamenteNovos = [];
+
+    itensNovos.forEach(item => {
+
+        const rastreio = (item.rastreio || '').trim();
+        const cardExistente = rastreio ? cardIdPorRastreio.get(rastreio) : null;
+
+        if (cardExistente) {
+
+            if (!itensParaMesclar.has(cardExistente)) {
+                itensParaMesclar.set(cardExistente, []);
+            }
+
+            itensParaMesclar.get(cardExistente).push(item);
+
+        } else {
+
+            itensGenuinamenteNovos.push(item);
+        }
+    });
+
+    const cardsAfetados = [];
+
+    // ---- Mescla nos cards existentes ----
+    for (const [cardId, itens] of itensParaMesclar.entries()) {
+
+        const itemsToInsert = itens.map(item => montarLinhaEntradaItem(item, cardId));
+
+        const { error: erroInsert } = await window.supabaseClient
+            .from('entrada_items')
+            .insert(itemsToInsert);
+
+        if (erroInsert) throw erroInsert;
+
+        const { data: cardAtual, error: erroCard } = await window.supabaseClient
+            .from('entradas_cards')
+            .select('numero_entrada, total_items')
+            .eq('id', cardId)
+            .single();
+
+        if (erroCard) throw erroCard;
+
+        const { error: erroUpdate } = await window.supabaseClient
+            .from('entradas_cards')
+            .update({
+                status: 'pendente',
+                total_items: (cardAtual.total_items || 0) + itens.length,
+                finalizado_em: null,
+                finalizado_por: null
+            })
+            .eq('id', cardId);
+
+        if (erroUpdate) throw erroUpdate;
+
+        cardsAfetados.push({
+            cardId,
+            tipo: 'mesclado',
+            quantidadeItens: itens.length,
+            numeroEntrada: cardAtual.numero_entrada
+        });
+    }
+
+    // ---- Cria uma entrada nova só com o que sobrou ----
+    if (itensGenuinamenteNovos.length > 0) {
+
+        const cardData = {
+            ...dadosCardBase,
+            status: 'a_caminho',
+            total_items: itensGenuinamenteNovos.length,
+            items_concluidos: 0
+        };
+
+        const { data: cardResult, error: cardError } = await window.supabaseClient
+            .from('entradas_cards')
+            .insert([cardData])
+            .select();
+
+        if (cardError) throw cardError;
+
+        const novoCard = cardResult[0];
+
+        const itemsToInsert = itensGenuinamenteNovos.map(item => montarLinhaEntradaItem(item, novoCard.id));
+
+        const { error: itemsError } = await window.supabaseClient
+            .from('entrada_items')
+            .insert(itemsToInsert);
+
+        if (itemsError) throw itemsError;
+
+        cardsAfetados.push({
+            cardId: novoCard.id,
+            tipo: 'novo',
+            quantidadeItens: itensGenuinamenteNovos.length,
+            numeroEntrada: novoCard.numero_entrada
+        });
+    }
+
+    return {
+        cardsAfetados,
+        totalMesclados: cardsAfetados
+            .filter(c => c.tipo === 'mesclado')
+            .reduce((soma, c) => soma + c.quantidadeItens, 0),
+        totalNovos: cardsAfetados
+            .filter(c => c.tipo === 'novo')
+            .reduce((soma, c) => soma + c.quantidadeItens, 0)
+    };
+}
+
+// Monta a linha de entrada_item a partir do objeto "item" em
+// memória (mesmo shape usado pelos 3 fluxos de criação hoje) +
+// o entrada_id de destino (existente ou recém-criado).
+function montarLinhaEntradaItem(item, entradaId) {
+    return {
+        entrada_id: entradaId,
+        cd_fornecedor: item.cd_fornecedor || '',
+        rastreio: item.rastreio || '',
+        fornecedor_nome: item.fornecedor_nome || '',
+        quantidade: item.quantidade,
+        produto: item.produto || '',
+        sku_original: item.sku_original || '',
+        sku_match: item.sku_match || '',
+        produto_id: item.produto_id || null,
+        observacao: item.observacao || '',
+        ncm: item.ncm || '',
+        valor_unitario: item.valor_unitario || 0,
+        cprod_fornecedor: item.cprod_fornecedor || '',
+        tipo_entrada: item.tipo_entrada || 'xml',
+        status: 'pendente',
+        acao: null,
+        responsavel: null,
+        data_acao: null,
+        quantidade_entrada: 0,
+        valor_custo: item.valor_custo || 0
+    };
+}
+
+// ============================================
 // PROCESSAR XML - COM HORÁRIO CORRETO
 // ============================================
 window.processarXML = async function() {
@@ -2880,58 +3125,26 @@ window.processarXML = async function() {
 
             if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-            const cardData = {
+            const resultadoMescla = await criarOuMesclarEntradaPorRastreio(itens, {
                 numero_entrada: numeroEntrada,
                 dados_brutos: xmlString.substring(0, 500) + '...',
-                status: 'pendente',
                 criado_por: currentUser.name,
                 criado_em: getDataHoraLocalISO(),  // <- USANDO HORÁRIO LOCAL
-                total_items: itens.length,
-                items_concluidos: 0,
                 tipo_entrada: 'xml',
                 fornecedor: fornecedorNome,
                 nf_numero: nNF,
                 nf_data: dataEmissao
-            };
+            });
 
-            const { data: cardResult, error: cardError } = await window.supabaseClient
-                .from('entradas_cards')
-                .insert([cardData])
-                .select();
+            if (resultadoMescla.totalMesclados > 0) {
+                showToast(
+                    `✅ ${resultadoMescla.totalNovos} item(ns) novo(s) — ${resultadoMescla.totalMesclados} juntado(s) numa entrada já existente com o mesmo rastreio!`,
+                    'success'
+                );
+            } else {
+                showToast(`✅ Entrada ${numeroEntrada} criada com ${itens.length} item(s) a partir do XML! Marcada como "A caminho".`, 'success');
+            }
 
-            if (cardError) throw cardError;
-            const card = cardResult[0];
-
-            const itemsToInsert = itens.map(item => ({
-                entrada_id: card.id,
-                cd_fornecedor: item.cd_fornecedor || '',
-                rastreio: item.rastreio || '',
-                fornecedor_nome: item.fornecedor_nome || '',
-                quantidade: item.quantidade,
-                produto: item.produto || '',
-                sku_original: item.sku_original || '',
-                sku_match: item.sku_match || '',
-                produto_id: item.produto_id || null,
-                observacao: item.observacao || '',
-                ncm: item.ncm || '',
-                valor_unitario: item.valor_unitario || 0,
-                cprod_fornecedor: item.cprod_fornecedor || '',
-                tipo_entrada: 'xml',
-                status: 'pendente',
-                acao: null,
-                responsavel: null,
-                data_acao: null,
-                quantidade_entrada: 0,
-                valor_custo: item.valor_custo || 0
-            }));
-
-            const { error: itemsError } = await window.supabaseClient
-                .from('entrada_items')
-                .insert(itemsToInsert);
-
-            if (itemsError) throw itemsError;
-
-            showToast(`✅ Entrada ${numeroEntrada} criada com ${itens.length} item(s) a partir do XML!`, 'success');
             fileInput.value = '';
             await carregarEntradas();
 
@@ -3660,7 +3873,10 @@ window.processarEntrada =
                     null,
 
                 quantidade_entrada:
-                    0
+                    0,
+
+                tipo_entrada:
+                    'excel'
 
             });
 
@@ -3977,178 +4193,44 @@ window.processarEntrada =
 
 
             // ====================================
-            // CARD DA ENTRADA
+            // CRIA (OU MESCLA POR RASTREIO)
             // ====================================
 
-            const cardData = {
-
-                numero_entrada:
-                    numeroEntrada,
-
-                // Guarda exatamente o texto colado.
-                dados_brutos:
-                    texto,
-
-                status:
-                    'pendente',
-
-                criado_por:
-                    currentUser?.name ||
-                    currentUser?.username ||
-                    'Sistema',
-
-                criado_em:
-                    typeof getDataHoraLocalISO ===
-                        'function'
-
-                        ? getDataHoraLocalISO()
-
-                        : new Date()
-                            .toISOString(),
-
-                total_items:
-                    itensRaw.length,
-
-                items_concluidos:
-                    0,
-
-                tipo_entrada:
-                    'excel'
-
-            };
-
-
-            const {
-                data: cardResult,
-                error: cardError
-            } =
-                await window.supabaseClient
-
-                    .from(
-                        'entradas_cards'
-                    )
-
-                    .insert([
-                        cardData
-                    ])
-
-                    .select();
-
-
-            if (
-                cardError
-            ) {
-
-                throw cardError;
-            }
-
-
-            const card =
-                cardResult[0];
-
-
-            // ====================================
-            // ITENS
-            // ====================================
-
-            const itemsToInsert =
-                itensRaw.map(
-                    item => ({
-
-                        entrada_id:
-                            card.id,
-
-                        cd_fornecedor:
-                            item.cd_fornecedor ||
-                            '',
-
-                        rastreio:
-                            item.rastreio ||
-                            '',
-
-                        fornecedor_nome:
-                            item.fornecedor_nome ||
-                            '',
-
-                        quantidade:
-                            item.quantidade,
-
-                        produto:
-                            item.produto ||
-                            '',
-
-                        sku_original:
-                            item.sku_original ||
-                            '',
-
-                        sku_match:
-                            item.sku_match ||
-                            null,
-
-                        produto_id:
-                            item.produto_id ||
-                            null,
-
-                        observacao:
-                            item.observacao ||
-                            '',
-
-                        valor_custo:
-                            item.valor_custo ||
-                            0,
-
-                        status:
-                            'pendente',
-
-                        acao:
-                            null,
-
-                        responsavel:
-                            null,
-
-                        data_acao:
-                            null,
-
-                        quantidade_entrada:
-                            0,
-
-                        tipo_entrada:
-                            'excel'
-
-                    })
+            const resultadoMescla =
+                await criarOuMesclarEntradaPorRastreio(
+                    itensRaw,
+                    {
+                        numero_entrada: numeroEntrada,
+                        // Guarda exatamente o texto colado.
+                        dados_brutos: texto,
+                        criado_por:
+                            currentUser?.name ||
+                            currentUser?.username ||
+                            'Sistema',
+                        criado_em:
+                            typeof getDataHoraLocalISO === 'function'
+                                ? getDataHoraLocalISO()
+                                : new Date().toISOString(),
+                        tipo_entrada: 'excel'
+                    }
                 );
-
-
-            const {
-                error: itemsError
-            } =
-                await window.supabaseClient
-
-                    .from(
-                        'entrada_items'
-                    )
-
-                    .insert(
-                        itemsToInsert
-                    );
-
-
-            if (
-                itemsError
-            ) {
-
-                throw itemsError;
-            }
 
 
             // ====================================
             // SUCESSO
             // ====================================
 
-            showToast(
-                `✅ Entrada ${numeroEntrada} criada com ${itensRaw.length} item(s)!`,
-                'success'
-            );
+            if (resultadoMescla.totalMesclados > 0) {
+                showToast(
+                    `✅ ${resultadoMescla.totalNovos} item(ns) novo(s) — ${resultadoMescla.totalMesclados} juntado(s) numa entrada já existente com o mesmo rastreio!`,
+                    'success'
+                );
+            } else {
+                showToast(
+                    `✅ Entrada ${numeroEntrada} criada com ${itensRaw.length} item(s)! Marcada como "A caminho".`,
+                    'success'
+                );
+            }
 
 
             pasteArea.value =
@@ -5304,6 +5386,62 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 // ============================================
 // IGNORAR ITEM / CORRIGIR SKU RECEBIDO
 // ============================================
+
+// ============================================
+// MARCAR ENTRADA COMO "CHEGOU"
+//
+// Passa a entrada inteira (todos os itens) de "a_caminho" pra
+// "pendente" — a partir daí os botões normais (Dar Entrada /
+// Cadastrar / Já existe / Ignorar) e o pisca-pisca de estoque
+// zerado voltam a valer, item por item, exatamente como já
+// funcionava antes desta mudança.
+// ============================================
+window.marcarEntradaChegou = async function(cardId) {
+
+    if (!cardId) {
+        showToast('Erro: dados incompletos', 'error');
+        return;
+    }
+
+    const card = entradasCards.find(c => String(c.id) === String(cardId));
+
+    if (!card) {
+        showToast('Entrada não encontrada', 'error');
+        return;
+    }
+
+    if (card.status !== 'a_caminho') {
+        showToast('Esta entrada não está "a caminho".', 'warning');
+        return;
+    }
+
+    const totalItens = (card.itens || []).length;
+
+    if (!confirm(`Confirmar que a entrada "${card.numero_entrada}" chegou? Os ${totalItens} item(ns) vão pra "Pendentes" pra você processar.`)) {
+        return;
+    }
+
+    try {
+
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        const { error } = await window.supabaseClient
+            .from('entradas_cards')
+            .update({ status: 'pendente' })
+            .eq('id', cardId)
+            .eq('status', 'a_caminho');
+
+        if (error) throw error;
+
+        showToast(`✅ "${card.numero_entrada}" chegou! Agora está em Pendentes.`, 'success');
+
+        await carregarEntradas();
+
+    } catch (error) {
+        console.error('❌ Erro ao marcar entrada como chegada:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
+    }
+};
 
 window.ignorarItem = async function(cardId, itemId) {
 
@@ -7124,57 +7262,24 @@ window.processarPreEntrada = async function() {
 
         const numeroEntrada = await gerarNumeroEntrada();
 
-        const cardData = {
+        const resultadoMescla = await criarOuMesclarEntradaPorRastreio(preEntradaItens, {
             numero_entrada: numeroEntrada,
             dados_brutos: preEntradaDadosBrutos || 'Pré-entrada processada',
-            status: 'pendente',
             criado_por: currentUser.name,
             criado_em: new Date().toISOString(),
-            total_items: preEntradaItens.length,
-            items_concluidos: 0,
             tipo_entrada: 'xml',
             fornecedor: preEntradaItens[0]?.fornecedor_nome || '',
             nf_numero: preEntradaItens[0]?.rastreio?.split('-')[1] || ''
-        };
+        });
 
-        const { data: cardResult, error: cardError } = await window.supabaseClient
-            .from('entradas_cards')
-            .insert([cardData])
-            .select();
-
-        if (cardError) throw cardError;
-        const card = cardResult[0];
-
-        const itemsToInsert = preEntradaItens.map(item => ({
-            entrada_id: card.id,
-            cd_fornecedor: item.cd_fornecedor || '',
-            rastreio: item.rastreio || '',
-            fornecedor_nome: item.fornecedor_nome || '',
-            quantidade: item.quantidade,
-            produto: item.produto || '',
-            sku_original: item.sku_original || '',
-            sku_match: item.sku_match || '',
-            produto_id: item.produto_id || null,
-            observacao: item.observacao || '',
-            ncm: item.ncm || '',
-            valor_unitario: item.valor_unitario || 0,
-            cprod_fornecedor: item.cprod_fornecedor || '',
-            tipo_entrada: 'xml',
-            status: 'pendente',
-            acao: null,
-            responsavel: null,
-            data_acao: null,
-            quantidade_entrada: 0,
-            valor_custo: item.valor_custo || 0
-        }));
-
-        const { error: itemsError } = await window.supabaseClient
-            .from('entrada_items')
-            .insert(itemsToInsert);
-
-        if (itemsError) throw itemsError;
-
-        showToast(`✅ Entrada ${numeroEntrada} criada com ${preEntradaItens.length} item(s) a partir da pré-entrada!`, 'success');
+        if (resultadoMescla.totalMesclados > 0) {
+            showToast(
+                `✅ ${resultadoMescla.totalNovos} item(ns) novo(s) — ${resultadoMescla.totalMesclados} juntado(s) numa entrada já existente com o mesmo rastreio!`,
+                'success'
+            );
+        } else {
+            showToast(`✅ Entrada ${numeroEntrada} criada com ${preEntradaItens.length} item(s) a partir da pré-entrada! Marcada como "A caminho".`, 'success');
+        }
 
         limparPreEntrada();
         await carregarEntradas();
