@@ -39,6 +39,15 @@ const usuariosRegraEstoque = ['andressamiotto', 'ronald', 'bruna', 'arthur'];
 // ===== USUÁRIOS QUE PODEM GERENCIAR CATEGORIAS (BRUNA E ARTHUR INCLUÍDOS) =====
 const usuariosGerenciarCategorias = ['andressamiotto', 'ronald', 'leticia', 'bruna', 'arthur'];
 
+// ===== AUTORIZAÇÃO DE CORREÇÃO MANUAL DE ESTOQUE =====
+// Quem pode autorizar um ajuste manual de estoque (nunca a própria
+// pessoa que fez a alteração).
+const usuariosAutorizadoresCorrecaoEstoque = ['ronald', 'leticia', 'bruna', 'andressamiotto'];
+// Quem recebe a tela bloqueante pedindo autorização; os demais
+// autorizadores (ronald/andressamiotto) só autorizam via Acessibilidade.
+const usuariosPopupAutorizacaoCorrecaoEstoque = ['bruna', 'leticia'];
+const LIMITE_IGNORAR_AUTORIZACAO_CORRECAO_ESTOQUE = 3;
+
 // =========================================================
 // REGRAS DE ESTOQUE CONDICIONAIS (VALOR DO ANÚNCIO + QUANTIDADE)
 // =========================================================
@@ -2936,6 +2945,14 @@ function moverBotoesParaMenuAcessibilidadeEstoque() {
         });
     }
 
+    const btnAutorizacaoCorrecaoEstoque = document.getElementById('btnAutorizacaoCorrecaoEstoque');
+    if (btnAutorizacaoCorrecaoEstoque) {
+        candidatos.push({
+            botao: btnAutorizacaoCorrecaoEstoque,
+            ordem: 37
+        });
+    }
+
 
     // =====================================================
     // IMPORTAR PRODUTOS
@@ -3395,6 +3412,10 @@ function toggleMenuAcessibilidadeEstoque() {
 
         if (typeof adicionarBotaoHistoricoBaixasFull === 'function') {
             adicionarBotaoHistoricoBaixasFull();
+        }
+
+        if (typeof adicionarBotaoAutorizacaoCorrecaoEstoque === 'function') {
+            adicionarBotaoAutorizacaoCorrecaoEstoque();
         }
 
     }
@@ -4364,6 +4385,265 @@ function filtrarProdutosEstoque() {
 }
 
 // =========================================================
+// VERIFICA SE UM PRODUTO BATE COM UM ÚNICO TERMO DE BUSCA
+// (nome, sku, categoria, mlb_codes, dados_extra)
+// =========================================================
+
+function produtoCorrespondeTermoBuscaEstoque(produto, termo) {
+
+    if (
+        produto.nome &&
+        produto.nome
+            .toLowerCase()
+            .includes(
+                termo
+            )
+    ) {
+
+        return true;
+
+    }
+
+
+    if (
+        produto.sku &&
+        produto.sku
+            .toLowerCase()
+            .includes(
+                termo
+            )
+    ) {
+
+        return true;
+
+    }
+
+
+    if (
+        produto.categoria &&
+        produto.categoria
+            .toLowerCase()
+            .includes(
+                termo
+            )
+    ) {
+
+        return true;
+
+    }
+
+
+    // =====================================
+    // MLB CODES
+    // =====================================
+
+    if (
+        produto.mlb_codes
+    ) {
+
+        let mlbArray =
+            produto.mlb_codes;
+
+
+        if (
+            typeof mlbArray ===
+            'string'
+        ) {
+
+            mlbArray =
+                mlbArray
+                    .split(',')
+                    .map(
+                        s =>
+                            s.trim()
+                    );
+
+        }
+
+
+        if (
+            Array.isArray(
+                mlbArray
+            )
+        ) {
+
+            if (
+                mlbArray.some(
+                    code =>
+                        String(
+                            code
+                        )
+                        .toLowerCase()
+                        .includes(
+                            termo
+                        )
+                )
+            ) {
+
+                return true;
+
+            }
+
+        }
+
+    }
+
+
+    // =====================================
+    // DADOS EXTRA
+    // =====================================
+
+    if (
+        produto.dados_extra &&
+        typeof produto
+            .dados_extra ===
+            'object'
+    ) {
+
+        for (
+            const [
+                chave,
+                valor
+            ]
+            of Object.entries(
+                produto
+                    .dados_extra
+            )
+        ) {
+
+            // =================================
+            // NÃO USAR CAMPOS INTERNOS
+            // NA BUSCA
+            // =================================
+
+            if (
+                chave ===
+                    'mlb_codes'
+                ||
+                chave ===
+                    'historico_custos'
+                ||
+                chave ===
+                    'bloquear_sync_ml'
+                ||
+                chave ===
+                    'inativo'
+                ||
+                chave ===
+                    'inativado_em'
+                ||
+                chave ===
+                    'inativado_por'
+                ||
+                chave ===
+                    'reativado_em'
+                ||
+                chave ===
+                    'reativado_por'
+            ) {
+
+                continue;
+
+            }
+
+
+            if (
+                typeof valor ===
+                    'string'
+                &&
+                valor
+                    .toLowerCase()
+                    .includes(
+                        termo
+                    )
+            ) {
+
+                return true;
+
+            }
+
+
+            if (
+                typeof valor ===
+                    'number'
+                &&
+                String(
+                    valor
+                ).includes(
+                    termo
+                )
+            ) {
+
+                return true;
+
+            }
+
+
+            if (
+                Array.isArray(
+                    valor
+                )
+            ) {
+
+                if (
+                    valor.some(
+                        item =>
+                            typeof item ===
+                                'string'
+                            &&
+                            item
+                                .toLowerCase()
+                                .includes(
+                                    termo
+                                )
+                    )
+                ) {
+
+                    return true;
+
+                }
+
+            }
+
+
+            if (
+                typeof valor ===
+                    'object'
+                &&
+                valor !==
+                    null
+            ) {
+
+                const valorString =
+                    JSON.stringify(
+                        valor
+                    )
+                    .toLowerCase();
+
+
+                if (
+                    valorString.includes(
+                        termo
+                    )
+                ) {
+
+                    return true;
+
+                }
+
+            }
+
+        }
+
+    }
+
+
+    return false;
+
+}
+
+
+// =========================================================
 // APLICAR FILTROS E ORDENAÇÃO
 // CATEGORIA + SITUAÇÃO + PESQUISA EM ATRIBUTOS
 // =========================================================
@@ -4462,273 +4742,34 @@ function aplicarFiltrosEOrdenacao() {
         estadoFiltrosEstoque.termo
     ) {
 
-        const termo =
+        // Quebra em palavras (separadas por espaço) e exige que
+        // TODAS apareçam no produto, em qualquer ordem, em
+        // qualquer combinação dos campos buscáveis — busca por
+        // "nipple alumínio" só retorna produtos que tenham as
+        // duas palavras, não uma ou outra.
+        const palavrasBusca =
             estadoFiltrosEstoque
                 .termo
-                .toLowerCase();
+                .toLowerCase()
+                .split(/\s+/)
+                .filter(Boolean);
 
 
         filtrados =
             filtrados.filter(
-                produto => {
-
-                    // =====================================
-                    // CAMPOS PADRÃO
-                    // =====================================
-
-                    if (
-                        produto.nome &&
-                        produto.nome
-                            .toLowerCase()
-                            .includes(
-                                termo
+                produto =>
+                    palavrasBusca.every(
+                        palavra =>
+                            produtoCorrespondeTermoBuscaEstoque(
+                                produto,
+                                palavra
                             )
-                    ) {
-
-                        return true;
-
-                    }
-
-
-                    if (
-                        produto.sku &&
-                        produto.sku
-                            .toLowerCase()
-                            .includes(
-                                termo
-                            )
-                    ) {
-
-                        return true;
-
-                    }
-
-
-                    if (
-                        produto.categoria &&
-                        produto.categoria
-                            .toLowerCase()
-                            .includes(
-                                termo
-                            )
-                    ) {
-
-                        return true;
-
-                    }
-
-
-                    // =====================================
-                    // MLB CODES
-                    // =====================================
-
-                    if (
-                        produto.mlb_codes
-                    ) {
-
-                        let mlbArray =
-                            produto.mlb_codes;
-
-
-                        if (
-                            typeof mlbArray ===
-                            'string'
-                        ) {
-
-                            mlbArray =
-                                mlbArray
-                                    .split(',')
-                                    .map(
-                                        s =>
-                                            s.trim()
-                                    );
-
-                        }
-
-
-                        if (
-                            Array.isArray(
-                                mlbArray
-                            )
-                        ) {
-
-                            if (
-                                mlbArray.some(
-                                    code =>
-                                        String(
-                                            code
-                                        )
-                                        .toLowerCase()
-                                        .includes(
-                                            termo
-                                        )
-                                )
-                            ) {
-
-                                return true;
-
-                            }
-
-                        }
-
-                    }
-
-
-                    // =====================================
-                    // DADOS EXTRA
-                    // =====================================
-
-                    if (
-                        produto.dados_extra &&
-                        typeof produto
-                            .dados_extra ===
-                            'object'
-                    ) {
-
-                        for (
-                            const [
-                                chave,
-                                valor
-                            ]
-                            of Object.entries(
-                                produto
-                                    .dados_extra
-                            )
-                        ) {
-
-                            // =================================
-                            // NÃO USAR CAMPOS INTERNOS
-                            // NA BUSCA
-                            // =================================
-
-                            if (
-                                chave ===
-                                    'mlb_codes'
-                                ||
-                                chave ===
-                                    'historico_custos'
-                                ||
-                                chave ===
-                                    'bloquear_sync_ml'
-                                ||
-                                chave ===
-                                    'inativo'
-                                ||
-                                chave ===
-                                    'inativado_em'
-                                ||
-                                chave ===
-                                    'inativado_por'
-                                ||
-                                chave ===
-                                    'reativado_em'
-                                ||
-                                chave ===
-                                    'reativado_por'
-                            ) {
-
-                                continue;
-
-                            }
-
-
-                            if (
-                                typeof valor ===
-                                    'string'
-                                &&
-                                valor
-                                    .toLowerCase()
-                                    .includes(
-                                        termo
-                                    )
-                            ) {
-
-                                return true;
-
-                            }
-
-
-                            if (
-                                typeof valor ===
-                                    'number'
-                                &&
-                                String(
-                                    valor
-                                ).includes(
-                                    termo
-                                )
-                            ) {
-
-                                return true;
-
-                            }
-
-
-                            if (
-                                Array.isArray(
-                                    valor
-                                )
-                            ) {
-
-                                if (
-                                    valor.some(
-                                        item =>
-                                            typeof item ===
-                                                'string'
-                                            &&
-                                            item
-                                                .toLowerCase()
-                                                .includes(
-                                                    termo
-                                                )
-                                    )
-                                ) {
-
-                                    return true;
-
-                                }
-
-                            }
-
-
-                            if (
-                                typeof valor ===
-                                    'object'
-                                &&
-                                valor !==
-                                    null
-                            ) {
-
-                                const valorString =
-                                    JSON.stringify(
-                                        valor
-                                    )
-                                    .toLowerCase();
-
-
-                                if (
-                                    valorString.includes(
-                                        termo
-                                    )
-                                ) {
-
-                                    return true;
-
-                                }
-
-                            }
-
-                        }
-
-                    }
-
-
-                    return false;
-
-                }
+                    )
             );
 
     }
+
+
 
 
     // =====================================================
@@ -15934,6 +15975,10 @@ async function salvarProdutoEstoque() {
         false;
 
 
+    let quantidadeAntesDaEdicao =
+        null;
+
+
     if (id) {
 
         const produtoExistente =
@@ -15968,6 +16013,12 @@ async function salvarProdutoEstoque() {
                 produtoExistente.bloquear_sync_ml ||
                 produtoExistente.dados_extra?.bloquear_sync_ml ||
                 false;
+
+
+            quantidadeAntesDaEdicao =
+                Number(
+                    produtoExistente.quantidade || 0
+                );
 
         }
 
@@ -16079,10 +16130,32 @@ async function salvarProdutoEstoque() {
                 produtoSalvo
             ) {
 
-                showToast(
-                    'Produto atualizado!',
-                    'success'
-                );
+                if (
+                    quantidadeAntesDaEdicao !== null &&
+                    quantidadeAntesDaEdicao !== quantidade
+                ) {
+
+                    await criarSolicitacaoAutorizacaoCorrecaoEstoque({
+                        produtoId: parseInt(id),
+                        produtoSku: sku,
+                        produtoNome: nome,
+                        origem: 'edicao_produto',
+                        quantidadeAnterior: quantidadeAntesDaEdicao,
+                        quantidadeNova: quantidade
+                    });
+
+                    showToast(
+                        'Produto atualizado! A mudança de quantidade já vale, mas precisa ser autorizada.',
+                        'warning'
+                    );
+
+                } else {
+
+                    showToast(
+                        'Produto atualizado!',
+                        'success'
+                    );
+                }
 
             }
 
@@ -25670,7 +25743,19 @@ async function confirmarMovimentacaoEstoque() {
 
         await registrarMovimentacao(id, tipo, quantidade, numeroDocumento, tipoEntrada);
 
-        if (window.showToast) showToast(`Movimentação: ${tipo === 'entrada' ? '+' : '-'}${quantidade}`, 'success');
+        if (tipo === 'entrada' && tipoEntrada === 'ajuste') {
+            await criarSolicitacaoAutorizacaoCorrecaoEstoque({
+                produtoId: parseInt(id),
+                produtoSku: produto.sku,
+                produtoNome: produto.nome,
+                origem: 'movimentacao_ajuste',
+                quantidadeAnterior: produto.quantidade,
+                quantidadeNova: novaQuantidade
+            });
+            if (window.showToast) showToast('Ajuste registrado! Já vale, mas precisa ser autorizado.', 'warning');
+        } else {
+            if (window.showToast) showToast(`Movimentação: ${tipo === 'entrada' ? '+' : '-'}${quantidade}`, 'success');
+        }
         fecharModalMovimentacaoEstoque();
         await carregarProdutosEstoque();
 
@@ -32666,6 +32751,9 @@ if (!window._monitorVisualBaixaFullEstoque) {
         if (document.getElementById('estoqueGestaoSystem')) {
             adicionarBotaoImportarXmlFull();
             adicionarBotaoHistoricoBaixasFull();
+            if (typeof adicionarBotaoAutorizacaoCorrecaoEstoque === 'function') {
+                adicionarBotaoAutorizacaoCorrecaoEstoque();
+            }
         }
     }, 1000);
 }
@@ -52938,3 +53026,459 @@ if (
     window.registrarMovimentacao =
         registrarMovimentacao;
 }
+
+// ============================================================
+// AUTORIZAÇÃO DE CORREÇÃO MANUAL DE ESTOQUE
+// ============================================================
+// Toda mudança manual de quantidade (editar o campo Quantidade do
+// produto, ou Movimentar > Ajuste de estoque) já vale na hora, mas
+// fica pendente de autorização de alguém de
+// usuariosAutorizadoresCorrecaoEstoque que NÃO seja quem fez a
+// mudança. Se for recusada, o estoque volta pro valor anterior.
+// Bruna e Letícia recebem uma tela bloqueante (podem ignorar até
+// LIMITE_IGNORAR_AUTORIZACAO_CORRECAO_ESTOQUE vezes cada uma, por
+// pedido); Ronald e andressamiotto só autorizam via Acessibilidade.
+// ============================================================
+
+async function criarSolicitacaoAutorizacaoCorrecaoEstoque({ produtoId, produtoSku, produtoNome, origem, quantidadeAnterior, quantidadeNova }) {
+    if (!window.supabaseClient) return;
+
+    const solicitadoPor = (currentUser?.username || '').toLowerCase().trim();
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('estoque_correcoes_autorizacao')
+            .insert([{
+                produto_id: produtoId,
+                produto_sku: produtoSku || null,
+                produto_nome: produtoNome || null,
+                origem,
+                quantidade_anterior: quantidadeAnterior,
+                quantidade_nova: quantidadeNova,
+                solicitado_por: solicitadoPor,
+                status: 'pendente'
+            }]);
+
+        if (error) throw error;
+    } catch (error) {
+        console.error('❌ Erro ao criar solicitação de autorização de correção de estoque:', error);
+    }
+}
+
+function usuarioEhAutorizadorCorrecaoEstoque(username) {
+    return usuariosAutorizadoresCorrecaoEstoque.includes((username || '').toLowerCase().trim());
+}
+
+async function buscarPendenciasAutorizacaoCorrecaoEstoque() {
+    if (!window.supabaseClient) return [];
+
+    const username = (currentUser?.username || '').toLowerCase().trim();
+    if (!usuarioEhAutorizadorCorrecaoEstoque(username)) return [];
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('estoque_correcoes_autorizacao')
+            .select('*')
+            .eq('status', 'pendente')
+            .order('solicitado_em', { ascending: true });
+
+        if (error) throw error;
+
+        // Nunca mostra pra quem fez a própria alteração.
+        return (data || []).filter(item => (item.solicitado_por || '').toLowerCase().trim() !== username);
+    } catch (error) {
+        console.error('❌ Erro ao buscar pendências de autorização de correção de estoque:', error);
+        return [];
+    }
+}
+
+async function autorizarCorrecaoEstoqueDb(id) {
+    const username = (currentUser?.username || '').toLowerCase().trim();
+
+    const { error } = await window.supabaseClient
+        .from('estoque_correcoes_autorizacao')
+        .update({
+            status: 'autorizada',
+            autorizado_por: username,
+            autorizado_em: new Date().toISOString()
+        })
+        .eq('id', id)
+        .eq('status', 'pendente');
+
+    if (error) throw error;
+}
+
+async function recusarCorrecaoEstoqueDb(item, motivo) {
+    const username = (currentUser?.username || '').toLowerCase().trim();
+
+    // Reverte o estoque pro valor anterior — só se ninguém mexeu de
+    // novo na quantidade desde que o pedido foi criado.
+    const { data: revertido, error: erroRevert } = await window.supabaseClient
+        .from('produtos_estoque')
+        .update({ quantidade: item.quantidade_anterior })
+        .eq('id', item.produto_id)
+        .eq('quantidade', item.quantidade_nova)
+        .select('id')
+        .maybeSingle();
+
+    if (erroRevert) throw erroRevert;
+
+    const { error } = await window.supabaseClient
+        .from('estoque_correcoes_autorizacao')
+        .update({
+            status: 'recusada',
+            autorizado_por: username,
+            autorizado_em: new Date().toISOString(),
+            motivo_recusa: motivo || null
+        })
+        .eq('id', item.id)
+        .eq('status', 'pendente');
+
+    if (error) throw error;
+
+    if (!revertido) {
+        showToast('⚠️ Recusado, mas o estoque foi alterado de novo depois do pedido — confira manualmente.', 'warning');
+    }
+
+    if (typeof carregarProdutosEstoque === 'function') {
+        carregarProdutosEstoque();
+    }
+}
+
+async function ignorarCorrecaoEstoqueDb(item) {
+    const username = (currentUser?.username || '').toLowerCase().trim();
+    const ignoradas = { ...(item.ignoradas || {}) };
+    ignoradas[username] = (ignoradas[username] || 0) + 1;
+
+    const { error } = await window.supabaseClient
+        .from('estoque_correcoes_autorizacao')
+        .update({ ignoradas })
+        .eq('id', item.id);
+
+    if (error) throw error;
+    return ignoradas[username];
+}
+
+// ------------------------------------------------------------
+// TELA BLOQUEANTE (Bruna / Letícia)
+// ------------------------------------------------------------
+
+let filaAutorizacaoCorrecaoEstoque = [];
+let modalAutorizacaoCorrecaoEstoqueAberto = false;
+
+async function verificarPopupAutorizacaoCorrecaoEstoque() {
+    const username = (currentUser?.username || '').toLowerCase().trim();
+    if (!usuariosPopupAutorizacaoCorrecaoEstoque.includes(username)) return;
+    if (modalAutorizacaoCorrecaoEstoqueAberto) return;
+
+    const pendencias = await buscarPendenciasAutorizacaoCorrecaoEstoque();
+    if (!pendencias.length) return;
+
+    filaAutorizacaoCorrecaoEstoque = pendencias;
+    mostrarProximaAutorizacaoForcada();
+}
+
+function mostrarProximaAutorizacaoForcada() {
+    if (!filaAutorizacaoCorrecaoEstoque.length) {
+        fecharModalAutorizacaoForcada();
+        return;
+    }
+
+    const item = filaAutorizacaoCorrecaoEstoque[0];
+    const username = (currentUser?.username || '').toLowerCase().trim();
+    const vezesIgnorado = (item.ignoradas || {})[username] || 0;
+    const podeIgnorar = vezesIgnorado < LIMITE_IGNORAR_AUTORIZACAO_CORRECAO_ESTOQUE;
+
+    renderizarModalAutorizacaoForcada(item, podeIgnorar);
+}
+
+function renderizarModalAutorizacaoForcada(item, podeIgnorar) {
+    let modal = document.getElementById('modalAutorizacaoCorrecaoEstoqueForcada');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalAutorizacaoCorrecaoEstoqueForcada';
+        modal.className = 'modal hidden';
+        modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:99999; align-items:center; justify-content:center;';
+        document.body.appendChild(modal);
+    }
+
+    const diferenca = item.quantidade_nova - item.quantidade_anterior;
+    const corDiferenca = diferenca >= 0 ? '#28a745' : '#dc3545';
+    const sinal = diferenca >= 0 ? '+' : '';
+
+    modal.innerHTML = `
+        <div style="background:white; border-radius:12px; width:min(460px, 92vw); padding:24px;">
+            <h3 style="margin:0 0 4px; color:#dc3545;"><i class="fas fa-triangle-exclamation"></i> Autorização necessária</h3>
+            <p style="color:#6c757d; font-size:13px; margin-bottom:16px;">Um ajuste manual de estoque precisa da sua autorização.</p>
+
+            <div style="background:#f8f9fa; border-radius:10px; padding:14px; margin-bottom:16px;">
+                <div style="font-weight:700; margin-bottom:4px;">${escapeHtml(item.produto_nome || '(produto)')}</div>
+                <div style="font-size:12px; color:#6c757d; margin-bottom:10px;">SKU: ${escapeHtml(item.produto_sku || '—')}</div>
+                <div style="display:flex; align-items:center; gap:8px; font-size:18px; font-weight:700;">
+                    <span>${item.quantidade_anterior}</span>
+                    <i class="fas fa-arrow-right" style="font-size:13px; color:#adb5bd;"></i>
+                    <span>${item.quantidade_nova}</span>
+                    <span style="font-size:13px; color:${corDiferenca};">(${sinal}${diferenca})</span>
+                </div>
+                <div style="font-size:12px; color:#6c757d; margin-top:8px;">
+                    Solicitado por ${escapeHtml(item.solicitado_por)} em ${new Date(item.solicitado_em).toLocaleString('pt-BR')}
+                    ${item.origem === 'movimentacao_ajuste' ? ' • via Movimentar → Ajuste' : ' • edição direta do produto'}
+                </div>
+            </div>
+
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                ${podeIgnorar ? `<button class="btn btn-secondary" onclick="window.aceIgnorarAutorizacaoForcada(${item.id})">Ignorar</button>` : ''}
+                <button class="btn btn-danger" onclick="window.aceRecusarAutorizacaoForcada(${item.id})">Recusar</button>
+                <button class="btn btn-success" onclick="window.aceAutorizarAutorizacaoForcada(${item.id})">Autorizar</button>
+            </div>
+            ${!podeIgnorar ? `<div style="font-size:12px; color:#dc3545; margin-top:10px; text-align:right;"><i class="fas fa-lock"></i> Você já ignorou esse pedido ${LIMITE_IGNORAR_AUTORIZACAO_CORRECAO_ESTOQUE} vezes — agora precisa decidir.</div>` : ''}
+        </div>
+    `;
+
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    modalAutorizacaoCorrecaoEstoqueAberto = true;
+}
+
+function fecharModalAutorizacaoForcada() {
+    const modal = document.getElementById('modalAutorizacaoCorrecaoEstoqueForcada');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+    modalAutorizacaoCorrecaoEstoqueAberto = false;
+}
+
+function avancarFilaAutorizacaoForcada(idResolvido) {
+    filaAutorizacaoCorrecaoEstoque = filaAutorizacaoCorrecaoEstoque.filter(i => i.id !== idResolvido);
+    if (filaAutorizacaoCorrecaoEstoque.length) {
+        mostrarProximaAutorizacaoForcada();
+    } else {
+        fecharModalAutorizacaoForcada();
+    }
+}
+
+window.aceAutorizarAutorizacaoForcada = async function(id) {
+    try {
+        await autorizarCorrecaoEstoqueDb(id);
+        showToast('✅ Correção de estoque autorizada!', 'success');
+        avancarFilaAutorizacaoForcada(id);
+    } catch (error) {
+        console.error(error);
+        showToast('❌ Erro ao autorizar', 'error');
+    }
+};
+
+window.aceRecusarAutorizacaoForcada = async function(id) {
+    const item = filaAutorizacaoCorrecaoEstoque.find(i => i.id === id);
+    if (!item) return;
+
+    const motivo = window.prompt('Motivo da recusa (opcional):') || null;
+
+    try {
+        await recusarCorrecaoEstoqueDb(item, motivo);
+        showToast('🚫 Correção recusada — estoque revertido.', 'info');
+        avancarFilaAutorizacaoForcada(id);
+    } catch (error) {
+        console.error(error);
+        showToast('❌ Erro ao recusar', 'error');
+    }
+};
+
+window.aceIgnorarAutorizacaoForcada = async function(id) {
+    const item = filaAutorizacaoCorrecaoEstoque.find(i => i.id === id);
+    if (!item) return;
+
+    try {
+        await ignorarCorrecaoEstoqueDb(item);
+        avancarFilaAutorizacaoForcada(id);
+    } catch (error) {
+        console.error(error);
+        showToast('❌ Erro ao ignorar', 'error');
+    }
+};
+
+if (!window.__pollAutorizacaoCorrecaoEstoqueAtivo) {
+    window.__pollAutorizacaoCorrecaoEstoqueAtivo = true;
+    setTimeout(() => { if (currentUser) verificarPopupAutorizacaoCorrecaoEstoque(); }, 4000);
+    setInterval(() => { if (currentUser) verificarPopupAutorizacaoCorrecaoEstoque(); }, 5 * 60 * 1000);
+}
+
+// ------------------------------------------------------------
+// TELA DE REVISÃO (Acessibilidade — Ronald / andressamiotto / Bruna / Letícia)
+// ------------------------------------------------------------
+
+window.abrirTelaAutorizacaoCorrecaoEstoque = async function() {
+    const username = (currentUser?.username || '').toLowerCase().trim();
+    if (!usuarioEhAutorizadorCorrecaoEstoque(username)) {
+        showToast('🔒 Você não pode autorizar correções de estoque.', 'warning');
+        return;
+    }
+
+    // A tela de revisão já deixa resolver tudo, incluindo o pedido que
+    // estava travando a tela bloqueante — fecha ela pra não ficar uma
+    // por cima da outra interceptando cliques.
+    fecharModalAutorizacaoForcada();
+
+    let modal = document.getElementById('modalAutorizacaoCorrecaoEstoqueRevisao');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalAutorizacaoCorrecaoEstoqueRevisao';
+        modal.className = 'modal hidden';
+        modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:100000; align-items:center; justify-content:center;';
+        document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+        <div style="background:white; border-radius:12px; width:min(700px, 94vw); max-height:88vh; overflow-y:auto; padding:24px;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 style="margin:0;"><i class="fas fa-user-check" style="color:#00ADEE;"></i> Autorização de correção de estoque</h3>
+                <button type="button" onclick="window.fecharTelaAutorizacaoCorrecaoEstoque()" style="background:none; border:none; font-size:22px; cursor:pointer;">&times;</button>
+            </div>
+            <h5>Pendentes</h5>
+            <div id="acePendentesLista"><div class="wt-empty">Carregando...</div></div>
+            <hr>
+            <h5>Histórico recente</h5>
+            <div id="aceHistoricoLista"><div class="wt-empty">Carregando...</div></div>
+        </div>
+    `;
+
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+
+    await aceCarregarRevisao();
+};
+
+window.fecharTelaAutorizacaoCorrecaoEstoque = function() {
+    const modal = document.getElementById('modalAutorizacaoCorrecaoEstoqueRevisao');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+};
+
+function aceRenderizarLinhaPendente(item) {
+    const diferenca = item.quantidade_nova - item.quantidade_anterior;
+    const sinal = diferenca >= 0 ? '+' : '';
+    return `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px; border:1px solid #e9ecef; border-radius:8px; margin-bottom:8px;">
+            <div>
+                <strong>${escapeHtml(item.produto_nome || '(produto)')}</strong>
+                <span style="font-size:12px; color:#6c757d;"> · SKU ${escapeHtml(item.produto_sku || '—')}</span>
+                <div style="font-size:13px;">${item.quantidade_anterior} → ${item.quantidade_nova} (${sinal}${diferenca}) · solicitado por ${escapeHtml(item.solicitado_por)}</div>
+            </div>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+                <button class="btn btn-sm btn-danger" onclick="window.aceRecusarRevisao(${item.id})">Recusar</button>
+                <button class="btn btn-sm btn-success" onclick="window.aceAutorizarRevisao(${item.id})">Autorizar</button>
+            </div>
+        </div>
+    `;
+}
+
+function aceRenderizarLinhaHistorico(item) {
+    const aprovada = item.status === 'autorizada';
+    return `
+        <div style="font-size:13px; padding:8px 0; border-bottom:1px solid #f1f3f5;">
+            <span style="color:${aprovada ? '#28a745' : '#dc3545'}; font-weight:600;">${aprovada ? '✅ Autorizada' : '🚫 Recusada'}</span>
+            — ${escapeHtml(item.produto_nome || '(produto)')} (${item.quantidade_anterior} → ${item.quantidade_nova})
+            por ${escapeHtml(item.autorizado_por || '—')} em ${item.autorizado_em ? new Date(item.autorizado_em).toLocaleString('pt-BR') : '—'}
+            ${item.motivo_recusa ? `<br><span style="color:#6c757d;">Motivo: ${escapeHtml(item.motivo_recusa)}</span>` : ''}
+        </div>
+    `;
+}
+
+async function aceCarregarRevisao() {
+    const pendentes = await buscarPendenciasAutorizacaoCorrecaoEstoque();
+    const listaPendentes = document.getElementById('acePendentesLista');
+    if (listaPendentes) {
+        listaPendentes.innerHTML = pendentes.length
+            ? pendentes.map(aceRenderizarLinhaPendente).join('')
+            : '<div class="wt-empty">Nada pendente. 🎉</div>';
+    }
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('estoque_correcoes_autorizacao')
+            .select('*')
+            .neq('status', 'pendente')
+            .order('autorizado_em', { ascending: false })
+            .limit(20);
+
+        if (error) throw error;
+
+        const listaHistorico = document.getElementById('aceHistoricoLista');
+        if (listaHistorico) {
+            listaHistorico.innerHTML = (data && data.length)
+                ? data.map(aceRenderizarLinhaHistorico).join('')
+                : '<div class="wt-empty">Sem histórico ainda.</div>';
+        }
+    } catch (error) {
+        console.error('❌ Erro ao carregar histórico de autorização de correção de estoque:', error);
+    }
+}
+
+window.aceAutorizarRevisao = async function(id) {
+    try {
+        await autorizarCorrecaoEstoqueDb(id);
+        showToast('✅ Correção autorizada!', 'success');
+        aceCarregarRevisao();
+    } catch (error) {
+        console.error(error);
+        showToast('❌ Erro ao autorizar', 'error');
+    }
+};
+
+window.aceRecusarRevisao = async function(id) {
+    const pendentes = await buscarPendenciasAutorizacaoCorrecaoEstoque();
+    const item = pendentes.find(i => i.id === id);
+    if (!item) return;
+
+    const motivo = window.prompt('Motivo da recusa (opcional):') || null;
+
+    try {
+        await recusarCorrecaoEstoqueDb(item, motivo);
+        showToast('🚫 Correção recusada — estoque revertido.', 'info');
+        aceCarregarRevisao();
+    } catch (error) {
+        console.error(error);
+        showToast('❌ Erro ao recusar', 'error');
+    }
+};
+
+// ------------------------------------------------------------
+// BOTÃO NO MENU ACESSIBILIDADE
+// ------------------------------------------------------------
+
+function adicionarBotaoAutorizacaoCorrecaoEstoque() {
+    const username = currentUser?.username?.toLowerCase()?.trim() || '';
+    const autorizado = usuarioEhAutorizadorCorrecaoEstoque(username);
+    const existente = document.getElementById('btnAutorizacaoCorrecaoEstoque');
+
+    if (!autorizado) {
+        existente?.remove();
+        return;
+    }
+
+    const menu = garantirMenuAcessibilidadeEstoque();
+    if (!menu) {
+        setTimeout(adicionarBotaoAutorizacaoCorrecaoEstoque, 400);
+        return;
+    }
+
+    if (existente) {
+        if (existente.parentElement !== menu) menu.appendChild(existente);
+        estilizarItemMenuAcessibilidadeEstoque(existente);
+        return;
+    }
+
+    const botao = document.createElement('button');
+    botao.id = 'btnAutorizacaoCorrecaoEstoque';
+    botao.type = 'button';
+    botao.title = 'Autorizar ou recusar ajustes manuais de estoque';
+    botao.innerHTML = '<i class="fas fa-user-check"></i> Autorização de correção de estoque';
+    botao.onclick = () => window.abrirTelaAutorizacaoCorrecaoEstoque();
+    estilizarItemMenuAcessibilidadeEstoque(botao);
+    menu.appendChild(botao);
+    moverBotoesParaMenuAcessibilidadeEstoque();
+}
+window.adicionarBotaoAutorizacaoCorrecaoEstoque = adicionarBotaoAutorizacaoCorrecaoEstoque;
