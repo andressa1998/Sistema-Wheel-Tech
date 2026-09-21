@@ -22280,6 +22280,180 @@ async function obterRegraFixaTipoAnuncioML(itemId) {
 }
 
 
+// =========================================================
+// EXPOSIÇÃO x PREÇO DE PROMOÇÃO
+//
+// Quando uma promoção (Promoções em Lote) derruba o preço de um
+// anúncio PREMIUM pra menos de R$150, a exposição vira Clássico
+// automaticamente (Premium com preço baixo não compensa a taxa).
+// Quando a promoção é desativada e o preço volta a R$150+, reverte
+// pra Premium. As regras fixas de clássico/premium (acima) têm
+// SEMPRE prioridade — isto aqui nunca mexe num MLB que já tem
+// regra fixa definida.
+// =========================================================
+
+const LIMITE_PRECO_EXPOSICAO_PROMOCAO = 150;
+
+async function mudarListingTypeML(mlb, tipoDesejado, token, workerUrl) {
+    const url = `https://api.mercadolibre.com/items/${mlb}/listing_type`;
+    const proxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+
+    const resp = await fetch(proxy, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: tipoDesejado })
+    });
+
+    if (!resp.ok) {
+        const texto = await resp.text().catch(() => '');
+        throw new Error(`HTTP ${resp.status} ${texto}`);
+    }
+
+    return true;
+}
+
+// Chamada logo após uma promoção ser ativada com sucesso (Promoções
+// em Lote). precoOriginal = preço do anúncio ANTES da promoção;
+// precoComPromocao = preço final já com a promoção aplicada.
+async function ajustarExposicaoPorPromocaoAtivada(mlb, precoOriginal, precoComPromocao, token, workerUrl) {
+    if (!mlb || !token) return { aplicado: false, motivo: 'dados insuficientes' };
+
+    workerUrl = workerUrl || window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
+    const original = Number(precoOriginal);
+    const comPromocao = Number(precoComPromocao);
+
+    if (!Number.isFinite(original) || !Number.isFinite(comPromocao)) {
+        return { aplicado: false, motivo: 'preço original ou promocional inválido' };
+    }
+
+    // Só age quando REALMENTE cruza o limite: estava >= 150 e caiu
+    // pra menos de 150 por causa da promoção.
+    if (!(original >= LIMITE_PRECO_EXPOSICAO_PROMOCAO && comPromocao < LIMITE_PRECO_EXPOSICAO_PROMOCAO)) {
+        return { aplicado: false, motivo: 'não cruzou o limite de R$150' };
+    }
+
+    const regraFixa = await obterRegraFixaTipoAnuncioML(mlb);
+    if (regraFixa) {
+        return { aplicado: false, motivo: 'MLB tem regra fixa de tipo de anúncio — não mexe' };
+    }
+
+    if (!window.supabaseClient) return { aplicado: false, motivo: 'sem conexão' };
+
+    try {
+        const urlItem = `https://api.mercadolibre.com/items/${mlb}?attributes=id,listing_type_id`;
+        const proxyGet = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(urlItem)}&token=${encodeURIComponent(token)}`;
+        const respItem = await fetch(proxyGet);
+
+        if (!respItem.ok) {
+            return { aplicado: false, motivo: `erro consultando anúncio (HTTP ${respItem.status})` };
+        }
+
+        const item = await respItem.json();
+        const tipoAtual = item.listing_type_id;
+
+        // Só reage se hoje realmente é Premium.
+        if (tipoAtual !== 'gold_pro') {
+            return { aplicado: false, motivo: `anúncio já não está Premium (está ${tipoAtual})` };
+        }
+
+        await mudarListingTypeML(mlb, 'gold_special', token, workerUrl);
+
+        await window.supabaseClient.from('produto_exposicao_promocao_ativa').upsert({
+            mlb,
+            listing_type_original: tipoAtual,
+            listing_type_atual: 'gold_special',
+            preco_no_momento: comPromocao,
+            motivo: 'promocao_abaixo_150',
+            ativado_em: new Date().toISOString(),
+            revertido_em: null
+        }, { onConflict: 'mlb' });
+
+        console.log(`🔻 [Exposição x Promoção] ${mlb}: Premium → Clássico (preço caiu de R$${original.toFixed(2)} para R$${comPromocao.toFixed(2)}, abaixo de R$150).`);
+
+        return { aplicado: true, de: tipoAtual, para: 'gold_special' };
+
+    } catch (error) {
+        console.warn(`⚠️ [Exposição x Promoção] Erro ajustando ${mlb}:`, error);
+        return { aplicado: false, motivo: error.message };
+    }
+}
+window.ajustarExposicaoPorPromocaoAtivada = ajustarExposicaoPorPromocaoAtivada;
+
+// Chamada logo após uma promoção ser desativada com sucesso.
+// precoAposDesativar = preço do anúncio já sem a promoção.
+async function reverterExposicaoPorPromocaoDesativada(mlb, precoAposDesativar, token, workerUrl) {
+    if (!mlb || !window.supabaseClient) return { revertido: false, motivo: 'dados insuficientes' };
+
+    workerUrl = workerUrl || window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
+    const { data: registro } = await window.supabaseClient
+        .from('produto_exposicao_promocao_ativa')
+        .select('*')
+        .eq('mlb', mlb)
+        .is('revertido_em', null)
+        .maybeSingle();
+
+    if (!registro) return { revertido: false, motivo: 'sem alteração registrada para este MLB' };
+
+    const precoAtual = Number(precoAposDesativar);
+    if (!Number.isFinite(precoAtual) || precoAtual < LIMITE_PRECO_EXPOSICAO_PROMOCAO) {
+        return { revertido: false, motivo: 'preço ainda abaixo de R$150 — mantém Clássico' };
+    }
+
+    // Regra fixa manda agora — só fecha nosso controle, quem decide o
+    // tipo dali pra frente é a regra fixa (via sync de estoque).
+    const regraFixa = await obterRegraFixaTipoAnuncioML(mlb);
+    if (regraFixa) {
+        await window.supabaseClient
+            .from('produto_exposicao_promocao_ativa')
+            .update({ revertido_em: new Date().toISOString() })
+            .eq('id', registro.id);
+        return { revertido: false, motivo: 'regra fixa assumiu' };
+    }
+
+    if (!token) return { revertido: false, motivo: 'sem token ML' };
+
+    try {
+        await mudarListingTypeML(mlb, registro.listing_type_original || 'gold_pro', token, workerUrl);
+        console.log(`🔺 [Exposição x Promoção] ${mlb}: Clássico → Premium (preço voltou a R$${precoAtual.toFixed(2)}).`);
+    } catch (error) {
+        console.warn(`⚠️ [Exposição x Promoção] Erro revertendo ${mlb}:`, error);
+        return { revertido: false, motivo: error.message };
+    }
+
+    await window.supabaseClient
+        .from('produto_exposicao_promocao_ativa')
+        .update({ revertido_em: new Date().toISOString() })
+        .eq('id', registro.id);
+
+    return { revertido: true, para: registro.listing_type_original || 'gold_pro' };
+}
+window.reverterExposicaoPorPromocaoDesativada = reverterExposicaoPorPromocaoDesativada;
+
+// Consultado pelo alerta de tipo de anúncio (gerenciamento_anuncios.js)
+// pra não sinalizar como "errado" um MLB que está Clássico de propósito
+// por causa de uma promoção ativa.
+let _mlbsExposicaoPromocaoAtivaCache = null;
+let _mlbsExposicaoPromocaoAtivaCacheQuando = 0;
+async function obterMlbsComExposicaoPorPromocaoAtiva() {
+    if (_mlbsExposicaoPromocaoAtivaCache && Date.now() - _mlbsExposicaoPromocaoAtivaCacheQuando < 60000) {
+        return _mlbsExposicaoPromocaoAtivaCache;
+    }
+    if (!window.supabaseClient) return new Set();
+
+    const { data } = await window.supabaseClient
+        .from('produto_exposicao_promocao_ativa')
+        .select('mlb')
+        .is('revertido_em', null);
+
+    _mlbsExposicaoPromocaoAtivaCache = new Set((data || []).map(r => r.mlb));
+    _mlbsExposicaoPromocaoAtivaCacheQuando = Date.now();
+    return _mlbsExposicaoPromocaoAtivaCache;
+}
+window.obterMlbsComExposicaoPorPromocaoAtiva = obterMlbsComExposicaoPorPromocaoAtiva;
+
+
 async function salvarRegrasFixasTipoAnuncioML(
     novasRegras
 ) {

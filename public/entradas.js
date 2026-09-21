@@ -1587,6 +1587,20 @@ async function renderizarEntradas() {
                         'badge-secondary';
 
                 } else if (
+                    item.status === 'entrada_realizada' &&
+                    card.tipo_entrada === 'xml_antigo_custo'
+                ) {
+
+                    // Mesmo status/acao da entrada normal (o banco só
+                    // aceita esses valores), mas aqui foi só custo e
+                    // fornecedor — o estoque não mudou.
+                    itemStatus =
+                        '💰 Custo atualizado';
+
+                    statusClass =
+                        'badge-success';
+
+                } else if (
                     item.status ===
                     'entrada_realizada'
                 ) {
@@ -1750,6 +1764,54 @@ async function renderizarEntradas() {
                                 `
                                 : ''
                         }
+
+                    `;
+
+                // PRODUTO JÁ EXISTE — CARD DE XML ANTIGO
+                //
+                // Não usa "Dar Entrada" (que altera estoque). Só
+                // grava custo/fornecedor.
+                } else if (
+                    produtoExistente &&
+                    card.tipo_entrada === 'xml_antigo_custo'
+                ) {
+
+                    acaoHtml = `
+
+                        <span class="badge badge-info">
+                            📦 Já cadastrado
+                        </span>
+
+                        <br>
+
+                        <button
+                            class="btn btn-sm btn-warning"
+                            onclick="salvarCustoFornecedorItem(
+                                '${card.id}',
+                                ${item.id},
+                                '${produtoExistente.id}'
+                            )"
+                            title="Salvar custo e fornecedor — não altera estoque"
+                        >
+                            <i class="fas fa-save"></i>
+                            Salvar informações
+                        </button>
+
+                        <small class="d-block text-muted" style="margin-top:2px; font-size:11px;">
+                            Estoque não será alterado — só custo e fornecedor.
+                        </small>
+
+                        <button
+                            class="btn btn-sm btn-secondary"
+                            onclick="ignorarItem(
+                                '${card.id}',
+                                ${item.id}
+                            )"
+                            title="Ignorar este item"
+                        >
+                            <i class="fas fa-ban"></i>
+                            Ignorar
+                        </button>
 
                     `;
 
@@ -7276,6 +7338,478 @@ window.processarPreEntradaXML = async function() {
         }
     };
     reader.readAsText(file);
+};
+
+// ============================================
+// SUBIR XML ANTIGO — só custo/fornecedor, NUNCA mexe em estoque
+//
+// Para notas de compras antigas, já lançadas manualmente no sistema
+// há mais tempo. O objetivo aqui é só capturar o valor de custo e o
+// fornecedor de cada produto pra manter o histórico de custo em dia
+// — a quantidade em estoque nunca é tocada por este fluxo.
+// ============================================
+
+let xmlAntigoItens = [];
+
+// Fatores conhecidos de "quantas unidades individuais cabem numa
+// unidade comercial da nota" — usados como PALPITE inicial. A
+// colaboradora confere/corrige na prévia antes de salvar, porque
+// "pacote fechado" não tem um tamanho universal (varia por produto).
+const FATORES_UNIDADE_NFE_ANTIGO = {
+    'GR': 144, 'GROSA': 144,
+    'DZ': 12, 'DUZIA': 12, 'DÚZIA': 12,
+    'CT': 100, 'CENTO': 100,
+    'PAR': 2,
+    'UN': 1, 'UND': 1, 'PC': 1, 'UNID': 1, 'UNIDADE': 1
+};
+
+function fatorUnidadePadraoXmlAntigo(uCom) {
+    const chave = String(uCom || '').trim().toUpperCase();
+    return FATORES_UNIDADE_NFE_ANTIGO[chave] || 1;
+}
+
+// Uma nota é considerada "já importada" se o número dela já existe
+// em QUALQUER entrada (normal, pré-entrada ou XML antigo) — checa
+// contra entradas_cards.nf_numero, sem distinguir o tipo.
+async function verificarNFJaImportadaXmlAntigo(nNF) {
+    if (!nNF || !window.supabaseClient) return false;
+    const { data, error } = await window.supabaseClient
+        .from('entradas_cards')
+        .select('id, numero_entrada, tipo_entrada')
+        .eq('nf_numero', nNF)
+        .limit(1);
+    if (error) {
+        console.warn('⚠️ Erro verificando NF já importada:', error);
+        return false;
+    }
+    return data && data.length > 0 ? data[0] : false;
+}
+
+window.processarXmlAntigo = async function() {
+    const fileInput = document.getElementById('xmlAntigoFileInput');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showToast('⚠️ Selecione ao menos um arquivo XML.', 'warning');
+        return;
+    }
+
+    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
+        showToast('🔄 Carregando estoque...', 'info');
+        if (typeof carregarProdutosEstoque === 'function') {
+            await carregarProdutosEstoque();
+        } else {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
+    await aguardarEstoqueCarregado();
+
+    const arquivos = Array.from(fileInput.files);
+    let totalItensNovos = 0;
+    let notasIgnoradas = [];
+
+    for (const file of arquivos) {
+        if (!file.name.toLowerCase().endsWith('.xml')) {
+            showToast(`⚠️ "${file.name}" não é .xml — ignorado.`, 'warning');
+            continue;
+        }
+
+        const xmlString = await file.text();
+
+        try {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+            const nfeNode = xmlDoc.querySelector('NFe') || xmlDoc.querySelector('nfeProc');
+            if (!nfeNode) {
+                showToast(`❌ "${file.name}" não é uma NF-e válida.`, 'error');
+                continue;
+            }
+
+            const emitNode = nfeNode.querySelector('emit');
+            const fornecedorNome = emitNode ? emitNode.querySelector('xNome')?.textContent || '' : '';
+
+            const ideNode = nfeNode.querySelector('ide');
+            const nNF = ideNode ? ideNode.querySelector('nNF')?.textContent || '' : '';
+
+            if (!nNF) {
+                showToast(`⚠️ "${file.name}" não tem número de NF — ignorado.`, 'warning');
+                continue;
+            }
+
+            const jaImportada = await verificarNFJaImportadaXmlAntigo(nNF);
+            if (jaImportada) {
+                notasIgnoradas.push(`NF ${nNF} (já importada em ${jaImportada.numero_entrada})`);
+                continue;
+            }
+
+            const detNodes = xmlDoc.querySelectorAll('det');
+            if (detNodes.length === 0) {
+                showToast(`⚠️ "${file.name}" não tem itens.`, 'warning');
+                continue;
+            }
+
+            for (const det of detNodes) {
+                const prod = det.querySelector('prod');
+                if (!prod) continue;
+
+                const cProd = prod.querySelector('cProd')?.textContent || '';
+                const xProd = prod.querySelector('xProd')?.textContent || '';
+                const NCM = prod.querySelector('NCM')?.textContent || '';
+                const qCom = parseFloat(prod.querySelector('qCom')?.textContent || '0');
+                const vUnCom = parseFloat(prod.querySelector('vUnCom')?.textContent || '0');
+                const uCom = prod.querySelector('uCom')?.textContent || '';
+
+                const ipi = extrairIPI(det);
+                // Custo COMERCIAL (por unidade da nota, ex. por grosa) —
+                // o custo por unidade INDIVIDUAL só é calculado na hora
+                // de exibir/salvar, dividindo pelo fator de unidade.
+                const valorCustoComercial = vUnCom + (ipi / (qCom || 1));
+
+                const fornecedor = buscarFornecedor(cProd);
+                const skuSistema = fornecedor ? fornecedor.sku_sistema : null;
+                const nomeFornecedor = fornecedor ? fornecedor.nome_fornecedor : (fornecedorNome || '');
+                const cdFornecedor = fornecedor ? fornecedor.cd_fornecedor : cProd;
+
+                let produtoEstoque = null;
+                if (skuSistema) produtoEstoque = verificarSKUExistente(skuSistema);
+                if (!produtoEstoque && cProd) produtoEstoque = verificarSKUExistente(cProd);
+
+                const fatorUnidade = fatorUnidadePadraoXmlAntigo(uCom);
+
+                xmlAntigoItens.push({
+                    nf_numero: nNF,
+                    cd_fornecedor: cdFornecedor || '',
+                    fornecedor_nome: nomeFornecedor || '',
+                    produto: xProd || '',
+                    sku_original: cProd || '',
+                    sku_match: skuSistema || (produtoEstoque ? produtoEstoque.sku : null),
+                    produto_id: produtoEstoque ? produtoEstoque.id : null,
+                    ncm: NCM || '',
+                    unidade_nota: uCom || '-',
+                    quantidade_nota: qCom || 0,
+                    valor_custo_comercial: valorCustoComercial,
+                    fator_unidade: fatorUnidade
+                });
+
+                totalItensNovos++;
+            }
+
+        } catch (error) {
+            console.error(`❌ Erro processando "${file.name}":`, error);
+            showToast(`❌ Erro processando "${file.name}": ${error.message}`, 'error');
+        }
+    }
+
+    fileInput.value = '';
+
+    if (notasIgnoradas.length > 0) {
+        showToast(`⏭️ ${notasIgnoradas.length} nota(s) já importada(s) antes, ignorada(s): ${notasIgnoradas.join(', ')}`, 'info');
+    }
+
+    if (totalItensNovos === 0) {
+        if (notasIgnoradas.length === 0) {
+            showToast('⚠️ Nenhum item novo encontrado nos XMLs selecionados.', 'warning');
+        }
+        return;
+    }
+
+    renderizarXmlAntigo();
+    document.getElementById('xmlAntigoTableContainer').style.display = 'block';
+    showToast(`✅ ${totalItensNovos} item(ns) carregado(s). Confira a unidade de cada um antes de salvar.`, 'success');
+};
+
+function renderizarXmlAntigo() {
+    const tbody = document.getElementById('xmlAntigoTableBody');
+    if (!tbody) return;
+
+    if (xmlAntigoItens.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">Nenhum item carregado.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = xmlAntigoItens.map((item, idx) => {
+        const custoUnitario = item.fator_unidade > 0
+            ? item.valor_custo_comercial / item.fator_unidade
+            : item.valor_custo_comercial;
+
+        return `
+            <tr>
+                <td>${idx + 1}</td>
+                <td>${escapeHtml(item.nf_numero)}</td>
+                <td>${escapeHtml(item.produto)}</td>
+                <td>${escapeHtml(item.sku_match || item.sku_original || '-')}</td>
+                <td>${escapeHtml(item.fornecedor_nome || item.cd_fornecedor || '-')}</td>
+                <td>${escapeHtml(item.unidade_nota)}</td>
+                <td>${item.quantidade_nota}</td>
+                <td>
+                    <input type="number" min="1" step="1" class="form-control form-control-sm"
+                        value="${item.fator_unidade}"
+                        onchange="atualizarFatorUnidadeXmlAntigo(${idx}, this.value)">
+                </td>
+                <td><strong>R$ ${custoUnitario.toFixed(2)}</strong></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.atualizarFatorUnidadeXmlAntigo = function(idx, valor) {
+    const fator = parseInt(valor, 10);
+    if (!xmlAntigoItens[idx] || !Number.isFinite(fator) || fator < 1) return;
+    xmlAntigoItens[idx].fator_unidade = fator;
+    renderizarXmlAntigo();
+};
+
+window.limparXmlAntigo = function() {
+    if (xmlAntigoItens.length > 0) {
+        if (!confirm('Limpar todos os itens carregados? Nada foi salvo ainda.')) return;
+    }
+    xmlAntigoItens = [];
+    document.getElementById('xmlAntigoTableContainer').style.display = 'none';
+    document.getElementById('xmlAntigoFileInput').value = '';
+    renderizarXmlAntigo();
+    showToast('🧹 Limpo.', 'info');
+};
+
+window.salvarXmlAntigo = async function() {
+    if (xmlAntigoItens.length === 0) {
+        showToast('Nenhum item pra salvar.', 'warning');
+        return;
+    }
+
+    if (!confirm(`Salvar ${xmlAntigoItens.length} item(ns) de custo/fornecedor? O ESTOQUE não será alterado — só custo e fornecedor dos produtos já cadastrados serão atualizados depois, um a um, na lista de entradas.`)) {
+        return;
+    }
+
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        // Agrupa por NF — cada nota vira o seu próprio card, igual ao
+        // fluxo normal de XML.
+        const porNota = {};
+        xmlAntigoItens.forEach(item => {
+            if (!porNota[item.nf_numero]) porNota[item.nf_numero] = [];
+            porNota[item.nf_numero].push(item);
+        });
+
+        let cardsCriados = 0;
+
+        for (const nfNumero of Object.keys(porNota)) {
+            const itensDaNota = porNota[nfNumero];
+
+            const numeroEntrada = await gerarNumeroEntrada();
+
+            const cardData = {
+                numero_entrada: numeroEntrada,
+                dados_brutos: `XML antigo — apenas custo/fornecedor, sem alterar estoque.`,
+                status: 'pendente',
+                criado_por: currentUser.name,
+                criado_em: getDataHoraLocalISO(),
+                total_items: itensDaNota.length,
+                items_concluidos: 0,
+                tipo_entrada: 'xml_antigo_custo',
+                fornecedor: itensDaNota[0].fornecedor_nome || '',
+                nf_numero: nfNumero
+            };
+
+            const { data: cardResult, error: cardError } = await window.supabaseClient
+                .from('entradas_cards')
+                .insert([cardData])
+                .select();
+
+            if (cardError) throw cardError;
+            const card = cardResult[0];
+
+            const itemsToInsert = itensDaNota.map(item => {
+                const custoUnitario = item.fator_unidade > 0
+                    ? item.valor_custo_comercial / item.fator_unidade
+                    : item.valor_custo_comercial;
+
+                return {
+                    entrada_id: card.id,
+                    cd_fornecedor: item.cd_fornecedor || '',
+                    rastreio: `NF-${item.nf_numero}-${item.sku_original}`,
+                    fornecedor_nome: item.fornecedor_nome || '',
+                    // Quantidade da nota fica só de referência visual —
+                    // este fluxo NUNCA usa isso pra alterar estoque.
+                    quantidade: item.quantidade_nota,
+                    produto: item.produto || '',
+                    sku_original: item.sku_original || '',
+                    sku_match: item.sku_match || '',
+                    produto_id: item.produto_id || null,
+                    observacao: `Unid. na nota: ${item.unidade_nota} · ${item.fator_unidade} un/embalagem`,
+                    ncm: item.ncm || '',
+                    valor_unitario: custoUnitario,
+                    cprod_fornecedor: item.sku_original || '',
+                    tipo_entrada: 'xml_antigo_custo',
+                    status: 'pendente',
+                    acao: null,
+                    responsavel: null,
+                    data_acao: null,
+                    quantidade_entrada: 0,
+                    valor_custo: custoUnitario
+                };
+            });
+
+            const { error: itemsError } = await window.supabaseClient
+                .from('entrada_items')
+                .insert(itemsToInsert);
+
+            if (itemsError) throw itemsError;
+
+            cardsCriados++;
+        }
+
+        showToast(`✅ ${cardsCriados} nota(s) importada(s). Vá na lista de entradas pra confirmar o custo de cada produto.`, 'success');
+
+        xmlAntigoItens = [];
+        document.getElementById('xmlAntigoTableContainer').style.display = 'none';
+        await carregarEntradas();
+
+    } catch (error) {
+        console.error('❌ Erro ao salvar XML antigo:', error);
+        showToast('❌ Erro ao salvar: ' + error.message, 'error');
+    }
+};
+
+// Versão de "dar entrada" que NUNCA mexe em produtos_estoque.quantidade
+// — só custo (ultimo_custo/custo_medio/historico_custos) e fornecedor
+// (dados_extra.fornecedor_nome/cd_fornecedor). Usada exclusivamente
+// pelos cards tipo_entrada === 'xml_antigo_custo'.
+window.salvarCustoFornecedorItem = async function(cardId, itemId, produtoId) {
+    if (!cardId || !itemId || !produtoId) {
+        showToast('Erro: dados incompletos', 'error');
+        return;
+    }
+
+    const card = entradasCards.find(c => c.id == cardId);
+    if (!card) {
+        showToast('Card não encontrado', 'error');
+        return;
+    }
+
+    const item = card.itens.find(i => i.id == itemId);
+    if (!item) {
+        showToast('Item não encontrado', 'error');
+        return;
+    }
+
+    if (item.status !== 'pendente') {
+        showToast('Este item já foi processado', 'warning');
+        return;
+    }
+
+    if (!confirm(`Salvar custo (R$ ${Number(item.valor_custo || 0).toFixed(2)}) e fornecedor de "${item.produto}"?\n\nO ESTOQUE NÃO será alterado.`)) {
+        return;
+    }
+
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        const { data: produto, error: errProd } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('sku, nome, dados_extra, historico_custos')
+            .eq('id', produtoId)
+            .single();
+
+        if (errProd) throw errProd;
+
+        const valorCusto = item.valor_custo || 0;
+
+        let historicoCustos = produto.historico_custos || [];
+
+        if (valorCusto > 0) {
+            historicoCustos.push({
+                valor: valorCusto,
+                data: getDataHoraLocalISO(),
+                entrada: card.numero_entrada,
+                quantidade: 0,
+                usuario: currentUser.name,
+                origem: 'xml_antigo_custo'
+            });
+
+            if (historicoCustos.length > 50) {
+                historicoCustos = historicoCustos.slice(-50);
+            }
+        }
+
+        const custosValidos = historicoCustos.filter(h => h.valor > 0);
+        const custoMedio = custosValidos.length > 0
+            ? custosValidos.reduce((sum, h) => sum + h.valor, 0) / custosValidos.length
+            : 0;
+
+        let dadosExtra = produto.dados_extra || {};
+        dadosExtra.ultimo_custo = valorCusto;
+        dadosExtra.custo_medio = custoMedio;
+        dadosExtra.historico_custos = historicoCustos;
+        if (item.fornecedor_nome) dadosExtra.fornecedor_nome = item.fornecedor_nome;
+        if (item.cd_fornecedor) dadosExtra.cd_fornecedor = item.cd_fornecedor;
+
+        // IMPORTANTE: "quantidade" nunca entra neste update — é
+        // exatamente o que esta função existe pra evitar.
+        const { error: errUpdate } = await window.supabaseClient
+            .from('produtos_estoque')
+            .update({
+                dados_extra: dadosExtra,
+                historico_custos: historicoCustos,
+                ultimo_custo: valorCusto,
+                custo_medio: custoMedio
+            })
+            .eq('id', produtoId);
+
+        if (errUpdate) throw errUpdate;
+
+        // Usa os mesmos valores de status/acao da entrada normal — o
+        // banco tem uma constraint que só aceita esses valores. O que
+        // diferencia visualmente (badge "💰 Custo atualizado" em vez
+        // de "✅ Entrada") é o card.tipo_entrada, checado na
+        // renderização (ver renderizarEntradas).
+        const { error: errItem } = await window.supabaseClient
+            .from('entrada_items')
+            .update({
+                status: 'entrada_realizada',
+                acao: 'entrada',
+                responsavel: currentUser.name,
+                data_acao: getDataHoraLocalISO()
+            })
+            .eq('id', itemId);
+
+        if (errItem) throw errItem;
+
+        const concluidos = card.itens.filter(i =>
+            i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
+        ).length + 1;
+
+        const total = card.itens.filter(i => i.status !== 'ignorado').length;
+        const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
+
+        const { error: errCard } = await window.supabaseClient
+            .from('entradas_cards')
+            .update({
+                items_concluidos: concluidos,
+                status: novoStatus,
+                finalizado_em: novoStatus === 'finalizado' ? getDataHoraLocalISO() : null,
+                finalizado_por: novoStatus === 'finalizado' ? currentUser.name : null
+            })
+            .eq('id', cardId);
+
+        if (errCard) throw errCard;
+
+        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+            const produtoLocal = produtosEstoque.find(p => p.id == produtoId);
+            if (produtoLocal) {
+                produtoLocal.dados_extra = dadosExtra;
+                produtoLocal.historico_custos = historicoCustos;
+                produtoLocal.ultimo_custo = valorCusto;
+                produtoLocal.custo_medio = custoMedio;
+            }
+        }
+
+        showToast(`✅ Custo e fornecedor salvos! Estoque não foi alterado.`, 'success');
+
+        await carregarEntradas();
+
+    } catch (error) {
+        console.error('❌ Erro ao salvar custo/fornecedor:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
+    }
 };
 
 // ============================================

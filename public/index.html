@@ -6374,6 +6374,66 @@ body:has(#loginScreen:not(.hidden)) {
             </div>
         </div>
 
+        <!-- Card: Subir XML antigo (só custo/fornecedor, NÃO mexe em estoque) -->
+        <div class="card mb-4" id="xmlAntigoCard" style="border: 2px solid #f0ad4e; background: #fffaf0;">
+            <div class="card-header" style="background: #fff3cd; border-bottom: 2px solid #f0ad4e; border-radius: 8px 8px 0 0;">
+                <h2 class="card-title" style="color:#8a6d00;">
+                    <i class="fas fa-clock-rotate-left"></i>
+                    Subir XML antigo
+                </h2>
+                <div>
+                    <span style="font-size: 12px; color:#8a6d00;">
+                        <i class="fas fa-info-circle"></i>
+                        Para notas de compras antigas, já lançadas manualmente. Salva só <strong>custo e fornecedor</strong> —
+                        NÃO altera quantidade em estoque. Notas cujo número já foi importado antes são ignoradas automaticamente.
+                    </span>
+                </div>
+            </div>
+
+            <div class="form-group mb-3" style="padding: 0 20px;">
+                <label for="xmlAntigoFileInput"><i class="fas fa-file-code"></i> Selecione o(s) XML(s) da(s) nota(s) fiscal(is)</label>
+                <div class="d-flex gap-2 align-items-center">
+                    <input type="file" id="xmlAntigoFileInput" class="form-control" accept=".xml" multiple style="width: auto; flex: 1;">
+                    <button class="btn btn-warning" onclick="processarXmlAntigo()">
+                        <i class="fas fa-upload"></i> Carregar
+                    </button>
+                    <button class="btn btn-danger" onclick="limparXmlAntigo()">
+                        <i class="fas fa-trash"></i> Limpar
+                    </button>
+                </div>
+                <small class="text-muted">Pode selecionar várias notas de uma vez. Confira a unidade de medida de cada item (ex.: grosa = 144un) antes de salvar.</small>
+            </div>
+
+            <div id="xmlAntigoTableContainer" style="display: none; padding: 0 20px 20px;">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover" id="xmlAntigoTable">
+                        <thead>
+                            <tr>
+                                <th style="width:40px;">#</th>
+                                <th>NF</th>
+                                <th>Produto</th>
+                                <th>SKU</th>
+                                <th>Fornecedor</th>
+                                <th style="width:100px;">Unid. na nota</th>
+                                <th style="width:90px;">Qtd na nota</th>
+                                <th style="width:140px;">Unid. por embalagem</th>
+                                <th style="width:110px;">Custo/unid.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="xmlAntigoTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button class="btn btn-secondary" onclick="limparXmlAntigo()">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                    <button class="btn btn-warning" onclick="salvarXmlAntigo()">
+                        <i class="fas fa-check-double"></i> Salvar
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Card: Nova Entrada (Excel) -->
         <div class="card mb-4">
             <div class="card-header">
@@ -7301,7 +7361,8 @@ body:has(#loginScreen:not(.hidden)) {
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="script.js?v=20260917-5"></script>
+    <script src="script.js?v=20260918-6"></script>
+    <script src="historico_downloads_excel.js?v=20260918-1"></script>
     <script src="ml_token_manager.js"></script>
     <script src="folgas.js?v=20260915-4"></script>
     <script src="shipping_simple.js?v=20260916-8"></script>
@@ -7309,15 +7370,15 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
     <script src="nfe_manager.js?v=20260918-3"></script>
-    <script src="estoque_gestao.js?v=20260918-9"></script>
+    <script src="estoque_gestao.js?v=20260918-10"></script>
     <script src="estoque_analise.js?v=20260911-1"></script>
     <script src="regras_nivel_estoque.js?v=20260918-1"></script>
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
     <script src="entradas.js"></script>
-    <script src="promocoes_manager.js?v=20260918-1"></script>
+    <script src="promocoes_manager.js?v=20260918-2"></script>
     <script src="full_analysis.js"></script>
-    <script src="gerenciamento_anuncios.js?v=20260916-4"></script>
+    <script src="gerenciamento_anuncios.js?v=20260918-1"></script>
     <script src="chamados.js?v=20260915-4"></script>
     <script src="atividades.js?v=20260917-4"></script>
     <script src="projetos.js?v=20260917-3"></script>

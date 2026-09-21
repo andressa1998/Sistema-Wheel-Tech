@@ -8028,6 +8028,16 @@ function gaPrecisaCorrigirTipo(
     row
 ) {
 
+    // Clássico DE PROPÓSITO por causa de uma promoção que derrubou o
+    // preço abaixo de R$150 (ver estoque_gestao.js) — não é "errado",
+    // não sinaliza.
+    if (
+        window._mlbsExposicaoPromocaoAtivaSync &&
+        window._mlbsExposicaoPromocaoAtivaSync.has(row?.itemId)
+    ) {
+        return false;
+    }
+
     return (
         (
             gaMaisDe30DiasSemVender(
@@ -12175,6 +12185,15 @@ function exportarCSV() {
         console.log(
             '📊 Abrindo Gerenciamento de Anúncios...'
         );
+
+        // MLBs com exposição trocada de propósito por uma promoção
+        // (ver estoque_gestao.js) — evita marcar como "precisa virar
+        // Premium" um anúncio que está Clássico por causa disso.
+        if (typeof window.obterMlbsComExposicaoPorPromocaoAtiva === 'function') {
+            window.obterMlbsComExposicaoPorPromocaoAtiva()
+                .then(set => { window._mlbsExposicaoPromocaoAtivaSync = set; })
+                .catch(() => {});
+        }
 
 
         // =====================================================

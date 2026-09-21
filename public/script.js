@@ -20469,30 +20469,64 @@ async function abrirHistoricoAcessos() {
                 <h2 style="margin: 0;">
                     <i class="fas fa-history"></i> Histórico de Acessos
                 </h2>
-                <div class="d-flex gap-2">
+                <button class="btn btn-secondary" onclick="voltarParaMenu()">
+                    <i class="fas fa-arrow-left"></i> Voltar
+                </button>
+            </div>
+            <div class="d-flex gap-2" style="padding: 12px 20px 0;">
+                <button type="button" class="btn btn-primary" id="haTabAcessos" onclick="window.alternarAbaHistoricoAcessos('acessos')">
+                    <i class="fas fa-sign-in-alt"></i> Acessos
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="haTabDownloads" onclick="window.alternarAbaHistoricoAcessos('downloads')">
+                    <i class="fas fa-file-excel"></i> Downloads de Excel
+                </button>
+            </div>
+
+            <div id="haAbaAcessos">
+                <div class="card-header" style="display: flex; justify-content: flex-end;">
                     <button class="btn btn-outline-success" onclick="exportarHistoricoAcessosExcel()">
                         <i class="fas fa-file-excel"></i> Exportar Excel
                     </button>
-                    <button class="btn btn-secondary" onclick="voltarParaMenu()">
-                        <i class="fas fa-arrow-left"></i> Voltar
-                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped" id="historyTable">
+                        <thead>
+                            <tr>
+                                <th>Usuário</th>
+                                <th>Nome</th>
+                                <th>IP</th>
+                                <th>Data/Hora</th>
+                                <th>Navegador</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <tr><td colspan="5" class="text-center"><div class="spinner"></div> Carregando...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            <div class="table-responsive">
-                <table class="table table-striped" id="historyTable">
-                    <thead>
-                        <tr>
-                            <th>Usuário</th>
-                            <th>Nome</th>
-                            <th>IP</th>
-                            <th>Data/Hora</th>
-                            <th>Navegador</th>
-                        </tr>
-                    </thead>
-                    <tbody id="historyTableBody">
-                        <tr><td colspan="5" class="text-center"><div class="spinner"></div> Carregando...</td><ee
-                    </tbody>
-                </table>
+
+            <div id="haAbaDownloads" class="hidden">
+                <div class="card-header" style="display: flex; justify-content: flex-end;">
+                    <button class="btn btn-outline-success" onclick="exportarHistoricoDownloadsExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar Excel
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped" id="downloadsExcelTable">
+                        <thead>
+                            <tr>
+                                <th>Usuário</th>
+                                <th>Aba</th>
+                                <th>Arquivo</th>
+                                <th>Data/Hora</th>
+                            </tr>
+                        </thead>
+                        <tbody id="downloadsExcelTableBody">
+                            <tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     `;
@@ -20540,6 +20574,48 @@ async function abrirHistoricoAcessos() {
         }
         showToast('❌ Erro ao carregar histórico de acessos', 'error');
     }
+
+    await carregarAbaDownloadsExcel();
+}
+
+window.alternarAbaHistoricoAcessos = function (aba) {
+    const abaAcessos = document.getElementById('haAbaAcessos');
+    const abaDownloads = document.getElementById('haAbaDownloads');
+    const btnAcessos = document.getElementById('haTabAcessos');
+    const btnDownloads = document.getElementById('haTabDownloads');
+    if (!abaAcessos || !abaDownloads) return;
+
+    const mostrarDownloads = aba === 'downloads';
+    abaAcessos.classList.toggle('hidden', mostrarDownloads);
+    abaDownloads.classList.toggle('hidden', !mostrarDownloads);
+    if (btnAcessos) btnAcessos.className = mostrarDownloads ? 'btn btn-outline-secondary' : 'btn btn-primary';
+    if (btnDownloads) btnDownloads.className = mostrarDownloads ? 'btn btn-primary' : 'btn btn-outline-secondary';
+};
+
+async function carregarAbaDownloadsExcel() {
+    const tbody = document.getElementById('downloadsExcelTableBody');
+    if (!tbody) return;
+
+    if (typeof window.carregarHistoricoDownloadsExcel !== 'function') {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Módulo de histórico de downloads não carregado.</td></tr>';
+        return;
+    }
+
+    const registros = await window.carregarHistoricoDownloadsExcel(200);
+
+    if (!registros.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhum download registrado ainda.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = registros.map(reg => `
+        <tr>
+            <td>${escapeHtml(reg.usuario_nome || reg.usuario_username || '')}</td>
+            <td>${escapeHtml(reg.aba || '-')}</td>
+            <td>${escapeHtml(reg.arquivo || '-')}</td>
+            <td>${reg.criado_em ? new Date(reg.criado_em).toLocaleString('pt-BR') : '-'}</td>
+        </tr>
+    `).join('');
 }
 
 window.exportarHistoricoAcessosExcel = function() {
@@ -20552,6 +20628,19 @@ window.exportarHistoricoAcessosExcel = function() {
     const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
     XLSX.utils.book_append_sheet(wb, ws, 'Historico_Acessos');
     XLSX.writeFile(wb, `historico_acessos_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('✅ Exportado!', 'success');
+};
+
+window.exportarHistoricoDownloadsExcel = function() {
+    const tabela = document.getElementById('downloadsExcelTable');
+    if (!tabela || !document.getElementById('downloadsExcelTableBody')?.children.length) {
+        showToast('Nenhum registro para exportar', 'warning');
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Downloads_Excel');
+    XLSX.writeFile(wb, `historico_downloads_excel_${new Date().toISOString().slice(0, 10)}.xlsx`);
     showToast('✅ Exportado!', 'success');
 };
 

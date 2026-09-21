@@ -3084,6 +3084,18 @@ window.executarAtivacaoEmMassa = async function() {
                 item.statusDestino = 'pending';
                 item.statusLabel = '⏳ Programado';
 
+                // Se o preço caiu de >=150 pra <150 com a promoção,
+                // e o anúncio é Premium sem regra fixa, muda a
+                // exposição pra Clássico automaticamente.
+                if (typeof window.ajustarExposicaoPorPromocaoAtivada === 'function') {
+                    window.ajustarExposicaoPorPromocaoAtivada(
+                        mlb,
+                        item.precoOriginalDestino,
+                        dealPrice,
+                        token
+                    ).catch(() => {});
+                }
+
             } else {
                 falhas++;
 
@@ -5350,6 +5362,29 @@ async function processarAtivacaoAgendada(
             );
         }
 
+        // Preço ANTES da promoção — precisa ser capturado agora,
+        // porque depois de ativar a promoção o preço do anúncio já
+        // vai estar com o desconto aplicado (não dá pra recuperar
+        // "o original" consultando o ML depois).
+        let precoAntesPromocao = null;
+        try {
+            const worker =
+                window.WORKER_URL ||
+                'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+            const urlItemAntes =
+                `https://api.mercadolibre.com/items/${reservado.mlb}?attributes=id,price`;
+            const respAntes = await fetch(
+                `${worker}/api/ml/proxy?url=${encodeURIComponent(urlItemAntes)}&token=${encodeURIComponent(accessToken)}`
+            );
+            if (respAntes.ok) {
+                const itemAntes = await respAntes.json();
+                precoAntesPromocao = Number(itemAntes.price) || null;
+            }
+        } catch (erroPrecoAntes) {
+            // Sem preço original disponível — o ajuste de exposição
+            // simplesmente não vai poder comparar e vai pular.
+        }
+
         const resultado = await ativarItemPromocao(
             reservado.mlb,
             reservado.promotion_id,
@@ -5363,6 +5398,15 @@ async function processarAtivacaoAgendada(
                 resultado?.error ||
                 'Mercado Livre recusou a ativação'
             );
+        }
+
+        if (typeof window.ajustarExposicaoPorPromocaoAtivada === 'function') {
+            window.ajustarExposicaoPorPromocaoAtivada(
+                reservado.mlb,
+                precoAntesPromocao,
+                reservado.valor_final,
+                accessToken
+            ).catch(() => {});
         }
 
         let offerId =
@@ -6132,6 +6176,33 @@ async function aguardarConfirmacaoDesativacaoML(
             throw new Error(
                 'A promoção foi desativada, mas não foi possível atualizar o status local'
             );
+        }
+
+        // Se este MLB teve a exposição trocada pra Clássico por causa
+        // desta promoção, e o preço já voltou a R$150+ sem a
+        // promoção, reverte pra Premium.
+        if (typeof window.reverterExposicaoPorPromocaoDesativada === 'function') {
+            (async () => {
+                try {
+                    const worker =
+                        window.WORKER_URL ||
+                        'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+                    const urlItemDepois =
+                        `https://api.mercadolibre.com/items/${reservado.mlb}?attributes=id,price`;
+                    const respDepois = await fetch(
+                        `${worker}/api/ml/proxy?url=${encodeURIComponent(urlItemDepois)}&token=${encodeURIComponent(accessToken)}`
+                    );
+                    if (!respDepois.ok) return;
+                    const itemDepois = await respDepois.json();
+                    await window.reverterExposicaoPorPromocaoDesativada(
+                        reservado.mlb,
+                        Number(itemDepois.price) || null,
+                        accessToken
+                    );
+                } catch (erroReverterExposicao) {
+                    console.warn('⚠️ Erro revertendo exposição pós-desativação:', erroReverterExposicao);
+                }
+            })();
         }
 
         /*
