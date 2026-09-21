@@ -74234,10 +74234,13 @@ async function gerarSecaoContatosImportadosNFE() {
         <div class="card mb-3" style="border: 1px solid #ffe08a; background: #fffaf0;">
             <div class="card-header" style="background: #fff3cd; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
                 <div>
-                    <strong style="color:#8a6d00;"><i class="fas fa-address-book"></i> Contatos importados sem CPF/CNPJ (${contatos.length})</strong>
+                    <strong style="color:#8a6d00;"><i class="fas fa-address-book"></i> Contatos importados sem CPF/CNPJ (${contatos.length}${contatos.length === 500 ? '+' : ''})</strong>
                     <br>
                     <small style="color:#8a6d00;">Vieram da planilha, mas ainda não têm documento — não dá pra emitir nota pra eles até alguém completar isso. Use "Cadastrar oficial" quando tiver o CPF/CNPJ em mãos.</small>
                 </div>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="excluirTodosContatosImportadosNFE()" title="Excluir todos os contatos importados sem CPF/CNPJ">
+                    <i class="fas fa-trash-alt"></i> Excluir Todos
+                </button>
             </div>
             <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
                 <table class="table table-sm table-striped mb-0">
@@ -74347,6 +74350,50 @@ window.excluirContatoImportadoNFE = async function(id) {
 
         console.error('❌ Erro ao excluir contato importado:', erroExcluir);
         showToast('❌ Erro: ' + erroExcluir.message, 'error');
+    }
+};
+
+window.excluirTodosContatosImportadosNFE = async function() {
+
+    if (!usuarioPodeImportarClientesPlanilhaNFE()) {
+        showToast('⛔ Função disponível apenas para Andressa.', 'warning');
+        return;
+    }
+
+    try {
+
+        const { count, error: erroCount } =
+            await window.supabaseClient
+                .from('clientes_planilha_importados')
+                .select('id', { count: 'exact', head: true })
+                .is('cliente_nfe_id', null);
+
+        if (erroCount) throw erroCount;
+
+        if (!count) {
+            showToast('Nenhum contato pra excluir.', 'info');
+            return;
+        }
+
+        if (!confirm(`Excluir TODOS os ${count} contatos importados sem CPF/CNPJ? Isso não afeta nenhum cliente oficial de NF-e — só limpa essa lista de contatos aguardando documento.`)) {
+            return;
+        }
+
+        const { error: erroDelete } =
+            await window.supabaseClient
+                .from('clientes_planilha_importados')
+                .delete()
+                .is('cliente_nfe_id', null);
+
+        if (erroDelete) throw erroDelete;
+
+        showToast(`🗑️ ${count} contato(s) removido(s).`, 'success');
+        await carregarCadastroClientesNFE();
+
+    } catch (erroExcluirTodos) {
+
+        console.error('❌ Erro ao excluir todos os contatos importados:', erroExcluirTodos);
+        showToast('❌ Erro: ' + erroExcluirTodos.message, 'error');
     }
 };
 
