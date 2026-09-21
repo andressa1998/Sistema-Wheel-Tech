@@ -74522,17 +74522,36 @@ window.processarImportacaoClientesPlanilhaNFE = async function() {
 
         if (statusEl) statusEl.textContent = 'Verificando contatos já importados...';
 
-        const { data: existentes, error: erroExistentes } =
-            await window.supabaseClient
-                .from('clientes_planilha_importados')
-                .select('nome')
-                .limit(20000);
+        // Busca TODOS os nomes já importados, paginando — a planilha
+        // real tem dezenas de milhares de linhas, e o PostgREST só
+        // devolve até 1000 por página por padrão.
+        const nomesJaImportados = new Set();
+        {
+            const TAMANHO_PAGINA = 1000;
+            let inicio = 0;
+            let continuar = true;
 
-        if (erroExistentes) throw erroExistentes;
+            while (continuar) {
 
-        const nomesJaImportados = new Set(
-            (existentes || []).map(c => String(c.nome || '').trim().toLowerCase())
-        );
+                const { data: pagina, error: erroPagina } =
+                    await window.supabaseClient
+                        .from('clientes_planilha_importados')
+                        .select('nome')
+                        .range(inicio, inicio + TAMANHO_PAGINA - 1);
+
+                if (erroPagina) throw erroPagina;
+
+                (pagina || []).forEach(c => {
+                    nomesJaImportados.add(String(c.nome || '').trim().toLowerCase());
+                });
+
+                if (!pagina || pagina.length < TAMANHO_PAGINA) {
+                    continuar = false;
+                } else {
+                    inicio += TAMANHO_PAGINA;
+                }
+            }
+        }
 
         const paraInserir = [];
         let ignoradosVazios = 0;
