@@ -1903,6 +1903,18 @@ body:has(#loginScreen:not(.hidden)) {
                 <button class="carousel-btn prev" type="button">&#10094;</button><button class="carousel-btn next" type="button">&#10095;</button><div class="carousel-indicators"></div>
             </div>
 
+            <section class="wt-panel" style="margin: 20px 0;">
+                <div class="wt-panel-head">
+                    <div class="wt-panel-title"><i class="fas fa-list-check"></i> Minhas tarefas de hoje</div>
+                    <button type="button" id="btnNovaTarefaPeriodica" class="wt-panel-link" style="display:none; border:none; background:none; cursor:pointer;" onclick="window.abrirModalNovaAtividade && window.abrirModalNovaAtividade()">
+                        <i class="fas fa-plus"></i> Nova tarefa
+                    </button>
+                </div>
+                <div id="wtTarefasPeriodicasHoje">
+                    <div class="wt-empty">Carregando tarefas...</div>
+                </div>
+            </section>
+
             <section class="wt-summary-grid" aria-label="Resumo operacional">
                 <article class="wt-summary-card" data-menu-visual-depends="ordem_de_servico" onclick="abrirSistemaOS()"><div class="wt-summary-icon"><i class="fas fa-clipboard-list"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountOS">—</strong><span class="wt-summary-label">OS a fazer</span></div></article>
                 <article class="wt-summary-card" data-menu-visual-depends="emissao_nf_e" onclick="abrirSistemaNFE()"><div class="wt-summary-icon"><i class="fas fa-cart-shopping"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountSeparar">—</strong><span class="wt-summary-label">vendas a separar</span></div></article>
@@ -6337,8 +6349,41 @@ body:has(#loginScreen:not(.hidden)) {
     </header>
 
     <div class="container">
+        <!-- Menu Acessibilidade - Nova entrada -->
+        <div class="card mb-4" id="entradasAcessibilidadeCard">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                    <i class="fas fa-plus-circle" style="color:#00ADEE;"></i>
+                    <strong>Nova entrada</strong>
+                    <span class="text-muted" style="font-size: 12px; margin-left:6px;">
+                        Escolha como deseja lançar
+                    </span>
+                </div>
+                <div style="position:relative;">
+                    <button type="button" id="btnEntradasAcessibilidade" class="btn btn-sm" style="background:#00ADEE; color:white; font-weight:600; min-width:155px; min-height:38px;" onclick="toggleEntradasAcessibilidade(event)">
+                        <i class="fas fa-bars"></i> Acessibilidade
+                        <i id="iconeEntradasAcessibilidade" class="fas fa-chevron-down" style="font-size:10px; margin-left:3px;"></i>
+                    </button>
+                    <div id="entradasAcessibilidadeDropdown" style="display:none; position:absolute; right:0; top:calc(100% + 7px); width:240px; padding:7px; background:white; border:1px solid #dee2e6; border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.16); z-index:9999;">
+                        <button type="button" onclick="mostrarPainelEntrada('preEntrada')" style="display:block; width:100%; text-align:left; padding:10px 12px; border:none; background:none; cursor:pointer; font-size:14px; border-radius:6px;" onmouseover="this.style.background='#f1f3f5'" onmouseout="this.style.background='none'">
+                            <i class="fas fa-file-upload" style="width:20px; color:#00ADEE;"></i> Pré-entrada
+                        </button>
+                        <button type="button" onclick="mostrarPainelEntrada('xmlAntigo')" style="display:block; width:100%; text-align:left; padding:10px 12px; border:none; background:none; cursor:pointer; font-size:14px; border-radius:6px;" onmouseover="this.style.background='#f1f3f5'" onmouseout="this.style.background='none'">
+                            <i class="fas fa-clock-rotate-left" style="width:20px; color:#f0ad4e;"></i> Subir XML antigo
+                        </button>
+                        <button type="button" id="itemEntradaManualAcessibilidade" onclick="mostrarPainelEntrada('manual')" style="display:block; width:100%; text-align:left; padding:10px 12px; border:none; background:none; cursor:pointer; font-size:14px; border-radius:6px;" onmouseover="this.style.background='#f1f3f5'" onmouseout="this.style.background='none'">
+                            <i class="fas fa-paste" style="width:20px; color:#28a745;"></i> Nova entrada manual
+                        </button>
+                        <button type="button" onclick="mostrarPainelEntrada('xml')" style="display:block; width:100%; text-align:left; padding:10px 12px; border:none; background:none; cursor:pointer; font-size:14px; border-radius:6px;" onmouseover="this.style.background='#f1f3f5'" onmouseout="this.style.background='none'">
+                            <i class="fas fa-file-code" style="width:20px; color:#007bff;"></i> Nova entrada XML
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Card: Pré-entrada (XML) -->
-        <div class="card mb-4" id="preEntradaCard">
+        <div class="card mb-4" id="preEntradaCard" style="display:none;">
             <div class="card-header">
                 <h2 class="card-title">
                     <i class="fas fa-file-upload"></i>
@@ -6403,7 +6448,7 @@ body:has(#loginScreen:not(.hidden)) {
         </div>
 
         <!-- Card: Subir XML antigo (só custo/fornecedor, NÃO mexe em estoque) -->
-        <div class="card mb-4" id="xmlAntigoCard" style="border: 2px solid #f0ad4e; background: #fffaf0;">
+        <div class="card mb-4" id="xmlAntigoCard" style="border: 2px solid #f0ad4e; background: #fffaf0; display:none;">
             <div class="card-header" style="background: #fff3cd; border-bottom: 2px solid #f0ad4e; border-radius: 8px 8px 0 0;">
                 <h2 class="card-title" style="color:#8a6d00;">
                     <i class="fas fa-clock-rotate-left"></i>
@@ -6463,7 +6508,7 @@ body:has(#loginScreen:not(.hidden)) {
         </div>
 
         <!-- Card: Nova Entrada (Excel) -->
-        <div class="card mb-4">
+        <div class="card mb-4" id="entradaManualCard" style="display:none;">
             <div class="card-header">
                 <h2 class="card-title">
                     <i class="fas fa-paste"></i>
@@ -6497,7 +6542,7 @@ body:has(#loginScreen:not(.hidden)) {
         </div>
 
         <!-- Área de Upload XML -->
-        <div class="row mt-3">
+        <div class="row mt-3" id="entradaXmlUploadCard" style="display:none;">
             <div class="col-md-12">
                 <div class="form-group">
                     <label for="xmlFileInput"><i class="fas fa-file-code"></i> Ou envie o XML da nota fiscal do fornecedor</label>
@@ -7421,6 +7466,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="regras_alertas_estoque.js?v=20260910-7"></script>
     <script src="usuarios_gestao.js?v=20260915-1"></script>
     <script src="carrossel_menu.js?v=20260915-4"></script>
+    <script src="atividades_dashboard.js?v=20260921-1"></script>
 
     <script>
     // ===== LOGIN / CADASTRO COM ROTACAO 3D =====

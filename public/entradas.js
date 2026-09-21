@@ -69,17 +69,118 @@ function aplicarPermissoesEntradaUsuario() {
         ? pasteArea.closest('.card')
         : null;
 
-    if (!cardEntradaManual) return;
+    const itemMenuManual = document.getElementById('itemEntradaManualAcessibilidade');
 
-    if (usuarioSomenteXMLEntradas()) {
+    const bloqueado = usuarioSomenteXMLEntradas();
 
-        // Bruna e Arthur não enxergam a entrada manual
-        cardEntradaManual.style.display = 'none';
+    if (cardEntradaManual) {
+        // Bruna e Arthur não enxergam a entrada manual.
+        // Quem pode ver continua controlado pelo menu de
+        // Acessibilidade (mostrarPainelEntrada), não aqui.
+        if (bloqueado) {
+            cardEntradaManual.style.display = 'none';
+        }
+        cardEntradaManual.dataset.bloqueadoAcessibilidade = bloqueado ? 'true' : 'false';
+    }
 
-    } else {
+    if (itemMenuManual) {
+        itemMenuManual.style.display = bloqueado ? 'none' : 'block';
+    }
+}
 
-        // Ronald / Admin continuam vendo normalmente
-        cardEntradaManual.style.display = '';
+
+// ============================================
+// MENU ACESSIBILIDADE - NOVA ENTRADA
+// Mantém a página limpa: os 4 painéis de
+// upload/colagem ficam ocultos até a pessoa
+// escolher uma opção no menu.
+// ============================================
+
+const PAINEIS_ACESSIBILIDADE_ENTRADAS = {
+    preEntrada: 'preEntradaCard',
+    xmlAntigo: 'xmlAntigoCard',
+    manual: 'entradaManualCard',
+    xml: 'entradaXmlUploadCard'
+};
+
+window.mostrarPainelEntrada = function(tipo) {
+
+    const idAlvo = PAINEIS_ACESSIBILIDADE_ENTRADAS[tipo];
+
+    if (!idAlvo) return;
+
+    const cardAlvo = document.getElementById(idAlvo);
+
+    if (
+        tipo === 'manual' &&
+        cardAlvo &&
+        cardAlvo.dataset.bloqueadoAcessibilidade === 'true'
+    ) {
+        showToast('⚠️ Este usuário só pode lançar entradas por XML', 'warning');
+        fecharEntradasAcessibilidade();
+        return;
+    }
+
+    Object.values(PAINEIS_ACESSIBILIDADE_ENTRADAS).forEach(id => {
+        const card = document.getElementById(id);
+        if (card) card.style.display = 'none';
+    });
+
+    if (cardAlvo) {
+        cardAlvo.style.display = '';
+        cardAlvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    fecharEntradasAcessibilidade();
+};
+
+window.toggleEntradasAcessibilidade = function(event) {
+
+    if (event) event.stopPropagation();
+
+    const menu = document.getElementById('entradasAcessibilidadeDropdown');
+    const icone = document.getElementById('iconeEntradasAcessibilidade');
+
+    if (!menu) return;
+
+    const aberto = menu.style.display === 'block';
+
+    menu.style.display = aberto ? 'none' : 'block';
+
+    if (icone) {
+        icone.style.transform = aberto ? 'rotate(0deg)' : 'rotate(180deg)';
+    }
+};
+
+window.fecharEntradasAcessibilidade = function() {
+
+    const menu = document.getElementById('entradasAcessibilidadeDropdown');
+    const icone = document.getElementById('iconeEntradasAcessibilidade');
+
+    if (menu) menu.style.display = 'none';
+    if (icone) icone.style.transform = 'rotate(0deg)';
+};
+
+if (document.body && document.body.dataset.entradasAcessibilidadeClick !== 'true') {
+
+    document.addEventListener('click', function(event) {
+
+        const wrapper = document.getElementById('entradasAcessibilidadeDropdown');
+        const botao = document.getElementById('btnEntradasAcessibilidade');
+
+        if (!wrapper || wrapper.style.display !== 'block') return;
+
+        if (
+            !wrapper.contains(event.target) &&
+            event.target !== botao &&
+            !(botao && botao.contains(event.target))
+        ) {
+            window.fecharEntradasAcessibilidade();
+        }
+    });
+
+    if (document.body) {
+        document.body.dataset.entradasAcessibilidadeClick = 'true';
     }
 }
 
@@ -1069,10 +1170,16 @@ async function renderizarEntradas() {
             entradaPasteArea.closest('.card');
 
         if (cardEntradaManual) {
-            cardEntradaManual.style.display =
-                somenteXML
-                    ? 'none'
-                    : '';
+            // Só força 'none' pra quem é bloqueado. Quem pode ver
+            // continua controlado pelo menu de Acessibilidade
+            // (mostrarPainelEntrada) — não mexe aqui se já não
+            // for bloqueado, senão volta a mostrar o card toda
+            // vez que a lista de entradas é recarregada.
+            if (somenteXML) {
+                cardEntradaManual.style.display = 'none';
+            }
+            cardEntradaManual.dataset.bloqueadoAcessibilidade =
+                somenteXML ? 'true' : 'false';
         }
     }
 
