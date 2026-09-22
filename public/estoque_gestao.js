@@ -5027,8 +5027,30 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     const podeVerCusto =
         usuariosVerCusto.includes(
             username
-        ) ||
-        isAdmin;
+        );
+
+
+    // Pra quem não pode ver custo, os cabeçalhos "Último custo" /
+    // "Média custo" nem aparecem — não só as células ficam vazias.
+    const thUltimoCusto =
+        document.getElementById(
+            'thUltimoCusto'
+        );
+
+    const thCustoMedio =
+        document.getElementById(
+            'thCustoMedio'
+        );
+
+    if (thUltimoCusto) {
+        thUltimoCusto.style.display =
+            podeVerCusto ? '' : 'none';
+    }
+
+    if (thCustoMedio) {
+        thCustoMedio.style.display =
+            podeVerCusto ? '' : 'none';
+    }
 
 
     // =====================================================
@@ -16049,6 +16071,42 @@ async function salvarProdutoEstoque() {
                     produtoExistente.quantidade || 0
                 );
 
+        }
+
+    }
+
+
+    // =====================================================
+    // CUSTO EDITADO À MÃO (só quem pode ver/editar custo)
+    // =====================================================
+
+    if (
+        id &&
+        usuariosVerCusto.includes(username)
+    ) {
+
+        const ultimoCustoInput =
+            document.getElementById(
+                'produtoUltimoCusto'
+            );
+
+        const custoMedioInput =
+            document.getElementById(
+                'produtoCustoMedio'
+            );
+
+        if (ultimoCustoInput) {
+            ultimoCusto =
+                parseFloat(
+                    ultimoCustoInput.value
+                ) || 0;
+        }
+
+        if (custoMedioInput) {
+            custoMedio =
+                parseFloat(
+                    custoMedioInput.value
+                ) || 0;
         }
 
     }
@@ -27994,6 +28052,27 @@ async function abrirModalProdutoEstoque(
         isAdmin;
 
 
+    const podeEditarCusto =
+        usuariosVerCusto.includes(
+            username
+        );
+
+
+    const custoWrapper =
+        document.getElementById(
+            'produtoCustoWrapper'
+        );
+
+    if (custoWrapper) {
+        // Só faz sentido editar custo de um produto que já existe
+        // (tem histórico de compra) — produto novo não mostra.
+        custoWrapper.style.display =
+            (podeEditarCusto && produto && produto.id)
+                ? ''
+                : 'none';
+    }
+
+
     // =====================================================
     // CONFIGURAR TOGGLE DE SINCRONIZAÇÃO
     // =====================================================
@@ -28187,6 +28266,35 @@ async function abrirModalProdutoEstoque(
         categoriaSelect.value =
             produto.categoria ||
             '';
+
+
+        // =================================================
+        // CUSTO (edição manual — só quem pode ver custo)
+        // =================================================
+
+        const ultimoCustoInput =
+            document.getElementById(
+                'produtoUltimoCusto'
+            );
+
+        const custoMedioInput =
+            document.getElementById(
+                'produtoCustoMedio'
+            );
+
+        if (ultimoCustoInput) {
+            ultimoCustoInput.value =
+                produto.ultimo_custo ||
+                produto.dados_extra?.ultimo_custo ||
+                0;
+        }
+
+        if (custoMedioInput) {
+            custoMedioInput.value =
+                produto.custo_medio ||
+                produto.dados_extra?.custo_medio ||
+                0;
+        }
 
 
         // =================================================

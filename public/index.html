@@ -6763,6 +6763,22 @@ body:has(#loginScreen:not(.hidden)) {
             <input type="number" id="produtoQuantidade" class="form-control" value="0" min="0">
         </div>
 
+        <!-- ===== CUSTO (só quem tem permissão de ver custo) ===== -->
+        <div id="produtoCustoWrapper" class="row" style="display:none;">
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label>Último custo (R$)</label>
+                    <input type="number" id="produtoUltimoCusto" class="form-control" step="0.01" min="0" value="0">
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label>Custo médio (R$)</label>
+                    <input type="number" id="produtoCustoMedio" class="form-control" step="0.01" min="0" value="0">
+                </div>
+            </div>
+        </div>
+
         <!-- ===== TOGGLE BLOQUEAR SINCRONIZAÇÃO ML ===== -->
         <div class="form-group" style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
             <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -7152,8 +7168,8 @@ body:has(#loginScreen:not(.hidden)) {
         <th>SKU</th>
         <th>MLB</th>
         <th>Estoque</th>
-        <th>Último custo</th>
-        <th>Média custo</th>
+        <th id="thUltimoCusto">Último custo</th>
+        <th id="thCustoMedio">Média custo</th>
         <th>Sincronizado?</th>
         <th>Ações</th>
     </tr>
@@ -7457,9 +7473,9 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
     <script src="nfe_manager.js?v=20260921-3"></script>
-    <script src="estoque_gestao.js?v=20260921-12"></script>
-    <script src="estoque_analise.js?v=20260911-1"></script>
-    <script src="regras_nivel_estoque.js?v=20260922-2"></script>
+    <script src="estoque_gestao.js?v=20260922-15"></script>
+    <script src="estoque_analise.js?v=20260922-2"></script>
+    <script src="regras_nivel_estoque.js?v=20260922-3"></script>
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
     <script src="entradas.js"></script>

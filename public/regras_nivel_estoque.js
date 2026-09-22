@@ -21,7 +21,9 @@
 (function () {
     'use strict';
 
-    const ADMINS_FALLBACK = ['andressamiotto', 'ronald', 'leticia'];
+    // Regras de nível de estoque mexem em preço/custo — restrito só a
+    // essas duas pessoas, mesmo que outras também sejam Administrador.
+    const USUARIOS_REGRAS_NIVEL_ESTOQUE = ['andressamiotto', 'ronald'];
     const ML_BASE = 'https://api.mercadolibre.com';
 
     let regrasCache = [];
@@ -33,10 +35,7 @@
     // ---------- helpers ------------------------------------
     function ehAdmin() {
         const u = (window.currentUser && window.currentUser.username || '').toLowerCase();
-        let admins = ADMINS_FALLBACK;
-        try { if (typeof usuariosAdmin !== 'undefined' && Array.isArray(usuariosAdmin)) admins = usuariosAdmin; } catch (e) {}
-        return !!u && (admins.includes(u) ||
-            String(window.currentUser && window.currentUser.role || '').toLowerCase() === 'administrador');
+        return !!u && USUARIOS_REGRAS_NIVEL_ESTOQUE.includes(u);
     }
     function sb() { return window.supabaseClient || null; }
     function toast(m, t) { if (window.showToast) window.showToast(m, t || 'info'); else console.log('[regras-nivel]', m); }

@@ -19,7 +19,10 @@
 (function () {
     'use strict';
 
-    const ADMINS_FALLBACK = ['andressamiotto', 'ronald', 'leticia'];
+    // Análise de estoque (fornecedor, vendas, valor em estoque,
+    // projeção...) é sensível igual custo — restrita só a essas duas
+    // pessoas, mesmo que outras também sejam Administrador no sistema.
+    const USUARIOS_ANALISE_ESTOQUE = ['andressamiotto', 'ronald'];
     const DIA_MS = 86400000;
 
     let metricasPorId = {};
@@ -27,18 +30,10 @@
     let metricasCarregando = null;
 
     // ---------------------------------------------------------
-    function listaAdmins() {
-        try {
-            if (typeof usuariosAdmin !== 'undefined' && Array.isArray(usuariosAdmin)) return usuariosAdmin;
-        } catch (e) { /* não existe nesse escopo */ }
-        return ADMINS_FALLBACK;
-    }
-
     function ehAdmin() {
         const u = (window.currentUser && window.currentUser.username || '').toLowerCase();
         if (!u) return false;
-        if (listaAdmins().includes(u)) return true;
-        return String(window.currentUser && window.currentUser.role || '').toLowerCase() === 'administrador';
+        return USUARIOS_ANALISE_ESTOQUE.includes(u);
     }
 
     function sb() { return window.supabaseClient || null; }
@@ -572,6 +567,30 @@
                 try { paginaAtualEstoque = 1; } catch (e) { /* ignora */ }
                 try { if (typeof estadoFiltrosEstoque !== 'undefined' && estadoFiltrosEstoque) estadoFiltrosEstoque.pagina = 1; } catch (e) { /* ignora */ }
                 return _ord.apply(this, arguments);
+            };
+        }
+
+        // -- recarrega as métricas (Valor em estoque etc.) depois de
+        // qualquer movimentação (venda, entrada, ajuste) ou edição
+        // manual de produto — senão elas ficam presas no valor que
+        // tinham na 1ª vez que a tela foi aberta na sessão.
+        if (!window.__analiseMovPatched && typeof window.registrarMovimentacao === 'function') {
+            window.__analiseMovPatched = true;
+            const _movAnalise = window.registrarMovimentacao;
+            window.registrarMovimentacao = async function (...args) {
+                const r = await _movAnalise.apply(this, args);
+                recarregarMetricas();
+                return r;
+            };
+        }
+
+        if (!window.__analiseSalvarProdutoPatched && typeof window.salvarProdutoEstoque === 'function') {
+            window.__analiseSalvarProdutoPatched = true;
+            const _salvarProduto = window.salvarProdutoEstoque;
+            window.salvarProdutoEstoque = async function (...args) {
+                const r = await _salvarProduto.apply(this, args);
+                recarregarMetricas();
+                return r;
             };
         }
 
