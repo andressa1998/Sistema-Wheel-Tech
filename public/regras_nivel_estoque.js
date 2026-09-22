@@ -289,6 +289,7 @@
             const produtos = await obterProdutosParaMotor();
             let token = null;
             let houveMudanca = false;
+            let houveNovoReset = false;
 
             for (const r of regras) {
                 const gatilho = r.gatilho_qtd;
@@ -299,7 +300,35 @@
                     const estado = estadoDe[chave];
                     const nivelAlvo = qtd > gatilho ? null : Math.max(1, qtd);
 
-                    // --- acima do gatilho: volta ao normal ---
+                    // --- estoque AUMENTOU desde o último disparo salvo:
+                    // não muda o preço sozinho — calcula a recomendação
+                    // (pela escada, ou volta ao preço original se saiu
+                    // da faixa) e deixa pendente de confirmação do admin.
+                    const estoqueSubiu = estado && qtd > (Number(estado.estoque_no_disparo) || 0);
+                    if (estoqueSubiu) {
+                        if (!token) token = await obterTokenML();
+                        const mlbs = mlbsDoProduto(p);
+                        const base = estado.precos_base || {};
+                        const recomendado = {};
+                        for (const mlb of mlbs) {
+                            const b = base[mlb] != null ? base[mlb] : 0;
+                            recomendado[mlb] = nivelAlvo == null
+                                ? round2(b)
+                                : precoNoNivel(b, r.escada, nivelAlvo, (r.overrides && r.overrides[mlb]) || {});
+                        }
+                        const eraNovoAviso = !estado.reset_pendente;
+                        await cli.from('regras_nivel_disparos').update({
+                            reset_pendente: true,
+                            reset_nivel_recomendado: nivelAlvo,
+                            reset_precos: recomendado,
+                            reset_estoque_novo: qtd,
+                            reset_detectado_em: new Date().toISOString()
+                        }).eq('id', estado.id);
+                        if (eraNovoAviso) houveNovoReset = true;
+                        continue;
+                    }
+
+                    // --- acima do gatilho: volta ao normal (sem ter sido por reposição de estoque) ---
                     if (nivelAlvo == null) {
                         if (estado) {
                             if (!token) token = await obterTokenML();
@@ -315,6 +344,11 @@
                         }
                         continue;
                     }
+
+                    // produto com reset pendente: não reavalia sozinho
+                    // enquanto o admin não decidir (evita ficar mudando
+                    // a recomendação sozinho a cada ciclo).
+                    if (estado && estado.reset_pendente) continue;
 
                     // --- dentro da escada ---
                     if (estado && estado.nivel_atual === nivelAlvo) continue;
@@ -368,6 +402,10 @@
                 toast('📉 Regras de nível de estoque aplicadas — preços de anúncios atualizados.', 'warning');
                 atualizarSino(true);
                 if (typeof window.aplicarFiltrosEOrdenacao === 'function') { try { window.aplicarFiltrosEOrdenacao(); } catch (e) {} }
+            }
+            if (houveNovoReset) {
+                toast('📦 Estoque reposto em produto com preço reajustado — reveja o reset recomendado em Regras de nível → Disparos.', 'info');
+                atualizarSino(true);
             }
         } catch (e) {
             console.warn('[regras-nivel] avaliar:', e);
@@ -1017,9 +1055,31 @@
         const lista = data || [];
         if (!lista.length) { corpo.innerHTML = `<div class="rn-vazio">Nenhum produto entrou em regra ainda.</div>`; return; }
         const temNaoVisto = lista.some(d => !d.visto);
+        const pendentes = lista.filter(d => d.reset_pendente);
+        const normais = lista.filter(d => !d.reset_pendente);
         corpo.innerHTML = `
+            ${pendentes.length ? `
+                <h4 style="margin:0 0 10px;color:#7c3aed;">📦 Estoque reposto — reveja o preço (${pendentes.length})</h4>
+                ${pendentes.map(d => {
+                    const precos = d.reset_precos || {};
+                    const voltaAoOriginal = d.reset_nivel_recomendado == null;
+                    return `<div class="rn-disparo" style="border-color:#c4b5fd;background:#f5f3ff;" data-reset-id="${d.id}">
+                        <strong>${esc(d.produto_nome || d.produto_sku || d.produto_id)}</strong>
+                        — estoque agora: ${d.reset_estoque_novo}${voltaAoOriginal ? ' (fora da faixa de gatilho)' : ' · novo nível: ' + d.reset_nivel_recomendado}
+                        <div style="font-size:11px;color:#7c3aed;">${d.reset_detectado_em ? new Date(d.reset_detectado_em).toLocaleString('pt-BR') : ''}</div>
+                        <div style="margin-top:5px;">
+                            ${Object.keys(precos).map(mlb => `<div>${esc(mlb)}: sugestão ${fmtBRL(precos[mlb])}${voltaAoOriginal ? ' (preço original)' : ''}</div>`).join('') || '<div style="font-size:12px;color:#94a3b8;">produto sem anúncios</div>'}
+                        </div>
+                        <div class="rn-acoes" style="margin-top:8px;">
+                            <button data-reset-a="aplicar">✅ Aplicar preço recomendado</button>
+                            <button data-reset-a="ignorar">Manter preço atual</button>
+                        </div>
+                    </div>`;
+                }).join('')}
+                <h4 style="margin:16px 0 10px;">Histórico</h4>
+            ` : ''}
             ${temNaoVisto ? `<button type="button" class="rn-btn rn-btn-sec" id="rnMarcarVistos" style="margin-bottom:12px;">Marcar todos como vistos</button>` : ''}
-            ${lista.map(d => {
+            ${!normais.length ? '<div class="rn-vazio">Nenhum produto entrou em regra ainda.</div>' : normais.map(d => {
                 const mlbs = Array.isArray(d.mlbs) ? d.mlbs : [];
                 return `<div class="rn-disparo ${d.visto ? '' : 'novo'}">
                     <strong>${esc(d.produto_nome || d.produto_sku || d.produto_id)}</strong>
@@ -1038,6 +1098,72 @@
             atualizarSino(true);
             renderDisparos(corpo);
         });
+        corpo.querySelectorAll('[data-reset-id]').forEach(el => {
+            const id = el.dataset.resetId;
+            el.querySelectorAll('button[data-reset-a]').forEach(b => b.addEventListener('click', async () => {
+                b.disabled = true;
+                if (b.dataset.resetA === 'aplicar') await aplicarResetProduto(id);
+                else await ignorarResetProduto(id);
+                renderDisparos(corpo);
+            }));
+        });
+    }
+
+    // ---------- RESET DE PREÇO POR REPOSIÇÃO DE ESTOQUE ----------
+    async function aplicarResetProduto(id) {
+        const cli = sb();
+        if (!cli) return;
+        const { data: estado } = await cli.from('regras_nivel_disparos').select('*').eq('id', id).maybeSingle();
+        if (!estado || !estado.reset_pendente) { toast('Nada pendente pra esse produto.', 'info'); return; }
+
+        const token = await obterTokenML();
+        const recomendado = estado.reset_precos || {};
+        const log = [];
+        for (const mlb of Object.keys(recomendado)) {
+            const alvo = round2(recomendado[mlb]);
+            const res = token ? await aplicarPreco(mlb, alvo, token) : { ok: false, erro: 'sem token ML' };
+            log.push({
+                mlb, preco_novo: alvo, ok: res.ok, erro: res.erro || null,
+                nota: estado.reset_nivel_recomendado == null ? 'voltou ao original (estoque reposto)' : 'reajustado pela reposição de estoque'
+            });
+        }
+
+        if (estado.reset_nivel_recomendado == null) {
+            // saiu de vez da faixa de gatilho — não precisa mais do registro
+            await cli.from('regras_nivel_disparos').delete().eq('id', id);
+        } else {
+            await cli.from('regras_nivel_disparos').update({
+                nivel_atual: estado.reset_nivel_recomendado,
+                estoque_no_disparo: estado.reset_estoque_novo,
+                mlbs: log,
+                reset_pendente: false,
+                reset_precos: null,
+                reset_nivel_recomendado: null,
+                reset_estoque_novo: null,
+                reset_detectado_em: null,
+                atualizado_em: new Date().toISOString()
+            }).eq('id', id);
+        }
+        toast('✅ Preço atualizado conforme o novo estoque.', 'success');
+    }
+
+    async function ignorarResetProduto(id) {
+        const cli = sb();
+        if (!cli) return;
+        const { data: estado } = await cli.from('regras_nivel_disparos').select('*').eq('id', id).maybeSingle();
+        if (!estado) return;
+        // Mantém o preço atual, mas atualiza a base de comparação pro
+        // estoque de agora — senão o aviso voltaria sozinho no próximo
+        // ciclo mesmo sem o estoque ter mudado de novo.
+        await cli.from('regras_nivel_disparos').update({
+            estoque_no_disparo: estado.reset_estoque_novo != null ? estado.reset_estoque_novo : estado.estoque_no_disparo,
+            reset_pendente: false,
+            reset_precos: null,
+            reset_nivel_recomendado: null,
+            reset_estoque_novo: null,
+            reset_detectado_em: null
+        }).eq('id', id);
+        toast('Ok, preço mantido como está.', 'info');
     }
 
     // ---------- hooks ----------------------------------
@@ -1047,7 +1173,9 @@
             const _mov = window.registrarMovimentacao;
             window.registrarMovimentacao = async function (produtoId, tipo) {
                 const r = await _mov.apply(this, arguments);
-                if (tipo && tipo !== 'entrada' && ehAdmin()) setTimeout(() => avaliarRegras({ forcar: true }), 1500);
+                // 'entrada' agora também dispara — o motor só sinaliza
+                // reset pendente nesse caso, nunca muda o preço sozinho.
+                if (tipo && ehAdmin()) setTimeout(() => avaliarRegras({ forcar: true }), 1500);
                 return r;
             };
         }
