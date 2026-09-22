@@ -41,6 +41,11 @@ function aphEscapar(valor) {
         .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 }
 
+function aphDiaDaSemanaIso(hojeISO) {
+    const [y, m, d] = hojeISO.split('-').map(Number);
+    return new Date(y, m - 1, d, 12).getDay();
+}
+
 function aphCalcularVisiveisHoje(atividadesDoUsuario, hojeISO) {
     return atividadesDoUsuario
         .filter(a => a.status !== 'prorrogada')
@@ -48,8 +53,18 @@ function aphCalcularVisiveisHoje(atividadesDoUsuario, hojeISO) {
             if (a.frequencia === 'dia') {
                 return a.status === 'pendente' && a.data_fim <= hojeISO;
             }
-            // semana / mes: aparece todo dia dentro do prazo, mesmo concluída
-            return hojeISO >= a.data_inicio && hojeISO <= a.data_fim;
+
+            if (hojeISO < a.data_inicio || hojeISO > a.data_fim) {
+                return false;
+            }
+
+            // semana com dias específicos: só aparece nos dias marcados
+            if (a.frequencia === 'semana' && Array.isArray(a.dias_semana) && a.dias_semana.length) {
+                return a.dias_semana.includes(aphDiaDaSemanaIso(hojeISO));
+            }
+
+            // semana toda / mes: aparece todo dia dentro do prazo, mesmo concluída
+            return true;
         })
         .map(a => {
             const atrasada = a.frequencia === 'dia'

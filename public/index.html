@@ -1370,6 +1370,19 @@ body > * {
     width: 98vw !important;
 }
 
+/* ============================================================
+   CONTROLE DE ATIVIDADES - COLUNAS LADO A LADO OCUPANDO A TELA
+   ============================================================ */
+#atividadesSystem > .container,
+#atividadesSystem .container {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+#atividadesSystem {
+    overflow-x: hidden;
+}
+
 #mainSystem .table-responsive {
     width: 100%;
     overflow-x: auto;
@@ -7454,7 +7467,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="full_analysis.js"></script>
     <script src="gerenciamento_anuncios.js?v=20260921-1"></script>
     <script src="chamados.js?v=20260922-2"></script>
-    <script src="atividades.js?v=20260917-4"></script>
+    <script src="atividades.js?v=20260922-6"></script>
     <script src="projetos.js?v=20260917-3"></script>
     <script src="patrimonios.js?v=20260917-1"></script>
     <script src="sugestoes.js?v=20260917-1"></script>
@@ -7466,7 +7479,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="regras_alertas_estoque.js?v=20260910-7"></script>
     <script src="usuarios_gestao.js?v=20260915-1"></script>
     <script src="carrossel_menu.js?v=20260915-4"></script>
-    <script src="atividades_dashboard.js?v=20260921-1"></script>
+    <script src="atividades_dashboard.js?v=20260922-1"></script>
 
     <script>
     // ===== LOGIN / CADASTRO COM ROTACAO 3D =====
@@ -7715,7 +7728,10 @@ body:has(#loginScreen:not(.hidden)) {
             const hoje = iso(agora);
             const ehSabado = agora.getDay() === 6;
             const [resAgenda, resFolgas, resSabado] = await Promise.all([
-                sb.from('agenda_eventos').select('*').neq('tipo', 'recado').lte('data_inicio', hoje).gte('data_fim', hoje).order('hora_inicio', { ascending: true }),
+                // Só itens coletivos (reunião, evento, feriado...) — tarefas pessoais
+                // (tipo='tarefa', espelhadas do Controle de Atividades) já aparecem
+                // em "Minhas tarefas de hoje", lá em cima.
+                sb.from('agenda_eventos').select('*').neq('tipo', 'recado').neq('tipo', 'tarefa').lte('data_inicio', hoje).gte('data_fim', hoje).order('hora_inicio', { ascending: true }),
                 sb.from('folgas').select('*').eq('status', 'aprovado').lte('data_inicio', hoje).gte('data_fim', hoje).order('user_name', { ascending: true }),
                 ehSabado
                     ? sb.from('escala_sabados').select('colaborador').eq('data_sabado', hoje).order('colaborador', { ascending: true })

@@ -42,6 +42,9 @@
         mes: 'Mês todo'
     };
 
+    // Segue a convenção de Date.getDay(): 0 = domingo ... 6 = sábado.
+    const NOMES_DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
     let atividadesCache = [];
     let filtroStatusAtiv = 'ativas'; // ativas | concluidas | todas
     let filtroColaboradorAtiv = '';
@@ -151,10 +154,23 @@
     }
 
     function periodoTextoAtiv(atividade) {
-        if (atividade.data_inicio === atividade.data_fim) {
-            return formatarDataBrAtiv(atividade.data_inicio);
+        const periodo = atividade.data_inicio === atividade.data_fim
+            ? formatarDataBrAtiv(atividade.data_inicio)
+            : `${formatarDataBrAtiv(atividade.data_inicio)} a ${formatarDataBrAtiv(atividade.data_fim)}`;
+
+        if (
+            atividade.frequencia === 'semana' &&
+            Array.isArray(atividade.dias_semana) &&
+            atividade.dias_semana.length
+        ) {
+            const dias = [...atividade.dias_semana]
+                .sort((a, b) => a - b)
+                .map(indice => NOMES_DIAS_SEMANA[indice])
+                .join(', ');
+            return `${periodo} (${dias})`;
         }
-        return `${formatarDataBrAtiv(atividade.data_inicio)} a ${formatarDataBrAtiv(atividade.data_fim)}`;
+
+        return periodo;
     }
 
     // ============================================================
@@ -172,7 +188,7 @@
                     data_inicio: atividade.data_inicio,
                     data_fim: atividade.data_fim,
                     descricao: atividade.descricao || null,
-                    cor: CORES_PRIORIDADE[atividade.prioridade] || CORES_PRIORIDADE.normal,
+                    cor: atividade.cor || CORES_PRIORIDADE[atividade.prioridade] || CORES_PRIORIDADE.normal,
                     dia_inteiro: true,
                     destaque: atividade.prioridade === 'urgente',
                     criado_por: atividade.criado_por,
@@ -398,14 +414,18 @@
         const lista = atividadesFiltradasAtiv();
 
         if (!lista.length) {
+            container.classList.remove('ativ-lista-colunas');
             container.innerHTML = `<div class="text-center py-5 text-muted"><i class="fas fa-clipboard-check fa-2x mb-2" style="opacity:.4;"></i><br>Nenhuma atividade encontrada.</div>`;
             return;
         }
 
         if (!ehAdminAtiv()) {
+            container.classList.remove('ativ-lista-colunas');
             container.innerHTML = lista.map(renderizarCardAtividadeAtiv).join('');
             return;
         }
+
+        container.classList.add('ativ-lista-colunas');
 
         // Visão admin: agrupada por colaborador designado, com avatar e nome no topo de cada grupo.
         const grupos = new Map();
@@ -463,6 +483,7 @@
                 </div>
                 <div class="ativ-card-corpo">
                     <div class="ativ-card-topo">
+                        ${a.cor ? `<span title="Cor no calendário" style="display:inline-block; width:11px; height:11px; border-radius:50%; background:${a.cor}; flex-shrink:0;"></span>` : ''}
                         <strong class="${concluida ? 'ativ-titulo-riscado' : ''}">${escapeAtiv(a.titulo)}</strong>
                         <span class="ativ-badge-prioridade" style="background:${corPrioridade};">${NOMES_PRIORIDADE[a.prioridade] || 'Normal'}</span>
                         ${a.categoria ? `<span class="ativ-badge-categoria">${escapeAtiv(a.categoria)}</span>` : ''}
@@ -594,6 +615,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="ativFormCor">Cor (igual no Calendário)</label>
+                    <input type="color" id="ativFormCor" class="form-control" style="max-width:80px; height:38px; padding:2px;" value="#0875ee">
+                </div>
+
+                <div class="form-group">
                     <label>Designar para *</label>
                     <div id="ativFormColaboradores" style="display:grid; grid-template-columns:repeat(2,1fr); gap:6px; max-height:160px; overflow-y:auto; border:1px solid #dee2e6; border-radius:8px; padding:10px;"></div>
                     <small class="text-muted">Marque um ou mais colaboradores — uma atividade é criada para cada um.</small>
@@ -633,6 +659,11 @@
                     </div>
                 </div>
 
+                <div class="form-group" id="ativFormDiasSemanaWrapper" style="display:none;">
+                    <label>Em quais dias da semana? (deixe todos em branco para a semana toda)</label>
+                    <div class="ativ-dias-semana" id="ativFormDiasSemana"></div>
+                </div>
+
                 <div class="d-flex justify-content-end gap-2 mt-3">
                     <button class="btn btn-secondary" onclick="window.fecharModalAtividade()">Cancelar</button>
                     <button class="btn btn-primary" id="ativBtnSalvar" onclick="window.salvarAtividade()">
@@ -647,6 +678,19 @@
     function popularColaboradoresModalAtiv(selecionados = []) {
         const container = document.getElementById('ativFormColaboradores');
         if (!container) return;
+
+        // Quem não é admin só pode criar atividade pra si mesmo.
+        if (!ehAdminAtiv()) {
+            const eu = usuarioAtualAtiv();
+            container.innerHTML = `
+                <label style="display:flex; align-items:center; gap:6px; font-weight:400; margin:0;">
+                    <input type="checkbox" value="${usernameAtiv()}" checked disabled>
+                    ${escapeAtiv(eu?.name || usernameAtiv())} (você)
+                </label>
+            `;
+            return;
+        }
+
         const colaboradores = obterColaboradoresAtiv();
         container.innerHTML = colaboradores.map(u => `
             <label style="display:flex; align-items:center; gap:6px; font-weight:400; margin:0;">
@@ -660,7 +704,12 @@
         const frequencia = document.getElementById('ativFormFrequencia')?.value || 'dia';
         const wrapperUnico = document.getElementById('ativFormDataUnicaWrapper');
         const wrapperIntervalo = document.getElementById('ativFormDataIntervaloWrapper');
+        const wrapperDiasSemana = document.getElementById('ativFormDiasSemanaWrapper');
         if (!wrapperUnico || !wrapperIntervalo) return;
+
+        if (wrapperDiasSemana) {
+            wrapperDiasSemana.style.display = frequencia === 'semana' ? '' : 'none';
+        }
 
         if (frequencia === 'dia') {
             wrapperUnico.style.display = '';
@@ -678,11 +727,25 @@
         document.getElementById('ativFormDataFim').value = data_fim;
     };
 
+    // Desenha os 7 checkboxes de dia da semana, marcando os selecionados.
+    function marcarDiasSemanaAtiv(selecionados = []) {
+        const container = document.getElementById('ativFormDiasSemana');
+        if (!container) return;
+        container.innerHTML = NOMES_DIAS_SEMANA.map((nome, indice) => `
+            <label>
+                <input type="checkbox" value="${indice}" ${selecionados.includes(indice) ? 'checked' : ''}>
+                ${nome}
+            </label>
+        `).join('');
+    }
+
+    // Lê os dias marcados no form. Array vazio = semana toda (sem restrição).
+    function obterDiasSemanaSelecionadosAtiv() {
+        return Array.from(document.querySelectorAll('#ativFormDiasSemana input:checked'))
+            .map(el => Number(el.value));
+    }
+
     window.abrirModalNovaAtividade = function () {
-        if (!ehAdminAtiv()) {
-            showToast('🔒 Apenas administradores podem designar atividades.', 'warning');
-            return;
-        }
         criarModalAtividadeAtiv();
         document.getElementById('ativModalTitulo').textContent = 'Nova Atividade';
         document.getElementById('ativFormId').value = '';
@@ -694,7 +757,10 @@
         document.getElementById('ativFormData').value = hojeIsoAtiv();
         document.getElementById('ativFormDataInicio').value = '';
         document.getElementById('ativFormDataFim').value = '';
+        const corInput = document.getElementById('ativFormCor');
+        if (corInput) corInput.value = CORES_PRIORIDADE.normal;
         popularColaboradoresModalAtiv([]);
+        marcarDiasSemanaAtiv([]);
         window.alternarCamposDataAtividade();
         document.getElementById('modalAtividade').classList.remove('hidden');
     };
@@ -713,7 +779,10 @@
         document.getElementById('ativFormData').value = atividade.data_inicio;
         document.getElementById('ativFormDataInicio').value = atividade.data_inicio;
         document.getElementById('ativFormDataFim').value = atividade.data_fim;
+        const corInput = document.getElementById('ativFormCor');
+        if (corInput) corInput.value = atividade.cor || CORES_PRIORIDADE[atividade.prioridade] || CORES_PRIORIDADE.normal;
         popularColaboradoresModalAtiv([atividade.designado_para]);
+        marcarDiasSemanaAtiv(atividade.dias_semana || []);
         window.alternarCamposDataAtividade();
         document.getElementById('modalAtividade').classList.remove('hidden');
     };
@@ -729,9 +798,14 @@
         const categoria = document.getElementById('ativFormCategoria').value.trim();
         const prioridade = document.getElementById('ativFormPrioridade').value;
         const frequencia = document.getElementById('ativFormFrequencia').value;
-        const colaboradoresSelecionados = Array.from(
-            document.querySelectorAll('#ativFormColaboradores input:checked')
-        ).map(el => el.value);
+        const cor = document.getElementById('ativFormCor')?.value || CORES_PRIORIDADE.normal;
+        const diasSemana = frequencia === 'semana' ? obterDiasSemanaSelecionadosAtiv() : [];
+
+        // Quem não é admin só pode criar/editar atividade pra si mesmo,
+        // não importa o que o formulário (manipulado ou não) mande.
+        const colaboradoresSelecionados = ehAdminAtiv()
+            ? Array.from(document.querySelectorAll('#ativFormColaboradores input:checked')).map(el => el.value)
+            : [usernameAtiv()];
 
         let data_inicio, data_fim;
         if (frequencia === 'dia') {
@@ -773,8 +847,10 @@
                     descricao: descricao || null,
                     categoria: categoria || null,
                     prioridade,
+                    cor,
                     designado_para: colaboradoresSelecionados[0],
                     frequencia,
+                    dias_semana: diasSemana.length ? diasSemana : null,
                     data_inicio,
                     data_fim,
                     atualizado_em: new Date().toISOString()
@@ -798,9 +874,11 @@
                         descricao: descricao || null,
                         categoria: categoria || null,
                         prioridade,
+                        cor,
                         designado_para: username,
                         designado_por: usernameAtiv(),
                         frequencia,
+                        dias_semana: diasSemana.length ? diasSemana : null,
                         data_inicio,
                         data_fim,
                         status: 'pendente',
@@ -834,6 +912,10 @@
     };
 
     window.excluirAtividade = async function (id) {
+        if (!ehAdminAtiv()) {
+            showToast('🔒 Apenas administradores podem excluir atividades.', 'warning');
+            return;
+        }
         const atividade = atividadesCache.find(a => a.id === id);
         if (!atividade) return;
         if (!confirm(`Excluir a atividade "${atividade.titulo}"?`)) return;
@@ -1027,6 +1109,13 @@
             .ativ-grupo-avatar { width: 38px; height: 38px; border-radius: 50%; background: #0875ee; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex-shrink: 0; overflow: hidden; }
             .ativ-grupo-nome { font-weight: 700; font-size: 14px; color: #212529; }
             .ativ-grupo-contagem { font-size: 11px; color: #6c757d; }
+
+            /* Colaboradores lado a lado (colunas) em vez de empilhados */
+            #ativLista.ativ-lista-colunas { display: flex; gap: 16px; align-items: flex-start; overflow-x: auto; padding-bottom: 12px; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+            #ativLista.ativ-lista-colunas .ativ-grupo { flex: 1 1 320px; min-width: 320px; margin-bottom: 0; background: #f8f9fa; border-radius: 10px; padding: 12px; }
+
+            .ativ-dias-semana { display: flex; gap: 6px; flex-wrap: wrap; }
+            .ativ-dias-semana label { display: flex; align-items: center; gap: 4px; font-weight: 400; font-size: 13px; background: #f1f3f5; border-radius: 6px; padding: 4px 8px; margin: 0; cursor: pointer; }
         `;
         document.head.appendChild(style);
     }
@@ -1105,7 +1194,6 @@
                     obterColaboradoresAtiv().map(u => `<option value="${u.username}">${escapeAtiv(u.name)}</option>`).join('');
             }
         } else {
-            document.getElementById('ativBtnNova')?.remove();
             document.getElementById('ativBtnRelatorio')?.remove();
         }
     }
