@@ -2873,6 +2873,28 @@ function moverBotoesParaMenuAcessibilidadeEstoque() {
 
 
     // =====================================================
+    // SUBCATEGORIAS
+    // =====================================================
+
+    const btnSubcategorias =
+        document.getElementById(
+            'btnGerenciarSubcategorias'
+        );
+
+
+    if (btnSubcategorias) {
+
+        candidatos.push({
+            botao:
+                btnSubcategorias,
+            ordem:
+                15
+        });
+
+    }
+
+
+    // =====================================================
     // CRIAR CATEGORIA
     // =====================================================
 
@@ -3321,6 +3343,13 @@ function garantirMenuAcessibilidadeEstoque() {
         }
 
     }
+
+
+    adicionarBotaoGerenciarSubcategorias(
+        document.getElementById(
+            'menuAcessibilidadeEstoqueDropdown'
+        )
+    );
 
 
     moverBotoesParaMenuAcessibilidadeEstoque();
@@ -30885,45 +30914,55 @@ function fecharModalGerenciarSubcategorias() {
         ?.remove();
 }
 
-function adicionarBotaoGerenciarSubcategorias() {
+function adicionarBotaoGerenciarSubcategorias(menuFornecido = null) {
 
-    const modal =
+    const menu =
+        menuFornecido ||
+        garantirMenuAcessibilidadeEstoque();
+
+
+    if (!menu) {
+
+        setTimeout(
+            adicionarBotaoGerenciarSubcategorias,
+            400
+        );
+
+        return;
+    }
+
+
+    const existente =
         document.getElementById(
-            'modalGerenciarCategorias'
+            'btnGerenciarSubcategorias'
         );
 
 
-    if (!modal) {
-        return;
-    }
+    if (existente) {
+
+        if (existente.parentElement !== menu) {
+            menu.appendChild(existente);
+        }
 
 
-    if (
-        modal.querySelector(
-            '#btnGerenciarSubcategorias'
-        )
-    ) {
-        return;
-    }
-
-
-    const btnCriar =
-        Array.from(
-            modal.querySelectorAll(
-                'button'
-            )
-        ).find(
-            btn =>
-                btn.textContent
-                    .includes(
-                        'Criar Nova Categoria'
-                    )
+        estilizarItemMenuAcessibilidadeEstoque(
+            existente
         );
 
 
-    if (!btnCriar) {
         return;
     }
+
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase() || '';
+
+
+    const isAuthorized =
+        usuariosGerenciarCategorias.includes(
+            username
+        );
 
 
     const botao =
@@ -30936,8 +30975,8 @@ function adicionarBotaoGerenciarSubcategorias() {
         'btnGerenciarSubcategorias';
 
 
-    botao.className =
-        'btn btn-sm btn-primary';
+    botao.type =
+        'button';
 
 
     botao.innerHTML = `
@@ -30948,25 +30987,42 @@ function adicionarBotaoGerenciarSubcategorias() {
     `;
 
 
+    botao.title =
+        'Gerenciar subcategorias do estoque';
+
+
     botao.onclick =
-        function() {
+        async function() {
 
-            fecharModalGerenciarCategorias();
+            await garantirSubcategoriasEstoqueCarregadas();
 
 
-            setTimeout(
-                abrirModalGerenciarSubcategorias,
-                200
-            );
+            abrirModalGerenciarSubcategorias();
 
         };
 
 
-    btnCriar.parentElement
-        .insertBefore(
-            botao,
-            btnCriar
-        );
+    if (!isAuthorized) {
+
+        botao.disabled = true;
+        botao.title =
+            'Apenas usuários autorizados podem gerenciar subcategorias';
+
+    }
+
+
+    estilizarItemMenuAcessibilidadeEstoque(
+        botao
+    );
+
+
+    if (!isAuthorized) {
+        botao.style.opacity = '0.5';
+        botao.style.cursor = 'not-allowed';
+    }
+
+
+    menu.appendChild(botao);
 }
 
 function atualizarStatusSyncLabel(bloqueado) {
@@ -35461,14 +35517,6 @@ function abrirModalGerenciarCategorias() {
     // Preencher a lista
     preencherListaCategoriasGerenciamento();
 
-    setTimeout(adicionarBotaoGerenciarSubcategorias,
-    50
-);
-
-    setTimeout(carregarSubcategoriasEstoque,
-        1250
-);
-    
     modal.classList.remove('hidden');
     modal.style.display = 'flex';
 }
