@@ -20,8 +20,7 @@
 
     // Estes usuários enxergam TODOS os chamados
     admins: [
-        'andressamiotto',
-        'ronald'
+        'andressamiotto'
     ],
 
     // Máximo 8 MB por imagem
@@ -82,6 +81,12 @@
             texto: 'Concluído',
             icone: '🟢',
             classe: 'ch-status-concluido'
+        },
+
+        aguardando_teste: {
+            texto: 'Aguardando teste',
+            icone: '🧪',
+            classe: 'ch-status-teste'
         }
 
     };
@@ -1165,6 +1170,12 @@ function atualizarCabecalhoVisibilidadeChamados() {
             .ch-status-concluido {
                 background: #d1e7dd;
                 color: #0f5132;
+            }
+
+
+            .ch-status-teste {
+                background: #ede4ff;
+                color: #5a2ea6;
             }
 
 
@@ -2988,6 +2999,29 @@ window.excluirRecadoChamados =
 
                     </div>
 
+
+                    <div
+                        class="ch-resumo-card"
+                        onclick="
+                            filtrarStatusChamados(
+                                'aguardando_teste'
+                            )
+                        "
+                    >
+
+                        <small>
+                            🧪 TESTE
+                        </small>
+
+                        <div
+                            class="ch-resumo-num"
+                            id="chQtdTeste"
+                        >
+                            0
+                        </div>
+
+                    </div>
+
                 </div>
 
 
@@ -3047,6 +3081,12 @@ window.excluirRecadoChamados =
                                 value="concluido"
                             >
                                 Concluído
+                            </option>
+
+                            <option
+                                value="aguardando_teste"
+                            >
+                                Aguardando teste
                             </option>
 
                         </select>
@@ -5952,6 +5992,11 @@ await Promise.all([
             chQtdConcluido:
                 qtd(
                     'concluido'
+                ),
+
+            chQtdTeste:
+                qtd(
+                    'aguardando_teste'
                 )
 
         };
@@ -6668,6 +6713,16 @@ window.renderizarChamados =
             id
         ) {
 
+            // O lembrete de teste não pode ficar por cima do
+            // detalhe do chamado interceptando clique.
+            if (
+                typeof window.fecharModalLembreteTeste ===
+                'function'
+            ) {
+                window.fecharModalLembreteTeste();
+            }
+
+
             criarModalDetalhesChamados();
 
 
@@ -7175,6 +7230,20 @@ window.renderizarChamados =
                         </div>
 
 
+                        ${
+                            c.resultado_teste
+                                ? `
+                                    <div style="font-size:13px; color:${c.resultado_teste === 'ok' ? '#0f5132' : '#a61b29'}; margin-bottom:8px;">
+                                        ${c.resultado_teste === 'ok' ? '✅ Testado e funcionou' : '❌ Testado — não funcionou'}
+                                        ${c.testado_por ? ` — por ${escChamados(c.testado_por)}` : ''}
+                                        ${c.testado_em ? ` em ${formatarDataChamados(c.testado_em)}` : ''}
+                                        ${c.observacao_teste ? `<br><span style="color:#6c757d;">Observação: ${escChamados(c.observacao_teste)}</span>` : ''}
+                                    </div>
+                                `
+                                : ''
+                        }
+
+
                         <h3
                             style="
                                 font-size:20px !important;
@@ -7427,6 +7496,35 @@ window.renderizarChamados =
                             </div>
 
 
+                            ${
+                                admin
+                                    ? `
+                                        <label
+                                            class="ch-label"
+                                            style="
+                                                display:flex;
+                                                align-items:center;
+                                                gap:7px;
+                                                margin-top:10px;
+                                                cursor:pointer;
+                                            "
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                id="chMarcarTeste"
+                                                ${
+                                                    c.status === 'aguardando_teste'
+                                                        ? 'checked'
+                                                        : ''
+                                                }
+                                            >
+                                            🧪 Marcar como corrigido — pedir teste ao usuário
+                                        </label>
+                                    `
+                                    : ''
+                            }
+
+
                             <div
                                 style="
                                     text-align:right;
@@ -7542,6 +7640,18 @@ window.renderizarChamados =
                                             🟢 Concluído
                                         </option>
 
+
+                                        <option
+                                            value="aguardando_teste"
+                                            ${
+                                                c.status === 'aguardando_teste'
+                                                    ? 'selected'
+                                                    : ''
+                                            }
+                                        >
+                                            🧪 Aguardando teste
+                                        </option>
+
                                     </select>
 
                                 </div>
@@ -7591,6 +7701,30 @@ window.renderizarChamados =
                                     </span>
 
                                 </div>
+
+
+                                ${
+                                    c.status === 'aguardando_teste' &&
+                                    !c.resultado_teste &&
+                                    normalizarUsuarioChamados(c.criado_por_username) === usernameChamados()
+                                        ? `
+                                            <div class="ch-box" style="border:2px solid #5a2ea6; background:#f7f2ff;">
+                                                <div class="ch-box-titulo">🧪 Precisa testar</div>
+                                                <p style="font-size:13px; color:#4b5563; margin:0 0 10px;">
+                                                    O suporte marcou este chamado como corrigido. Teste a função e confirme abaixo.
+                                                </p>
+                                                <div class="d-flex gap-2" style="flex-wrap:wrap;">
+                                                    <button class="btn btn-success btn-sm" onclick="marcarTesteChamado(${Number(c.id)}, 'ok')">
+                                                        ✅ Funcionou
+                                                    </button>
+                                                    <button class="btn btn-danger btn-sm" onclick="marcarTesteChamado(${Number(c.id)}, 'falhou')">
+                                                        ❌ Não funcionou
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `
+                                        : ''
+                                }
 
 
                                 ${
@@ -8479,6 +8613,17 @@ Alterado por: ${
             '';
 
 
+        const marcarComoTeste =
+            ehAdminChamados() &&
+            Boolean(
+                document
+                    .getElementById(
+                        'chMarcarTeste'
+                    )
+                    ?.checked
+            );
+
+
         if (
             !texto &&
             !printNovaMensagem
@@ -8784,6 +8929,42 @@ Alterado por: ${
             }
 
 
+            /*
+             * Admin marcou essa resposta como "pede teste" —
+             * manda o chamado pra Aguardando teste e limpa
+             * qualquer resultado de teste anterior.
+             */
+
+            if (
+                marcarComoTeste
+            ) {
+
+                atualizacao.status =
+                    'aguardando_teste';
+
+
+                atualizacao.concluido_em =
+                    null;
+
+
+                atualizacao.resultado_teste =
+                    null;
+
+
+                atualizacao.testado_em =
+                    null;
+
+
+                atualizacao.testado_por =
+                    null;
+
+
+                atualizacao.observacao_teste =
+                    null;
+
+            }
+
+
             const {
                 error: erroUpdate
             } =
@@ -8859,6 +9040,49 @@ Alterado por: ${
                     console.warn(
                         '⚠️ Chamado reaberto, mas a notificação do status falhou:',
                         erroNotificacaoStatus
+                    );
+
+                }
+
+            }
+
+
+            if (
+                marcarComoTeste
+            ) {
+
+                try {
+
+                    await notificarMudancaStatusChamado({
+
+                        chamadoId:
+                            id,
+
+                        tituloChamado:
+                            dadosChamado
+                                .titulo,
+
+                        criadorUsername:
+                            dadosChamado
+                                .criado_por_username,
+
+                        statusAnterior:
+                            dadosChamado
+                                .status,
+
+                        novoStatus:
+                            'aguardando_teste'
+
+                    });
+
+
+                } catch (
+                    erroNotificacaoTeste
+                ) {
+
+                    console.warn(
+                        '⚠️ Chamado marcado como aguardando teste, mas a notificação falhou:',
+                        erroNotificacaoTeste
                     );
 
                 }
@@ -9153,6 +9377,16 @@ Alterado por: ${
                 );
 
 
+            } else if (
+                marcarComoTeste
+            ) {
+
+                toastChamados(
+                    '✅ Resposta enviada. Chamado marcado como Aguardando teste.',
+                    'success'
+                );
+
+
             } else {
 
                 toastChamados(
@@ -9215,6 +9449,298 @@ Alterado por: ${
         }
 
     };
+
+    // ========================================================
+    // MARCAR RESULTADO DO TESTE (quem abriu o chamado)
+    // ========================================================
+
+    window.marcarTesteChamado =
+        async function(
+            id,
+            resultado
+        ) {
+
+            if (
+                resultado !== 'ok' &&
+                resultado !== 'falhou'
+            ) {
+                return;
+            }
+
+            const sb =
+                sbChamados();
+
+            const u =
+                usuarioChamados();
+
+            if (
+                !sb ||
+                !u
+            ) {
+                return;
+            }
+
+            let observacao =
+                null;
+
+            if (
+                resultado === 'falhou'
+            ) {
+
+                observacao =
+                    window.prompt(
+                        'O que não funcionou? (ajuda o suporte a corrigir — opcional)'
+                    ) ||
+                    null;
+
+            }
+
+            try {
+
+                const {
+                    data: dadosChamado,
+                    error: erroConsulta
+                } =
+                    await sb
+                        .from(
+                            CFG_CHAMADOS
+                                .tabelaChamados
+                        )
+                        .select(
+                            'id, titulo, status, criado_por_username'
+                        )
+                        .eq(
+                            'id',
+                            id
+                        )
+                        .single();
+
+                if (
+                    erroConsulta ||
+                    !dadosChamado
+                ) {
+                    throw (
+                        erroConsulta ||
+                        new Error(
+                            'Chamado não encontrado.'
+                        )
+                    );
+                }
+
+                if (
+                    normalizarUsuarioChamados(
+                        dadosChamado
+                            .criado_por_username
+                    ) !==
+                    usernameChamados()
+                ) {
+
+                    toastChamados(
+                        '🔒 Só quem abriu o chamado pode confirmar o teste.',
+                        'warning'
+                    );
+
+                    return;
+
+                }
+
+                if (
+                    dadosChamado.status !==
+                    'aguardando_teste'
+                ) {
+
+                    toastChamados(
+                        'ℹ️ Este chamado não está mais aguardando teste.',
+                        'info'
+                    );
+
+                    await carregarDetalhesChamados(
+                        id
+                    );
+
+                    return;
+
+                }
+
+                const agora =
+                    new Date()
+                        .toISOString();
+
+                const novoStatus =
+                    resultado === 'ok'
+                        ? 'concluido'
+                        : 'em_andamento';
+
+                const atualizacao = {
+
+                    resultado_teste:
+                        resultado,
+
+                    testado_em:
+                        agora,
+
+                    testado_por:
+                        u.name ||
+                        u.username ||
+                        usernameChamados(),
+
+                    observacao_teste:
+                        observacao,
+
+                    atualizado_em:
+                        agora,
+
+                    status:
+                        novoStatus,
+
+                    concluido_em:
+                        resultado === 'ok'
+                            ? agora
+                            : null
+
+                };
+
+                const {
+                    error: erroUpdate
+                } =
+                    await sb
+                        .from(
+                            CFG_CHAMADOS
+                                .tabelaChamados
+                        )
+                        .update(
+                            atualizacao
+                        )
+                        .eq(
+                            'id',
+                            id
+                        );
+
+                if (
+                    erroUpdate
+                ) {
+                    throw erroUpdate;
+                }
+
+                /*
+                 * Quando o teste falha, registra a observação
+                 * também como mensagem na conversa, pro suporte
+                 * ver exatamente o que deu errado.
+                 */
+
+                if (
+                    resultado === 'falhou' &&
+                    observacao
+                ) {
+
+                    await sb
+                        .from(
+                            CFG_CHAMADOS
+                                .tabelaMensagens
+                        )
+                        .insert({
+
+                            chamado_id:
+                                id,
+
+                            autor_username:
+                                usernameChamados(),
+
+                            autor_nome:
+                                u.name ||
+                                u.username ||
+                                usernameChamados(),
+
+                            mensagem:
+                                `❌ Teste reprovado: ${observacao}`,
+
+                            criado_em:
+                                agora
+
+                        });
+
+                }
+
+                try {
+
+                    await notificarMudancaStatusChamado({
+
+                        chamadoId:
+                            id,
+
+                        tituloChamado:
+                            dadosChamado
+                                .titulo,
+
+                        criadorUsername:
+                            dadosChamado
+                                .criado_por_username,
+
+                        statusAnterior:
+                            'aguardando_teste',
+
+                        novoStatus:
+                            novoStatus
+
+                    });
+
+                } catch (
+                    erroNotificacao
+                ) {
+
+                    console.warn(
+                        '⚠️ Teste registrado, mas a notificação falhou:',
+                        erroNotificacao
+                    );
+
+                }
+
+                toastChamados(
+                    resultado === 'ok'
+                        ? '✅ Show! Chamado concluído.'
+                        : '🔁 Chamado reaberto — o suporte vai ver o que não funcionou.',
+                    'success'
+                );
+
+                await carregarDetalhesChamados(
+                    id
+                );
+
+                await window
+                    .carregarChamados(
+                        false
+                    );
+
+                if (
+                    typeof atualizarContadorMenuChamados ===
+                    'function'
+                ) {
+
+                    await atualizarContadorMenuChamados();
+
+                }
+
+            } catch (
+                e
+            ) {
+
+                console.error(
+                    '❌ Erro ao marcar teste do chamado:',
+                    e
+                );
+
+                toastChamados(
+                    '❌ Erro ao registrar o teste: ' +
+                    (
+                        e.message ||
+                        'erro desconhecido'
+                    ),
+                    'error'
+                );
+
+            }
+
+        };
 
     // ========================================================
     // CONTADOR DO MENU - CACHE
@@ -9445,6 +9971,215 @@ Alterado por: ${
         setTimeout(
             iniciarChamados,
             100
+        );
+
+    }
+
+
+    // ========================================================
+    // LEMBRETE: CHAMADO(S) AGUARDANDO TESTE
+    //
+    // Fica checando de tempos em tempos se quem está logado
+    // tem algum chamado seu marcado como "aguardando teste".
+    // Pode fechar quantas vezes quiser ("Lembrar depois") —
+    // sem limite — mas volta a aparecer no próximo ciclo até
+    // a pessoa ir lá testar.
+    // ========================================================
+
+    let chamadoTesteModalAberto =
+        false;
+
+    async function verificarChamadosAguardandoTeste() {
+
+        if (
+            chamadoTesteModalAberto
+        ) {
+            return;
+        }
+
+        // Não interrompe quem já está com um chamado aberto na
+        // tela — o lembrete voltaria a atrapalhar bem na hora de
+        // clicar em Funcionou/Não funcionou.
+        const detalheChamadoAberto =
+            document.getElementById(
+                'modalDetalhesChamado'
+            );
+
+        if (
+            detalheChamadoAberto &&
+            !detalheChamadoAberto.classList.contains(
+                'hidden-ch'
+            )
+        ) {
+            return;
+        }
+
+        const sb =
+            sbChamados();
+
+        const username =
+            usernameChamados();
+
+        if (
+            !sb ||
+            !username
+        ) {
+            return;
+        }
+
+        try {
+
+            const {
+                data,
+                error
+            } =
+                await sb
+                    .from(
+                        CFG_CHAMADOS
+                            .tabelaChamados
+                    )
+                    .select(
+                        'id, titulo, atualizado_em'
+                    )
+                    .eq(
+                        'status',
+                        'aguardando_teste'
+                    )
+                    .eq(
+                        'criado_por_username',
+                        username
+                    )
+                    .is(
+                        'resultado_teste',
+                        null
+                    )
+                    .order(
+                        'atualizado_em',
+                        { ascending: true }
+                    )
+                    .limit(1);
+
+            if (error) {
+                throw error;
+            }
+
+            if (
+                Array.isArray(data) &&
+                data.length
+            ) {
+                mostrarModalLembreteTeste(data[0]);
+            }
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ Falha ao checar chamados aguardando teste:',
+                error
+            );
+
+        }
+
+    }
+    window.verificarChamadosAguardandoTeste =
+        verificarChamadosAguardandoTeste;
+
+    function mostrarModalLembreteTeste(chamado) {
+
+        let modal =
+            document.getElementById(
+                'chModalLembreteTeste'
+            );
+
+        if (!modal) {
+
+            modal =
+                document.createElement('div');
+
+            modal.id =
+                'chModalLembreteTeste';
+
+            modal.className =
+                'ch-overlay hidden-ch';
+
+            document.body.appendChild(modal);
+
+        }
+
+        modal.innerHTML = `
+            <div class="ch-modal" style="max-width:420px; text-align:center;">
+                <div style="font-size:40px; margin-bottom:8px;">🧪</div>
+                <h3 style="margin:0 0 8px;">Um chamado seu está aguardando teste</h3>
+                <p style="color:#6c757d; font-size:14px; margin:0 0 18px;">
+                    "${escChamados(chamado.titulo || '')}" foi corrigido pelo suporte. Teste a função e confirme se funcionou.
+                </p>
+                <div style="display:flex; gap:8px; justify-content:center;">
+                    <button class="btn btn-secondary" onclick="window.fecharModalLembreteTeste()">Lembrar depois</button>
+                    <button class="btn btn-primary" onclick="window.irTestarChamado(${Number(chamado.id)})">Ir testar agora</button>
+                </div>
+            </div>
+        `;
+
+        modal.classList.remove('hidden-ch');
+        chamadoTesteModalAberto = true;
+
+    }
+
+    window.fecharModalLembreteTeste =
+        function() {
+
+            const modal =
+                document.getElementById(
+                    'chModalLembreteTeste'
+                );
+
+            if (modal) {
+                modal.classList.add('hidden-ch');
+            }
+
+            chamadoTesteModalAberto = false;
+
+        };
+
+    window.irTestarChamado =
+        function(id) {
+
+            window.fecharModalLembreteTeste();
+
+            if (
+                typeof window.abrirSistemaChamados ===
+                'function'
+            ) {
+                window.abrirSistemaChamados();
+            }
+
+            setTimeout(
+                () => {
+
+                    if (
+                        typeof window.abrirDetalhesChamado ===
+                        'function'
+                    ) {
+                        window.abrirDetalhesChamado(id);
+                    }
+
+                },
+                600
+            );
+
+        };
+
+    if (!window.__pollChamadosAguardandoTesteAtivo) {
+
+        window.__pollChamadosAguardandoTesteAtivo = true;
+
+        setTimeout(
+            verificarChamadosAguardandoTeste,
+            5000
+        );
+
+        setInterval(
+            verificarChamadosAguardandoTeste,
+            10 * 60 * 1000
         );
 
     }
