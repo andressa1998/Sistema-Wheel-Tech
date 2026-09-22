@@ -8318,39 +8318,46 @@ Alterado por: ${
             }
 
             /*
-             * Somente gera a notificação depois que o banco
-             * confirmar a alteração.
+             * Notificação só quando o chamado vai pra "Aguardando
+             * teste" — as demais mudanças de status (aberto, em
+             * andamento, aguardando, concluído) não notificam mais,
+             * pra não lotar o sino de quem recebe.
              */
-            try {
-                await notificarMudancaStatusChamado({
-                    chamadoId:
-                        id,
-
-                    tituloChamado:
-                        chamadoAntes.titulo,
-
-                    criadorUsername:
-                        chamadoAntes
-                            .criado_por_username,
-
-                    statusAnterior:
-                        statusAnterior,
-
-                    novoStatus:
-                        novoStatus
-                });
-
-            } catch (
-                erroNotificacao
+            if (
+                novoStatus ===
+                'aguardando_teste'
             ) {
-                /*
-                 * Uma falha na notificação não desfaz uma
-                 * alteração de status já salva.
-                 */
-                console.warn(
-                    '⚠️ Status alterado, mas não foi possível gerar a notificação:',
+                try {
+                    await notificarMudancaStatusChamado({
+                        chamadoId:
+                            id,
+
+                        tituloChamado:
+                            chamadoAntes.titulo,
+
+                        criadorUsername:
+                            chamadoAntes
+                                .criado_por_username,
+
+                        statusAnterior:
+                            statusAnterior,
+
+                        novoStatus:
+                            novoStatus
+                    });
+
+                } catch (
                     erroNotificacao
-                );
+                ) {
+                    /*
+                     * Uma falha na notificação não desfaz uma
+                     * alteração de status já salva.
+                     */
+                    console.warn(
+                        '⚠️ Status alterado, mas não foi possível gerar a notificação:',
+                        erroNotificacao
+                    );
+                }
             }
 
             if (
@@ -8996,56 +9003,12 @@ Alterado por: ${
 
             // =================================================
             // NOTIFICA A MUDANÇA DE STATUS
+            //
+            // Só quando essa resposta marca o chamado como
+            // "Aguardando teste" — as demais mudanças (incluindo
+            // reabrir automaticamente ao responder um concluído)
+            // não notificam mais.
             // =================================================
-
-            if (
-                deveReabrirChamado &&
-                atualizacao.status ===
-                    'aguardando'
-            ) {
-
-                try {
-
-                    await notificarMudancaStatusChamado({
-
-                        chamadoId:
-                            id,
-
-                        tituloChamado:
-                            dadosChamado
-                                .titulo,
-
-                        criadorUsername:
-                            dadosChamado
-                                .criado_por_username,
-
-                        statusAnterior:
-                            'concluido',
-
-                        novoStatus:
-                            'aguardando'
-
-                    });
-
-
-                } catch (
-                    erroNotificacaoStatus
-                ) {
-
-                    /*
-                     * A falha da notificação não desfaz
-                     * a mensagem nem a mudança de status.
-                     */
-
-                    console.warn(
-                        '⚠️ Chamado reaberto, mas a notificação do status falhou:',
-                        erroNotificacaoStatus
-                    );
-
-                }
-
-            }
-
 
             if (
                 marcarComoTeste
@@ -9119,95 +9082,46 @@ Alterado por: ${
 
 
                 /*
-                 * Quando um administrador responde um chamado
-                 * de outra pessoa, notifica quem abriu.
+                 * Só notifica quando um administrador responde —
+                 * aí sim avisa quem abriu o chamado. Quando é o
+                 * próprio criador que responde, não notifica
+                 * ninguém (nem os admins), pra não lotar o sino.
+                 *
+                 * Se essa resposta também marcou "aguardando
+                 * teste", a notificação de status já avisou —
+                 * não manda uma segunda, duplicada, só da mensagem.
                  */
 
                 if (
-                    ehAdminChamados()
+                    ehAdminChamados() &&
+                    !marcarComoTeste &&
+                    criadorChamado &&
+                    criadorChamado !==
+                        usernameChamados() &&
+                    typeof window
+                        .criarNotificacaoChamado ===
+                        'function'
                 ) {
 
-                    if (
-                        criadorChamado &&
-                        criadorChamado !==
-                            usernameChamados() &&
-                        typeof window
-                            .criarNotificacaoChamado ===
-                            'function'
-                    ) {
+                    await window
+                        .criarNotificacaoChamado({
 
-                        await window
-                            .criarNotificacaoChamado({
+                            chamadoId:
+                                id,
 
-                                chamadoId:
-                                    id,
+                            destinatarioUsername:
+                                criadorChamado,
 
-                                destinatarioUsername:
-                                    criadorChamado,
+                            tipo:
+                                'nova_mensagem',
 
-                                tipo:
-                                    'nova_mensagem',
+                            titulo:
+                                'Nova resposta no seu chamado',
 
-                                titulo:
-                                    'Nova resposta no seu chamado',
+                            mensagem:
+                                previewMensagem
 
-                                mensagem:
-                                    previewMensagem
-
-                            });
-
-                    }
-
-
-                } else {
-
-                    /*
-                     * Quando o usuário que abriu responde,
-                     * notifica os administradores.
-                     */
-
-                    if (
-                        typeof window
-                            .notificarAdminsChamado ===
-                            'function'
-                    ) {
-
-                        await window
-                            .notificarAdminsChamado({
-
-                                chamadoId:
-                                    id,
-
-                                tipo:
-                                    deveReabrirChamado
-                                        ? 'chamado_reaberto'
-                                        : 'resposta_usuario',
-
-                                titulo:
-                                    deveReabrirChamado
-
-                                        ? `${
-                                            u.name ||
-                                            u.username ||
-                                            'Usuário'
-                                        } reabriu o chamado #${numeroChamado(id)}`
-
-                                        : `${
-                                            u.name ||
-                                            u.username ||
-                                            'Usuário'
-                                        } respondeu o chamado #${numeroChamado(id)}`,
-
-                                mensagem:
-                                    deveReabrirChamado
-
-                                        ? `O chamado voltou automaticamente para Aguardando. ${previewMensagem}`
-
-                                        : previewMensagem
-
-                            });
-
-                    }
+                        });
 
                 }
 
@@ -9661,39 +9575,9 @@ Alterado por: ${
 
                 }
 
-                try {
-
-                    await notificarMudancaStatusChamado({
-
-                        chamadoId:
-                            id,
-
-                        tituloChamado:
-                            dadosChamado
-                                .titulo,
-
-                        criadorUsername:
-                            dadosChamado
-                                .criado_por_username,
-
-                        statusAnterior:
-                            'aguardando_teste',
-
-                        novoStatus:
-                            novoStatus
-
-                    });
-
-                } catch (
-                    erroNotificacao
-                ) {
-
-                    console.warn(
-                        '⚠️ Teste registrado, mas a notificação falhou:',
-                        erroNotificacao
-                    );
-
-                }
+                // Resultado do teste (funcionou/não funcionou) não
+                // gera notificação — só "foi pra teste" e resposta
+                // de admin notificam.
 
                 toastChamados(
                     resultado === 'ok'
