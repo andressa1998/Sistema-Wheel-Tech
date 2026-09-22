@@ -107,12 +107,22 @@ async function aphCarregarPainelHoje() {
 }
 window.aphCarregarPainelHoje = aphCarregarPainelHoje;
 
+// Sem tarefa nenhuma, a seção encolhe (não fica um card vazio
+// grandão ocupando espaço à toa). Volta ao tamanho normal assim
+// que tiver algo pra mostrar.
+function aphAjustarTamanhoSecao(vazio) {
+    const secao = document.getElementById('wtTarefasHojeSecao');
+    if (secao) secao.style.minHeight = vazio ? '0' : '';
+}
+
 function aphRenderizarLista(container, atividades) {
     if (!atividades.length) {
-        container.innerHTML = '<div class="wt-empty">Nenhuma tarefa para hoje. 🎉</div>';
+        aphAjustarTamanhoSecao(true);
+        container.innerHTML = '<div class="wt-empty" style="padding:6px 8px;">Nenhuma tarefa para hoje. 🎉</div>';
         return;
     }
 
+    aphAjustarTamanhoSecao(false);
     const rotulos = { dia: 'Diária', semana: 'Semanal', mes: 'Mensal' };
     const cores = { dia: '#00ADEE', semana: '#8e44ad', mes: '#e67e22' };
 
