@@ -560,7 +560,8 @@
                     <button type="button" class="rn-fechar">&times;</button>
                 </div>
                 <div class="rn-tabs">
-                    <button type="button" class="rn-tab" data-aba="regras">Regras</button>
+                    <button type="button" class="rn-tab" data-aba="regras">Regra nova</button>
+                    <button type="button" class="rn-tab" data-aba="salvas">Regras salvas</button>
                     <button type="button" class="rn-tab" data-aba="disparos">Disparos</button>
                 </div>
                 <div class="rn-corpo"></div>
@@ -589,6 +590,7 @@
         ov.querySelectorAll('.rn-tab').forEach(t => t.classList.toggle('ativa', t.dataset.aba === abaAtual));
         const corpo = ov.querySelector('.rn-corpo');
         if (abaAtual === 'regras') renderRegras(corpo);
+        else if (abaAtual === 'salvas') renderRegrasSalvas(corpo);
         else renderDisparos(corpo);
     }
 
@@ -652,9 +654,6 @@
             </fieldset>
 
             <div id="rnPreview"></div>
-
-            <h4 style="margin:6px 0 10px;">Regras ativas</h4>
-            <div id="rnListaRegras"></div>
         `;
 
         renderTabelaEscada(corpo);
@@ -689,7 +688,6 @@
 
         // escopo pequeno -> já puxa os preços do ML sozinho, sem precisar clicar
         renderPreview(corpo, produtos, produtos.length > 0 && produtos.length <= 15);
-        renderListaRegras(corpo);
     }
 
     function cancelarEdicao() {
@@ -811,32 +809,89 @@
             <table class="rn-escada" style="margin-bottom:12px;"><tr><th>Nível</th><th>Preço</th><th></th></tr>${linhas}</table>`;
     }
 
-    function renderListaRegras(corpo) {
-        const lista = corpo.querySelector('#rnListaRegras');
-        if (!lista) return;
-        if (!regrasCache.length) { lista.innerHTML = `<div class="rn-vazio">Nenhuma regra criada.</div>`; return; }
-        const temOverrides = r => r.overrides && Object.values(r.overrides).some(m => m && Object.keys(m).length);
-        lista.innerHTML = regrasCache.map(r => `
-            <div class="rn-regra ${r.ativo ? '' : 'off'}" data-id="${r.id}">
-                <h4 style="margin:0 0 4px;font-size:14px;">${esc(r.nome || 'Regra')} — gatilho: estoque ${r.gatilho_qtd}</h4>
-                <div style="font-size:12px;color:#64748b;">Escopo: ${esc(descreverEscopoObj(r))}</div>
-                <div style="font-size:12px;color:#64748b;">Escada: ${esc(descreverEscada(r.escada))}${temOverrides(r) ? ' · <span style="color:#7c3aed;font-weight:600;">tem ajustes manuais</span>' : ''}</div>
-                <div class="rn-acoes">
-                    <button data-a="editar">Ajustar preços</button>
-                    <button data-a="toggle">${r.ativo ? 'Pausar' : 'Ativar'}</button>
-                    <button data-a="rodar">Verificar agora</button>
-                    <button data-a="excluir">Excluir</button>
-                </div>
-            </div>`).join('');
-        lista.querySelectorAll('.rn-regra').forEach(el => {
-            const id = el.dataset.id;
-            el.querySelectorAll('button[data-a]').forEach(b => b.addEventListener('click', () => {
-                if (b.dataset.a === 'toggle') toggleRegra(id);
-                else if (b.dataset.a === 'excluir') excluirRegra(id);
-                else if (b.dataset.a === 'editar') iniciarEdicao(id);
-                else { toast('Verificando…'); avaliarRegras({ forcar: true }).then(() => { toast('Pronto.', 'success'); render(); }); }
-            }));
+    // ---------- ABA "REGRAS SALVAS" — lista por PRODUTO ----------
+    function renderRegrasSalvas(corpo) {
+        const temOverridesMlb = (r, p) => {
+            if (!r.overrides) return false;
+            return mlbsDoProduto(p).some(mlb => r.overrides[mlb] && Object.keys(r.overrides[mlb]).length);
+        };
+
+        // Expande cada regra salva nos produtos reais que ela afeta —
+        // o que o usuário pediu foi "lista de produtos", não de regras.
+        const linhas = [];
+        regrasCache.forEach(r => {
+            produtosDoEscopo(r).forEach(p => linhas.push({ produto: p, regra: r }));
         });
+
+        corpo.innerHTML = `
+            <input type="text" id="rnBuscaSalvas" placeholder="🔍 Buscar por produto, SKU ou nome da regra..." style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px;box-sizing:border-box;">
+            <div id="rnListaSalvas"></div>
+        `;
+
+        const listaEl = corpo.querySelector('#rnListaSalvas');
+
+        function desenhar(filtro) {
+            const termo = (filtro || '').trim().toLowerCase();
+            const filtradas = !termo ? linhas : linhas.filter(l =>
+                String(l.produto.nome || '').toLowerCase().includes(termo) ||
+                String(l.produto.sku || '').toLowerCase().includes(termo) ||
+                String(l.regra.nome || '').toLowerCase().includes(termo)
+            );
+
+            if (!filtradas.length) {
+                listaEl.innerHTML = `<div class="rn-vazio">${linhas.length ? 'Nada encontrado.' : 'Nenhum produto com regra de estoque salva ainda.'}</div>`;
+                return;
+            }
+
+            listaEl.innerHTML = filtradas.map((l, i) => {
+                const p = l.produto, r = l.regra;
+                return `
+                <div class="rn-regra ${r.ativo ? '' : 'off'}" data-i="${i}" style="cursor:pointer;">
+                    <h4 style="margin:0 0 4px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                        <span>${esc(p.nome || p.sku || 'Produto')}</span>
+                        <span style="font-size:11px;font-weight:600;color:${r.ativo ? '#16a34a' : '#94a3b8'};">${r.ativo ? 'regra ativa' : 'pausada'}</span>
+                    </h4>
+                    <div style="font-size:12px;color:#64748b;">SKU: ${esc(p.sku || '—')} · Estoque atual: ${Number(p.quantidade) || 0} · Gatilho: ${r.gatilho_qtd}</div>
+                    <div style="font-size:12px;color:#64748b;">Regra: ${esc(r.nome || 'Regra')}${temOverridesMlb(r, p) ? ' · <span style="color:#7c3aed;font-weight:600;">tem ajuste manual neste produto</span>' : ''}</div>
+                    <div id="rnDetalheSalvas${i}" style="display:none;margin-top:8px;border-top:1px dashed #e2e8f0;padding-top:8px;"></div>
+                </div>`;
+            }).join('');
+
+            listaEl.querySelectorAll('.rn-regra').forEach(el => {
+                const i = el.dataset.i;
+                el.addEventListener('click', (e) => {
+                    if (e.target.closest('button')) return;
+                    const det = el.querySelector('#rnDetalheSalvas' + i);
+                    const jaAberto = det.style.display !== 'none';
+                    listaEl.querySelectorAll('[id^="rnDetalheSalvas"]').forEach(d => { d.style.display = 'none'; });
+                    if (jaAberto) return;
+                    det.style.display = 'block';
+                    const { produto: p, regra: r } = filtradas[i];
+                    det.innerHTML = `
+                        <div style="font-size:12px;color:#475569;">
+                            <div><strong>Escopo da regra:</strong> ${esc(descreverEscopoObj(r))}</div>
+                            <div><strong>Escada (do gatilho até 1):</strong> ${esc(descreverEscada(r.escada))}</div>
+                        </div>
+                        <div class="rn-acoes" style="margin-top:8px;">
+                            <button data-a="editar">Ajustar preços</button>
+                            <button data-a="toggle">${r.ativo ? 'Pausar' : 'Ativar'}</button>
+                            <button data-a="rodar">Verificar agora</button>
+                            <button data-a="excluir">Excluir</button>
+                        </div>
+                    `;
+                    det.querySelectorAll('button[data-a]').forEach(b => b.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        if (b.dataset.a === 'toggle') toggleRegra(r.id);
+                        else if (b.dataset.a === 'excluir') excluirRegra(r.id);
+                        else if (b.dataset.a === 'editar') iniciarEdicao(r.id);
+                        else { toast('Verificando…'); avaliarRegras({ forcar: true }).then(() => { toast('Pronto.', 'success'); render(); }); }
+                    }));
+                });
+            });
+        }
+
+        desenhar('');
+        corpo.querySelector('#rnBuscaSalvas').addEventListener('input', e => desenhar(e.target.value));
     }
 
     function iniciarEdicao(id) {
@@ -846,6 +901,11 @@
         escadaDraft = (r.escada || []).map(d => ({ ...d }));
         overridesDraft = JSON.parse(JSON.stringify(r.overrides || {}));
         previewToken = null;
+        // "Ajustar preços" pode ser clicado de dentro de "Regras salvas" —
+        // o formulário de edição mora na aba "Regra nova".
+        abaAtual = 'regras';
+        const ov = document.getElementById('rnOverlay');
+        if (ov) ov.querySelectorAll('.rn-tab').forEach(t => t.classList.toggle('ativa', t.dataset.aba === abaAtual));
         render();
         const corpo = document.querySelector('#rnModal .rn-corpo');
         if (corpo) corpo.scrollTop = 0;
