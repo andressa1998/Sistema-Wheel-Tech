@@ -592,7 +592,9 @@
             <div class="card mb-4">
                 <div class="card-header">
                     <h2 class="card-title"><i class="fas fa-wand-magic-sparkles"></i> Produtos, custos e níveis de estoque</h2>
-                    <div class="d-flex gap-2 align-items-center pi-acoes"></div>
+                    <div class="d-flex gap-2 align-items-center pi-acoes">
+                        <button type="button" class="btn btn-success" id="piBtnRelatorio" title="Quanto vale o estoque a preço de custo: por categoria, produto e período"><i class="fas fa-sack-dollar"></i> Relatório de estoque (R$)</button>
+                    </div>
                 </div>
                 <div class="pi-filtros">
                     <input type="text" id="piBusca" class="form-control" placeholder="🔍 Buscar por nome, SKU, MLB ou fornecedor..." style="min-width:260px;flex:1;">
@@ -647,6 +649,7 @@
         document.body.appendChild(tela);
 
         const ligar = (id, evento, fn) => tela.querySelector('#' + id).addEventListener(evento, fn);
+        ligar('piBtnRelatorio', 'click', () => { if (typeof window.abrirRelatorioEstoqueValor === 'function') window.abrirRelatorioEstoqueValor(); });
         ligar('piBusca', 'input', e => {
             clearTimeout(temporizadorBusca);
             const v = e.target.value;
@@ -856,7 +859,16 @@
 
     window.addEventListener('wt-regras-nivel-atualizadas', () => { if (telaAberta()) render(); });
 
-    window.PrecificacaoInteligente = { lerFiltro, telaAberta, render };
+    window.PrecificacaoInteligente = {
+        lerFiltro, telaAberta, render,
+        // usado pelo relatório de valor em estoque
+        relatorio: {
+            produtos,
+            ultimoCusto: ultimoCustoDoProduto,
+            custoMedio: custoMedioDoProduto,
+            estimativa: estimativaDoProduto
+        }
+    };
 
     // ---------- menu lateral (só quem tem permissão) ----------
     function garantirBotoesMenu() {
