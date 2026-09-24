@@ -3045,14 +3045,16 @@ function renderizarPaginaFretes() {
                 </div>
             </td>
             <td style="min-width:90px;">
-                <button class="btn btn-sm btn-primary btn-reclamar" 
+                <button class="btn btn-sm ${item.temReclamacaoAberta ? 'btn-warning' : 'btn-primary'} btn-reclamar"
                         data-venda-id="${item.id}"
                         data-valor="${valorProduto}"
                         data-frete-cobrado="${freteCobrado}"
                         data-frete-esperado="${freteEsperado !== null ? freteEsperado : 0}"
-                        ${item.temReclamacaoAberta ? 'disabled' : ''}
+                        title="${item.temReclamacaoAberta ? 'Reclamação em andamento: clique para informar o reembolso e marcar como resolvida' : 'Abrir reclamação do frete'}"
                         style="padding:4px 6px; font-size:10px; width:100%;">
-                    <i class="fas fa-comment-dots"></i> Reclamar
+                    ${item.temReclamacaoAberta
+                        ? '<i class="fas fa-check-circle"></i> Atualizar / Resolver'
+                        : '<i class="fas fa-comment-dots"></i> Reclamar'}
                 </button>
                 ${item.temReclamacaoAberta || item.temReclamacaoRejeitada || item.temReclamacaoResolvida ? 
                     `<button class="btn btn-sm btn-info btn-ver-reclamacao" data-venda-id="${item.id}" title="Ver reclamações" style="padding:4px 6px; font-size:10px; width:100%; margin-top:2px;">
@@ -3629,7 +3631,7 @@ function criarModalReclamacaoCompleta() {
         <div id="modalReclamacaoCompleta" class="modal hidden">
             <div class="modal-content" style="max-width: 750px; max-height: 90vh; overflow-y: auto; padding: 0;">
                 <div style="background: linear-gradient(135deg, #00ADEE, #80D6F7); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
-                    <h3 style="margin:0;"><i class="fas fa-comment-dots"></i> Nova Reclamação de Frete</h3>
+                    <h3 style="margin:0;" id="tituloModalReclamacao"><i class="fas fa-comment-dots"></i> Nova Reclamação de Frete</h3>
                     <button onclick="fecharModalReclamacaoCompleta()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
                 </div>
 
@@ -3683,7 +3685,7 @@ function criarModalReclamacaoCompleta() {
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label><i class="fas fa-money-bill-wave"></i> Valor *</label>
+                                <label id="labelReclamacaoValor"><i class="fas fa-money-bill-wave"></i> Valor reclamado (opcional)</label>
                                 <input type="number" id="reclamacaoValor" class="form-control" step="0.01" min="0" placeholder="0,00" value="0">
                             </div>
                         </div>
@@ -3721,14 +3723,14 @@ function criarModalReclamacaoCompleta() {
                         </div>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group" id="campoStatusReclamacao">
                         <label><i class="fas fa-tag"></i> Status *</label>
                         <select id="reclamacaoStatus" class="form-control" onchange="onStatusChange()" required>
-                            <option value="aberto">Aberto</option>
                             <option value="em_andamento">Em andamento</option>
+                            <option value="resolvido">Resolvido (reembolso obtido)</option>
                             <option value="rejeitado">Rejeitado</option>
-                            <option value="resolvido">Resolvido</option>
                         </select>
+                        <small style="color: #6c757d;">Ao marcar como <strong>Resolvido</strong>, informe o valor do reembolso e o número da transação: a reclamação vai para a coordenação conferir se o dinheiro entrou.</small>
                     </div>
 
                     <div id="campoJustificativa" style="display: none;">
@@ -3822,6 +3824,42 @@ function onStatusChange() {
             document.getElementById('reclamacaoNumeroTransacao').required = false;
         }
     }
+
+    const operacao = document.getElementById('campoNumeroOperacaoWrap');
+    if (operacao) operacao.style.display = status === 'resolvido' ? 'block' : 'none';
+
+    const labelValor = document.getElementById('labelReclamacaoValor');
+    if (labelValor) {
+        labelValor.innerHTML = status === 'resolvido'
+            ? '<i class="fas fa-money-bill-wave"></i> Valor do reembolso obtido (R$) *'
+            : '<i class="fas fa-money-bill-wave"></i> Valor reclamado (opcional)';
+    }
+}
+
+// Reclamação NOVA: o status não é escolhido — a venda entra "em andamento".
+// Reclamação EXISTENTE: o status aparece (em andamento / resolvido / rejeitado);
+// só ao marcar "resolvido" se informa o reembolso e ela vai para a coordenação.
+function ajustarModalReclamacao() {
+    const existente = !!document.getElementById('reclamacaoId')?.value;
+    const campoStatus = document.getElementById('campoStatusReclamacao');
+    const select = document.getElementById('reclamacaoStatus');
+    const titulo = document.getElementById('tituloModalReclamacao');
+
+    if (campoStatus) campoStatus.style.display = existente ? 'block' : 'none';
+
+    if (select) {
+        // registros antigos com status "aberto" contam como em andamento
+        if (!select.value || select.value === 'aberto') select.value = 'em_andamento';
+        if (!existente) select.value = 'em_andamento';
+    }
+
+    if (titulo) {
+        titulo.innerHTML = existente
+            ? '<i class="fas fa-check-circle"></i> Atualizar Reclamação de Frete'
+            : '<i class="fas fa-comment-dots"></i> Nova Reclamação de Frete';
+    }
+
+    onStatusChange();
 }
 
 function adicionarProtocolo() {
@@ -3930,7 +3968,7 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
     elementos.freteCobrado.value = (freteCobrado || 0).toFixed(2);
     elementos.freteEsperado.value = (freteEsperado || 0).toFixed(2);
     elementos.diferenca.value = diferenca.toFixed(2);
-    elementos.status.value = 'aberto';
+    elementos.status.value = 'em_andamento';
     elementos.data.value = new Date().toISOString().split('T')[0];
     
     elementos.valorDisplay.textContent = (valorProduto || 0).toFixed(2);
@@ -3965,6 +4003,7 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
     }
     
     modal.classList.remove('hidden');
+    ajustarModalReclamacao();
     carregarReclamacaoExistente(vendaId);
 }
 
@@ -4012,7 +4051,7 @@ async function carregarReclamacaoExistente(vendaId) {
                 toggleCamposReclamacao();
             }
             
-            onStatusChange();
+            ajustarModalReclamacao();
         }
     } catch (error) {
         console.error('Erro ao carregar reclamação:', error);
@@ -4030,7 +4069,9 @@ async function salvarReclamacaoCompleta() {
     const valor = parseFloat(document.getElementById('reclamacaoValor').value) || 0;
     const data = document.getElementById('reclamacaoData').value;
     const motivo = document.getElementById('reclamacaoMotivo').value;
-    const status = document.getElementById('reclamacaoStatus').value;
+    // Reclamação nova sempre nasce "em andamento" (o status só é escolhido ao atualizar).
+    let status = id ? document.getElementById('reclamacaoStatus').value : 'em_andamento';
+    if (status === 'aberto') status = 'em_andamento';
     const observacoes = document.getElementById('reclamacaoObservacoes').value.trim();
     const justificativa = document.getElementById('reclamacaoJustificativa').value.trim();
     const numeroTransacao = document.getElementById('reclamacaoNumeroTransacao').value.trim();
@@ -4061,6 +4102,12 @@ async function salvarReclamacaoCompleta() {
 
     if (status === 'rejeitado' && !justificativa) {
         showToast('Justificativa é obrigatória para rejeição', 'warning');
+        return;
+    }
+
+    if (status === 'resolvido' && tipoReclamacao === 'com_reembolso' && !(valor > 0)) {
+        showToast('Informe o valor do reembolso obtido para resolver a reclamação', 'warning');
+        document.getElementById('reclamacaoValor')?.focus();
         return;
     }
 
@@ -4130,7 +4177,12 @@ async function salvarReclamacaoCompleta() {
             await criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId);
         }
 
-        showToast('✅ Reclamação salva com sucesso!', 'success');
+        showToast(
+            status === 'resolvido' && tipoReclamacao === 'com_reembolso'
+                ? '✅ Reclamação resolvida! Ela foi enviada à coordenação para conferir o reembolso.'
+                : (id ? '✅ Reclamação atualizada!' : '✅ Reclamação aberta! A venda ficou em andamento.'),
+            'success'
+        );
         fecharModalReclamacaoCompleta();
         await carregarFretesSalvos();
 
@@ -4420,7 +4472,7 @@ async function editarReclamacao(id) {
         toggleCamposReclamacao();
     }
     
-    onStatusChange();
+    ajustarModalReclamacao();
 }
 
 // ============================================
