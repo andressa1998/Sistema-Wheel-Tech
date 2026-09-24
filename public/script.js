@@ -20577,6 +20577,9 @@ async function abrirHistoricoAcessos() {
                 <button type="button" class="btn btn-outline-secondary" id="haTabDownloads" onclick="window.alternarAbaHistoricoAcessos('downloads')">
                     <i class="fas fa-file-excel"></i> Downloads de Excel
                 </button>
+                <button type="button" class="btn btn-outline-secondary" id="haTabConectados" onclick="window.alternarAbaHistoricoAcessos('conectados')">
+                    <i class="fas fa-user-lock"></i> Conectados agora
+                </button>
             </div>
 
             <div id="haAbaAcessos">
@@ -20621,6 +20624,32 @@ async function abrirHistoricoAcessos() {
                         </thead>
                         <tbody id="downloadsExcelTableBody">
                             <tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="haAbaConectados" class="hidden">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <small class="text-muted">Quem está com o sistema aberto (atualiza sozinho). Ao desconectar, a pessoa é deslogada em até 30 segundos.</small>
+                    <button class="btn btn-outline-primary btn-sm" onclick="window.carregarSessoesConectadas()">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped" id="haSessoesTable">
+                        <thead>
+                            <tr>
+                                <th>Usuário</th>
+                                <th>Situação</th>
+                                <th>IP</th>
+                                <th>Entrou em</th>
+                                <th>Navegador</th>
+                                <th style="width:150px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="haSessoesBody">
+                            <tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -20676,17 +20705,19 @@ async function abrirHistoricoAcessos() {
 }
 
 window.alternarAbaHistoricoAcessos = function (aba) {
-    const abaAcessos = document.getElementById('haAbaAcessos');
-    const abaDownloads = document.getElementById('haAbaDownloads');
-    const btnAcessos = document.getElementById('haTabAcessos');
-    const btnDownloads = document.getElementById('haTabDownloads');
-    if (!abaAcessos || !abaDownloads) return;
+    const abas = { acessos: 'haAbaAcessos', downloads: 'haAbaDownloads', conectados: 'haAbaConectados' };
+    const botoes = { acessos: 'haTabAcessos', downloads: 'haTabDownloads', conectados: 'haTabConectados' };
+    if (!document.getElementById(abas.acessos)) return;
 
-    const mostrarDownloads = aba === 'downloads';
-    abaAcessos.classList.toggle('hidden', mostrarDownloads);
-    abaDownloads.classList.toggle('hidden', !mostrarDownloads);
-    if (btnAcessos) btnAcessos.className = mostrarDownloads ? 'btn btn-outline-secondary' : 'btn btn-primary';
-    if (btnDownloads) btnDownloads.className = mostrarDownloads ? 'btn btn-primary' : 'btn btn-outline-secondary';
+    Object.keys(abas).forEach(chave => {
+        document.getElementById(abas[chave])?.classList.toggle('hidden', chave !== aba);
+        const btn = document.getElementById(botoes[chave]);
+        if (btn) btn.className = chave === aba ? 'btn btn-primary' : 'btn btn-outline-secondary';
+    });
+
+    if (aba === 'conectados' && typeof window.iniciarAbaSessoesConectadas === 'function') {
+        window.iniciarAbaSessoesConectadas();
+    }
 };
 
 async function carregarAbaDownloadsExcel() {

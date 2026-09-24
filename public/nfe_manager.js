@@ -11660,7 +11660,7 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
                                     white-space:nowrap;
                                 "
                             >
-                                após a venda
+                                total do anúncio no FULL
                             </div>
                         </div>
                     `
@@ -34779,11 +34779,42 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                     possuiLocalizacaoFull
                 );
 
+            // Estoque FULL = total do ANÚNCIO TODO (soma de todas as
+            // variações que têm estoque no FULL), não só da variação que
+            // acabou de vender. Ex.: variações com 2, 1 e 3 un. no FULL
+            // => 6 un.
             let quantidadeFull =
                 null;
 
             if (oferecendoFull) {
+                const detalhesComFull =
+                    detalhes.filter(item =>
+                        item?.tem_meli_facility === true &&
+                        item?.estoque_full !== null &&
+                        item?.estoque_full !== undefined &&
+                        Number.isFinite(
+                            Number(
+                                item.estoque_full
+                            )
+                        )
+                    );
+
                 if (
+                    detalhesComFull.length > 0
+                ) {
+                    quantidadeFull =
+                        detalhesComFull.reduce(
+                            (total, item) =>
+                                total +
+                                Math.max(
+                                    0,
+                                    Number(
+                                        item.estoque_full
+                                    )
+                                ),
+                            0
+                        );
+                } else if (
                     detalhe?.estoque_full !== null &&
                     detalhe?.estoque_full !== undefined &&
                     Number.isFinite(
@@ -34799,35 +34830,6 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                                 detalhe.estoque_full
                             )
                         );
-                } else {
-                    const detalhesComFull =
-                        detalhes.filter(item =>
-                            item?.tem_meli_facility === true &&
-                            item?.estoque_full !== null &&
-                            item?.estoque_full !== undefined &&
-                            Number.isFinite(
-                                Number(
-                                    item.estoque_full
-                                )
-                            )
-                        );
-
-                    if (
-                        detalhesComFull.length > 0
-                    ) {
-                        quantidadeFull =
-                            detalhesComFull.reduce(
-                                (total, item) =>
-                                    total +
-                                    Math.max(
-                                        0,
-                                        Number(
-                                            item.estoque_full
-                                        )
-                                    ),
-                                0
-                            );
-                    }
                 }
             }
 
@@ -35499,6 +35501,80 @@ async function buscarLeadTimeShipmentNFE(
     }
 }
 
+
+// =========================================================
+// SLA DO SHIPMENT (DATA LIMITE PARA DESPACHAR)
+//
+// O /lead_time do ML deixou de trazer estimated_handling_limit
+// (vem sempre null), e o /shipments/{id} também não traz o SLA.
+// A data limite de despacho agora só vem de /shipments/{id}/sla
+// -> { status, expected_date, service, last_updated }.
+// =========================================================
+async function buscarSlaShipmentNFE(
+    shipmentId,
+    token = null
+) {
+    shipmentId =
+        String(
+            shipmentId ||
+            ''
+        ).trim();
+
+    if (!shipmentId) {
+        return null;
+    }
+
+    token =
+        token ||
+        await obterTokenMLNFE();
+
+    if (!token) {
+        return null;
+    }
+
+    try {
+        const alvo =
+            `https://api.mercadolibre.com/shipments/${encodeURIComponent(
+                shipmentId
+            )}/sla`;
+
+        const proxyUrl =
+            `${window.WORKER_URL}/api/ml/proxy?url=` +
+            `${encodeURIComponent(alvo)}` +
+            `&token=${encodeURIComponent(token)}`;
+
+        const response =
+            await fetch(
+                proxyUrl,
+                {
+                    cache:
+                        'no-store'
+                }
+            );
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const data =
+            await response.json();
+
+        return (
+            data &&
+            typeof data === 'object' &&
+            data.expected_date
+        )
+            ? data
+            : null;
+    } catch (error) {
+        console.warn(
+            `⚠️ [NFE] sla do shipment ${shipmentId}:`,
+            error?.message ||
+            error
+        );
+        return null;
+    }
+}
 
 // =========================================================
 // BUSCAR DETALHES DE UMA VARIAÇÃO
@@ -63618,6 +63694,59 @@ async function corrigirVendaIncompletaNFE(
                     }
                 }
 
+                // O lead_time não traz mais a data limite de despacho:
+                // busca o SLA do shipment (/shipments/{id}/sla).
+                if (
+                    !atualizada._data_envio
+                ) {
+                    const sla =
+                        await buscarSlaShipmentNFE(
+                            shipmentId,
+                            token
+                        );
+
+                    if (
+                        sla?.expected_date
+                    ) {
+                        const infoBase =
+                            (
+                                typeof parseInformacoesEnvioNFE ===
+                                'function'
+                            )
+                                ? (
+                                    parseInformacoesEnvioNFE(
+                                        atualizada
+                                    ) ||
+                                    {}
+                                )
+                                : {};
+
+                        atualizada.informacoes_envio = {
+                            ...infoBase,
+                            sla:
+                                {
+                                    ...(infoBase.sla || {}),
+                                    ...sla
+                                }
+                        };
+
+                        const dataSla =
+                            (typeof extrairDataEnvioML === 'function')
+                                ? extrairDataEnvioML(atualizada)
+                                : null;
+
+                        if (dataSla) {
+                            atualizada._data_envio =
+                                dataSla;
+                            atualizada.data_envio =
+                                dataSla;
+                            atualizada._prazo_envio =
+                                sla.expected_date;
+                            houveAlteracao =
+                                true;
+                        }
+                    }
+                }
             } catch (error) {
 
                 console.warn(
