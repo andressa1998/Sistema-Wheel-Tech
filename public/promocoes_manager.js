@@ -1895,7 +1895,7 @@ async function buscarOfferIdDoItem(itemId, promotionId, token) {
         const response = await fetch(proxyUrl);
         
         if (response.ok) {
-            const data = await response.json();
+            const data = normalizarPromocoesItemML(await response.json());
             
             // Procura a promoção específica
             for (const promocao of data) {
@@ -1992,6 +1992,50 @@ async function buscarItensPromocaoComPrecos(promotionId, promotionType, token) {
 // ============================================================
 // FUNÇÃO: BUSCAR PROMOÇÕES DO ITEM (API CORRETA)
 // ============================================================
+// A "Nova proposta para ganhar exposição!" do Mercado Livre é uma promoção
+// PRICE_DISCOUNT candidata que vem SEM id e SEM nome. Sem um id ela era
+// descartada da lista. Aqui ela ganha um id fixo e um nome, e passa a
+// aparecer e a poder ser programada como as demais.
+const ID_PROMOCAO_PRICE_DISCOUNT = 'PRICE_DISCOUNT';
+const NOME_PROMOCAO_PRICE_DISCOUNT = 'Nova proposta para ganhar exposição!';
+const DIAS_PADRAO_PRICE_DISCOUNT = 7;
+
+function normalizarPromocoesItemML(lista) {
+    if (!Array.isArray(lista)) return lista;
+    return lista.map(promocao => {
+        if (promocao && promocao.type === 'PRICE_DISCOUNT') {
+            return {
+                ...promocao,
+                id: promocao.id || ID_PROMOCAO_PRICE_DISCOUNT,
+                name: promocao.name || NOME_PROMOCAO_PRICE_DISCOUNT
+            };
+        }
+        return promocao;
+    });
+}
+
+// Data/hora "de parede" do Brasil (AAAA-MM-DDTHH:mm:ss), formato que a API
+// de promoções de preço aceita em start_date / finish_date.
+function formatarDataHoraMlBrasil(data) {
+    const partes = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hourCycle: 'h23'
+    }).formatToParts(data).reduce((acc, parte) => {
+        acc[parte.type] = parte.value;
+        return acc;
+    }, {});
+    return `${partes.year}-${partes.month}-${partes.day}T${partes.hour}:${partes.minute}:${partes.second}`;
+}
+
+function rotuloIdPromocaoAgenda(promocao) {
+    if (promocao.type === 'PRICE_DISCOUNT' && promocao.id === ID_PROMOCAO_PRICE_DISCOUNT) {
+        return `proposta do Mercado Livre (sem data de desativação, dura ${DIAS_PADRAO_PRICE_DISCOUNT} dias)`;
+    }
+    return promocao.id;
+}
+
 async function buscarPromocoesDoItem(itemId, token) {
     try {
         const url = `https://api.mercadolibre.com/seller-promotions/items/${itemId}?app_version=v2`;
@@ -1999,7 +2043,7 @@ async function buscarPromocoesDoItem(itemId, token) {
         const response = await fetch(proxyUrl);
         
         if (response.ok) {
-            return await response.json();
+            return normalizarPromocoesItemML(await response.json());
         }
         return null;
     } catch (error) {
@@ -2139,7 +2183,8 @@ async function ativarItemPromocao(
     promotionId,
     promotionType,
     dealPrice,
-    token
+    token,
+    opcoes = {}
 ) {
     try {
         if (!itemId) {
@@ -2178,6 +2223,22 @@ async function ativarItemPromocao(
             promotion_id: promotionId,
             promotion_type: promotionType
         };
+
+        // "Nova proposta para ganhar exposição!" (PRICE_DISCOUNT): a API não
+        // usa promotion_id e exige start_date/finish_date. Sem data de
+        // desativação escolhida, dura DIAS_PADRAO_PRICE_DISCOUNT dias.
+        if (String(promotionType) === 'PRICE_DISCOUNT') {
+            delete body.promotion_id;
+
+            const inicioMl = new Date(Date.now() + 2 * 60 * 1000);
+            const fimEscolhido = opcoes.fim ? new Date(opcoes.fim) : null;
+            const fimMl = fimEscolhido && Number.isFinite(fimEscolhido.getTime()) && fimEscolhido > inicioMl
+                ? fimEscolhido
+                : new Date(inicioMl.getTime() + DIAS_PADRAO_PRICE_DISCOUNT * 24 * 60 * 60 * 1000);
+
+            body.start_date = formatarDataHoraMlBrasil(inicioMl);
+            body.finish_date = formatarDataHoraMlBrasil(fimMl);
+        }
 
         // Algumas promoções exigem deal_price.
         // IMPORTANTE: NÃO multiplicar por 100.
@@ -2290,6 +2351,10 @@ async function excluirItemPromocao(
             promotion_id: String(promotionId),
             promotion_type: String(promotionType)
         });
+
+        if (String(promotionType) === 'PRICE_DISCOUNT') {
+            parametros.delete('promotion_id');
+        }
 
         const url =
             `https://api.mercadolibre.com/seller-promotions/items/` +
@@ -4062,7 +4127,7 @@ function(
                                 : p.status === 'candidate' ? 'Candidata' : p.status === 'pending' ? 'Já programada no ML' : 'Já ativa';
                             return `<tr>
                                 <td style="text-align:center;"><input type="checkbox" class="agenda-promo-check" data-index="${index}" ${candidato ? '' : 'disabled'}></td>
-                                <td><strong>${escaparHtmlAgenda(p.name)}</strong><br><small>${escaparHtmlAgenda(p.type)} • ${escaparHtmlAgenda(p.id)}</small></td>
+                                <td><strong>${escaparHtmlAgenda(p.name)}</strong><br><small>${escaparHtmlAgenda(p.type)} • ${escaparHtmlAgenda(rotuloIdPromocaoAgenda(p))}</small></td>
                                 <td>${escaparHtmlAgenda(status)}</td>
                                 <td><input type="number" min="0.01" step="0.01" class="form-control form-control-sm agenda-promo-valor"
                                     data-index="${index}" value="${p.valor > 0 ? p.valor.toFixed(2) : ''}" ${candidato ? '' : 'disabled'} ${p.fixadoPeloMl ? 'readonly' : ''}></td>
@@ -5390,7 +5455,8 @@ async function processarAtivacaoAgendada(
             reservado.promotion_id,
             reservado.promotion_type,
             reservado.valor_final,
-            accessToken
+            accessToken,
+            { fim: reservado.data_desativacao }
         );
 
         if (!resultado?.success) {
@@ -5740,6 +5806,10 @@ async function consultarPromocaoAtivaNoML(
             return (
                 normalizar(item.id) ===
                 normalizar(promotionId)
+            ) || (
+                normalizar(promotionId) === ID_PROMOCAO_PRICE_DISCOUNT &&
+                item.type === 'PRICE_DISCOUNT' &&
+                ['started', 'pending'].includes(item.status)
             );
         });
 
@@ -6959,7 +7029,7 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
                                     <td style="text-align:center;">
                                         <input type="radio" name="promoItemRadio" ${selecionadoIndex === index ? 'checked' : ''} ${candidato ? '' : 'disabled'} onclick="selecionarPromocaoModalItem(${index})">
                                     </td>
-                                    <td><strong>${escaparHtmlAgenda(p.name)}</strong><br><small>${escaparHtmlAgenda(p.type)} • ${escaparHtmlAgenda(p.id)}</small></td>
+                                    <td><strong>${escaparHtmlAgenda(p.name)}</strong><br><small>${escaparHtmlAgenda(p.type)} • ${escaparHtmlAgenda(rotuloIdPromocaoAgenda(p))}</small></td>
                                     <td>${escaparHtmlAgenda(status)}</td>
                                 </tr>
                             `;
