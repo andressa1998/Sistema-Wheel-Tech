@@ -701,7 +701,8 @@ function renderizarAgendaSemanal(){
 
         const itensAgenda=agendaEventos.filter(e=>e.data_inicio<=iso&&(e.data_fim||e.data_inicio)>=iso).map(e=>{
             const hora=e.dia_inteiro?'Dia inteiro':([e.hora_inicio?.slice(0,5),e.hora_fim?.slice(0,5)].filter(Boolean).join(' às ')||'Sem horário'), extra=[hora,e.responsavel].filter(Boolean).join(' • ');
-            return `<div class="agenda-item" style="--agenda-cor:${agendaEscape(e.cor||'#0875ee')};${e.destaque?'background:#fff8dc;':''}" onclick="abrirDetalhesAgenda('${e.id}')"><strong>${agendaEscape(e.titulo)}</strong><small>${agendaEscape(AGENDA_TIPOS[e.tipo]||e.tipo)} • ${agendaEscape(extra)}</small></div>`;
+            const importante=typeof window.agendaTituloImportante==='function'&&window.agendaTituloImportante(e.titulo);
+            return `<div class="agenda-item${importante?' agenda-item-importante':''}" style="--agenda-cor:${agendaEscape(e.cor||'#0875ee')};${e.destaque?'background:#fff8dc;':''}" onclick="abrirDetalhesAgenda('${e.id}')"><strong>${agendaEscape(e.titulo)}</strong><small>${agendaEscape(AGENDA_TIPOS[e.tipo]||e.tipo)} • ${agendaEscape(extra)}</small></div>`;
         });
 
         const itensFolga=(Array.isArray(folgas)?folgas:[]).filter(f=>f.status==='aprovado'&&f.data_inicio===iso).map(f=>

@@ -953,7 +953,7 @@
     // RELATÓRIO (ADMIN) — GRÁFICO DE PIZZA + POR COLABORADOR
     // ============================================================
 
-    window.abrirRelatorioAtividades = function () {
+    window.abrirRelatorioAtividades = async function () {
         if (!ehAdminAtiv()) {
             showToast('🔒 Apenas administradores podem ver o relatório.', 'warning');
             return;
@@ -983,14 +983,29 @@
         `;
         document.body.appendChild(modal);
 
-        montarRelatorioAtividadesAtiv();
+        // O cache só é preenchido ao abrir a tela de Atividades; o relatório aberto pela
+        // tela inicial precisa buscar os dados por conta própria.
+        let lista = atividadesCache;
+        try {
+            const { data, error } = await window.supabaseClient
+                .from(CFG_ATIV.tabela)
+                .select('id,status,designado_para')
+                .range(0, 4999);
+            if (error) throw error;
+            lista = data || [];
+        } catch (error) {
+            console.warn('⚠️ [Atividades] Relatório: falha ao buscar atividades:', error);
+        }
+
+        if (!document.getElementById('modalRelatorioAtividades')) return;
+        montarRelatorioAtividadesAtiv(lista);
     };
 
-    function montarRelatorioAtividadesAtiv() {
-        const total = atividadesCache.length;
-        const concluidas = atividadesCache.filter(a => a.status === 'concluida').length;
-        const pendentes = atividadesCache.filter(a => a.status === 'pendente').length;
-        const prorrogadas = atividadesCache.filter(a => a.status === 'prorrogada').length;
+    function montarRelatorioAtividadesAtiv(lista = atividadesCache) {
+        const total = lista.length;
+        const concluidas = lista.filter(a => a.status === 'concluida').length;
+        const pendentes = lista.filter(a => a.status === 'pendente').length;
+        const prorrogadas = lista.filter(a => a.status === 'prorrogada').length;
 
         const ctx = document.getElementById('ativGraficoPizza');
         if (ctx && typeof Chart !== 'undefined') {
@@ -1021,7 +1036,7 @@
         obterColaboradoresAtiv().forEach(u => {
             porColaborador.set(u.username, { nome: u.name, concluidas: 0, pendentes: 0, prorrogadas: 0 });
         });
-        atividadesCache.forEach(a => {
+        lista.forEach(a => {
             if (!porColaborador.has(a.designado_para)) {
                 porColaborador.set(a.designado_para, { nome: nomeExibicaoUsuarioAtiv(a.designado_para), concluidas: 0, pendentes: 0, prorrogadas: 0 });
             }

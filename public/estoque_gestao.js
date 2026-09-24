@@ -31767,13 +31767,159 @@ function salvarRegistroHistoricoFull(registro) {
     else historico.unshift(novoRegistro);
 
     historico.sort((a, b) => new Date(b.criadoEm || b.atualizadoEm) - new Date(a.criadoEm || a.atualizadoEm));
-    localStorage.setItem(CHAVE_HISTORICO_BAIXAS_FULL, JSON.stringify(historico.slice(0, 100)));
+    gravarCacheHistoricoFull(historico);
+    enviarRegistroHistoricoFullAoBanco(indice >= 0 ? historico.find(item => item.documentoMovimentacao === registro.documentoMovimentacao) : novoRegistro);
     return novoRegistro;
+}
+
+
+function gravarCacheHistoricoFull(historico) {
+    try {
+        localStorage.setItem(CHAVE_HISTORICO_BAIXAS_FULL, JSON.stringify(historico.slice(0, 300)));
+    } catch (erro) {
+        console.warn('Não foi possível guardar o histórico FULL no navegador:', erro);
+    }
+}
+
+
+// O histórico fica no banco (tabela historico_baixas_full) para aparecer em qualquer
+// computador/navegador; o localStorage é só cache. Envio com atraso para não fazer
+// uma requisição a cada SKU processado.
+const temporizadoresHistoricoFull = new Map();
+let tabelaHistoricoFullIndisponivel = false;
+
+function enviarRegistroHistoricoFullAoBanco(registro) {
+    if (!registro?.documentoMovimentacao || tabelaHistoricoFullIndisponivel || !window.supabaseClient) return;
+    const chave = registro.documentoMovimentacao;
+    clearTimeout(temporizadoresHistoricoFull.get(chave));
+    const enviar = async () => {
+        temporizadoresHistoricoFull.delete(chave);
+        const atual = obterRegistroHistoricoFull(chave) || registro;
+        const { error } = await window.supabaseClient
+            .from('historico_baixas_full')
+            .upsert({
+                documento_movimentacao: chave,
+                dados: atual,
+                atualizado_em: new Date().toISOString()
+            }, { onConflict: 'documento_movimentacao' });
+        if (error) {
+            console.warn('Histórico FULL não enviado ao banco:', error.message);
+            if (/does not exist|schema cache|relation/i.test(error.message || '')) tabelaHistoricoFullIndisponivel = true;
+        }
+    };
+    if (registro.status && registro.status !== 'processando') enviar();
+    else temporizadoresHistoricoFull.set(chave, setTimeout(enviar, 2000));
 }
 
 
 function obterRegistroHistoricoFull(documentoMovimentacao) {
     return lerHistoricoBaixasFull().find(item => item.documentoMovimentacao === documentoMovimentacao) || null;
+}
+
+
+function rotuloDocumentoFullPorMovimentacao(documento) {
+    const nfe = /^FULL-NFE-([^-]+)-/.exec(documento);
+    if (nfe) return `NF-e ${nfe[1]}`;
+    const plano = /^FULL-PLANO-(.+)$/.exec(documento);
+    if (plano) return `Plano FULL ${plano[1]}`;
+    return documento;
+}
+
+
+// Junta o que está no banco (tabela + movimentações de saída "envio_full") com o cache
+// local. Baixas antigas, feitas antes de existir a tabela, são reconstruídas pelas
+// movimentações de estoque.
+async function sincronizarHistoricoFullComBanco() {
+    const sb = window.supabaseClient;
+    if (!sb) return false;
+    const historico = lerHistoricoBaixasFull();
+    const porDocumento = new Map(historico.map(item => [item.documentoMovimentacao, item]));
+    let alterou = false;
+
+    if (!tabelaHistoricoFullIndisponivel) {
+        const { data, error } = await sb.from('historico_baixas_full').select('documento_movimentacao,dados').limit(1000);
+        if (error) {
+            if (/does not exist|schema cache|relation/i.test(error.message || '')) tabelaHistoricoFullIndisponivel = true;
+        } else {
+            const noBanco = new Set((data || []).map(linha => linha.documento_movimentacao));
+            historico.forEach(item => {
+                if (!noBanco.has(item.documentoMovimentacao) && item.status !== 'processando') enviarRegistroHistoricoFullAoBanco(item);
+            });
+            (data || []).forEach(linha => {
+                const remoto = linha.dados;
+                if (!remoto?.documentoMovimentacao) return;
+                const local = porDocumento.get(remoto.documentoMovimentacao);
+                if (!local || new Date(remoto.atualizadoEm || 0) > new Date(local.atualizadoEm || 0)) {
+                    porDocumento.set(remoto.documentoMovimentacao, remoto);
+                    alterou = true;
+                }
+            });
+        }
+    }
+
+    // Reconstrução a partir das movimentações
+    const movimentos = [];
+    for (let inicio = 0; inicio < 20000; inicio += 1000) {
+        const { data, error } = await sb.from('estoque_movimentacoes')
+            .select('produto_id,quantidade,numero_documento,data_hora')
+            .eq('tipo', 'saida')
+            .eq('tipo_entrada', 'envio_full')
+            .order('data_hora', { ascending: false })
+            .range(inicio, inicio + 999);
+        if (error) { console.warn('Histórico FULL: movimentações indisponíveis:', error.message); break; }
+        movimentos.push(...(data || []));
+        if (!data || data.length < 1000) break;
+    }
+
+    const faltando = new Map();
+    movimentos.forEach(mov => {
+        if (!mov.numero_documento || porDocumento.has(mov.numero_documento)) return;
+        if (!faltando.has(mov.numero_documento)) faltando.set(mov.numero_documento, []);
+        faltando.get(mov.numero_documento).push(mov);
+    });
+
+    if (faltando.size) {
+        const ids = [...new Set([...faltando.values()].flat().map(m => m.produto_id))];
+        const produtos = new Map();
+        for (let i = 0; i < ids.length; i += 200) {
+            const { data } = await sb.from('produtos_estoque').select('id,sku,nome').in('id', ids.slice(i, i + 200));
+            (data || []).forEach(p => produtos.set(String(p.id), p));
+        }
+        faltando.forEach((movs, documento) => {
+            const somados = new Map();
+            movs.forEach(m => somados.set(String(m.produto_id), (somados.get(String(m.produto_id)) || 0) + Number(m.quantidade || 0)));
+            const datas = movs.map(m => m.data_hora).filter(Boolean).sort();
+            const baixados = [...somados.entries()].map(([id, quantidade]) => ({
+                produtoId: id,
+                sku: produtos.get(id)?.sku || '',
+                nome: produtos.get(id)?.nome || '',
+                quantidade
+            }));
+            const registro = {
+                documentoMovimentacao: documento,
+                identificadorExibicao: rotuloDocumentoFullPorMovimentacao(documento),
+                nomeArquivo: 'Recuperado das movimentações de estoque',
+                criadoEm: datas[0] || new Date().toISOString(),
+                atualizadoEm: datas[datas.length - 1] || new Date().toISOString(),
+                status: 'concluido',
+                total: baixados.length,
+                processados: baixados.length,
+                baixados, ignorados: [], naoCadastrados: [], erros: [], errosSync: [],
+                recuperado: true
+            };
+            porDocumento.set(documento, registro);
+            alterou = true;
+            enviarRegistroHistoricoFullAoBanco(registro);
+        });
+    }
+
+    // Registros só locais (ainda não no banco) também sobem
+    if (alterou || historico.length) {
+        const lista = [...porDocumento.values()]
+            .sort((a, b) => new Date(b.criadoEm || b.atualizadoEm) - new Date(a.criadoEm || a.atualizadoEm));
+        gravarCacheHistoricoFull(lista);
+    }
+    return alterou;
 }
 
 
@@ -31865,18 +32011,36 @@ function garantirModalHistoricoBaixasFull() {
 }
 
 
-function abrirHistoricoBaixasFull() {
+let sincronizandoHistoricoFull = false;
+
+function abrirHistoricoBaixasFull(jaSincronizado = false) {
     const modal = garantirModalHistoricoBaixasFull();
     const conteudo = modal.querySelector('#conteudoHistoricoBaixasFull');
     const historico = lerHistoricoBaixasFull();
 
-    conteudo.innerHTML = historico.length ? historico.map((registro, indice) => `
+    if (jaSincronizado !== true && !sincronizandoHistoricoFull) {
+        sincronizandoHistoricoFull = true;
+        sincronizarHistoricoFullComBanco()
+            .then(alterou => {
+                if (alterou && modal.style.display === 'block' && conteudo.querySelector('[data-historico-full-lista]')) abrirHistoricoBaixasFull(true);
+            })
+            .catch(erro => console.warn('Histórico FULL: falha ao sincronizar:', erro))
+            .finally(() => {
+                sincronizandoHistoricoFull = false;
+                const lista = conteudo.querySelector('[data-historico-full-carregando]');
+                if (lista) lista.remove();
+            });
+    }
+
+    const carregandoHtml = jaSincronizado === true || !sincronizandoHistoricoFull ? ''
+        : '<div data-historico-full-carregando style="padding:8px 4px 12px; color:#6c757d; font-size:13px;"><i class="fas fa-spinner fa-spin"></i> Buscando histórico completo…</div>';
+    conteudo.innerHTML = '<span data-historico-full-lista hidden></span>' + carregandoHtml + (historico.length ? historico.map((registro, indice) => `
         <button type="button" onclick="verDetalhesBaixaFull('${escaparHtmlXmlFull(registro.documentoMovimentacao)}')" style="width:100%; display:grid; grid-template-columns:minmax(180px,1fr) 160px 130px 28px; gap:12px; align-items:center; padding:13px 14px; margin-bottom:8px; border:1px solid #dee2e6; border-radius:8px; background:#fff; text-align:left; cursor:pointer;">
             <span><strong>${escaparHtmlXmlFull(registro.identificadorExibicao || registro.numeroNfe)}</strong><br><small>${escaparHtmlXmlFull(registro.nomeArquivo || '')}</small></span>
             <span>${new Date(registro.criadoEm || registro.atualizadoEm).toLocaleString('pt-BR')}</span>
             <span style="font-weight:700; color:${registro.status === 'concluido' ? '#198754' : registro.status === 'processando' ? '#0d6efd' : '#b58100'};">${obterRotuloStatusFull(registro.status)}</span>
             <i class="fas fa-chevron-right"></i>
-        </button>`).join('') : '<div style="padding:25px; text-align:center; color:#6c757d;">Nenhuma baixa FULL registrada ainda.</div>';
+        </button>`).join('') : (sincronizandoHistoricoFull && jaSincronizado !== true ? '' : '<div style="padding:25px; text-align:center; color:#6c757d;">Nenhuma baixa FULL registrada ainda.</div>'));
 
     modal.style.display = 'block';
 }
