@@ -187,6 +187,9 @@
 
     // ---------- escopo -----------------------------------
     function lerFiltroAtual() {
+        // Na aba "Precificação inteligente" o escopo vem dos filtros/seleção dela.
+        const pi = window.PrecificacaoInteligente;
+        if (pi && typeof pi.telaAberta === 'function' && pi.telaAberta()) return pi.lerFiltro();
         const est = getEstadoFiltros();
         const g = id => document.getElementById(id);
         let selIds = [];
@@ -259,6 +262,7 @@
         if (!cli) return [];
         const { data, error } = await cli.from('regras_nivel_estoque').select('*').order('criado_em', { ascending: false });
         if (error) { console.warn('[regras-nivel]', error.message); return regrasCache; }
+        window.setTimeout(() => window.dispatchEvent(new Event('wt-regras-nivel-atualizadas')), 0);
         regrasCache = (data || []).map(r => ({
             ...r,
             escada: Array.isArray(r.escada) ? r.escada : (r.escada ? JSON.parse(r.escada) : []),
@@ -527,8 +531,8 @@
     // ---------- botão barra + sino ----------------------
     function garantirBotaoToolbar() {
         if (document.getElementById('btnRegrasNivelToolbar')) return;
-        const barra = document.querySelector('#estoqueGestaoSystem .card-header .d-flex.gap-2')
-            || document.querySelector('#estoqueGestaoSystem .card-header .d-flex');
+        // O botão mora na aba "Precificação inteligente" (saiu da Gestão de Estoque).
+        const barra = document.querySelector('#precificacaoInteligenteSystem .pi-acoes');
         if (!barra) return;
         garantirEstilo();
         const b = document.createElement('button');
@@ -538,7 +542,7 @@
         b.title = 'Regras de nível de estoque (escada de preços)';
         b.innerHTML = `<i class="fas fa-bolt"></i> Regras de nível <span class="rn-badge" style="display:none">0</span>`;
         b.addEventListener('click', () => abrirPainel('regras'));
-        barra.appendChild(b);
+        barra.insertBefore(b, barra.firstChild);
     }
     function garantirSino() {
         if (document.getElementById('wtRegrasNivelNotifBtn')) return document.getElementById('wtRegrasNivelNotifBtn');
@@ -1294,13 +1298,18 @@
             // que a pessoa esteja só na tela inicial (o throttle interno
             // de 45s evita ficar batendo no banco/ML toda hora).
             avaliarRegras();
-            const sistema = document.getElementById('estoqueGestaoSystem');
+            const sistema = document.getElementById('precificacaoInteligenteSystem');
             if (sistema && !sistema.classList.contains('hidden')) garantirBotaoToolbar();
         }, 3000);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
     else start();
 
-    window.RegrasNivelEstoque = { abrir: abrirPainel, avaliar: avaliarRegras, ehAdmin };
+    window.RegrasNivelEstoque = {
+        abrir: abrirPainel, avaliar: avaliarRegras, ehAdmin,
+        regras: () => regrasCache,
+        carregar: async () => { const r = await carregarRegras(); window.dispatchEvent(new Event('wt-regras-nivel-atualizadas')); return r; },
+        produtoNoEscopo
+    };
     window.abrirRegrasNivelEstoque = () => abrirPainel('regras');
 })();

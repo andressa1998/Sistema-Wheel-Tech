@@ -507,11 +507,12 @@
         enfeitando = true;
         if (observer) observer.disconnect();
         try {
-            garantirMetricas();
+            // As colunas de análise (fornecedor, vendas, valor em estoque,
+            // projeção, sem venda há) não aparecem mais na Gestão de Estoque:
+            // foram para a aba "Precificação inteligente", que carrega as
+            // métricas por conta própria.
             aplicarMetricasAosProdutos();
             injetarControlesFiltro();
-            enfeitarCabecalho();
-            enfeitarLinhas();
         } catch (e) {
             console.warn('[estoque-analise] enfeitar:', e);
         } finally {
@@ -665,6 +666,21 @@
     }
 
     window.WTEstoqueAnalise = {
+        // Mesmas células da tabela de Gestão (usadas na Precificação inteligente).
+        celulas: {
+            vendas: celulaVendas,
+            valor: celulaValor,
+            projecao: celulaProjecao,
+            semVenda: celulaSemVenda
+        },
+        metricaDe: id => metricasPorId[String(id)] || null,
+        // Garante as métricas (fornecedor, custo...) mesmo fora da tabela de Gestão.
+        garantirMetricas: async function () {
+            if (metricasCarregadas) return;
+            if (metricasCarregando) { await metricasCarregando; return; }
+            metricasCarregando = carregarMetricas().then(() => { metricasCarregadas = true; }).finally(() => { metricasCarregando = null; });
+            await metricasCarregando;
+        },
         recarregarMetricas,
         ehAdmin,
         _metricas: () => metricasPorId

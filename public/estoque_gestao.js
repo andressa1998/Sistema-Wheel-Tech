@@ -5029,14 +5029,14 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
         isAdmin;
 
 
-    const podeVerCusto =
-        usuariosVerCusto.includes(
-            username
-        );
+    // Custo (último/médio), fornecedor, vendas, valor em estoque, projeção e
+    // "sem venda há" saíram da tabela da Gestão de Estoque: agora ficam só
+    // na aba "Precificação inteligente". O cabeçalho e as células de custo
+    // não aparecem para ninguém aqui.
+    const podeVerCusto = false;
 
 
-    // Pra quem não pode ver custo, os cabeçalhos "Último custo" /
-    // "Média custo" nem aparecem — não só as células ficam vazias.
+    // Cabeçalhos "Último custo" / "Média custo" escondidos (a coluna não existe aqui).
     const thUltimoCusto =
         document.getElementById(
             'thUltimoCusto'
@@ -8965,10 +8965,6 @@ function abrirModalAjusteMassaEstoque() {
             <!-- PREÇO -->
             <!-- ========================================== -->
 
-            ${criarCampoMassaCategoria(
-    mesmaCategoria
-)}
-
 ${criarCampoMassaSimples({
 
     id:
@@ -9233,12 +9229,38 @@ function criarCampoMassaCategoria(
                 id="massaCategoria"
                 class="form-control"
                 disabled
-                onchange="
-                    gerarCamposAtributosMassa(
-                        this.value
-                    )
-                "
+                onchange="aoMudarCategoriaMassa(this.value)"
             ></select>
+
+
+            <!-- Subcategoria: só aparece quando a categoria escolhida tem subcategorias -->
+            <div
+                id="massaSubcategoriaWrap"
+                style="display:none; margin-top:10px;"
+            >
+
+                <label
+                    for="massaSubcategoria"
+                    style="font-weight:600; font-size:13px; margin-bottom:5px; display:block;"
+                >
+                    Subcategoria
+                </label>
+
+                <select
+                    id="massaSubcategoria"
+                    class="form-control"
+                    disabled
+                    onchange="aoMudarSubcategoriaMassa(this.value)"
+                ></select>
+
+                <small
+                    style="display:block; margin-top:5px; color:#6c757d;"
+                >
+                    Opcional. Se escolher, todos os produtos selecionados
+                    ficam nessa subcategoria da nova categoria.
+                </small>
+
+            </div>
 
 
             ${
@@ -9381,6 +9403,155 @@ function toggleCategoriaMassa(
             !ativo;
 
     }
+
+    const selectSubcategoria =
+        document.getElementById(
+            'massaSubcategoria'
+        );
+
+    if (
+        selectSubcategoria
+    ) {
+
+        selectSubcategoria.disabled =
+            !ativo;
+
+    }
+
+    // Marcou "Alterar categoria": mostra as subcategorias da categoria
+    // que já está no seletor (mesmo sem trocar a categoria).
+    if (
+        ativo &&
+        select &&
+        select.value
+    ) {
+
+        atualizarSubcategoriasMassa(
+            select.value
+        );
+
+    }
+}
+
+// =========================================================
+// SUBCATEGORIAS NO AJUSTE EM MASSA
+// =========================================================
+
+// Preenche (e mostra/esconde) o seletor de subcategoria conforme a
+// categoria escolhida. Devolve true se a categoria tem subcategorias.
+async function atualizarSubcategoriasMassa(
+    categoria
+) {
+
+    const wrap =
+        document.getElementById(
+            'massaSubcategoriaWrap'
+        );
+
+    const select =
+        document.getElementById(
+            'massaSubcategoria'
+        );
+
+    if (
+        !wrap ||
+        !select
+    ) {
+        return false;
+    }
+
+    try {
+        await garantirSubcategoriasEstoqueCarregadas();
+    } catch (erro) {
+        console.warn(
+            '⚠️ Não foi possível carregar as subcategorias:',
+            erro
+        );
+    }
+
+    const nomes =
+        Object.keys(
+            categoria
+                ? obterSubcategoriasCategoria(categoria)
+                : {}
+        ).sort(
+            (a, b) =>
+                a.localeCompare(
+                    b,
+                    'pt-BR'
+                )
+        );
+
+    if (
+        nomes.length === 0
+    ) {
+
+        select.innerHTML = '';
+        wrap.style.display = 'none';
+
+        return false;
+    }
+
+    select.innerHTML =
+        '<option value="">Sem subcategoria</option>' +
+        nomes.map(
+            nome =>
+                `<option value="${escapeHtml(nome)}">${escapeHtml(nome)}</option>`
+        ).join('');
+
+    wrap.style.display = 'block';
+
+    select.disabled =
+        !document.getElementById(
+            'massaAlterarCategoria'
+        )?.checked;
+
+    return true;
+}
+
+function obterSubcategoriaMassaSelecionada() {
+
+    const wrap =
+        document.getElementById(
+            'massaSubcategoriaWrap'
+        );
+
+    if (
+        !wrap ||
+        wrap.style.display === 'none'
+    ) {
+        return '';
+    }
+
+    return document.getElementById(
+        'massaSubcategoria'
+    )?.value || '';
+}
+
+async function aoMudarCategoriaMassa(
+    categoria
+) {
+
+    await atualizarSubcategoriasMassa(
+        categoria
+    );
+
+    gerarCamposAtributosMassa(
+        categoria,
+        obterSubcategoriaMassaSelecionada()
+    );
+}
+
+function aoMudarSubcategoriaMassa(
+    subcategoria
+) {
+
+    gerarCamposAtributosMassa(
+        document.getElementById(
+            'massaCategoria'
+        )?.value || '',
+        subcategoria
+    );
 }
 
 function preencherSelectCategoriaMassa(
@@ -9490,7 +9661,8 @@ function preencherSelectCategoriaMassa(
 }
 
 function gerarCamposAtributosMassa(
-    categoria
+    categoria,
+    subcategoria = ''
 ) {
 
     const container =
@@ -9529,16 +9701,22 @@ function gerarCamposAtributosMassa(
 
     const campos =
         getCamposPorCategoria(
-            categoria
+            categoria,
+            subcategoria || undefined
         ) || [];
 
 
-    // MLB não deve ser colocado igual em vários produtos.
+    // MLB não deve ser colocado igual em vários produtos, e a
+    // subcategoria já tem o seletor próprio lá em cima.
     const permitidos =
         campos.filter(
             campo =>
                 campo.nome !==
-                'mlb_codes'
+                    'mlb_codes' &&
+                campo.nome !==
+                    'subcategoria' &&
+                campo.ehSubcategoria !==
+                    true
         );
 
 
@@ -9820,6 +9998,12 @@ async function salvarAjusteMassaEstoque() {
         document.getElementById(
             'massaCategoria'
         )?.value || '';
+
+
+    const subcategoriaMassa =
+        alterarCategoria
+            ? obterSubcategoriaMassaSelecionada()
+            : '';
 
 
     // NOVO
@@ -10255,6 +10439,61 @@ if (
             }
 
 
+            // MLBs são do produto e sobrevivem a qualquer troca de
+            // categoria: se algum atributo marcado tentasse mexer neles,
+            // volta ao que estava salvo.
+            if (
+                produto.dados_extra &&
+                produto.dados_extra.mlb_codes !== undefined
+            ) {
+
+                dadosExtraNovo.mlb_codes =
+                    produto.dados_extra.mlb_codes;
+
+            }
+
+
+            // =============================================
+            // SUBCATEGORIA
+            //
+            // Escolheu uma: grava. Não escolheu e a categoria
+            // mudou: a subcategoria antiga pertencia à outra
+            // categoria, então é removida.
+            // =============================================
+
+            let mudouSubcategoria = false;
+
+            if (
+                alterarCategoria
+            ) {
+
+                if (
+                    subcategoriaMassa
+                ) {
+
+                    if (
+                        dadosExtraNovo.subcategoria !==
+                        subcategoriaMassa
+                    ) {
+
+                        dadosExtraNovo.subcategoria =
+                            subcategoriaMassa;
+
+                        mudouSubcategoria = true;
+                    }
+
+                } else if (
+                    produto.categoria !== categoria &&
+                    dadosExtraNovo.subcategoria !== undefined
+                ) {
+
+                    delete dadosExtraNovo.subcategoria;
+
+                    mudouSubcategoria = true;
+                }
+            }
+
+
             // =============================================
             // SINCRONIZAÇÃO
             // =============================================
@@ -10290,6 +10529,8 @@ if (
                 ).length > 0
                 ||
                 alterarSync
+                ||
+                mudouSubcategoria
             ) {
 
                 atualizacao.dados_extra =
@@ -15247,6 +15488,41 @@ async function salvarProdutoEstoque() {
 
 
     // =====================================================
+    // MLBs NUNCA SE PERDEM AO TROCAR DE CATEGORIA
+    //
+    // Os MLBs são do produto, não da categoria. Se a categoria mudou,
+    // os MLBs já salvos são mantidos (junto com qualquer MLB novo
+    // digitado), mesmo que a nova categoria não tenha o campo de MLB.
+    // =====================================================
+
+    if (
+        produtoExistenteAtual &&
+        produtoExistenteAtual.categoria &&
+        produtoExistenteAtual.categoria !== categoria
+    ) {
+
+        const mlbsSalvos =
+            normalizarListaMlbsProduto(
+                dadosExtraAnteriores.mlb_codes
+            );
+
+        if (
+            mlbsSalvos.length > 0
+        ) {
+
+            dadosExtra.mlb_codes =
+                normalizarListaMlbsProduto([
+                    ...mlbsSalvos,
+                    ...normalizarListaMlbsProduto(
+                        dadosExtra.mlb_codes
+                    )
+                ]);
+
+        }
+    }
+
+
+    // =====================================================
     // SINCRONIZAÇÃO ML
     // =====================================================
 
@@ -16779,6 +17055,64 @@ function atualizarLinksMlbCadastro() {
 // CATEGORIA + SUBCATEGORIA + ESTOQUE A CAMINHO
 // =========================================================
 
+// Os MLBs do produto não dependem da categoria: ao trocar categoria ou
+// subcategoria o formulário é refeito, mas o texto do campo de MLBs
+// precisa continuar exatamente igual.
+function regenerarCamposDinamicosPreservandoMlb(
+    categoria,
+    subcategoria = ''
+) {
+
+    const mlbAntes =
+        String(
+            document.getElementById(
+                'campo_mlb_codes'
+            )?.value || ''
+        );
+
+    gerarCamposDinamicos(
+        categoria,
+        subcategoria
+    );
+
+    const campoMlb =
+        document.getElementById(
+            'campo_mlb_codes'
+        );
+
+    if (
+        campoMlb &&
+        mlbAntes.trim() &&
+        !String(campoMlb.value || '').trim()
+    ) {
+
+        campoMlb.value =
+            mlbAntes;
+
+    }
+}
+
+
+// Lista de MLBs (array) a partir do que estiver guardado ou digitado.
+function normalizarListaMlbsProduto(
+    valor
+) {
+
+    const lista =
+        Array.isArray(valor)
+            ? valor
+            : String(valor || '').split(/[,;\s]+/);
+
+    return [
+        ...new Set(
+            lista
+                .map(m => String(m || '').trim().toUpperCase())
+                .filter(Boolean)
+        )
+    ];
+}
+
+
 function gerarCamposDinamicos(
     categoria,
     subcategoria = ''
@@ -17279,7 +17613,7 @@ function gerarCamposDinamicos(
                             // COM CAMPOS DA SUBCATEGORIA
                             // =================================
 
-                            gerarCamposDinamicos(
+                            regenerarCamposDinamicosPreservandoMlb(
                                 categoria,
                                 novaSubcategoria
                             );
@@ -29091,7 +29425,7 @@ async function abrirModalProdutoEstoque(
                 const confirmou =
                     confirm(
 
-                        'Alterar a categoria limpará os atributos específicos e a subcategoria exibidos no formulário.\n\nDeseja continuar?'
+                        'Alterar a categoria limpará os atributos específicos e a subcategoria exibidos no formulário (os MLBs são mantidos).\n\nDeseja continuar?'
 
                     );
 
@@ -29115,7 +29449,7 @@ async function abrirModalProdutoEstoque(
             // NOVA CATEGORIA SEM SUBCATEGORIA SELECIONADA
             // =================================================
 
-            gerarCamposDinamicos(
+            regenerarCamposDinamicosPreservandoMlb(
                 novaCategoria,
                 ''
             );

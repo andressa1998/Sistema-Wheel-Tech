@@ -60,6 +60,17 @@
     var verificacaoDiariaEmAndamento = false;
     var confirmacaoDiariaResolvida = false;
 
+    // Só estes usuários confirmam o horário de coleta do dia: a primeira
+    // das 3 que entrar vê o aviso. Quem não é dessa lista nunca vê o modal
+    // (só recebe o horário depois que alguma delas confirmar).
+    var USUARIOS_CONFIRMAM_COLETA = ['mirella', 'thalyta', 'leticia'];
+    var ultimaConsultaSemPermissao = 0;
+
+    function usuarioPodeConfirmarColeta() {
+        var u = String((window.currentUser && window.currentUser.username) || '').trim().toLowerCase();
+        return USUARIOS_CONFIRMAM_COLETA.indexOf(u) !== -1;
+    }
+
     // ---------- schedule ----------
 
     function lerScheduleLocal() {
@@ -553,6 +564,13 @@
         if (!window.currentUser) return;
         if (!window.supabaseClient) return;
 
+        // Quem não é das 3 só consulta (a cada 2 min) pra pegar o horário
+        // confirmado e mostrar na ampulheta — nunca abre o modal.
+        if (!usuarioPodeConfirmarColeta()) {
+            if (Date.now() - ultimaConsultaSemPermissao < 2 * 60 * 1000) return;
+            ultimaConsultaSemPermissao = Date.now();
+        }
+
         verificacaoDiariaEmAndamento = true;
 
         window.supabaseClient
@@ -574,8 +592,13 @@
                     return;
                 }
 
-                // Ninguém confirmou ainda hoje: este é (até onde
-                // sabemos) o primeiro usuário — mostra o modal.
+                // Ninguém confirmou ainda hoje. Se não for uma das 3
+                // pessoas responsáveis, ignora (sem modal); elas é que
+                // confirmam.
+                if (!usuarioPodeConfirmarColeta()) return;
+
+                // Este é (até onde sabemos) o primeiro usuário responsável
+                // a entrar — mostra o modal.
                 // Não marca confirmacaoDiariaResolvida ainda, pra
                 // tentar de novo depois se o usuário não confirmar
                 // (ex.: recarregar a página).
@@ -595,9 +618,9 @@
         modal.innerHTML =
             '<div class="box">' +
             '<h3>Horário de coleta de hoje</h3>' +
-            '<p>Você é o primeiro a entrar no sistema hoje. Confirme (ou ajuste) os ' +
-            'horários de coleta de hoje — a coluna FULL pode ficar em branco quando não ' +
-            'há coleta FULL nesse dia. Isso só aparece uma vez por dia, pro primeiro usuário.</p>' +
+            '<p>Você é a primeira pessoa (entre Mirella, Thalyta e Letícia) a entrar no sistema hoje. ' +
+            'Confirme (ou ajuste) os horários de coleta de hoje — a coluna FULL pode ficar em branco quando não ' +
+            'há coleta FULL nesse dia. Isso só aparece uma vez por dia, pra primeira das três.</p>' +
             '<div class="linha wt-coleta-2col"><span></span>' +
             '<span class="wt-coleta-col-label">Normal</span>' +
             '<span class="wt-coleta-col-label">FULL</span></div>' +
