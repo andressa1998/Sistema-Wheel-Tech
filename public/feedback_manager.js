@@ -19,7 +19,7 @@ const TOPICOS_POR_CATEGORIA = [
   {
     categoria: 'Desempenho',
     topicos: [
-      'Trabalho em equipe', 'Eficiência', 'Gestão de tempo', 'Cumprimento de prazos', 'Atenção aos detalhes'
+      'Trabalho em equipe', 'Eficiência', 'Gestão de tempo', 'Cumprimento de prazos', 'Atenção aos detalhes', 'Receptividade a criticas construtivas'
     ]
   }
 ];
