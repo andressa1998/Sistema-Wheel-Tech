@@ -478,6 +478,9 @@
             #rnOverlay.hidden{display:none}
             #rnModal{background:#fff;border-radius:16px;width:100%;max-width:920px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;font-size:14px}
             #rnModal .rn-head{display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid #eef0f4}
+            #rnModal .rn-head-acoes{display:flex;align-items:center;gap:8px}
+            #rnModal .rn-btn-backup{border:1px solid #d9dee7;background:#f6f7f9;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#334155;font-weight:600}
+            #rnModal .rn-btn-backup:hover{background:#ede9fe;border-color:#7c3aed;color:#6d28d9}
             #rnModal .rn-head h3{margin:0;font-size:17px;display:flex;gap:8px;align-items:center}
             #rnModal .rn-fechar{background:none;border:none;font-size:22px;cursor:pointer;color:#64748b}
             #rnModal .rn-tabs{display:flex;gap:6px;padding:12px 22px 0}
@@ -594,7 +597,12 @@
             <div id="rnModal" role="dialog" aria-modal="true">
                 <div class="rn-head">
                     <h3><i class="fas fa-bolt"></i> Regras de nível de estoque</h3>
-                    <button type="button" class="rn-fechar">&times;</button>
+                    <div class="rn-head-acoes">
+                        <button type="button" id="rnBtnBackup" class="rn-btn-backup" title="Baixa um arquivo com todas as regras salvas e o estado dos disparos"><i class="fas fa-download"></i> Backup das regras</button>
+                        <button type="button" id="rnBtnRestaurar" class="rn-btn-backup" title="Restaura regras a partir de um arquivo de backup"><i class="fas fa-upload"></i> Restaurar backup</button>
+                        <input type="file" id="rnArquivoBackup" accept=".json,application/json" style="display:none;">
+                        <button type="button" class="rn-fechar">&times;</button>
+                    </div>
                 </div>
                 <div class="rn-tabs">
                     <button type="button" class="rn-tab" data-aba="regras">Regra nova</button>
@@ -605,6 +613,14 @@
             </div>`;
         ov.addEventListener('click', e => { if (e.target === ov) fechar(); });
         ov.querySelector('.rn-fechar').addEventListener('click', fechar);
+        ov.querySelector('#rnBtnBackup').addEventListener('click', fazerBackupRegras);
+        const inputBackup = ov.querySelector('#rnArquivoBackup');
+        ov.querySelector('#rnBtnRestaurar').addEventListener('click', () => inputBackup.click());
+        inputBackup.addEventListener('change', () => {
+            const arquivo = inputBackup.files && inputBackup.files[0];
+            inputBackup.value = '';
+            if (arquivo) restaurarBackupRegras(arquivo);
+        });
         ov.querySelectorAll('.rn-tab').forEach(t => t.addEventListener('click', () => { abaAtual = t.dataset.aba; render(); }));
         document.body.appendChild(ov);
         return ov;
@@ -864,7 +880,6 @@
             <input type="text" id="rnBuscaSalvas" placeholder="🔍 Buscar por produto, SKU ou nome da regra..." style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px;box-sizing:border-box;">
             <div id="rnListaSalvas"></div>
         `;
-
         const listaEl = corpo.querySelector('#rnListaSalvas');
 
         function desenhar(filtro) {
@@ -929,6 +944,94 @@
 
         desenhar('');
         corpo.querySelector('#rnBuscaSalvas').addEventListener('input', e => desenhar(e.target.value));
+    }
+
+    // ---- backup / restauração das regras ----
+    async function fazerBackupRegras() {
+        const cli = sb();
+        if (!cli) return;
+        try {
+            const { data: regras, error } = await cli.from('regras_nivel_estoque').select('*').order('criado_em', { ascending: true });
+            if (error) throw error;
+            const { data: disparos, error: erroDisp } = await cli.from('regras_nivel_disparos').select('*');
+            if (erroDisp) throw erroDisp;
+
+            const agora = new Date();
+            const backup = {
+                tipo: 'wheeltech_regras_nivel_estoque',
+                versao: 1,
+                gerado_em: agora.toISOString(),
+                gerado_por: (window.currentUser && (window.currentUser.name || window.currentUser.username)) || '',
+                regras: regras || [],
+                disparos: disparos || []
+            };
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const pad = n => String(n).padStart(2, '0');
+            a.href = url;
+            a.download = `backup-regras-estoque-${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}-${pad(agora.getHours())}${pad(agora.getMinutes())}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            toast(`✅ Backup salvo: ${backup.regras.length} regra(s) e ${backup.disparos.length} estado(s) de disparo.`, 'success');
+        } catch (e) {
+            console.error('[regras-nivel] backup:', e);
+            toast('Erro ao fazer backup: ' + (e.message || e), 'error');
+        }
+    }
+
+    async function restaurarBackupRegras(arquivo) {
+        const cli = sb();
+        if (!cli) return;
+        let backup;
+        try {
+            backup = JSON.parse(await arquivo.text());
+        } catch (_) {
+            toast('Arquivo inválido: não é um backup de regras.', 'error');
+            return;
+        }
+        if (!backup || backup.tipo !== 'wheeltech_regras_nivel_estoque' || !Array.isArray(backup.regras)) {
+            toast('Arquivo inválido: não é um backup de regras de estoque.', 'error');
+            return;
+        }
+
+        const idsAtuais = new Set(regrasCache.map(r => String(r.id)));
+        const novas = backup.regras.filter(r => !idsAtuais.has(String(r.id))).length;
+        const existentes = backup.regras.length - novas;
+        const quando = backup.gerado_em ? new Date(backup.gerado_em).toLocaleString('pt-BR') : 'data desconhecida';
+        if (!confirm(
+            `Restaurar backup de ${quando}?
+
+` +
+            `• ${novas} regra(s) que não existem mais serão recriadas
+` +
+            `• ${existentes} regra(s) existente(s) voltarão ao estado do backup
+
+` +
+            'Regras criadas depois do backup NÃO serão apagadas.'
+        )) return;
+
+        try {
+            if (backup.regras.length) {
+                const { error } = await cli.from('regras_nivel_estoque').upsert(backup.regras, { onConflict: 'id' });
+                if (error) throw error;
+            }
+            const idsRegras = new Set(backup.regras.map(r => String(r.id)));
+            const disparos = (backup.disparos || []).filter(d => idsRegras.has(String(d.regra_id)));
+            if (disparos.length) {
+                const { error } = await cli.from('regras_nivel_disparos').upsert(disparos, { onConflict: 'id' });
+                if (error) throw error;
+            }
+            toast(`✅ Backup restaurado: ${backup.regras.length} regra(s).`, 'success');
+            await carregarRegras();
+            render();
+            atualizarSino(true);
+        } catch (e) {
+            console.error('[regras-nivel] restaurar:', e);
+            toast('Erro ao restaurar: ' + (e.message || e), 'error');
+        }
     }
 
     function iniciarEdicao(id) {

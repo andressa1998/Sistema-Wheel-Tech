@@ -30,6 +30,11 @@ const usuariosAutorizadosSync = ['andressamiotto', 'ronald', 'bruna', 'arthur'];
 // ===== USUÁRIOS QUE PODEM VER CUSTOS =====
 const usuariosVerCusto = ['andressamiotto', 'ronald'];
 
+// ===== QUEM PODE ALTERAR TÍTULO E SKU DE UM PRODUTO JÁ CADASTRADO =====
+// Qualquer usuário escolhe título/SKU ao CRIAR um produto, mas só estes
+// podem mudá-los depois.
+const usuariosEditarNomeSkuProduto = ['ronald', 'bruna', 'andressamiotto'];
+
 // ===== USUÁRIOS ADMIN =====
 const usuariosAdmin = ['andressamiotto', 'ronald', 'leticia'];
 
@@ -14918,6 +14923,28 @@ async function salvarProdutoEstoque() {
 
 
     // =====================================================
+    // TÍTULO E SKU DE PRODUTO EXISTENTE — só usuários autorizados
+    // =====================================================
+
+    if (
+        produtoExistenteAtual &&
+        !usuariosEditarNomeSkuProduto.includes(username) &&
+        (
+            nome !== String(produtoExistenteAtual.nome || '').trim() ||
+            document.getElementById('produtoSKU').value.trim() !== String(produtoExistenteAtual.sku || '').trim()
+        )
+    ) {
+
+        showToast(
+            '🔒 Só Ronald, Bruna e Andressa podem alterar título e SKU de um produto já cadastrado.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
     // CAMPOS OBRIGATÓRIOS
     // =====================================================
 
@@ -26422,6 +26449,117 @@ async function salvarRegrasFixasTipoAnuncioMLDoModal() {
     };
 }
 
+// =====================================================
+// BACKUP / RESTAURAÇÃO DAS REGRAS DE ESTOQUE E MERCADO LIVRE
+//
+// Tudo isso mora em configuracoes_sistema (uma linha por chave).
+// =====================================================
+
+const CHAVES_BACKUP_REGRAS_ESTOQUE = [
+    'regras_estoque_condicionais',
+    'regras_estoque_individuais',
+    'regras_fixas_tipo_anuncio_ml',
+    'regras_exposicao_v2'
+];
+
+async function fazerBackupRegrasEstoque() {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('configuracoes_sistema')
+            .select('*')
+            .in('chave', CHAVES_BACKUP_REGRAS_ESTOQUE);
+
+        if (error) throw error;
+
+        const agora = new Date();
+        const backup = {
+            tipo: 'wheeltech_regras_estoque_ml',
+            versao: 1,
+            gerado_em: agora.toISOString(),
+            gerado_por: currentUser?.name || currentUser?.username || '',
+            configuracoes: data || []
+        };
+
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const pad = n => String(n).padStart(2, '0');
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `backup-regras-estoque-ml-${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}-${pad(agora.getHours())}${pad(agora.getMinutes())}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+        showToast(`✅ Backup salvo (${backup.configuracoes.length} grupo(s) de regras).`, 'success');
+    } catch (erro) {
+        console.error('❌ Erro no backup das regras de estoque:', erro);
+        showToast('❌ Erro ao fazer backup: ' + (erro.message || erro), 'error');
+    }
+}
+
+async function restaurarBackupRegrasEstoque(input) {
+    const arquivo = input?.files?.[0];
+    if (input) input.value = '';
+    if (!arquivo) return;
+
+    let backup;
+    try {
+        backup = JSON.parse(await arquivo.text());
+    } catch (_) {
+        showToast('❌ Arquivo inválido: não é um backup de regras.', 'error');
+        return;
+    }
+
+    if (backup?.tipo !== 'wheeltech_regras_estoque_ml' || !Array.isArray(backup.configuracoes)) {
+        showToast('❌ Arquivo inválido: não é um backup das regras de estoque e Mercado Livre.', 'error');
+        return;
+    }
+
+    const linhas = backup.configuracoes.filter(l => CHAVES_BACKUP_REGRAS_ESTOQUE.includes(l?.chave));
+    if (!linhas.length) {
+        showToast('❌ O backup não contém regras.', 'error');
+        return;
+    }
+
+    const quando = backup.gerado_em ? new Date(backup.gerado_em).toLocaleString('pt-BR') : 'data desconhecida';
+    if (!confirm(
+        `Restaurar o backup de ${quando}?\n\n` +
+        `${linhas.length} grupo(s) de regras voltarão exatamente ao que estava no backup ` +
+        '(o que foi alterado depois será substituído).\n\n' +
+        'A página será recarregada em seguida.'
+    )) return;
+
+    try {
+        const registros = linhas.map(({ id, ...resto }) => ({
+            ...resto,
+            atualizado_em: new Date().toISOString(),
+            atualizado_por: currentUser?.name || 'restauração de backup'
+        }));
+
+        const { error } = await window.supabaseClient
+            .from('configuracoes_sistema')
+            .upsert(registros, { onConflict: 'chave' });
+
+        if (error) throw error;
+
+        // Os caches locais têm prioridade em algumas telas; limpa para não
+        // sobrescrever o que acabou de ser restaurado.
+        ['regras_estoque_condicionais', 'regras_estoque_individuais', 'regras_fixas_tipo_anuncio_ml']
+            .forEach(chave => localStorage.removeItem(chave));
+
+        showToast('✅ Backup restaurado. Recarregando…', 'success');
+        setTimeout(() => location.reload(), 1200);
+    } catch (erro) {
+        console.error('❌ Erro ao restaurar backup das regras:', erro);
+        showToast('❌ Erro ao restaurar: ' + (erro.message || erro), 'error');
+    }
+}
+
+window.fazerBackupRegrasEstoque = fazerBackupRegrasEstoque;
+window.restaurarBackupRegrasEstoque = restaurarBackupRegrasEstoque;
+
+
 function criarModalRegrasEstoque() {
 
     const modal =
@@ -26477,18 +26615,48 @@ function criarModalRegrasEstoque() {
                 </h3>
 
 
-                <button
-                    onclick="fecharModalRegrasEstoque()"
-                    style="
-                        background: none;
-                        border: none;
-                        font-size: 24px;
-                        cursor: pointer;
-                        color: #6c757d;
-                    "
-                >
-                    &times;
-                </button>
+                <div style="display:flex; align-items:center; gap:8px;">
+
+                    <button
+                        type="button"
+                        onclick="fazerBackupRegrasEstoque()"
+                        title="Baixa um arquivo com todas as regras de estoque e Mercado Livre"
+                        style="border:1px solid #b6d4fe; background:#eef6ff; color:#0b5ed7; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:600; cursor:pointer;"
+                    >
+                        <i class="fas fa-download"></i> Backup das regras
+                    </button>
+
+                    <button
+                        type="button"
+                        onclick="document.getElementById('arquivoBackupRegrasEstoque').click()"
+                        title="Restaura as regras a partir de um arquivo de backup"
+                        style="border:1px solid #dee2e6; background:#f8f9fa; color:#495057; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:600; cursor:pointer;"
+                    >
+                        <i class="fas fa-upload"></i> Restaurar backup
+                    </button>
+
+                    <input
+                        type="file"
+                        id="arquivoBackupRegrasEstoque"
+                        accept=".json,application/json"
+                        style="display:none;"
+                        onchange="restaurarBackupRegrasEstoque(this)"
+                    >
+
+                    <button
+                        onclick="fecharModalRegrasEstoque()"
+                        style="
+                            background: none;
+                            border: none;
+                            font-size: 24px;
+                            cursor: pointer;
+                            color: #6c757d;
+                        "
+                    >
+                        &times;
+                    </button>
+
+                </div>
 
             </div>
 
@@ -28211,6 +28379,20 @@ async function abrirModalProdutoEstoque(
         return;
     }
 
+
+    // Título e SKU: só Ronald, Bruna e Andressa alteram produto já cadastrado.
+    // Produto novo: qualquer usuário preenche livremente.
+    const bloquearNomeSku =
+        !!(produto && produto.id) &&
+        !usuariosEditarNomeSkuProduto.includes(username);
+
+    [nomeInput, skuInput].forEach(campo => {
+        campo.readOnly = bloquearNomeSku;
+        campo.classList.toggle('bg-light', bloquearNomeSku);
+        campo.title = bloquearNomeSku
+            ? '🔒 Só Ronald, Bruna e Andressa podem alterar título e SKU de um produto já cadastrado'
+            : '';
+    });
 
     // =====================================================
     // PRODUTO EXISTENTE
@@ -43621,8 +43803,13 @@ async function carregarPreEntradasRastreioEstoque() {
             // Só "a caminho" enquanto CARD e ITEM
             // estiverem pendentes.
             if (
-                card.status !==
-                    'pendente'
+                (
+                    card.status !==
+                        'pendente'
+                    &&
+                    card.status !==
+                        'a_caminho'
+                )
                 ||
                 item.status !==
                     'pendente'
@@ -46361,8 +46548,11 @@ async function salvarCompraRastreio() {
                                 metadata
                             ),
 
+                        // Pré-entrada criada na Gestão de Estoque nasce "a caminho":
+                        // aparece na lista "A caminho" da aba Entradas com o botão
+                        // "Chegou"; só depois disso fica disponível pra dar entrada.
                         status:
-                            'pendente',
+                            'a_caminho',
 
                         criado_por:
                             currentUser?.name ||
