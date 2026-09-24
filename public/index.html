@@ -6574,13 +6574,12 @@ body:has(#loginScreen:not(.hidden)) {
         <div class="card mb-4">
             <div class="d-flex flex-wrap gap-2 align-items-center">
                 <span><i class="fas fa-filter"></i> Filtrar:</span>
-                <button class="btn btn-sm btn-primary active" data-filtro="todos" onclick="filtrarEntradas('todos')">Todos</button>
-                <button class="btn btn-sm btn-outline-secondary" data-filtro="a_caminho" onclick="filtrarEntradas('a_caminho')">🚚 A caminho</button>
-                <button class="btn btn-sm btn-outline-secondary" data-filtro="pendente" onclick="filtrarEntradas('pendente')">Pendentes</button>
-                <button class="btn btn-sm btn-outline-secondary" data-filtro="finalizado" onclick="filtrarEntradas('finalizado')">Finalizados</button>
+                <button class="btn btn-sm btn-outline-secondary" data-filtro="a_caminho" onclick="filtrarEntradas('a_caminho')">🚚 A caminho <span class="badge badge-light" data-contagem></span></button>
+                <button class="btn btn-sm btn-primary active" data-filtro="pendente" onclick="filtrarEntradas('pendente')">Pendentes <span class="badge badge-light" data-contagem></span></button>
+                <button class="btn btn-sm btn-outline-secondary" data-filtro="finalizado" onclick="filtrarEntradas('finalizado')">Finalizados <span class="badge badge-light" data-contagem></span></button>
                 
                 <div style="flex:1; min-width:200px; margin-left:auto;">
-                    <input type="text" id="buscaEntradas" class="form-control form-control-sm" placeholder="🔍 Buscar por rastreio, produto, SKU..." oninput="buscarEntradas()">
+                    <input type="text" id="buscaEntradas" class="form-control form-control-sm" placeholder="🔍 Buscar por produto, SKU, rastreio, fornecedor ou nº da nota (em todos os status)..." oninput="buscarEntradas()">
                 </div>
                 
                 <!-- Botão Exportar com Dropdown -->
@@ -7479,7 +7478,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="regras_nivel_estoque.js?v=20260924-2"></script>
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
-    <script src="entradas.js"></script>
+    <script src="entradas.js?v=20260924-3"></script>
     <script src="promocoes_manager.js?v=20260918-2"></script>
     <script src="full_analysis.js"></script>
     <script src="gerenciamento_anuncios.js?v=20260921-1"></script>

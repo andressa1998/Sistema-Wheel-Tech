@@ -3,7 +3,12 @@
 // ============================================
 
 let entradasCards = [];
-let filtroEntradasAtual = 'todos';
+let filtroEntradasAtual = 'pendente'; // 'a_caminho' | 'pendente' | 'finalizado' | null (busca nos 3)
+let paginaEntradasAtual = 1;
+let totalEntradasFiltro = 0;
+let contagemEntradasPorStatus = { a_caminho: 0, pendente: 0, finalizado: 0 };
+let cargaEntradasSeq = 0;
+const ENTRADAS_POR_PAGINA = 10;
 let entradaEmProcessamento = null;
 let fornecedoresMap = {};
 let preEntradaItens = [];
@@ -846,7 +851,11 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ============================================
-// CARREGAR ENTRADAS (COM ORDENAÇÃO: PENDENTES PRIMEIRO)
+// CARREGAR ENTRADAS — PAGINADO NO BANCO
+//
+// Só busca a página que está na tela (ENTRADAS_POR_PAGINA cards, do mais
+// recente pro mais antigo) e apenas os itens desses cards. Com texto no
+// campo de busca, procura nos 3 status (a caminho, pendentes e finalizados).
 // ============================================
 async function carregarEntradas() {
     if (!window.supabaseClient) {
@@ -854,46 +863,221 @@ async function carregarEntradas() {
         return;
     }
 
+    const sb = window.supabaseClient;
+    const seq = ++cargaEntradasSeq;
+
     try {
-        const { data: cards, error: errCards } = await window.supabaseClient
-            .from('entradas_cards')
-            .select('*')
-            .order('criado_em', { ascending: false });
+        const termo = termoBuscaEntradas();
 
-        if (errCards) throw errCards;
+        // Sem busca sempre existe um filtro de status selecionado.
+        if (!termo && !filtroEntradasAtual) filtroEntradasAtual = 'pendente';
 
-        if (!cards || cards.length === 0) {
-            entradasCards = [];
-            renderizarEntradas();
-            return;
+        const inicio = (paginaEntradasAtual - 1) * ENTRADAS_POR_PAGINA;
+        let cards = [];
+        let total = 0;
+        let contagens = null;
+
+        if (termo) {
+            const metas = await buscarMetaEntradasPorTermo(termo);
+
+            contagens = { a_caminho: 0, pendente: 0, finalizado: 0 };
+            metas.forEach(m => {
+                if (contagens[m.status] !== undefined) contagens[m.status]++;
+            });
+
+            const filtradas = filtroEntradasAtual
+                ? metas.filter(m => m.status === filtroEntradasAtual)
+                : metas;
+
+            filtradas.sort((a, b) =>
+                (new Date(b.criado_em) - new Date(a.criado_em)) ||
+                String(b.id).localeCompare(String(a.id), undefined, { numeric: true })
+            );
+
+            total = filtradas.length;
+
+            const paginasBusca = Math.max(1, Math.ceil(total / ENTRADAS_POR_PAGINA));
+            if (paginaEntradasAtual > paginasBusca) paginaEntradasAtual = paginasBusca;
+
+            const idsPagina = filtradas
+                .slice((paginaEntradasAtual - 1) * ENTRADAS_POR_PAGINA, paginaEntradasAtual * ENTRADAS_POR_PAGINA)
+                .map(m => m.id);
+
+            if (idsPagina.length) {
+                const { data, error } = await sb
+                    .from('entradas_cards')
+                    .select('*')
+                    .in('id', idsPagina);
+
+                if (error) throw error;
+
+                const porId = new Map((data || []).map(c => [String(c.id), c]));
+                cards = idsPagina.map(id => porId.get(String(id))).filter(Boolean);
+            }
+
+        } else {
+            const contagensPromise = contarEntradasPorStatus();
+
+            const { data, count, error } = await sb
+                .from('entradas_cards')
+                .select('*', { count: 'exact' })
+                .eq('status', filtroEntradasAtual)
+                .order('criado_em', { ascending: false })
+                .order('id', { ascending: false })
+                .range(inicio, inicio + ENTRADAS_POR_PAGINA - 1);
+
+            if (error) throw error;
+
+            total = count || 0;
+
+            // Página fora do alcance (ex.: a entrada mudou de status e a
+            // última página deixou de existir).
+            if (!(data || []).length && total > 0 && paginaEntradasAtual > 1) {
+                paginaEntradasAtual = Math.ceil(total / ENTRADAS_POR_PAGINA);
+                return carregarEntradas();
+            }
+
+            cards = data || [];
+            contagens = await contagensPromise;
         }
 
-        const cardIds = cards.map(c => c.id);
-        const { data: items, error: errItems } = await window.supabaseClient
-            .from('entrada_items')
-            .select('*')
-            .in('entrada_id', cardIds);
+        const itens = await buscarItensDasEntradas(cards.map(c => c.id));
 
-        if (errItems) throw errItems;
+        // Uma carga mais nova já saiu: descarta esta.
+        if (seq !== cargaEntradasSeq) return;
+
+        const itensPorCard = new Map();
+        itens.forEach(item => {
+            if (!itensPorCard.has(item.entrada_id)) itensPorCard.set(item.entrada_id, []);
+            itensPorCard.get(item.entrada_id).push(item);
+        });
 
         entradasCards = cards.map(card => ({
             ...card,
-            itens: items.filter(item => item.entrada_id === card.id) || []
+            itens: itensPorCard.get(card.id) || []
         }));
 
-        // ==== ORDENAÇÃO: PENDENTES PRIMEIRO ====
-        entradasCards.sort((a, b) => {
-            if (a.status === 'pendente' && b.status === 'finalizado') return -1;
-            if (a.status === 'finalizado' && b.status === 'pendente') return 1;
-            return new Date(b.criado_em) - new Date(a.criado_em);
-        });
+        totalEntradasFiltro = total;
+        contagemEntradasPorStatus = contagens || contagemEntradasPorStatus;
 
+        atualizarBotoesFiltroEntradas();
         renderizarEntradas();
 
     } catch (error) {
         console.error('❌ Erro ao carregar entradas:', error);
         showToast('Erro ao carregar entradas: ' + error.message, 'error');
     }
+}
+
+function termoBuscaEntradas() {
+    const bruto = document.getElementById('buscaEntradas')?.value || '';
+    // vírgula, parênteses, % e * têm significado nos filtros do banco
+    return String(bruto).replace(/[%,()*]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function contarEntradasPorStatus() {
+    const sb = window.supabaseClient;
+    const status = ['a_caminho', 'pendente', 'finalizado'];
+
+    const resultados = await Promise.all(status.map(s =>
+        sb.from('entradas_cards').select('id', { count: 'exact', head: true }).eq('status', s)
+    ));
+
+    const contagens = {};
+    status.forEach((s, i) => { contagens[s] = resultados[i].count || 0; });
+    return contagens;
+}
+
+// Itens só das entradas que estão na tela (em blocos, por causa do limite
+// de 1000 linhas por consulta).
+async function buscarItensDasEntradas(cardIds) {
+    const sb = window.supabaseClient;
+    const itens = [];
+
+    for (let i = 0; i < cardIds.length; i += 20) {
+        const ids = cardIds.slice(i, i + 20);
+
+        for (let inicio = 0; ; inicio += 1000) {
+            const { data, error } = await sb
+                .from('entrada_items')
+                .select('*')
+                .in('entrada_id', ids)
+                .order('id', { ascending: true })
+                .range(inicio, inicio + 999);
+
+            if (error) throw error;
+
+            itens.push(...(data || []));
+            if (!data || data.length < 1000) break;
+        }
+    }
+
+    return itens;
+}
+
+// Procura o termo nos dados da entrada (número, NF, fornecedor) e nos itens
+// (produto, SKU, rastreio, fornecedor). Devolve {id, criado_em, status} de
+// cada entrada encontrada, em qualquer status.
+async function buscarMetaEntradasPorTermo(termo) {
+    const sb = window.supabaseClient;
+    const padrao = `%${termo}%`;
+    const verFornecedor = typeof podeVerFornecedores === 'function' ? podeVerFornecedores() : false;
+
+    const camposCard = ['numero_entrada', 'nf_numero'];
+    const camposItem = ['produto', 'sku_original', 'sku_match', 'rastreio', 'cd_fornecedor'];
+    if (verFornecedor) {
+        camposCard.push('fornecedor');
+        camposItem.push('fornecedor_nome');
+    }
+
+    const orCard = camposCard.map(c => `${c}.ilike.${padrao}`).join(',');
+    const orItem = camposItem.map(c => `${c}.ilike.${padrao}`).join(',');
+
+    const metas = new Map();
+
+    // 1) entradas cujos próprios dados batem
+    for (let inicio = 0; inicio < 5000; inicio += 1000) {
+        const { data, error } = await sb
+            .from('entradas_cards')
+            .select('id, criado_em, status')
+            .or(orCard)
+            .range(inicio, inicio + 999);
+
+        if (error) throw error;
+
+        (data || []).forEach(c => metas.set(String(c.id), c));
+        if (!data || data.length < 1000) break;
+    }
+
+    // 2) entradas que têm algum item que bate
+    const idsPorItem = new Set();
+    for (let inicio = 0; inicio < 6000; inicio += 1000) {
+        const { data, error } = await sb
+            .from('entrada_items')
+            .select('entrada_id')
+            .or(orItem)
+            .order('id', { ascending: false })
+            .range(inicio, inicio + 999);
+
+        if (error) throw error;
+
+        (data || []).forEach(i => idsPorItem.add(i.entrada_id));
+        if (!data || data.length < 1000) break;
+    }
+
+    const faltando = [...idsPorItem].filter(id => !metas.has(String(id)));
+    for (let i = 0; i < faltando.length; i += 100) {
+        const { data, error } = await sb
+            .from('entradas_cards')
+            .select('id, criado_em, status')
+            .in('id', faltando.slice(i, i + 100));
+
+        if (error) throw error;
+
+        (data || []).forEach(c => metas.set(String(c.id), c));
+    }
+
+    return [...metas.values()];
 }
 
 // ============================================
@@ -1183,94 +1367,17 @@ async function renderizarEntradas() {
         }
     }
 
-    // =====================================================
-    // FILTRO
-    // =====================================================
-
-    let cardsFiltrados =
+    // Filtro, busca e paginação acontecem no banco (carregarEntradas):
+    // entradasCards já é só a página atual.
+    const cardsFiltrados =
         [...entradasCards];
-
-    if (filtroEntradasAtual === 'pendente') {
-        cardsFiltrados =
-            cardsFiltrados.filter(
-                c => c.status === 'pendente'
-            );
-
-    } else if (
-        filtroEntradasAtual === 'finalizado'
-    ) {
-        cardsFiltrados =
-            cardsFiltrados.filter(
-                c => c.status === 'finalizado'
-            );
-
-    } else if (
-        filtroEntradasAtual === 'a_caminho'
-    ) {
-        cardsFiltrados =
-            cardsFiltrados.filter(
-                c => c.status === 'a_caminho'
-            );
-    }
-
-    // =====================================================
-    // BUSCA
-    // =====================================================
-
-    const busca =
-        document
-            .getElementById('buscaEntradas')
-            ?.value
-            ?.trim()
-            .toLowerCase() || '';
-
-    if (busca) {
-        cardsFiltrados =
-            cardsFiltrados.filter(card => {
-
-                if (
-                    (card.numero_entrada || '')
-                        .toLowerCase()
-                        .includes(busca)
-                ) {
-                    return true;
-                }
-
-                return (card.itens || []).some(item =>
-
-                    (item.rastreio || '')
-                        .toLowerCase()
-                        .includes(busca) ||
-
-                    (item.produto || '')
-                        .toLowerCase()
-                        .includes(busca) ||
-
-                    (item.sku_original || '')
-                        .toLowerCase()
-                        .includes(busca) ||
-
-                    (item.sku_match || '')
-                        .toLowerCase()
-                        .includes(busca) ||
-
-                    (item.fornecedor_nome || '')
-                        .toLowerCase()
-                        .includes(busca) ||
-
-                    (item.cd_fornecedor || '')
-                        .toLowerCase()
-                        .includes(busca)
-                );
-            });
-    }
 
     // =====================================================
     // NENHUMA ENTRADA
     // =====================================================
 
     if (cardsFiltrados.length === 0) {
-        container.innerHTML = `
+        container.innerHTML = montarBarraListaEntradas() + `
 
             <div class="text-center py-5 text-muted">
 
@@ -1285,6 +1392,9 @@ async function renderizarEntradas() {
 
                 <p>
                     ${
+                        termoBuscaEntradas()
+                            ? 'Nada encontrado para essa busca.'
+                            :
                         filtroEntradasAtual === 'pendente'
                             ? 'Todas as entradas foram finalizadas!'
                             :
@@ -1353,22 +1463,45 @@ async function renderizarEntradas() {
                 i => i.status !== 'ignorado'
             ).length;
 
+        // Itens ignorados ficam FORA do total e FORA dos concluídos
+        // (antes eles entravam só nos concluídos: 5/4 itens, 125%, e o
+        // botão "Finalizar Entrada" nunca aparecia).
         const concluidos =
             itens.filter(i =>
                 i.status === 'entrada_realizada' ||
+                i.status === 'cadastrado'
+            ).length;
+
+        // Pronta pra finalizar: tem item e nenhum ficou pendente
+        // (tudo entrou/foi cadastrado ou foi ignorado).
+        const podeFinalizar =
+            itens.length > 0 &&
+            itens.every(i =>
+                i.status === 'entrada_realizada' ||
                 i.status === 'cadastrado' ||
                 i.status === 'ignorado'
-            ).length;
+            );
 
         const progresso =
             total > 0
                 ? Math.round(
                     (concluidos / total) * 100
                 )
-                : 0;
+                : (podeFinalizar ? 100 : 0);
 
         const isFinalizado =
             card.status === 'finalizado';
+
+        // Minimizar concluídos: esconde os itens já resolvidos e deixa só
+        // os que ainda precisam de ação.
+        const itensResolvidos =
+            itens.filter(itemEntradaResolvido).length;
+
+        const minimizado =
+            entradasMinimizadas.has(String(card.id)) &&
+            itensResolvidos > 0;
+
+        let itensOcultos = 0;
 
         const isACaminho =
             card.status === 'a_caminho';
@@ -1557,6 +1690,21 @@ async function renderizarEntradas() {
                         </div>
 
                         ${
+                            itensResolvidos > 0
+                                ? `
+                                    <button
+                                        class="btn btn-sm btn-outline-secondary"
+                                        onclick="alternarItensConcluidosEntrada('${card.id}')"
+                                        title="${minimizado ? 'Mostrar os itens já finalizados' : 'Esconder os itens já finalizados e ficar só com o que falta'}"
+                                    >
+                                        <i class="fas ${minimizado ? 'fa-expand-alt' : 'fa-compress-alt'}"></i>
+                                        ${minimizado ? 'Mostrar concluídos' : 'Minimizar concluídos'}
+                                    </button>
+                                `
+                                : ''
+                        }
+
+                        ${
                             isACaminho
                                 ? `
                                     <button
@@ -1705,6 +1853,11 @@ async function renderizarEntradas() {
         itens.forEach(
             (item, idx) => {
 
+                if (minimizado && itemEntradaResolvido(item)) {
+                    itensOcultos++;
+                    return;
+                }
+
                 const isConcluido =
                     item.status !== 'pendente';
 
@@ -1840,7 +1993,9 @@ async function renderizarEntradas() {
                 // cabeçalho do card) é que a entrada vira "pendente"
                 // e os botões normais (Dar Entrada/Cadastrar/etc.)
                 // voltam a aparecer.
-                if (isACaminho) {
+                // Só os itens ainda pendentes ficam "aguardando"; os que já
+                // foram processados antes do item novo chegar mantêm o status.
+                if (isACaminho && item.status === 'pendente') {
 
                     acaoHtml = `
                         <span class="badge badge-info">
@@ -2215,9 +2370,28 @@ async function renderizarEntradas() {
                 // OBSERVAÇÃO
                 // =========================================
 
-                let obsDisplay =
-                    obsValue ||
-                    '-';
+                // Observação: quebra de linha como na descrição do produto,
+                // mostrando até 8 linhas (o texto completo fica no title).
+                const obsEscapada =
+                    escapeHtml(String(obsValue || ''));
+
+                const estiloObs =
+                    'font-size:12px;' +
+                    'max-width:220px;' +
+                    'min-width:120px;' +
+                    'white-space:pre-wrap;' +
+                    'word-break:break-word;' +
+                    'overflow:hidden;' +
+                    'display:-webkit-box;' +
+                    '-webkit-box-orient:vertical;' +
+                    '-webkit-line-clamp:8;';
+
+                let obsDisplay = `
+                    <div
+                        style="${estiloObs}"
+                        title="${obsEscapada || '-'}"
+                    >${obsEscapada || '-'}</div>
+                `;
 
                 if (
                     podeEditarObservacoes
@@ -2226,22 +2400,14 @@ async function renderizarEntradas() {
                     obsDisplay = `
 
                         <div
-                            class="d-flex align-items-center gap-1"
+                            class="d-flex align-items-start gap-1"
                         >
 
                             <span
                                 id="${obsId}-text"
-                                style="
-                                    font-size:12px;
-                                    max-width:150px;
-                                    overflow:hidden;
-                                    text-overflow:ellipsis;
-                                    white-space:nowrap;
-                                "
-                                title="${obsValue || '-'}"
-                            >
-                                ${obsValue || '-'}
-                            </span>
+                                style="${estiloObs}"
+                                title="${obsEscapada || '-'}"
+                            >${obsEscapada || '-'}</span>
 
                             <button
                                 class="btn btn-sm btn-outline-primary"
@@ -2252,6 +2418,7 @@ async function renderizarEntradas() {
                                 style="
                                     padding:2px 6px;
                                     font-size:10px;
+                                    flex-shrink:0;
                                 "
                                 title="Editar observação"
                             >
@@ -2387,6 +2554,18 @@ async function renderizarEntradas() {
             }
         );
 
+        if (itensOcultos > 0) {
+            html += `
+                <tr>
+                    <td colspan="14" class="text-center text-muted" style="font-size:12px; cursor:pointer;"
+                        onclick="alternarItensConcluidosEntrada('${card.id}')">
+                        <i class="fas fa-eye-slash"></i>
+                        ${itensOcultos} item(ns) já finalizado(s) oculto(s) — clique para mostrar
+                    </td>
+                </tr>
+            `;
+        }
+
         // =================================================
         // RODAPÉ
         // =================================================
@@ -2414,8 +2593,8 @@ async function renderizarEntradas() {
                             >
 
                                 ${
-                                    concluidos === total &&
-                                    total > 0
+                                    podeFinalizar &&
+                                    !isACaminho
                                         ? `
                                             <button
                                                 class="btn btn-sm btn-success"
@@ -2475,7 +2654,9 @@ async function renderizarEntradas() {
     });
 
     container.innerHTML =
-        html;
+        montarBarraListaEntradas() +
+        html +
+        montarPaginacaoEntradas();
 }
 
 // ============================================
@@ -2999,7 +3180,10 @@ async function criarOuMesclarEntradaPorRastreio(itensNovos, dadosCardBase) {
         const { error: erroUpdate } = await window.supabaseClient
             .from('entradas_cards')
             .update({
-                status: 'pendente',
+                // Entrou item novo com rastreio que já existia: a entrada
+                // volta pra "a caminho" (mesmo que já tivesse chegado),
+                // e só vira pendente de novo quando alguém clicar "Chegou".
+                status: 'a_caminho',
                 total_items: (cardAtual.total_items || 0) + itens.length,
                 finalizado_em: null,
                 finalizado_por: null
@@ -4376,7 +4560,8 @@ window.exportarEntradasExcel = async function() {
     try {
         showToast('📊 Gerando relatório de entradas...', 'info');
         
-        if (!entradasCards || entradasCards.length === 0) {
+        const todasEntradas = await carregarTodasEntradasParaExportar();
+        if (todasEntradas.length === 0) {
             showToast('⚠️ Nenhuma entrada encontrada para exportar.', 'warning');
             return;
         }
@@ -4408,7 +4593,7 @@ window.exportarEntradasExcel = async function() {
         ];
         dadosExcel.push(cabecalho);
         
-        entradasCards.forEach(card => {
+        todasEntradas.forEach(card => {
             const itensDoCard = card.itens || [];
             
             if (itensDoCard.length === 0) {
@@ -4486,7 +4671,8 @@ window.exportarEntradasResumido = async function() {
     try {
         showToast('📊 Gerando relatório resumido...', 'info');
         
-        if (!entradasCards || entradasCards.length === 0) {
+        const todasEntradas = await carregarTodasEntradasParaExportar();
+        if (todasEntradas.length === 0) {
             showToast('⚠️ Nenhuma entrada encontrada.', 'warning');
             return;
         }
@@ -4495,7 +4681,7 @@ window.exportarEntradasResumido = async function() {
             ['Nº Entrada', 'Data Criação', 'Criado Por', 'Status', 'Tipo', 'Fornecedor', 'NF', 'Total Itens', 'Concluídos', 'Progresso']
         ];
         
-        for (const card of entradasCards) {
+        for (const card of todasEntradas) {
             const itens = card.itens || [];
             const total = itens.length;
             const concluidos = itens.filter(i => i.status !== 'pendente' && i.status !== 'ignorado').length;
@@ -4544,13 +4730,14 @@ window.exportarEntradasPorStatus = async function() {
     try {
         showToast('📊 Gerando relatório por status...', 'info');
         
-        if (!entradasCards || entradasCards.length === 0) {
+        const todasEntradas = await carregarTodasEntradasParaExportar();
+        if (todasEntradas.length === 0) {
             showToast('⚠️ Nenhuma entrada encontrada.', 'warning');
             return;
         }
         
-        const pendentes = entradasCards.filter(c => c.status === 'pendente');
-        const finalizados = entradasCards.filter(c => c.status === 'finalizado');
+        const pendentes = todasEntradas.filter(c => c.status === 'pendente');
+        const finalizados = todasEntradas.filter(c => c.status === 'finalizado');
         
         const wb = XLSX.utils.book_new();
         
@@ -6910,6 +7097,17 @@ async function criarOSCompleta(dados) {
 // FINALIZAR ENTRADA
 // ============================================
 window.finalizarEntrada = async function(cardId) {
+    const cardParaFinalizar = entradasCards.find(c => String(c.id) === String(cardId));
+    if (cardParaFinalizar) {
+        const restantes = (cardParaFinalizar.itens || []).filter(i =>
+            i.status !== 'entrada_realizada' && i.status !== 'cadastrado' && i.status !== 'ignorado'
+        ).length;
+        if (restantes > 0 || cardParaFinalizar.status === 'a_caminho') {
+            showToast('Ainda há item(ns) pendente(s) ou a entrada ainda não chegou.', 'warning');
+            return;
+        }
+    }
+
     if (!confirm('Confirmar que todos os itens foram processados e finalizar esta entrada?')) return;
 
     try {
@@ -6960,29 +7158,181 @@ window.cancelarEntrada = async function(cardId) {
     }
 };
 
+
 // ============================================
-// FUNÇÕES AUXILIARES
+// FILTROS, BUSCA, PAGINAÇÃO E MINIMIZAR ITENS CONCLUÍDOS
 // ============================================
+
+const CHAVE_ENTRADAS_MINIMIZADAS = 'wheeltech_entradas_minimizadas_v1';
+
+let entradasMinimizadas = (() => {
+    try {
+        return new Set(JSON.parse(localStorage.getItem(CHAVE_ENTRADAS_MINIMIZADAS) || '[]').map(String));
+    } catch (_) {
+        return new Set();
+    }
+})();
+
+function salvarEntradasMinimizadas() {
+    try {
+        // guarda só os 300 mais recentes pra não crescer pra sempre
+        const lista = [...entradasMinimizadas].slice(-300);
+        localStorage.setItem(CHAVE_ENTRADAS_MINIMIZADAS, JSON.stringify(lista));
+    } catch (_) { /* sem localStorage: vale só até recarregar */ }
+}
+
+function itemEntradaResolvido(item) {
+    return item.status === 'entrada_realizada' ||
+        item.status === 'cadastrado' ||
+        item.status === 'ignorado';
+}
+
+window.alternarItensConcluidosEntrada = function(cardId) {
+    const chave = String(cardId);
+    if (entradasMinimizadas.has(chave)) entradasMinimizadas.delete(chave);
+    else entradasMinimizadas.add(chave);
+    salvarEntradasMinimizadas();
+    renderizarEntradas();
+};
+
+window.alternarTodosItensConcluidosEntradas = function(minimizar) {
+    entradasCards.forEach(card => {
+        if (minimizar) entradasMinimizadas.add(String(card.id));
+        else entradasMinimizadas.delete(String(card.id));
+    });
+    salvarEntradasMinimizadas();
+    renderizarEntradas();
+};
+
+function montarBarraListaEntradas() {
+    const termo = termoBuscaEntradas();
+    const rotuloFiltro = { a_caminho: 'A caminho', pendente: 'Pendentes', finalizado: 'Finalizados' };
+
+    const resumo = termo
+        ? `${totalEntradasFiltro} entrada(s) para “${escapeHtml(termo)}” ${
+            filtroEntradasAtual
+                ? `em <strong>${rotuloFiltro[filtroEntradasAtual]}</strong>`
+                : 'nos 3 status (a caminho, pendentes e finalizados)'
+        }`
+        : `${totalEntradasFiltro} entrada(s) em <strong>${rotuloFiltro[filtroEntradasAtual] || ''}</strong>`;
+
+    return `
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <small class="text-muted">${resumo} · mais recentes primeiro</small>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-secondary" onclick="alternarTodosItensConcluidosEntradas(true)" title="Esconde os itens já finalizados de todas as entradas desta página">
+                    <i class="fas fa-compress-alt"></i> Minimizar concluídos
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="alternarTodosItensConcluidosEntradas(false)" title="Mostra todos os itens de todas as entradas desta página">
+                    <i class="fas fa-expand-alt"></i> Mostrar tudo
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function montarPaginacaoEntradas() {
+    const totalPaginas = Math.max(1, Math.ceil(totalEntradasFiltro / ENTRADAS_POR_PAGINA));
+    if (totalPaginas <= 1) return '';
+
+    const atual = paginaEntradasAtual;
+    const paginas = [];
+    for (let p = 1; p <= totalPaginas; p++) {
+        if (p === 1 || p === totalPaginas || Math.abs(p - atual) <= 2) paginas.push(p);
+        else if (paginas[paginas.length - 1] !== '…') paginas.push('…');
+    }
+
+    const botao = (rotulo, pagina, desabilitado, ativo) => `
+        <button class="btn btn-sm ${ativo ? 'btn-primary' : 'btn-outline-secondary'}"
+                ${desabilitado ? 'disabled' : ''}
+                onclick="irParaPaginaEntradas(${pagina})">${rotulo}</button>`;
+
+    return `
+        <div class="d-flex flex-wrap justify-content-center align-items-center gap-1 my-3">
+            ${botao('<i class="fas fa-chevron-left"></i>', atual - 1, atual <= 1, false)}
+            ${paginas.map(p => p === '…'
+                ? '<span class="px-1 text-muted">…</span>'
+                : botao(p, p, false, p === atual)).join('')}
+            ${botao('<i class="fas fa-chevron-right"></i>', atual + 1, atual >= totalPaginas, false)}
+            <small class="text-muted ml-2">Página ${atual} de ${totalPaginas}</small>
+        </div>
+    `;
+}
+
+window.irParaPaginaEntradas = async function(pagina) {
+    const totalPaginas = Math.max(1, Math.ceil(totalEntradasFiltro / ENTRADAS_POR_PAGINA));
+    paginaEntradasAtual = Math.min(Math.max(1, Number(pagina) || 1), totalPaginas);
+    await carregarEntradas();
+    document.getElementById('entradasCardsContainer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+function atualizarBotoesFiltroEntradas() {
+    document.querySelectorAll('#entradasSystem .btn[data-filtro]').forEach(btn => {
+        const ativo = btn.dataset.filtro === filtroEntradasAtual;
+        btn.classList.toggle('btn-primary', ativo);
+        btn.classList.toggle('active', ativo);
+        btn.classList.toggle('btn-outline-secondary', !ativo);
+
+        const contador = btn.querySelector('[data-contagem]');
+        if (contador) {
+            const n = contagemEntradasPorStatus[btn.dataset.filtro];
+            contador.textContent = n === undefined ? '' : String(n);
+        }
+    });
+}
 
 window.filtrarEntradas = function(filtro) {
     filtroEntradasAtual = filtro;
-
-    document.querySelectorAll('#entradasSystem .btn[data-filtro]').forEach(btn => {
-        btn.classList.remove('btn-primary', 'active');
-        btn.classList.add('btn-outline-secondary');
-    });
-    const btnAtivo = document.querySelector(`#entradasSystem .btn[data-filtro="${filtro}"]`);
-    if (btnAtivo) {
-        btnAtivo.classList.remove('btn-outline-secondary');
-        btnAtivo.classList.add('btn-primary', 'active');
-    }
-
-    renderizarEntradas();
+    paginaEntradasAtual = 1;
+    atualizarBotoesFiltroEntradas();
+    carregarEntradas();
 };
+
+let temporizadorBuscaEntradas = null;
 
 window.buscarEntradas = function() {
-    renderizarEntradas();
+    clearTimeout(temporizadorBuscaEntradas);
+    temporizadorBuscaEntradas = setTimeout(() => {
+        paginaEntradasAtual = 1;
+        // Buscando: procura nos 3 status. Sem texto: volta pra um filtro.
+        filtroEntradasAtual = termoBuscaEntradas() ? null : 'pendente';
+        atualizarBotoesFiltroEntradas();
+        carregarEntradas();
+    }, 400);
 };
+
+// Exportações precisam de TODAS as entradas, não só da página da tela.
+async function carregarTodasEntradasParaExportar() {
+    const sb = window.supabaseClient;
+    const cards = [];
+
+    for (let inicio = 0; ; inicio += 1000) {
+        const { data, error } = await sb
+            .from('entradas_cards')
+            .select('*')
+            .order('criado_em', { ascending: false })
+            .order('id', { ascending: false })
+            .range(inicio, inicio + 999);
+
+        if (error) throw error;
+
+        cards.push(...(data || []));
+        if (!data || data.length < 1000) break;
+    }
+
+    const itens = await buscarItensDasEntradas(cards.map(c => c.id));
+    const itensPorCard = new Map();
+    itens.forEach(item => {
+        if (!itensPorCard.has(item.entrada_id)) itensPorCard.set(item.entrada_id, []);
+        itensPorCard.get(item.entrada_id).push(item);
+    });
+
+    return cards.map(card => ({ ...card, itens: itensPorCard.get(card.id) || [] }));
+}
+
+// ============================================
+// FUNÇÕES AUXILIARES
+// ============================================
 
 window.limparAreaEntrada = function() {
     document.getElementById('entradaPasteArea').value = '';
