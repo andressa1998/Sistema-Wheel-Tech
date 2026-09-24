@@ -43634,7 +43634,7 @@ async function carregarPreEntradasRastreioEstoque() {
     try {
 
         const {
-            data: cards,
+            data: cardsRastreio,
             error: erroCards
         } =
             await window.supabaseClient
@@ -43664,6 +43664,53 @@ async function carregarPreEntradasRastreioEstoque() {
         }
 
 
+        // Itens de rastreio que entraram numa entrada de outro tipo
+        // (mesmo rastreio juntado a uma entrada XML/manual).
+        const idsBaseRastreio = new Set((cardsRastreio || []).map(c => String(c.id)));
+        const idsExtrasRastreio = new Set();
+
+        for (let inicio = 0; inicio < 5000; inicio += 1000) {
+
+            const { data: itensRastreio, error: erroItensRastreio } =
+                await window.supabaseClient
+                    .from('entrada_items')
+                    .select('entrada_id')
+                    .eq('tipo_entrada', 'rastreio')
+                    .order('id', { ascending: false })
+                    .range(inicio, inicio + 999);
+
+            if (erroItensRastreio) {
+                throw erroItensRastreio;
+            }
+
+            (itensRastreio || []).forEach(i => {
+                if (!idsBaseRastreio.has(String(i.entrada_id))) idsExtrasRastreio.add(i.entrada_id);
+            });
+
+            if (!itensRastreio || itensRastreio.length < 1000) break;
+        }
+
+        const cardsExtras = [];
+        const listaExtras = [...idsExtrasRastreio];
+
+        for (let i = 0; i < listaExtras.length; i += 100) {
+
+            const { data: lote, error: erroLote } =
+                await window.supabaseClient
+                    .from('entradas_cards')
+                    .select('id, numero_entrada, status, tipo_entrada, fornecedor, dados_brutos, criado_em')
+                    .in('id', listaExtras.slice(i, i + 100));
+
+            if (erroLote) {
+                throw erroLote;
+            }
+
+            cardsExtras.push(...(lote || []));
+        }
+
+        const cards = [...(cardsRastreio || []), ...cardsExtras];
+
+
         rastreiosCompraPorProduto =
             new Map();
 
@@ -43690,27 +43737,30 @@ async function carregarPreEntradasRastreioEstoque() {
             );
 
 
-        const {
-            data: itens,
-            error: erroItens
-        } =
-            await window.supabaseClient
-                .from(
-                    'entrada_items'
-                )
-                .select(
-                    'id, entrada_id, produto_id, sku_original, sku_match, quantidade, status, rastreio, fornecedor_nome, observacao, valor_custo'
-                )
-                .in(
-                    'entrada_id',
-                    idsCards
-                );
+        const itens = [];
 
+        for (let i = 0; i < idsCards.length; i += 50) {
 
-        if (
-            erroItens
-        ) {
-            throw erroItens;
+            const idsLote = idsCards.slice(i, i + 50);
+
+            for (let inicio = 0; ; inicio += 1000) {
+
+                const { data: lote, error: erroItens } =
+                    await window.supabaseClient
+                        .from('entrada_items')
+                        .select('id, entrada_id, produto_id, sku_original, sku_match, quantidade, status, rastreio, fornecedor_nome, observacao, valor_custo, tipo_entrada')
+                        .in('entrada_id', idsLote)
+                        .order('id', { ascending: true })
+                        .range(inicio, inicio + 999);
+
+                if (erroItens) {
+                    throw erroItens;
+                }
+
+                itens.push(...(lote || []));
+
+                if (!lote || lote.length < 1000) break;
+            }
         }
 
 
@@ -43731,6 +43781,21 @@ async function carregarPreEntradasRastreioEstoque() {
             const item
             of itens || []
         ) {
+
+            // Em entradas de outro tipo (XML/manual) só contam os itens
+            // que vieram de rastreio informado na Gestão de Estoque.
+            const cardDoItem =
+                cardsMap.get(String(item.entrada_id));
+
+            if (
+                !cardDoItem ||
+                (
+                    cardDoItem.tipo_entrada !== 'rastreio' &&
+                    item.tipo_entrada !== 'rastreio'
+                )
+            ) {
+                continue;
+            }
 
             let produtoId =
                 item.produto_id;
@@ -43870,7 +43935,7 @@ async function carregarPreEntradasRastreioEstoque() {
                 previsao_chegada:
                     metadata
                         .previsao_chegada ||
-                    '',
+                    previsaoDoObservacaoItemRastreio(item.observacao),
 
                 observacao:
                     metadata
@@ -43926,6 +43991,29 @@ async function carregarPreEntradasRastreioEstoque() {
         );
 
     }
+}
+
+
+// Itens juntados a uma entrada de outro tipo não têm os metadados da
+// pré-entrada no card; a previsão fica gravada na observação do item
+// ("Previsão: DD/MM/AAAA | ...").
+function previsaoDoObservacaoItemRastreio(observacao) {
+
+    const texto = String(observacao || '');
+    const marca = 'Previsão: ';
+    const inicio = texto.indexOf(marca);
+
+    if (inicio < 0) {
+        return '';
+    }
+
+    const partes = texto.slice(inicio + marca.length, inicio + marca.length + 10).split('/');
+
+    if (partes.length !== 3 || partes[2].length !== 4) {
+        return '';
+    }
+
+    return `${partes[2]}-${partes[1]}-${partes[0]}`;
 }
 
 
@@ -46336,54 +46424,80 @@ async function salvarCompraRastreio() {
 
 
     // =====================================================
-    // RASTREIO DUPLICADO
+    // RASTREIO JÁ EXISTENTE — JUNTA NA MESMA ENTRADA
+    //
+    // Mesmo rastreio com produtos diferentes: os itens entram na
+    // entrada que já existe (igual à aba Entradas), e ela volta
+    // pra "a caminho". Só bloqueia o MESMO produto no mesmo rastreio.
     // =====================================================
+
+    let entradaExistente = null;
 
     try {
 
         const {
-            data: rastreioExistente,
+            data: itensDoRastreio,
             error: erroDuplicidade
         } =
             await window.supabaseClient
-                .from(
-                    'entrada_items'
-                )
-                .select(
-                    'id, entrada_id'
-                )
-                .eq(
-                    'rastreio',
-                    rastreio
-                )
-                .limit(
-                    1
-                );
+                .from('entrada_items')
+                .select('id, entrada_id, produto_id, sku_original, sku_match')
+                .eq('rastreio', rastreio)
+                .limit(500);
 
-
-        if (
-            erroDuplicidade
-        ) {
-
+        if (erroDuplicidade) {
             throw erroDuplicidade;
-
         }
 
-
         if (
-            rastreioExistente &&
-            rastreioExistente.length >
-                0
+            itensDoRastreio &&
+            itensDoRastreio.length > 0
         ) {
 
-            showToast(
-                `❌ O rastreio "${rastreio}" já está cadastrado em uma entrada.`,
-                'error'
+            const skusJaNoRastreio = new Set(
+                itensDoRastreio.flatMap(
+                    i => [i.sku_original, i.sku_match]
+                        .map(v => String(v || '').trim())
+                        .filter(Boolean)
+                )
             );
 
-            return;
-        }
+            const idsJaNoRastreio = new Set(
+                itensDoRastreio
+                    .map(i => i.produto_id)
+                    .filter(v => v !== null && v !== undefined)
+                    .map(String)
+            );
 
+            const repetido = itens.find(
+                item =>
+                    idsJaNoRastreio.has(String(item.produto.id)) ||
+                    skusJaNoRastreio.has(String(item.produto.sku || '').trim())
+            );
+
+            if (repetido) {
+
+                showToast(
+                    `❌ O produto ${repetido.produto.sku} já está neste rastreio ("${rastreio}").`,
+                    'error'
+                );
+
+                return;
+            }
+
+            const { data: cardsDoRastreio, error: erroCardRastreio } =
+                await window.supabaseClient
+                    .from('entradas_cards')
+                    .select('id, numero_entrada, status, total_items, finalizado_em, finalizado_por')
+                    .eq('id', itensDoRastreio[0].entrada_id)
+                    .limit(1);
+
+            if (erroCardRastreio) {
+                throw erroCardRastreio;
+            }
+
+            entradaExistente = cardsDoRastreio?.[0] || null;
+        }
 
     } catch (error) {
 
@@ -46391,7 +46505,6 @@ async function salvarCompraRastreio() {
             'Erro verificando rastreio:',
             error
         );
-
 
         showToast(
             '❌ Não foi possível verificar o rastreio.',
@@ -46409,7 +46522,9 @@ async function salvarCompraRastreio() {
     if (
         !confirm(
 
-            `Criar pré-entrada?\n\n` +
+            (entradaExistente
+                ? `Juntar à entrada ${entradaExistente.numero_entrada} (mesmo rastreio)?\n\n`
+                : `Criar pré-entrada?\n\n`) +
 
             `Rastreio: ${rastreio}\n` +
 
@@ -46469,6 +46584,10 @@ async function salvarCompraRastreio() {
         null;
 
 
+    let itensInseridosIds =
+        [];
+
+
     let itensCriados =
         false;
 
@@ -46480,7 +46599,9 @@ async function salvarCompraRastreio() {
         // =================================================
 
         const numeroEntrada =
-            await gerarNumeroEntradaRastreioCompra();
+            entradaExistente
+                ? entradaExistente.numero_entrada
+                : await gerarNumeroEntradaRastreioCompra();
 
 
         // =================================================
@@ -46526,78 +46647,104 @@ async function salvarCompraRastreio() {
 
 
         // =================================================
-        // CRIAR CARD
+        // CRIAR CARD (ou reaproveitar a entrada do mesmo rastreio)
         // =================================================
 
-        const {
-            data: cards,
-            error: erroCard
-        } =
-            await window.supabaseClient
-                .from(
-                    'entradas_cards'
-                )
-                .insert([
-                    {
+        if (entradaExistente) {
 
-                        numero_entrada:
-                            numeroEntrada,
-
-                        dados_brutos:
-                            JSON.stringify(
-                                metadata
-                            ),
-
-                        // Pré-entrada criada na Gestão de Estoque nasce "a caminho":
-                        // aparece na lista "A caminho" da aba Entradas com o botão
-                        // "Chegou"; só depois disso fica disponível pra dar entrada.
-                        status:
-                            'a_caminho',
-
-                        criado_por:
-                            currentUser?.name ||
-                            currentUser?.username ||
-                            'Admin',
-
-                        criado_em:
-                            new Date()
-                                .toISOString(),
-
+            const { error: erroJuntar } =
+                await window.supabaseClient
+                    .from('entradas_cards')
+                    .update({
+                        status: 'a_caminho',
                         total_items:
-                            itens.length,
+                            (entradaExistente.total_items || 0) + itens.length,
+                        finalizado_em: null,
+                        finalizado_por: null
+                    })
+                    .eq('id', entradaExistente.id);
 
-                        items_concluidos:
-                            0,
+            if (erroJuntar) {
+                throw erroJuntar;
+            }
 
-                        tipo_entrada:
-                            'rastreio',
+            cardCriado = entradaExistente;
 
-                        fornecedor:
-                            fornecedor
-
-                    }
-                ])
-                .select();
-
-
-        if (
-            erroCard
-        ) {
-
-            throw erroCard;
-
-        }
+        } else {
 
 
-        cardCriado =
-            cards?.[0];
+            const {
+                data: cards,
+                error: erroCard
+            } =
+                await window.supabaseClient
+                    .from(
+                        'entradas_cards'
+                    )
+                    .insert([
+                        {
+
+                            numero_entrada:
+                                numeroEntrada,
+
+                            dados_brutos:
+                                JSON.stringify(
+                                    metadata
+                                ),
+
+                            // Pré-entrada criada na Gestão de Estoque nasce "a caminho":
+                            // aparece na lista "A caminho" da aba Entradas com o botão
+                            // "Chegou"; só depois disso fica disponível pra dar entrada.
+                            status:
+                                'a_caminho',
+
+                            criado_por:
+                                currentUser?.name ||
+                                currentUser?.username ||
+                                'Admin',
+
+                            criado_em:
+                                new Date()
+                                    .toISOString(),
+
+                            total_items:
+                                itens.length,
+
+                            items_concluidos:
+                                0,
+
+                            tipo_entrada:
+                                'rastreio',
+
+                            fornecedor:
+                                fornecedor
+
+                        }
+                    ])
+                    .select();
 
 
-        if (!cardCriado) {
+            if (
+                erroCard
+            ) {
 
-            throw new Error(
-                'A entrada não foi retornada pelo Supabase.'
-            );
+                throw erroCard;
+
+            }
+
+
+            cardCriado =
+                cards?.[0];
+
+
+            if (!cardCriado) {
+
+                throw new Error(
+                    'A entrada não foi retornada pelo Supabase.'
+                );
+
+            }
+
 
         }
 
@@ -46691,6 +46838,7 @@ async function salvarCompraRastreio() {
 
 
         const {
+            data: itensInseridos,
             error: erroItens
         } =
             await window.supabaseClient
@@ -46699,7 +46847,8 @@ async function salvarCompraRastreio() {
                 )
                 .insert(
                     itensParaInserir
-                );
+                )
+                .select('id');
 
 
         if (
@@ -46709,6 +46858,10 @@ async function salvarCompraRastreio() {
             throw erroItens;
 
         }
+
+
+        itensInseridosIds =
+            (itensInseridos || []).map(i => i.id);
 
 
         itensCriados =
@@ -46837,7 +46990,9 @@ async function salvarCompraRastreio() {
 
 
         showToast(
-            `✅ Pré-entrada ${numeroEntrada} criada! ${quantidadeTotal} unidade(s) vinculada(s) ao rastreio.`,
+            entradaExistente
+                ? `✅ ${quantidadeTotal} unidade(s) juntada(s) à entrada ${numeroEntrada} (mesmo rastreio). Ela voltou para "a caminho".`
+                : `✅ Pré-entrada ${numeroEntrada} criada! ${quantidadeTotal} unidade(s) vinculada(s) ao rastreio.`,
             'success'
         );
 
@@ -46855,6 +47010,42 @@ async function salvarCompraRastreio() {
         // =================================================
 
         if (
+            cardCriado?.id &&
+            entradaExistente
+        ) {
+
+            // Entrada que já existia: desfaz só o que este envio fez.
+            try {
+
+                if (itensInseridosIds.length) {
+
+                    await window.supabaseClient
+                        .from('entrada_items')
+                        .delete()
+                        .in('id', itensInseridosIds);
+
+                }
+
+                await window.supabaseClient
+                    .from('entradas_cards')
+                    .update({
+                        status: entradaExistente.status,
+                        total_items: entradaExistente.total_items || 0,
+                        finalizado_em: entradaExistente.finalizado_em || null,
+                        finalizado_por: entradaExistente.finalizado_por || null
+                    })
+                    .eq('id', entradaExistente.id);
+
+            } catch (rollbackError) {
+
+                console.error(
+                    '❌ Erro fazendo rollback:',
+                    rollbackError
+                );
+
+            }
+
+        } else if (
             cardCriado?.id
         ) {
 
