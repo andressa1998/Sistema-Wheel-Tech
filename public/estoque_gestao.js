@@ -3,6 +3,9 @@
 // ============================================
 
 let produtosEstoque = [];
+// ===== ESTOQUE EXTRA (Buraco / Mezanino / Parte de baixo / etc.) =====
+// Map: produto_id (string) -> array de { id, localizacao, texto }
+let mapaEstoqueExtra = new Map();
 // ===== VARIÁVEIS DE PAGINAÇÃO =====
 let paginaAtualEstoque = 1;
 let itensPorPaginaEstoque = 20;
@@ -3099,6 +3102,23 @@ function moverBotoesParaMenuAcessibilidadeEstoque() {
 
 
     // =====================================================
+    // ESTOQUE EXTRA
+    // =====================================================
+
+    const btnEstoqueExtra =
+        document.getElementById(
+            'btnEstoqueExtra'
+        );
+
+    if (btnEstoqueExtra) {
+        candidatos.push({
+            botao: btnEstoqueExtra,
+            ordem: 66
+        });
+    }
+
+
+    // =====================================================
     // LIMPAR FILTROS
     // =====================================================
 
@@ -3160,6 +3180,502 @@ function moverBotoesParaMenuAcessibilidadeEstoque() {
             }
         );
 }
+
+
+// =========================================================
+// ESTOQUE EXTRA (Buraco / Mezanino / Parte de baixo / etc.)
+// =========================================================
+
+let itensEstoqueExtraCompletos = [];
+let previaImportacaoEstoqueExtra = [];
+
+function normalizarTextoParaBuscaSku(valor) {
+    return String(valor || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '');
+}
+
+function encontrarProdutoParaEstoqueExtra(texto) {
+    const alvo = normalizarTextoParaBuscaSku(texto);
+    if (!alvo) return null;
+
+    let achado = produtosEstoque.find(
+        p => normalizarTextoParaBuscaSku(p.sku) === alvo
+    );
+    if (achado) return achado;
+
+    const semZeros = alvo.replace(/^0+/, '');
+    if (semZeros) {
+        achado = produtosEstoque.find(
+            p => normalizarTextoParaBuscaSku(p.sku).replace(/^0+/, '') === semZeros
+        );
+        if (achado) return achado;
+    }
+
+    return null;
+}
+
+function parseListaEstoqueExtra(texto) {
+    const linhas = String(texto || '').split(/\r?\n/);
+    let localizacaoAtual = null;
+    const itens = [];
+    const vistos = new Set();
+
+    linhas.forEach(linhaBruta => {
+        const linha = linhaBruta.trim();
+        if (!linha) return;
+
+        if (linha.endsWith(':')) {
+            localizacaoAtual = linha.slice(0, -1).trim();
+            return;
+        }
+
+        if (!localizacaoAtual) return;
+
+        const chave = `${localizacaoAtual}||${linha}`;
+        if (vistos.has(chave)) return;
+        vistos.add(chave);
+
+        itens.push({
+            localizacao: localizacaoAtual,
+            texto: linha
+        });
+    });
+
+    return itens;
+}
+
+async function carregarEstoqueExtra() {
+    if (!window.supabaseClient) return;
+
+    const { data, error } = await window.supabaseClient
+        .from('estoque_extra')
+        .select('id, localizacao, texto, produto_id')
+        .eq('ativo', true)
+        .not('produto_id', 'is', null);
+
+    if (error) {
+        console.warn('⚠️ Erro carregando estoque extra:', error);
+        return;
+    }
+
+    mapaEstoqueExtra = new Map();
+
+    (data || []).forEach(item => {
+        const chave = String(item.produto_id);
+        if (!mapaEstoqueExtra.has(chave)) {
+            mapaEstoqueExtra.set(chave, []);
+        }
+        mapaEstoqueExtra.get(chave).push(item);
+    });
+}
+
+async function carregarListaCompletaEstoqueExtra() {
+    if (!window.supabaseClient) return;
+
+    const { data, error } = await window.supabaseClient
+        .from('estoque_extra')
+        .select('id, localizacao, texto, produto_id')
+        .eq('ativo', true)
+        .order('localizacao', { ascending: true })
+        .order('texto', { ascending: true });
+
+    if (error) {
+        console.warn('⚠️ Erro carregando lista completa de estoque extra:', error);
+        return;
+    }
+
+    itensEstoqueExtraCompletos = data || [];
+}
+
+function nomeUsuarioAtualEstoqueExtra() {
+    return currentUser?.name || currentUser?.username || 'Sistema';
+}
+
+function renderizarLinhaEstoqueExtraModal(item) {
+    const produto = item.produto_id
+        ? produtosEstoque.find(p => p.id === item.produto_id)
+        : null;
+
+    const vinculoHtml = produto
+        ? `<span style="color:#146c2e;"><i class="fas fa-check-circle"></i> ${escapeHtml(produto.nome)} <code>${escapeHtml(produto.sku)}</code></span>`
+        : `<span style="color:#b02a37;"><i class="fas fa-unlink"></i> Sem vínculo com nenhum SKU</span>`;
+
+    return `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #f0f0f0;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;">${escapeHtml(item.texto)}</div>
+                <div style="font-size:12px;">${vinculoHtml}</div>
+            </div>
+            ${
+                !produto
+                    ? `
+                        <input type="text" id="vincInput_${item.id}" placeholder="SKU para vincular" style="width:150px;font-size:12px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;">
+                        <button class="btn btn-sm btn-outline-primary" onclick="window.vincularItemEstoqueExtraPorSku(${item.id})" title="Vincular a um SKU">
+                            <i class="fas fa-link"></i>
+                        </button>
+                    `
+                    : ''
+            }
+            <button class="btn btn-sm btn-outline-danger" onclick="window.removerItemEstoqueExtra(${item.id})" title="Remover">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `;
+}
+
+function renderizarListaEstoqueExtraModal(filtroTexto = '') {
+    const container = document.getElementById('listaEstoqueExtraContainer');
+    if (!container) return;
+
+    const termo = normalizarTextoParaBuscaSku(filtroTexto);
+
+    const grupos = new Map();
+
+    itensEstoqueExtraCompletos
+        .filter(item => {
+            if (!termo) return true;
+
+            const produto = item.produto_id
+                ? produtosEstoque.find(p => p.id === item.produto_id)
+                : null;
+
+            const alvo = normalizarTextoParaBuscaSku(
+                `${item.texto} ${produto?.sku || ''} ${produto?.nome || ''}`
+            );
+
+            return alvo.includes(termo);
+        })
+        .forEach(item => {
+            const loc = item.localizacao || 'Sem localização';
+            if (!grupos.has(loc)) grupos.set(loc, []);
+            grupos.get(loc).push(item);
+        });
+
+    if (grupos.size === 0) {
+        container.innerHTML = `
+            <div style="text-align:center;padding:30px;color:#6c757d;">
+                Nenhum item encontrado.
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+
+    for (const [loc, itens] of grupos) {
+        html += `
+            <div style="margin-bottom:18px;">
+                <div style="font-weight:700;color:#58595B;margin-bottom:6px;">
+                    <i class="fas fa-map-marker-alt"></i> ${escapeHtml(loc)} (${itens.length})
+                </div>
+                <div style="border:1px solid #eee;border-radius:8px;overflow:hidden;">
+                    ${itens.map(item => renderizarLinhaEstoqueExtraModal(item)).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
+}
+
+window.analisarListaEstoqueExtra = function() {
+    const textarea = document.getElementById('textareaImportarEstoqueExtra');
+    if (!textarea) return;
+
+    const itens = parseListaEstoqueExtra(textarea.value);
+
+    if (itens.length === 0) {
+        showToast(
+            '⚠️ Nenhum item reconhecido. Confira o formato (cabeçalho da localização termina com ":", itens em seguida, um por linha).',
+            'warning'
+        );
+        return;
+    }
+
+    previaImportacaoEstoqueExtra = itens.map(item => ({
+        ...item,
+        produto: encontrarProdutoParaEstoqueExtra(item.texto)
+    }));
+
+    renderizarPreviaImportacaoEstoqueExtra();
+};
+
+function renderizarPreviaImportacaoEstoqueExtra() {
+    const container = document.getElementById('previaImportacaoEstoqueExtraContainer');
+    if (!container) return;
+
+    const vinculados = previaImportacaoEstoqueExtra.filter(i => i.produto).length;
+    const semVinculo = previaImportacaoEstoqueExtra.length - vinculados;
+
+    let html = `
+        <div style="margin-bottom:10px;font-size:13px;">
+            <b>${previaImportacaoEstoqueExtra.length}</b> itens encontrados —
+            <span style="color:#146c2e;"><b>${vinculados}</b> vinculados automaticamente a um SKU</span>,
+            <span style="color:#b02a37;"><b>${semVinculo}</b> sem SKU correspondente (salvos como texto livre — vincule depois na lista abaixo)</span>
+        </div>
+        <div style="max-height:260px;overflow-y:auto;border:1px solid #eee;border-radius:8px;">
+    `;
+
+    previaImportacaoEstoqueExtra.forEach(item => {
+        html += `
+            <div style="display:flex;gap:10px;align-items:center;padding:6px 10px;border-bottom:1px solid #f5f5f5;font-size:12px;">
+                <span style="width:110px;flex-shrink:0;color:#6c757d;">${escapeHtml(item.localizacao)}</span>
+                <span style="flex:1;">${escapeHtml(item.texto)}</span>
+                <span style="flex:1;">
+                    ${
+                        item.produto
+                            ? `<span style="color:#146c2e;"><i class="fas fa-check-circle"></i> ${escapeHtml(item.produto.nome)} <code>${escapeHtml(item.produto.sku)}</code></span>`
+                            : `<span style="color:#b02a37;"><i class="fas fa-question-circle"></i> não encontrado</span>`
+                    }
+                </span>
+            </div>
+        `;
+    });
+
+    html += `
+        </div>
+        <div style="margin-top:12px;text-align:right;">
+            <button class="btn btn-success" onclick="window.confirmarImportacaoEstoqueExtra()">
+                <i class="fas fa-check"></i> Confirmar importação (${previaImportacaoEstoqueExtra.length} itens)
+            </button>
+        </div>
+    `;
+
+    container.innerHTML = html;
+    container.style.display = 'block';
+}
+
+window.confirmarImportacaoEstoqueExtra = async function() {
+    if (previaImportacaoEstoqueExtra.length === 0) return;
+
+    const confirmar = confirm(
+        `Importar ${previaImportacaoEstoqueExtra.length} itens de estoque extra?`
+    );
+    if (!confirmar) return;
+
+    const registros = previaImportacaoEstoqueExtra.map(item => ({
+        localizacao: item.localizacao,
+        texto: item.texto,
+        produto_id: item.produto ? item.produto.id : null,
+        ativo: true,
+        criado_por: nomeUsuarioAtualEstoqueExtra()
+    }));
+
+    const { error } = await window.supabaseClient
+        .from('estoque_extra')
+        .insert(registros);
+
+    if (error) {
+        showToast('❌ Erro ao importar: ' + error.message, 'error');
+        return;
+    }
+
+    showToast(`✅ ${registros.length} itens importados.`, 'success');
+
+    previaImportacaoEstoqueExtra = [];
+
+    const textarea = document.getElementById('textareaImportarEstoqueExtra');
+    if (textarea) textarea.value = '';
+
+    const previa = document.getElementById('previaImportacaoEstoqueExtraContainer');
+    if (previa) previa.style.display = 'none';
+
+    await carregarListaCompletaEstoqueExtra();
+    renderizarListaEstoqueExtraModal();
+    await carregarEstoqueExtra();
+    aplicarFiltrosEOrdenacao();
+};
+
+window.removerItemEstoqueExtra = async function(id) {
+    const confirmar = confirm('Remover este item do estoque extra?');
+    if (!confirmar) return;
+
+    const { error } = await window.supabaseClient
+        .from('estoque_extra')
+        .update({
+            ativo: false,
+            atualizado_por: nomeUsuarioAtualEstoqueExtra(),
+            atualizado_em: new Date().toISOString()
+        })
+        .eq('id', id);
+
+    if (error) {
+        showToast('❌ Erro ao remover: ' + error.message, 'error');
+        return;
+    }
+
+    showToast('🗑️ Item removido do estoque extra.', 'success');
+
+    await carregarListaCompletaEstoqueExtra();
+    renderizarListaEstoqueExtraModal();
+    await carregarEstoqueExtra();
+    aplicarFiltrosEOrdenacao();
+};
+
+window.vincularItemEstoqueExtraPorSku = async function(id) {
+    const input = document.getElementById(`vincInput_${id}`);
+    const skuDigitado = input ? input.value : '';
+
+    const produto = encontrarProdutoParaEstoqueExtra(skuDigitado);
+
+    if (!produto) {
+        showToast('⚠️ Nenhum produto encontrado com esse SKU.', 'warning');
+        return;
+    }
+
+    const { error } = await window.supabaseClient
+        .from('estoque_extra')
+        .update({
+            produto_id: produto.id,
+            atualizado_por: nomeUsuarioAtualEstoqueExtra(),
+            atualizado_em: new Date().toISOString()
+        })
+        .eq('id', id);
+
+    if (error) {
+        showToast('❌ Erro ao vincular: ' + error.message, 'error');
+        return;
+    }
+
+    showToast(`✅ Vinculado a ${produto.nome} (${produto.sku}).`, 'success');
+
+    await carregarListaCompletaEstoqueExtra();
+    renderizarListaEstoqueExtraModal();
+    await carregarEstoqueExtra();
+    aplicarFiltrosEOrdenacao();
+};
+
+window.adicionarItemEstoqueExtraManual = async function() {
+    const loc = document.getElementById('novoItemEstoqueExtraLocalizacao');
+    const txt = document.getElementById('novoItemEstoqueExtraTexto');
+
+    const localizacao = loc ? loc.value.trim() : '';
+    const texto = txt ? txt.value.trim() : '';
+
+    if (!localizacao || !texto) {
+        showToast('⚠️ Preencha localização e o SKU/descrição.', 'warning');
+        return;
+    }
+
+    const produto = encontrarProdutoParaEstoqueExtra(texto);
+
+    const { error } = await window.supabaseClient
+        .from('estoque_extra')
+        .insert([{
+            localizacao,
+            texto,
+            produto_id: produto ? produto.id : null,
+            ativo: true,
+            criado_por: nomeUsuarioAtualEstoqueExtra()
+        }]);
+
+    if (error) {
+        showToast('❌ Erro ao adicionar: ' + error.message, 'error');
+        return;
+    }
+
+    showToast(
+        produto
+            ? `✅ Adicionado e vinculado a ${produto.nome} (${produto.sku}).`
+            : '✅ Adicionado (sem SKU correspondente encontrado — vincule manualmente na lista).',
+        'success'
+    );
+
+    if (txt) txt.value = '';
+
+    await carregarListaCompletaEstoqueExtra();
+    renderizarListaEstoqueExtraModal();
+    await carregarEstoqueExtra();
+    aplicarFiltrosEOrdenacao();
+};
+
+function criarModalEstoqueExtra() {
+    const modal = document.createElement('div');
+    modal.id = 'modalEstoqueExtra';
+    modal.className = 'modal';
+    modal.style.cssText = 'display:none;align-items:center;justify-content:center;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;';
+
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:920px;width:95%;background:white;padding:0;border-radius:12px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;">
+            <div style="background:linear-gradient(135deg,#00ADEE,#0087b8);color:white;padding:18px 26px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                <div>
+                    <h3 style="margin:0;font-size:19px;"><i class="fas fa-warehouse"></i> Estoque Extra</h3>
+                    <p style="margin:4px 0 0 0;opacity:0.9;font-size:13px;">Itens guardados em locais separados (Buraco, Mezanino, Parte de baixo, etc.)</p>
+                </div>
+                <button onclick="window.fecharModalEstoqueExtra()" style="background:rgba(255,255,255,0.2);border:none;width:36px;height:36px;border-radius:50%;cursor:pointer;color:white;font-size:18px;">&times;</button>
+            </div>
+
+            <div style="padding:18px 22px;overflow-y:auto;flex:1;">
+
+                <details style="margin-bottom:18px;border:1px solid #e5e5e5;border-radius:8px;padding:10px 14px;">
+                    <summary style="cursor:pointer;font-weight:700;color:#58595B;"><i class="fas fa-file-import"></i> Importar lista colada</summary>
+                    <div style="margin-top:10px;">
+                        <p style="font-size:12px;color:#6c757d;margin-bottom:6px;">
+                            Cole a lista com cabeçalhos de localização terminando em ":" (ex: <code>Buraco:</code>), seguidos dos SKUs/itens, um por linha.
+                        </p>
+                        <textarea id="textareaImportarEstoqueExtra" rows="6" style="width:100%;font-family:monospace;font-size:12px;padding:8px;border:1px solid #ccc;border-radius:6px;" placeholder="Buraco:&#10;SKU1&#10;SKU2&#10;&#10;Mezanino:&#10;SKU3"></textarea>
+                        <div style="margin-top:8px;text-align:right;">
+                            <button class="btn btn-sm btn-outline-primary" onclick="window.analisarListaEstoqueExtra()">
+                                <i class="fas fa-search"></i> Analisar lista
+                            </button>
+                        </div>
+                        <div id="previaImportacaoEstoqueExtraContainer" style="display:none;margin-top:10px;"></div>
+                    </div>
+                </details>
+
+                <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;">
+                    <div>
+                        <label style="font-size:11px;color:#6c757d;display:block;">Localização</label>
+                        <input type="text" id="novoItemEstoqueExtraLocalizacao" list="listaLocalizacoesEstoqueExtra" placeholder="Ex: Buraco" style="padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;">
+                        <datalist id="listaLocalizacoesEstoqueExtra">
+                            <option value="Buraco">
+                            <option value="Mezanino">
+                            <option value="Parte de baixo">
+                        </datalist>
+                    </div>
+                    <div style="flex:1;min-width:180px;">
+                        <label style="font-size:11px;color:#6c757d;display:block;">SKU ou descrição</label>
+                        <input type="text" id="novoItemEstoqueExtraTexto" placeholder="SKU ou descrição do item" style="width:100%;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;">
+                    </div>
+                    <button class="btn btn-sm btn-success" onclick="window.adicionarItemEstoqueExtraManual()">
+                        <i class="fas fa-plus"></i> Adicionar
+                    </button>
+                </div>
+
+                <input type="text" id="filtroListaEstoqueExtra" placeholder="🔍 Buscar na lista..." style="width:100%;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;margin-bottom:12px;" oninput="renderizarListaEstoqueExtraModal(this.value)">
+
+                <div id="listaEstoqueExtraContainer"></div>
+
+            </div>
+
+            <div style="background:#f8f9fa;padding:12px 22px;border-top:1px solid #dee2e6;display:flex;justify-content:flex-end;flex-shrink:0;">
+                <button class="btn btn-secondary" onclick="window.fecharModalEstoqueExtra()">Fechar</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    return modal;
+}
+
+window.abrirModalEstoqueExtra = async function() {
+    let modal = document.getElementById('modalEstoqueExtra');
+    if (!modal) {
+        modal = criarModalEstoqueExtra();
+    }
+
+    modal.style.display = 'flex';
+
+    await carregarListaCompletaEstoqueExtra();
+    renderizarListaEstoqueExtraModal();
+};
+
+window.fecharModalEstoqueExtra = function() {
+    const modal = document.getElementById('modalEstoqueExtra');
+    if (modal) modal.style.display = 'none';
+};
 
 
 // =========================================================
@@ -4276,6 +4792,38 @@ async function carregarProdutosEstoque() {
 
                         console.warn(
                             '⚠️ Não foi possível atualizar rastreios:',
+                            error
+                        );
+
+                    }
+                );
+
+        }
+
+
+        // =====================================================
+        // ESTOQUE EXTRA
+        //
+        // Carrega em paralelo e, ao terminar, re-renderiza pra
+        // já mostrar os selos de "estoque extra" na tabela.
+        // =====================================================
+
+        if (
+            typeof carregarEstoqueExtra ===
+            'function'
+        ) {
+
+            carregarEstoqueExtra()
+                .then(
+                    () => {
+                        aplicarFiltrosEOrdenacao();
+                    }
+                )
+                .catch(
+                    error => {
+
+                        console.warn(
+                            '⚠️ Não foi possível carregar estoque extra:',
                             error
                         );
 
@@ -6089,6 +6637,64 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
 
 
             // =================================================
+            // ESTOQUE EXTRA
+            // =================================================
+
+            const itensExtraDoProduto =
+                mapaEstoqueExtra.get(
+                    String(
+                        prod.id
+                    )
+                ) ||
+                [];
+
+
+            const extraBadgeHtml =
+                itensExtraDoProduto.length >
+                0
+
+                    ? `
+
+                        <br>
+
+                        <span
+                            class="badge badge-warning"
+                            style="
+                                color: #664d03;
+                                background: #fff3cd;
+                                border: 1px solid #ffe08a;
+                            "
+                            title="${escapeHtml(
+                                itensExtraDoProduto
+                                    .map(
+                                        item =>
+                                            item.localizacao
+                                    )
+                                    .join(', ')
+                            )}"
+                        >
+
+                            <i class="fas fa-warehouse"></i>
+                            Extra:
+                            ${escapeHtml(
+                                [
+                                    ...new Set(
+                                        itensExtraDoProduto.map(
+                                            item =>
+                                                item.localizacao
+                                        )
+                                    )
+                                ].join(', ')
+                            )}
+
+                        </span>
+
+                    `
+
+                    : '';
+
+
+            // =================================================
             // VERIFICAR SE O PRODUTO JÁ ESTÁ SELECIONADO
             //
             // A seleção permanece mesmo quando muda a página.
@@ -6211,6 +6817,8 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
                         )}
 
                     </small>
+
+                    ${extraBadgeHtml}
 
                 </td>
 
