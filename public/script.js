@@ -25314,6 +25314,35 @@ window.salvarEdicaoOS =
 
 
         // ====================================================
+        // LINK DO ANÚNCIO JÁ CONTA COMO "ANÚNCIO CRIADO"
+        //
+        // Antes só sumia o aviso "Aguardando anúncio" clicando num
+        // botão de confirmação separado — colocar o link (velho ou
+        // novo) já é a prova de que o anúncio existe, não faz
+        // sentido pedir uma segunda confirmação manual pra isso.
+        // ====================================================
+
+        const ehOSDeAnuncio =
+            photoType === 'criar_anuncio' ||
+            photoType === 'replicar_anuncio';
+
+        const temLinkDeAnuncio =
+            Boolean(linkAnuncio) ||
+            Boolean(linkNovoAnuncio);
+
+        if (
+            ehOSDeAnuncio &&
+            temLinkDeAnuncio &&
+            !order.anuncio_criado
+        ) {
+
+            updateData.anuncio_criado = true;
+            updateData.anuncio_criado_por = currentUser.name;
+            updateData.anuncio_criado_data = agoraISO;
+        }
+
+
+        // ====================================================
         // ADMIN ALTERA MOTIVO
         // ====================================================
 
@@ -25584,7 +25613,25 @@ window.salvarEdicaoOS =
                         updateData.motivo_rejeicao !==
                         undefined
                             ? updateData.motivo_rejeicao
-                            : old.motivo_rejeicao
+                            : old.motivo_rejeicao,
+
+                    anuncio_criado:
+                        updateData.anuncio_criado !==
+                        undefined
+                            ? updateData.anuncio_criado
+                            : old.anuncio_criado,
+
+                    anuncio_criado_por:
+                        updateData.anuncio_criado_por !==
+                        undefined
+                            ? updateData.anuncio_criado_por
+                            : old.anuncio_criado_por,
+
+                    anuncio_criado_data:
+                        updateData.anuncio_criado_data !==
+                        undefined
+                            ? updateData.anuncio_criado_data
+                            : old.anuncio_criado_data
                 };
 
 
