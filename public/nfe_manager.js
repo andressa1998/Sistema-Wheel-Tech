@@ -1265,6 +1265,297 @@ async function completarDadosFiltroFinalNFE(filtro) {
 window.completarDadosFiltroFinalNFE =
     completarDadosFiltroFinalNFE;
 
+// =========================================================
+// MODAL DE DEVOLUÇÕES
+//
+// Lista separada (não reaproveita a tabela principal de vendas —
+// aquela tem atualização linha-a-linha própria, feita para outros
+// fins, que sobrescreve o array renderizado por baixo dos panos
+// toda vez que um alerta/contador de uma venda qualquer atualiza;
+// tentar filtrar por dentro dela causava resultado errado/piscando
+// entre "filtrado" e "tudo de novo"). Busca direto do banco, então
+// sempre reflete o que está gravado agora — inclusive vendas
+// canceladas antigas que a tabela principal já parou de consultar
+// no Mercado Livre.
+// =========================================================
+
+async function contarDevolucoesNFE() {
+
+    const cli =
+        window.supabaseClient;
+
+    if (!cli) return null;
+
+    const { count, error } =
+        await cli
+            .from('vendas_nfe_cache')
+            .select('id', { count: 'exact', head: true })
+            .eq('venda_cancelada', true)
+            .eq('eh_devolucao', true);
+
+    if (error) {
+
+        console.warn(
+            '⚠️ [NFE Devolução] Erro contando devoluções:',
+            error
+        );
+
+        return null;
+    }
+
+    return count;
+}
+
+// Atualiza o número no botão "Devoluções" do topo da tela —
+// chamada de dentro de garantirControlesVendasNFE (fire-and-
+// forget, não atrasa a montagem da tela).
+function atualizarContadorBotaoDevolucoesNFE() {
+
+    contarDevolucoesNFE()
+        .then(total => {
+
+            const span =
+                document.getElementById(
+                    'contadorDevolucoesNFE'
+                );
+
+            if (span && total != null) {
+                span.textContent = total;
+            }
+        })
+        .catch(() => {});
+}
+
+// O botão "Ver" (olhinho) de cada linha do modal de devoluções
+// chama abrirDetalhesVendaNFE, que só sabe abrir vendas que já
+// estão carregadas na tabela principal (window._vendasTabelaNFEBase
+// / vendasPendentes) — uma venda cancelada há mais tempo pode não
+// estar lá. Garante um registro mínimo antes de abrir; o resto dos
+// dados do modal de detalhes vem direto do Mercado Livre mesmo.
+window.abrirDetalhesVendaDoModalDevolucoesNFE = function (idVendaML) {
+
+    if (
+        !Array.isArray(
+            window._vendasTabelaNFEBase
+        )
+    ) {
+
+        window._vendasTabelaNFEBase =
+            [];
+    }
+
+    const jaExiste =
+        window._vendasTabelaNFEBase.some(
+            v =>
+                normalizarOrderIdML(
+                    v?.id_venda_ml ||
+                    v?.id
+                ) === idVendaML
+        );
+
+    if (!jaExiste) {
+
+        window._vendasTabelaNFEBase.push({
+            id: idVendaML,
+            id_venda_ml: idVendaML
+        });
+    }
+
+    abrirDetalhesVendaNFE(
+        idVendaML
+    );
+};
+
+window.abrirModalDevolucoesNFE = async function () {
+
+    let overlay =
+        document.getElementById(
+            'modalDevolucoesNFE'
+        );
+
+    if (!overlay) {
+
+        overlay =
+            document.createElement('div');
+
+        overlay.id =
+            'modalDevolucoesNFE';
+
+        overlay.style.cssText = `
+            position:fixed;
+            inset:0;
+            z-index:100000;
+            background:rgba(0,0,0,.55);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:15px;
+        `;
+
+        overlay.addEventListener(
+            'click',
+            e => {
+                if (e.target === overlay) {
+                    overlay.remove();
+                }
+            }
+        );
+
+        document.body.appendChild(overlay);
+    }
+
+    overlay.innerHTML = `
+        <div
+            style="
+                width:min(1100px,96vw);
+                max-height:90vh;
+                overflow-y:auto;
+                background:#fff;
+                border-radius:12px;
+                box-shadow:0 12px 40px rgba(0,0,0,.30);
+            "
+        >
+            <div
+                style="
+                    position:sticky;
+                    top:0;
+                    z-index:2;
+                    background:#fff;
+                    border-bottom:1px solid #dee2e6;
+                    padding:15px 18px;
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                "
+            >
+                <div style="font-size:18px;font-weight:800;color:#0a58ca;">
+                    <i class="fas fa-undo-alt"></i>
+                    Vendas em devolução
+                </div>
+                <button
+                    type="button"
+                    onclick="document.getElementById('modalDevolucoesNFE').remove()"
+                    style="border:0;background:transparent;font-size:25px;cursor:pointer;"
+                >&times;</button>
+            </div>
+            <div id="corpoDevolucoesNFE" style="padding:18px;">
+                <div style="text-align:center;color:#6c757d;padding:30px;">
+                    <i class="fas fa-spinner fa-spin"></i> Carregando...
+                </div>
+            </div>
+        </div>
+    `;
+
+    const corpo =
+        document.getElementById(
+            'corpoDevolucoesNFE'
+        );
+
+    try {
+
+        const cli =
+            window.supabaseClient;
+
+        const linhas = [];
+        let inicio = 0;
+
+        while (true) {
+
+            const { data, error } =
+                await cli
+                    .from('vendas_nfe_cache')
+                    .select('id_venda_ml, cliente, sku, venda_cancelada_em, devolucao_motivo, devolucao_status_nome, devolucao_despachada_em, devolucao_previsao_chegada, devolucao_chegou_em, devolucao_rastreio, devolucao_transportadora')
+                    .eq('venda_cancelada', true)
+                    .eq('eh_devolucao', true)
+                    .order('devolucao_verificada_em', { ascending: false })
+                    .range(inicio, inicio + 999);
+
+            if (error) throw error;
+
+            linhas.push(...(data || []));
+
+            if (!data || data.length < 1000) break;
+
+            inicio += 1000;
+        }
+
+        if (!linhas.length) {
+
+            corpo.innerHTML = `
+                <div style="text-align:center;color:#6c757d;padding:30px;">
+                    Nenhuma devolução encontrada nas vendas canceladas.
+                </div>
+            `;
+
+            return;
+        }
+
+        corpo.innerHTML = `
+            <div style="font-size:12px;color:#6c757d;margin-bottom:10px;">
+                ${linhas.length} venda(s) em devolução
+            </div>
+            <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                <thead>
+                    <tr style="text-align:left;border-bottom:2px solid #e2e8f0;">
+                        <th style="padding:6px 8px;">Venda</th>
+                        <th style="padding:6px 8px;">Cliente</th>
+                        <th style="padding:6px 8px;">SKU</th>
+                        <th style="padding:6px 8px;">Motivo</th>
+                        <th style="padding:6px 8px;">Status</th>
+                        <th style="padding:6px 8px;">Despachada em</th>
+                        <th style="padding:6px 8px;">Previsão</th>
+                        <th style="padding:6px 8px;">Chegou em</th>
+                        <th style="padding:6px 8px;">Rastreio</th>
+                        <th style="padding:6px 8px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${linhas.map(v => `
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:6px 8px;"><code>${escaparHTMLNFE(v.id_venda_ml)}</code></td>
+                            <td style="padding:6px 8px;">${escaparHTMLNFE(v.cliente || '-')}</td>
+                            <td style="padding:6px 8px;"><code>${escaparHTMLNFE(v.sku || '-')}</code></td>
+                            <td style="padding:6px 8px;max-width:180px;">${escaparHTMLNFE(v.devolucao_motivo || '-')}</td>
+                            <td style="padding:6px 8px;color:#0a58ca;font-weight:700;">${escaparHTMLNFE(v.devolucao_status_nome || '-')}</td>
+                            <td style="padding:6px 8px;">${escaparHTMLNFE(formatarDataHoraDetalhesNFE(v.devolucao_despachada_em))}</td>
+                            <td style="padding:6px 8px;">${escaparHTMLNFE(formatarDataHoraDetalhesNFE(v.devolucao_previsao_chegada))}</td>
+                            <td style="padding:6px 8px;">${v.devolucao_chegou_em ? escaparHTMLNFE(formatarDataHoraDetalhesNFE(v.devolucao_chegou_em)) : '-'}</td>
+                            <td style="padding:6px 8px;font-size:10px;">${escaparHTMLNFE(v.devolucao_rastreio || '-')}${v.devolucao_transportadora ? ' · ' + escaparHTMLNFE(v.devolucao_transportadora) : ''}</td>
+                            <td style="padding:6px 8px;">
+                                <button
+                                    type="button"
+                                    onclick="window.abrirDetalhesVendaDoModalDevolucoesNFE('${v.id_venda_ml}')"
+                                    style="border:1px solid #dee2e6;background:#fff;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;"
+                                ><i class="fas fa-eye"></i></button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        const span =
+            document.getElementById(
+                'contadorDevolucoesNFE'
+            );
+
+        if (span) span.textContent = linhas.length;
+
+    } catch (error) {
+
+        console.error(
+            '❌ [NFE Devolução] Erro carregando modal:',
+            error
+        );
+
+        corpo.innerHTML = `
+            <div style="text-align:center;color:#dc3545;padding:30px;">
+                Erro ao carregar: ${escaparHTMLNFE(error.message)}
+            </div>
+        `;
+    }
+};
+
 async function selecionarFiltroPainelNFE(
     filtro
 ) {
@@ -2248,6 +2539,13 @@ function aplicarFiltroPainelNFE(
             : [];
 
 
+    // "Só devoluções" é tratado à parte, direto por
+    // window.alternarSoDevolucaoNFE (busca fresca do banco — ver
+    // comentário lá). Esta função (chamada por qualquer sync/
+    // atualização automática em segundo plano) NUNCA aplica esse
+    // sub-filtro sozinha, pra não sobrescrever com dado velho de
+    // window._vendasPainelNFEBase, que não é mantido atualizado
+    // pra vendas já em estado final (canceladas).
     const filtradas =
         filtrarVendasPainelNFE(
             vendas,
@@ -16961,6 +17259,48 @@ function garantirControlesVendasNFE() {
             ${botoesHtml}
 
 
+            <button
+                type="button"
+
+                id="btnDevolucoesNFE"
+
+                onclick="window.abrirModalDevolucoesNFE()"
+
+                title="Lista só as vendas canceladas que são devolução de verdade"
+
+                style="
+                    display:flex;
+                    align-items:center;
+                    gap:6px;
+                    border:1px solid #b6d4fe;
+                    background:#eef6ff;
+                    color:#0a58ca;
+                    border-radius:7px;
+                    padding:8px 11px;
+                    font-size:11px;
+                    font-weight:700;
+                    cursor:pointer;
+                "
+            >
+                <i class="fas fa-undo-alt"></i>
+                Devoluções
+                <span
+                    id="contadorDevolucoesNFE"
+
+                    style="
+                        min-width:20px;
+                        padding:2px 5px;
+                        border-radius:10px;
+                        background:rgba(10,88,202,.12);
+                        text-align:center;
+                        font-size:9px;
+                    "
+                >
+                    &nbsp;
+                </span>
+            </button>
+
+
             <div
                 style="flex:1;"
             ></div>
@@ -17359,6 +17699,15 @@ function garantirControlesVendasNFE() {
             "
         ></div>
     `;
+
+
+    if (
+        typeof atualizarContadorBotaoDevolucoesNFE ===
+        'function'
+    ) {
+
+        atualizarContadorBotaoDevolucoesNFE();
+    }
 
 
     // =====================================================
@@ -46198,6 +46547,11 @@ function renderizarVendasNFETabela(vendas) {
                         }
 
 
+                        const ehDevolucao =
+                            Boolean(
+                                venda.eh_devolucao
+                            );
+
                         canceladaHtml = `
                             <div
                                 style="
@@ -46207,7 +46561,7 @@ function renderizarVendasNFETabela(vendas) {
                                 <span
                                     style="
                                         display:inline-block;
-                                        background:#dc3545;
+                                        background:${ehDevolucao ? '#0a58ca' : '#dc3545'};
                                         color:white;
                                         padding:3px 7px;
                                         border-radius:5px;
@@ -46216,12 +46570,26 @@ function renderizarVendasNFETabela(vendas) {
                                         white-space:nowrap;
                                     "
                                 >
-                                    <i class="fas fa-ban"></i>
-                                    VENDA CANCELADA
+                                    <i class="fas ${ehDevolucao ? 'fa-undo-alt' : 'fa-ban'}"></i>
+                                    ${ehDevolucao ? 'DEVOLUÇÃO' : 'VENDA CANCELADA'}
                                 </span>
 
                                 ${
-                                    dataCancelamento
+                                    ehDevolucao && venda.devolucao_status_nome
+                                        ? `
+                                            <div
+                                                style="
+                                                    color:#0a58ca;
+                                                    font-size:9px;
+                                                    margin-top:2px;
+                                                "
+                                            >
+                                                ${escaparHTMLNFE(
+                                                    venda.devolucao_status_nome
+                                                )}
+                                            </div>
+                                        `
+                                        : dataCancelamento
                                         ? `
                                             <div
                                                 style="
@@ -50652,6 +51020,527 @@ async function buscarDetalhesEnvioNFE(
 
 
 // =========================================================
+// DEVOLUÇÃO x CANCELAMENTO
+//
+// O Mercado Livre marca a venda como "cancelled" tanto quando o
+// comprador desiste antes do envio quanto quando ele devolve o
+// produto depois de receber — nos dois casos o pedido aparece
+// igual no filtro de canceladas. E o campo "tipo" da claim (que
+// o módulo de Reclamações de Clientes já sincroniza localmente)
+// NÃO é confiável pra essa distinção: testado com dados reais,
+// uma claim tipo "mediations" (reclamação/mediação) pode muito
+// bem ter terminado em devolução física — e uma "returns" pode
+// ter sido resolvida sem devolução nenhuma. A única forma
+// confiável é perguntar direto pro Mercado Livre se existe um
+// registro de devolução para aquela claim (GET .../returns);
+// quando não existe, a API responde 404 "There is no associated
+// return for claim X" — um erro limpo, não ambíguo. Por isso a
+// tabela local só serve pra achar OS CANDIDATOS (claim ids da
+// venda, rápido, sem chamar o ML) — quem decide de fato é a
+// chamada em buscarEnvioDevolucaoNFE, feita sob demanda ao abrir
+// o "olhinho".
+// =========================================================
+
+async function buscarCandidatosDevolucaoVendaNFE(orderIds) {
+
+    const cli =
+        window.supabaseClient;
+
+    const ids =
+        [
+            ...new Set(
+                (
+                    Array.isArray(orderIds)
+                        ? orderIds
+                        : [orderIds]
+                )
+                    .map(id => String(id || '').trim())
+                    .filter(Boolean)
+            )
+        ];
+
+    if (
+        !cli ||
+        !ids.length
+    ) {
+
+        return [];
+    }
+
+    const {
+        data,
+        error
+    } =
+        await cli
+            .from('reclamacoes_clientes')
+            .select('id, numero_venda, tipo, motivo, status_ml, ml_claim_id, ml_criado_em')
+            .in('numero_venda', ids)
+            .order('ml_criado_em', { ascending: false });
+
+    if (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ [NFE Devolução] Erro ao consultar reclamações locais:',
+            error
+        );
+
+        return [];
+    }
+
+    return (data || [])
+        .filter(r => r?.ml_claim_id);
+}
+
+// Valores reais de status de um shipment de devolução, confirmados
+// na documentação oficial (GET .../post-purchase/v2/claims/{id}/returns):
+// pending, ready_to_ship, shipped, not_delivered, delivered, cancelled.
+const NOMES_STATUS_DEVOLUCAO_NFE = {
+    pending: 'Aguardando o comprador despachar',
+    ready_to_ship: 'Pronta para o comprador despachar',
+    shipped: 'Despachada pelo comprador',
+    not_delivered: 'Não entregue',
+    delivered: 'Chegou até nós',
+    cancelled: 'Devolução cancelada'
+};
+
+function esperarMsNFE(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Detalhes do ENVIO da devolução (o pacote voltando pro nosso
+// endereço). A devolução em si (GET .../v2/claims/{id}/returns) traz
+// uma LISTA de shipments — o pacote de volta é o de type:"return"
+// (o outro tipo, "return_from_triage", é o envio interno de um
+// centro de triagem do ML pro vendedor, quando existe esse passo
+// extra, e não é o que o admin quer acompanhar aqui). Uma vez achado
+// o shipment_id certo, reaproveita buscarDetalhesEnvioNFE — que já
+// sabe extrair despacho/previsão/entrega de um shipment do ML.
+//
+// Esse endpoint específico do ML costuma bloquear com 429 (too many
+// requests) bem mais fácil que os outros usados no resto do sistema
+// — testado na prática. Por isso tem retry com espera crescente
+// aqui dentro, em vez de deixar a chamada simplesmente falhar.
+async function buscarEnvioDevolucaoNFE(claimId, token, tentativa = 0) {
+
+    if (
+        !claimId
+    ) {
+
+        return null;
+    }
+
+    try {
+
+        const retorno =
+            await buscarJsonMLDetalhesNFE(
+                `https://api.mercadolibre.com/post-purchase/v2/claims/${encodeURIComponent(claimId)}/returns`,
+                token,
+                { aceitar404: true }
+            );
+
+        if (
+            !retorno
+        ) {
+
+            return null;
+        }
+
+        const shipments =
+            Array.isArray(retorno?.shipments)
+                ? retorno.shipments
+                : [];
+
+        const shipmentDevolucao =
+            shipments.find(s => String(s?.type || '').toLowerCase() === 'return') ||
+            shipments[0] ||
+            null;
+
+        const shipmentId =
+            shipmentDevolucao?.shipment_id ||
+            null;
+
+        const statusBruto =
+            String(
+                shipmentDevolucao?.status ||
+                ''
+            )
+                .toLowerCase();
+
+        const envio =
+            shipmentId
+                ? await buscarDetalhesEnvioNFE(shipmentId, token)
+                    .catch(error => {
+
+                        console.warn(
+                            `⚠️ [NFE Devolução] Envio de retorno (shipment ${shipmentId}):`,
+                            error
+                        );
+
+                        return null;
+                    })
+                : null;
+
+        return {
+            status_devolucao: statusBruto || null,
+            status_devolucao_nome:
+                NOMES_STATUS_DEVOLUCAO_NFE[statusBruto] ||
+                (statusBruto || null),
+            data_criacao_devolucao: retorno?.date_created || null,
+            data_encerramento_devolucao: retorno?.date_closed || null,
+            envio
+        };
+
+    } catch (
+        error
+    ) {
+
+        const eRateLimit =
+            String(error?.message || '').includes('429');
+
+        if (
+            eRateLimit &&
+            tentativa < 3
+        ) {
+
+            await esperarMsNFE(
+                1500 *
+                (tentativa + 1)
+            );
+
+            return buscarEnvioDevolucaoNFE(
+                claimId,
+                token,
+                tentativa + 1
+            );
+        }
+
+        console.warn(
+            `⚠️ [NFE Devolução] Detalhes da devolução (claim ${claimId}):`,
+            error
+        );
+
+        // Erro que NÃO é "não existe devolução" (esse já voltou null
+        // lá em cima, via aceitar404) — relança pro chamador saber
+        // que a verificação falhou e não confundir com "confirmado
+        // que não é devolução".
+        throw error;
+    }
+}
+
+
+// =========================================================
+// VERIFICA E PERSISTE A DEVOLUÇÃO DE UMA VENDA (peça central,
+// reaproveitada tanto pela checagem automática — dispara sozinha
+// quando uma venda vira cancelada — quanto pelo backfill manual
+// mais abaixo). Grava eh_devolucao/devolucao_* em vendas_nfe_cache
+// e devolve se era devolução (true/false) ou lança erro se a
+// verificação falhou de verdade (pra quem chama saber que precisa
+// tentar de novo depois, em vez de assumir "não é devolução").
+// =========================================================
+
+async function verificarDevolucaoUmaVendaNFE(idVendaML, token) {
+
+    const cli =
+        window.supabaseClient;
+
+    const candidatos =
+        await buscarCandidatosDevolucaoVendaNFE(
+            [idVendaML]
+        );
+
+    let devolucao = null;
+
+    for (const candidato of candidatos) {
+
+        const envioDevolucao =
+            await buscarEnvioDevolucaoNFE(
+                candidato.ml_claim_id,
+                token
+            );
+
+        if (envioDevolucao) {
+            devolucao = { ...candidato, ...envioDevolucao };
+            break;
+        }
+
+        // intervalo entre tentativas de claims diferentes
+        // da MESMA venda (raro ter mais de uma)
+        await esperarMsNFE(400);
+    }
+
+    const camposAtualizar =
+        devolucao
+            ? {
+                eh_devolucao: true,
+                devolucao_claim_id: devolucao.claim_id || devolucao.ml_claim_id || null,
+                devolucao_motivo: devolucao.motivo || null,
+                devolucao_status: devolucao.status_devolucao || null,
+                devolucao_status_nome: devolucao.status_devolucao_nome || null,
+                devolucao_despachada_em: devolucao.envio?.data_envio || null,
+                devolucao_previsao_chegada: devolucao.envio?.previsao_entrega || null,
+                devolucao_chegou_em: devolucao.envio?.data_entrega || null,
+                devolucao_rastreio: devolucao.envio?.tracking_number || null,
+                devolucao_transportadora: devolucao.envio?.carrier_nome || null,
+                devolucao_verificada_em: new Date().toISOString()
+            }
+            : {
+                eh_devolucao: false,
+                devolucao_verificada_em: new Date().toISOString()
+            };
+
+    await cli
+        .from('vendas_nfe_cache')
+        .update(camposAtualizar)
+        .eq('id_venda_ml', idVendaML);
+
+    // só pausa quando realmente bateu na API do ML — venda sem
+    // claim nenhuma não gasta tempo à toa
+    if (candidatos.length) {
+        await esperarMsNFE(500);
+    }
+
+    return Boolean(devolucao);
+}
+
+
+// =========================================================
+// CHECAGEM AUTOMÁTICA: venda que acabou de virar cancelada
+//
+// Chamada (sem await, "dispara e esquece") de dentro de
+// salvarVendasCacheNFE sempre que alguma venda transiciona pra
+// cancelada nesse ciclo de sincronização — assim toda venda
+// cancelada nova já nasce com eh_devolucao certo, sem precisar de
+// nenhuma ação manual depois.
+// =========================================================
+
+async function verificarDevolucoesNovasCanceladasNFE(idsVendaML) {
+
+    if (
+        !Array.isArray(idsVendaML) ||
+        !idsVendaML.length
+    ) {
+
+        return;
+    }
+
+    console.log(
+        `🔄 [NFE Devolução] ${idsVendaML.length} venda(s) recém-cancelada(s) — checando se são devolução...`
+    );
+
+    let token = null;
+
+    try {
+        token = await obterTokenMLNFE();
+    } catch (error) {}
+
+    let encontradas = 0;
+
+    for (const idVendaML of idsVendaML) {
+
+        try {
+
+            const foiDevolucao =
+                await verificarDevolucaoUmaVendaNFE(
+                    idVendaML,
+                    token
+                );
+
+            if (foiDevolucao) encontradas++;
+
+        } catch (erroLinha) {
+
+            console.warn(
+                `⚠️ [NFE Devolução] Falha verificando ${idVendaML} recém-cancelada:`,
+                erroLinha
+            );
+
+            // não marca devolucao_verificada_em — o próximo ciclo
+            // de sincronização tenta de novo naturalmente
+        }
+    }
+
+    console.log(
+        `✅ [NFE Devolução] Checagem automática concluída — ${encontradas} devolução(ões) nova(s).`
+    );
+
+    if (encontradas > 0) {
+
+        try {
+            await window.atualizarListaNFE?.();
+        } catch (erroRefresh) {}
+    }
+}
+
+
+// =========================================================
+// BACKFILL MANUAL (histórico): passa por toda venda marcada como
+// cancelada em vendas_nfe_cache que ainda não foi checada
+// (devolucao_verificada_em null). Não fica mais exposto por botão
+// — a checagem de vendas NOVAS agora é automática (ver acima) —,
+// mas continua disponível pra rodar uma vez em vendas antigas ou
+// reprocessar falhas, via console: sincronizarDevolucoesCanceladasNFE()
+// =========================================================
+
+window.sincronizarDevolucoesCanceladasNFE = async function (opcoes = {}) {
+
+    const btn =
+        document.getElementById(
+            'btnVerificarDevolucoesNFE'
+        );
+
+    const cli =
+        window.supabaseClient;
+
+    if (
+        !cli
+    ) {
+
+        window.showToast?.(
+            '❌ Supabase não conectado',
+            'error'
+        );
+
+        return;
+    }
+
+    const iconeOriginal =
+        btn?.innerHTML;
+
+    if (btn) {
+        btn.disabled = true;
+    }
+
+    try {
+
+        // =================================================
+        // 1) LEVANTAR AS VENDAS CANCELADAS AINDA NÃO VERIFICADAS
+        // =================================================
+
+        const pendentes = [];
+        let inicio = 0;
+
+        while (true) {
+
+            const { data, error } =
+                await cli
+                    .from('vendas_nfe_cache')
+                    .select('id, id_venda_ml')
+                    .eq('venda_cancelada', true)
+                    .is('devolucao_verificada_em', null)
+                    .range(inicio, inicio + 999);
+
+            if (error) throw error;
+
+            pendentes.push(...(data || []));
+
+            if (!data || data.length < 1000) break;
+
+            inicio += 1000;
+        }
+
+        if (!pendentes.length) {
+
+            window.showToast?.(
+                '✅ Todas as vendas canceladas já foram verificadas.',
+                'success'
+            );
+
+            return;
+        }
+
+        const limite =
+            Number(opcoes.limite) || pendentes.length;
+
+        const lista =
+            pendentes.slice(0, limite);
+
+        const token =
+            await obterTokenMLNFE();
+
+        let verificadas = 0;
+        let devolucoesEncontradas = 0;
+        let comErro = 0;
+
+        // =================================================
+        // 2) PASSAR UMA POR UMA (sequencial — de propósito,
+        //    pra não estourar limite de requisições do ML)
+        // =================================================
+
+        for (const item of lista) {
+
+            verificadas++;
+
+            if (btn) {
+                btn.innerHTML =
+                    `<i class="fas fa-sync-alt fa-spin"></i> Verificando devoluções ${verificadas}/${lista.length}...`;
+            }
+
+            try {
+
+                const foiDevolucao =
+                    await verificarDevolucaoUmaVendaNFE(
+                        item.id_venda_ml,
+                        token
+                    );
+
+                if (foiDevolucao) devolucoesEncontradas++;
+
+            } catch (erroLinha) {
+
+                comErro++;
+
+                console.warn(
+                    `⚠️ [NFE Devolução] Falha verificando ${item.id_venda_ml}:`,
+                    erroLinha
+                );
+
+                // não grava devolucao_verificada_em — tenta de novo
+                // na próxima rodada em vez de assumir "não é devolução"
+            }
+        }
+
+        window.showToast?.(
+            comErro > 0
+                ? `⚠️ ${verificadas} venda(s) verificada(s), ${devolucoesEncontradas} devolução(ões) encontrada(s), ${comErro} com erro (rodar de novo pega as que falharam).`
+                : `✅ ${verificadas} venda(s) verificada(s) — ${devolucoesEncontradas} são devolução de verdade.`,
+            comErro > 0 ? 'warning' : 'success'
+        );
+
+        // =================================================
+        // 3) REFLETIR NA TELA SEM PRECISAR RECARREGAR A PÁGINA
+        // =================================================
+
+        try {
+            await window.atualizarListaNFE?.();
+        } catch (erroRefresh) {
+            console.warn('⚠️ [NFE Devolução] Falha atualizando lista após sync:', erroRefresh);
+        }
+
+    } catch (error) {
+
+        console.error(
+            '❌ [NFE Devolução] Erro na verificação em lote:',
+            error
+        );
+
+        window.showToast?.(
+            '❌ Erro ao verificar devoluções: ' + error.message,
+            'error'
+        );
+
+    } finally {
+
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = iconeOriginal;
+        }
+    }
+};
+
+
+// =========================================================
 // FEEDBACK / MOTIVO DO CANCELAMENTO
 // =========================================================
 
@@ -51945,6 +52834,69 @@ async function buscarDetalhesCompletosVendaNFE(
 
 
     // =====================================================
+    // DEVOLUÇÃO (a venda cancelada pode ser, na verdade, uma
+    // devolução — só dá pra saber consultando as reclamações)
+    // =====================================================
+
+    let devolucao =
+        null;
+
+    if (
+        cancelada
+    ) {
+
+        try {
+
+            const candidatos =
+                await buscarCandidatosDevolucaoVendaNFE(
+                    orderIds
+                );
+
+            // Testa cada claim associada à venda até achar uma que
+            // realmente tenha devolução (o Mercado Livre responde
+            // 404 "There is no associated return" pras que não têm —
+            // não dá pra confiar no campo "tipo" da claim sozinho).
+            for (
+                const candidato
+                of candidatos
+            ) {
+
+                const envioDevolucao =
+                    await buscarEnvioDevolucaoNFE(
+                        candidato.ml_claim_id,
+                        token
+                    );
+
+                if (
+                    envioDevolucao
+                ) {
+
+                    devolucao = {
+                        eh_devolucao: true,
+                        reclamacao_id: candidato.id,
+                        claim_id: candidato.ml_claim_id,
+                        motivo: candidato.motivo,
+                        status_claim: candidato.status_ml,
+                        ...envioDevolucao
+                    };
+
+                    break;
+                }
+            }
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ [NFE Devolução] Falha ao verificar devolução:',
+                error
+            );
+        }
+    }
+
+
+    // =====================================================
     // LIBERAÇÃO DA NF-E
     // =====================================================
 
@@ -52022,6 +52974,9 @@ async function buscarDetalhesCompletosVendaNFE(
 
         cancelamentos:
             detalhesCancelamentos,
+
+
+        devolucao,
 
 
         liberacao
@@ -52551,6 +53506,94 @@ function renderizarModalDetalhesVendaNFE(
     // =====================================================
 
     let cancelamentoHtml = '';
+    let devolucaoHtml = '';
+
+
+    if (
+        dados.devolucao
+            ?.eh_devolucao
+    ) {
+
+        const d =
+            dados.devolucao;
+
+        const envioDev =
+            d.envio;
+
+        devolucaoHtml = `
+            <div
+                style="
+                    padding:9px;
+                    border:1px solid #b6d4fe;
+                    background:#eef6ff;
+                    border-radius:7px;
+                    margin-bottom:9px;
+                "
+            >
+                <div
+                    style="
+                        font-weight:700;
+                        color:#0a58ca;
+                    "
+                >
+                    🔄 Isso é uma devolução — o Mercado Livre só marca como "cancelada"
+                </div>
+
+                <div style="margin-top:5px;font-size:11px;">
+                    <strong>Motivo:</strong>
+                    ${escaparHTMLNFE(d.motivo || 'Motivo não informado')}
+                </div>
+
+                <div style="font-size:11px;">
+                    <strong>Status da devolução:</strong>
+                    ${escaparHTMLNFE(d.status_devolucao_nome || 'Não disponível')}
+                </div>
+
+                ${
+                    envioDev
+                        ? `
+                            <div style="font-size:11px;">
+                                <strong>Despachada pelo cliente em:</strong>
+                                ${escaparHTMLNFE(formatarDataHoraDetalhesNFE(envioDev.data_envio))}
+                            </div>
+
+                            <div style="font-size:11px;">
+                                <strong>Previsão de chegada até nós:</strong>
+                                ${escaparHTMLNFE(formatarDataHoraDetalhesNFE(envioDev.previsao_entrega))}
+                            </div>
+
+                            ${
+                                envioDev.entregue
+                                    ? `
+                                        <div style="font-size:11px;color:#0a58ca;font-weight:700;">
+                                            ✅ Já chegou em:
+                                            ${escaparHTMLNFE(formatarDataHoraDetalhesNFE(envioDev.data_entrega))}
+                                        </div>
+                                    `
+                                    : ''
+                            }
+
+                            ${
+                                envioDev.tracking_number
+                                    ? `
+                                        <div style="font-size:10px;color:#495057;">
+                                            <strong>Rastreio:</strong>
+                                            ${escaparHTMLNFE(envioDev.tracking_number)}
+                                            ${envioDev.carrier_nome ? ` · ${escaparHTMLNFE(envioDev.carrier_nome)}` : ''}
+                                        </div>
+                                    `
+                                    : ''
+                            }
+                        `
+                        : `
+                            <div style="font-size:10px;color:#6c757d;margin-top:4px;">
+                                Detalhes do envio de volta ainda não disponíveis pelo Mercado Livre.
+                            </div>
+                        `
+                }
+            </div>
+        `;
+    }
 
 
     if (
@@ -52558,6 +53601,7 @@ function renderizarModalDetalhesVendaNFE(
     ) {
 
         cancelamentoHtml =
+            devolucaoHtml +
             (
                 dados.cancelamentos ||
                 []
@@ -53133,7 +54177,7 @@ function renderizarModalDetalhesVendaNFE(
                             margin:0 0 10px;
                         "
                     >
-                        🚫 Cancelamento
+                        ${dados.devolucao?.eh_devolucao ? '🔄 Devolução' : '🚫 Cancelamento'}
                     </h4>
 
                     ${cancelamentoHtml}
@@ -55047,6 +56091,12 @@ async function salvarVendasCacheNFE(
     const registros =
         [];
 
+    // Vendas que TRANSICIONARAM pra cancelada agora (não já
+    // estavam canceladas antes) — dispara a checagem automática
+    // de devolução só pra essas, no final desta função.
+    const novasCanceladas =
+        [];
+
 
     for (
         const venda
@@ -55508,6 +56558,18 @@ async function salvarVendasCacheNFE(
             anterior.venda_cancelada_em ??
 
             null;
+
+
+        // Virou cancelada agora — não estava assim antes.
+        if (
+            vendaCancelada &&
+            anterior.venda_cancelada !== true
+        ) {
+
+            novasCanceladas.push(
+                idVenda
+            );
+        }
 
 
         const estoqueRestauradoCancelamento =
@@ -56145,6 +57207,27 @@ async function salvarVendasCacheNFE(
     // Forçar nova contagem na próxima atualização visual.
     window._contagensStatusNFEBancoAtualizadoEm =
         0;
+
+
+    // Dispara sem esperar (não pode atrasar o salvamento/sync
+    // principal) a checagem de devolução das vendas que acabaram
+    // de virar canceladas neste ciclo.
+    if (
+        novasCanceladas.length
+    ) {
+
+        verificarDevolucoesNovasCanceladasNFE(
+            novasCanceladas
+        ).catch(
+            error => {
+
+                console.warn(
+                    '⚠️ [NFE Devolução] Falha na checagem automática:',
+                    error
+                );
+            }
+        );
+    }
 
 
     return true;
@@ -57393,6 +58476,57 @@ async function carregarVendasCacheNFE(
                         venda
                             .venda_cancelada_em ??
 
+                        null,
+
+
+                    // Devolução real (não cancelamento) — preenchido
+                    // em lote pelo botão "Verificar devoluções".
+                    eh_devolucao:
+
+                        registro
+                            .eh_devolucao ===
+                            true,
+
+                    devolucao_motivo:
+
+                        registro
+                            .devolucao_motivo ??
+                        null,
+
+                    devolucao_status_nome:
+
+                        registro
+                            .devolucao_status_nome ??
+                        null,
+
+                    devolucao_despachada_em:
+
+                        registro
+                            .devolucao_despachada_em ??
+                        null,
+
+                    devolucao_previsao_chegada:
+
+                        registro
+                            .devolucao_previsao_chegada ??
+                        null,
+
+                    devolucao_chegou_em:
+
+                        registro
+                            .devolucao_chegou_em ??
+                        null,
+
+                    devolucao_rastreio:
+
+                        registro
+                            .devolucao_rastreio ??
+                        null,
+
+                    devolucao_transportadora:
+
+                        registro
+                            .devolucao_transportadora ??
                         null,
 
 
