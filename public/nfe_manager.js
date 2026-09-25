@@ -48,7 +48,193 @@ window._vendasPainelNFEBase =
 window._claimsAbertasNFE = window._claimsAbertasNFE instanceof Map
         ? window._claimsAbertasNFE
         : new Map();
+window._buyerIdsConcorrentesConfirmadosNFE = window._buyerIdsConcorrentesConfirmadosNFE instanceof Set
+        ? window._buyerIdsConcorrentesConfirmadosNFE
+        : new Set();
 window._sincronizacaoPainelNFEEmAndamento = false;
+
+// Pré-carrega os buyer_id já confirmados como concorrente (tabela
+// clientes_concorrentes) num Set em memória — a tabela de vendas
+// renderiza de forma síncrona, então o badge na lista tem que
+// consultar esse cache já pronto, não bater no banco por linha.
+// Chamada de novo (recarregando o Set e re-renderizando) toda vez
+// que o admin marca/desmarca alguém, pra lista atualizar na hora.
+async function carregarClientesConcorrentesConfirmadosNFE() {
+    try {
+        const cli = window.supabaseClient;
+        if (!cli) return;
+
+        const novoSet = new Set();
+        let inicio = 0;
+        while (true) {
+            const { data, error } = await cli
+                .from('clientes_concorrentes')
+                .select('buyer_id')
+                .is('desmarcado_em', null)
+                .range(inicio, inicio + 999);
+            if (error || !data || !data.length) break;
+            data.forEach(r => novoSet.add(String(r.buyer_id)));
+            if (data.length < 1000) break;
+            inicio += 1000;
+        }
+
+        window._buyerIdsConcorrentesConfirmadosNFE = novoSet;
+
+        if (typeof atualizarListaNFE === 'function') {
+            atualizarListaNFE();
+        }
+
+    } catch (error) {
+        console.warn('⚠️ [Concorrente] Falha carregando lista de confirmados:', error);
+    }
+}
+window.carregarClientesConcorrentesConfirmadosNFE = carregarClientesConcorrentesConfirmadosNFE;
+
+function obterBuyerIdVendaListaNFE(venda) {
+    return (
+        venda?.buyer?.id ||
+        venda?.buyer_id ||
+        venda?.comprador_id ||
+        venda?._buyer_id_concorrente ||
+        null
+    );
+}
+
+function vendaEhClienteConcorrenteConfirmadoNFE(venda) {
+    const buyerId = obterBuyerIdVendaListaNFE(venda);
+    if (!buyerId) return false;
+    return window._buyerIdsConcorrentesConfirmadosNFE.has(String(buyerId));
+}
+
+// =========================================================
+// "POSSÍVEL" CONCORRENTE — sinal automático, não confirmado
+//
+// Verificado UMA VEZ por comprador, na hora em que a venda dele
+// chega pelo sync normal (salvarVendasCacheNFE) — não em toda
+// renderização da lista. Guarda em compradores_perfil_ml pra nunca
+// mais precisar checar esse mesmo buyer_id de novo.
+// =========================================================
+
+window._buyerIdsPossiveisConcorrentesNFE = window._buyerIdsPossiveisConcorrentesNFE instanceof Set
+        ? window._buyerIdsPossiveisConcorrentesNFE
+        : new Set();
+
+async function carregarCompradoresPossiveisConcorrentesNFE() {
+    try {
+        const cli = window.supabaseClient;
+        if (!cli) return;
+
+        const novoSet = new Set();
+        let inicio = 0;
+        while (true) {
+            const { data, error } = await cli
+                .from('compradores_perfil_ml')
+                .select('buyer_id')
+                .eq('tem_historico_vendedor', true)
+                .range(inicio, inicio + 999);
+            if (error || !data || !data.length) break;
+            data.forEach(r => novoSet.add(String(r.buyer_id)));
+            if (data.length < 1000) break;
+            inicio += 1000;
+        }
+
+        window._buyerIdsPossiveisConcorrentesNFE = novoSet;
+
+        if (typeof atualizarListaNFE === 'function') {
+            atualizarListaNFE();
+        }
+
+    } catch (error) {
+        console.warn('⚠️ [Concorrente] Falha carregando compradores possíveis:', error);
+    }
+}
+window.carregarCompradoresPossiveisConcorrentesNFE = carregarCompradoresPossiveisConcorrentesNFE;
+
+function vendaEhPossivelConcorrenteNFE(venda) {
+    const buyerId = obterBuyerIdVendaListaNFE(venda);
+    if (!buyerId) return false;
+    return window._buyerIdsPossiveisConcorrentesNFE.has(String(buyerId));
+}
+
+// Roda no fundo, sem travar o sync de vendas — pra cada buyer_id
+// novo (que ainda não está em compradores_perfil_ml), busca o
+// perfil público (mesma chamada já usada na modal de detalhes,
+// GET /users/{id} — essa continua funcionando, só a BUSCA de
+// anúncios de outro usuário que o ML bloqueou) e guarda o sinal.
+async function verificarCompradoresNovosNFE(buyerIds) {
+
+    const cli = window.supabaseClient;
+    if (!cli || !Array.isArray(buyerIds) || !buyerIds.length) return;
+
+    // filtra pra só quem ainda não foi verificado nenhuma vez
+    const jaVerificados = new Set();
+    {
+        let inicio = 0;
+        while (true) {
+            const { data, error } = await cli
+                .from('compradores_perfil_ml')
+                .select('buyer_id')
+                .in('buyer_id', buyerIds)
+                .range(inicio, inicio + 999);
+            if (error || !data || !data.length) break;
+            data.forEach(r => jaVerificados.add(String(r.buyer_id)));
+            if (data.length < 1000) break;
+            inicio += 1000;
+        }
+    }
+
+    const novos = buyerIds.filter(id => !jaVerificados.has(String(id)));
+    if (!novos.length) return;
+
+    const token = await obterTokenMLNFE().catch(() => null);
+    if (!token) return;
+
+    let encontrados = 0;
+
+    for (const buyerId of novos) {
+
+        try {
+
+            const perfil = await buscarJsonMLDetalhesNFE(
+                `https://api.mercadolibre.com/users/${encodeURIComponent(buyerId)}`,
+                token,
+                { aceitar404: true }
+            );
+
+            if (!perfil) continue;
+
+            const totalVendas = Number(perfil?.seller_reputation?.transactions?.total || 0);
+            const powerSeller = Boolean(perfil?.seller_reputation?.power_seller_status);
+            const temHistorico = totalVendas > 0 || powerSeller;
+
+            const { error: erroUpsert } = await cli
+                .from('compradores_perfil_ml')
+                .upsert([{
+                    buyer_id: String(buyerId),
+                    nickname: perfil?.nickname || null,
+                    tem_historico_vendedor: temHistorico,
+                    total_vendas_vendedor: totalVendas,
+                    power_seller: powerSeller,
+                    url_perfil: perfil?.permalink || null,
+                    verificado_em: new Date().toISOString()
+                }], { onConflict: 'buyer_id' });
+
+            if (!erroUpsert && temHistorico) encontrados++;
+
+        } catch (error) {
+
+            console.warn(`⚠️ [Concorrente] Falha verificando comprador ${buyerId}:`, error);
+        }
+
+        // intervalo entre chamadas pra não martelar a API do ML
+        await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    if (encontrados > 0) {
+        await carregarCompradoresPossiveisConcorrentesNFE();
+    }
+}
+window.verificarCompradoresNovosNFE = verificarCompradoresNovosNFE;
 
 // =========================================================
 // CACHE OPERACIONAL NF-e POR STATUS
@@ -17707,6 +17893,26 @@ function garantirControlesVendasNFE() {
     ) {
 
         atualizarContadorBotaoDevolucoesNFE();
+    }
+
+
+    if (
+        typeof carregarClientesConcorrentesConfirmadosNFE ===
+        'function' &&
+        window._buyerIdsConcorrentesConfirmadosNFE.size === 0
+    ) {
+
+        carregarClientesConcorrentesConfirmadosNFE();
+    }
+
+
+    if (
+        typeof carregarCompradoresPossiveisConcorrentesNFE ===
+        'function' &&
+        window._buyerIdsPossiveisConcorrentesNFE.size === 0
+    ) {
+
+        carregarCompradoresPossiveisConcorrentesNFE();
     }
 
 
@@ -47379,7 +47585,52 @@ function renderizarVendasNFETabela(vendas) {
                                         )}
                                     </div>
 
-                                    ${avisoConcorrenteHtml}
+                                    ${
+                                        vendaEhClienteConcorrenteConfirmadoNFE(venda)
+                                            ? `
+                                                <div
+                                                    style="
+                                                        display:inline-block;
+                                                        margin-top:4px;
+                                                        padding:3px 7px;
+                                                        border-radius:5px;
+                                                        background:#fdecea;
+                                                        border:1px solid #f5c2c0;
+                                                        color:#a61b29;
+                                                        font-size:9px;
+                                                        font-weight:800;
+                                                        white-space:nowrap;
+                                                    "
+                                                    title="Marcado como concorrente — clique no olhinho pra ver quando e por quem"
+                                                >
+                                                    <i class="fas fa-user-shield"></i>
+                                                    CONCORRENTE
+                                                </div>
+                                            `
+                                            : vendaEhPossivelConcorrenteNFE(venda)
+                                                ? `
+                                                    <div
+                                                        style="
+                                                            display:inline-block;
+                                                            margin-top:4px;
+                                                            padding:3px 7px;
+                                                            border-radius:5px;
+                                                            background:#fff3cd;
+                                                            border:1px solid #f0ad00;
+                                                            color:#7a5700;
+                                                            font-size:9px;
+                                                            font-weight:800;
+                                                            white-space:nowrap;
+                                                            cursor:pointer;
+                                                        "
+                                                        title="Esse cliente já vendeu algo no Mercado Livre — abra o olhinho pra ver e decidir se é concorrente"
+                                                    >
+                                                        <i class="fas fa-exclamation-triangle"></i>
+                                                        Possível concorrente
+                                                    </div>
+                                                `
+                                                : avisoConcorrenteHtml
+                                    }
                                 </td>
 
 
@@ -52918,6 +53169,113 @@ async function buscarDetalhesCompletosVendaNFE(
 
 
     // =====================================================
+    // CONCORRENTE (cliente que também vende no ML)
+    //
+    // 1) O Mercado Livre BLOQUEIA buscar anúncios de outro
+    //    usuário pra apps de terceiro (testado ao vivo: 403
+    //    "Searching another user items is restricted" — em
+    //    /sites/{site}/search?seller_id=, ?nickname= e em
+    //    /users/{id}/items/search, todas as variações). Não é
+    //    algo que dê pra contornar. Por isso o "tem_anuncios"
+    //    aqui usa um sinal mais fraco, mas 100% legítimo e que
+    //    já vem de graça no perfil público (GET /users/{id},
+    //    já buscado acima em perfilComprador): o histórico de
+    //    transações COMO VENDEDOR e o link do perfil público —
+    //    quem decide de verdade é o admin, olhando o perfil.
+    // 2) banco: o admin já confirmou esse buyer_id como
+    //    concorrente antes? Esse flag persiste pra sempre,
+    //    independente do sinal acima.
+    // =====================================================
+
+    if (
+        perfilComprador
+    ) {
+
+        try {
+
+            const vendasComoVendedor =
+                Number(
+                    perfilComprador
+                        ?.seller_reputation
+                        ?.transactions
+                        ?.total ||
+                    0
+                );
+
+            const powerSeller =
+                Boolean(
+                    perfilComprador
+                        ?.seller_reputation
+                        ?.power_seller_status
+                );
+
+            const linkPerfilPublico =
+                perfilComprador?.permalink ||
+                (
+                    perfilComprador?.nickname
+                        ? `https://perfil.mercadolivre.com.br/${encodeURIComponent(perfilComprador.nickname)}`
+                        : null
+                );
+
+            Object.assign(
+                perfilComprador,
+                {
+                    tem_anuncios:
+                        vendasComoVendedor > 0 ||
+                        powerSeller,
+
+                    total_anuncios:
+                        vendasComoVendedor,
+
+                    power_seller:
+                        powerSeller,
+
+                    url_anuncios:
+                        linkPerfilPublico
+                }
+            );
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ [Concorrente] Falha calculando sinal de vendedor:',
+                error
+            );
+        }
+
+        try {
+
+            const { data: confirmado } =
+                await window.supabaseClient
+                    .from('clientes_concorrentes')
+                    .select('*')
+                    .eq('buyer_id', String(perfilComprador.id))
+                    .is('desmarcado_em', null)
+                    .maybeSingle();
+
+            if (confirmado) {
+
+                Object.assign(
+                    perfilComprador,
+                    {
+                        concorrente_confirmado: true,
+                        concorrente_marcado_por: confirmado.marcado_por,
+                        concorrente_marcado_em: confirmado.marcado_em
+                    }
+                );
+            }
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ [Concorrente] Falha lendo confirmação salva:',
+                error
+            );
+        }
+    }
+
+
+    // =====================================================
     // RESULTADO FINAL
     // =====================================================
 
@@ -53109,6 +53467,11 @@ function renderizarModalDetalhesVendaNFE(
     // CLIENTE / VENDEDOR
     // =====================================================
 
+    const linkAnunciosComprador =
+        comprador?.url_anuncios ||
+        comprador?.permalink ||
+        null;
+
     let clienteHtml = `
         <div
             style="
@@ -53116,9 +53479,21 @@ function renderizarModalDetalhesVendaNFE(
                 font-weight:700;
             "
         >
-            ${escaparHTMLNFE(
-                clienteNome
-            )}
+            ${
+                linkAnunciosComprador
+                    ? `
+                        <a
+                            href="${escaparHTMLNFE(linkAnunciosComprador)}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style="color:inherit;text-decoration:underline dotted;"
+                            title="Ver perfil deste cliente no Mercado Livre"
+                        >
+                            ${escaparHTMLNFE(clienteNome)}
+                        </a>
+                    `
+                    : escaparHTMLNFE(clienteNome)
+            }
         </div>
 
         ${
@@ -53142,7 +53517,64 @@ function renderizarModalDetalhesVendaNFE(
     `;
 
 
+    // =====================================================
+    // CONCORRENTE CONFIRMADO — aviso forte, permanente,
+    // independe de "tem anúncios agora".
+    // =====================================================
+
     if (
+        comprador
+            ?.concorrente_confirmado ===
+        true
+    ) {
+
+        clienteHtml += `
+            <div
+                style="
+                    margin-top:8px;
+                    padding:8px 10px;
+                    background:#fdecea;
+                    border:1px solid #f5c2c0;
+                    border-radius:7px;
+                "
+            >
+                <div
+                    style="
+                        color:#a61b29;
+                        font-weight:800;
+                        font-size:12px;
+                    "
+                >
+                    <i class="fas fa-user-shield"></i>
+                    Cliente marcado como concorrente
+                </div>
+
+                <div
+                    style="
+                        margin-top:3px;
+                        font-size:10px;
+                        color:#8a4a4f;
+                    "
+                >
+                    Marcado por ${escaparHTMLNFE(comprador.concorrente_marcado_por || '—')}
+                    em ${escaparHTMLNFE(formatarDataHoraDetalhesNFE(comprador.concorrente_marcado_em))}
+                </div>
+
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    style="margin-top:7px;font-size:11px;"
+                    data-concorrente-buyer-id="${escaparHTMLNFE(comprador.id)}"
+                    data-concorrente-venda-id="${escaparHTMLNFE(dados.venda_id)}"
+                    onclick="window.desmarcarClienteConcorrenteNFE(this)"
+                >
+                    <i class="fas fa-undo"></i>
+                    Desmarcar
+                </button>
+            </div>
+        `;
+
+    } else if (
         comprador
             ?.tem_anuncios ===
         true
@@ -53166,7 +53598,7 @@ function renderizarModalDetalhesVendaNFE(
                     "
                 >
                     <i class="fas fa-store"></i>
-                    Este cliente também vende no Mercado Livre
+                    Este cliente também é vendedor no Mercado Livre
                 </div>
 
                 <div
@@ -53175,7 +53607,12 @@ function renderizarModalDetalhesVendaNFE(
                         font-size:11px;
                     "
                 >
-                    Anúncios ativos:
+                    ${
+                        comprador.power_seller
+                            ? '<strong>Vendedor com selo de destaque (power seller)</strong><br>'
+                            : ''
+                    }
+                    Vendas concluídas como vendedor:
                     <strong>
                         ${Number(
                             comprador.total_anuncios ||
@@ -53184,23 +53621,39 @@ function renderizarModalDetalhesVendaNFE(
                     </strong>
                 </div>
 
-                <a
-                    href="${escaparHTMLNFE(
-                        comprador.url_anuncios ||
-                        comprador.permalink ||
-                        '#'
-                    )}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-sm btn-success"
-                    style="
-                        margin-top:7px;
-                        text-decoration:none;
-                    "
-                >
-                    <i class="fas fa-external-link-alt"></i>
-                    Ver anúncios do cliente
-                </a>
+                <div style="margin-top:4px;font-size:10px;color:#6c757d;">
+                    O Mercado Livre não deixa mais consultar os anúncios de outro usuário por API — clique abaixo pra ver o perfil dele e conferir manualmente.
+                </div>
+
+                <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:7px;">
+                    <a
+                        href="${escaparHTMLNFE(
+                            linkAnunciosComprador ||
+                            '#'
+                        )}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="btn btn-sm btn-success"
+                        style="text-decoration:none;"
+                    >
+                        <i class="fas fa-external-link-alt"></i>
+                        Ver perfil do cliente
+                    </a>
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        data-concorrente-buyer-id="${escaparHTMLNFE(comprador.id)}"
+                        data-concorrente-nickname="${escaparHTMLNFE(comprador.nickname || '')}"
+                        data-concorrente-url="${escaparHTMLNFE(linkAnunciosComprador || '')}"
+                        data-concorrente-total="${Number(comprador.total_anuncios || 0)}"
+                        data-concorrente-venda-id="${escaparHTMLNFE(dados.venda_id)}"
+                        onclick="window.marcarClienteConcorrenteNFE(this)"
+                    >
+                        <i class="fas fa-exclamation-triangle"></i>
+                        É concorrente
+                    </button>
+                </div>
             </div>
         `;
     }
@@ -54421,6 +54874,116 @@ function fecharDetalhesVendaNFE() {
 window.abrirDetalhesVendaNFE = abrirDetalhesVendaNFE;
 window.fecharDetalhesVendaNFE = fecharDetalhesVendaNFE;
 window.buscarDetalhesCompletosVendaNFE = buscarDetalhesCompletosVendaNFE;
+
+// =========================================================
+// MARCAR / DESMARCAR CLIENTE COMO CONCORRENTE
+//
+// Decisão manual do admin, persistida por buyer_id — a partir daí
+// toda venda desse mesmo comprador mostra o aviso forte, mesmo que
+// ele não tenha anúncio ativo naquele momento específico.
+// =========================================================
+
+window.marcarClienteConcorrenteNFE = async function (botao) {
+
+    const buyerId = botao?.dataset?.concorrenteBuyerId;
+    const vendaId = botao?.dataset?.concorrenteVendaId;
+
+    if (!buyerId) return;
+
+    if (
+        !confirm(
+            'Marcar este cliente como concorrente? Isso vai avisar sempre que ele comprar de novo.'
+        )
+    ) {
+        return;
+    }
+
+    botao.disabled = true;
+
+    try {
+
+        const usuario = obterUsuarioOperacaoNFE();
+
+        const { error } = await window.supabaseClient
+            .from('clientes_concorrentes')
+            .upsert(
+                [{
+                    buyer_id: buyerId,
+                    nickname: botao.dataset.concorrenteNickname || null,
+                    url_anuncios: botao.dataset.concorrenteUrl || null,
+                    total_anuncios_na_marcacao: Number(botao.dataset.concorrenteTotal || 0),
+                    marcado_por: usuario?.nome || usuario?.username || 'Sistema',
+                    marcado_em: new Date().toISOString(),
+                    desmarcado_por: null,
+                    desmarcado_em: null
+                }],
+                { onConflict: 'buyer_id' }
+            );
+
+        if (error) throw error;
+
+        window.showToast?.('⚠️ Cliente marcado como concorrente.', 'warning');
+
+        await carregarClientesConcorrentesConfirmadosNFE();
+
+        if (vendaId) {
+            await abrirDetalhesVendaNFE(vendaId, true);
+        }
+
+    } catch (error) {
+
+        console.error('❌ [Concorrente] Erro ao marcar:', error);
+        window.showToast?.('❌ Erro ao marcar cliente: ' + error.message, 'error');
+        botao.disabled = false;
+    }
+};
+
+window.desmarcarClienteConcorrenteNFE = async function (botao) {
+
+    const buyerId = botao?.dataset?.concorrenteBuyerId;
+    const vendaId = botao?.dataset?.concorrenteVendaId;
+
+    if (!buyerId) return;
+
+    if (
+        !confirm(
+            'Desmarcar este cliente como concorrente?'
+        )
+    ) {
+        return;
+    }
+
+    botao.disabled = true;
+
+    try {
+
+        const usuario = obterUsuarioOperacaoNFE();
+
+        const { error } = await window.supabaseClient
+            .from('clientes_concorrentes')
+            .update({
+                desmarcado_por: usuario?.nome || usuario?.username || 'Sistema',
+                desmarcado_em: new Date().toISOString()
+            })
+            .eq('buyer_id', buyerId);
+
+        if (error) throw error;
+
+        window.showToast?.('Cliente desmarcado.', 'info');
+
+        await carregarClientesConcorrentesConfirmadosNFE();
+
+        if (vendaId) {
+            await abrirDetalhesVendaNFE(vendaId, true);
+        }
+
+    } catch (error) {
+
+        console.error('❌ [Concorrente] Erro ao desmarcar:', error);
+        window.showToast?.('❌ Erro ao desmarcar cliente: ' + error.message, 'error');
+        botao.disabled = false;
+    }
+};
 
 // =========================================================
 // INICIALIZAR
@@ -56097,6 +56660,14 @@ async function salvarVendasCacheNFE(
     const novasCanceladas =
         [];
 
+    // Todo comprador que aparece nesta sincronização — o gatilho no
+    // final desta função filtra pra só verificar (no ML) quem AINDA
+    // não tem registro em compradores_perfil_ml, então repetir o
+    // mesmo buyer_id aqui em vendas diferentes não gasta requisição
+    // extra nenhuma.
+    const buyersParaVerificar =
+        new Set();
+
 
     for (
         const venda
@@ -56117,6 +56688,20 @@ async function salvarVendasCacheNFE(
         ) {
 
             continue;
+        }
+
+
+        const buyerIdVenda =
+            venda?.buyer?.id ||
+            venda?.buyer_id ||
+            venda?.comprador_id ||
+            venda?._buyer_id_concorrente ||
+            null;
+
+        if (buyerIdVenda) {
+            buyersParaVerificar.add(
+                String(buyerIdVenda)
+            );
         }
 
 
@@ -57223,6 +57808,27 @@ async function salvarVendasCacheNFE(
 
                 console.warn(
                     '⚠️ [NFE Devolução] Falha na checagem automática:',
+                    error
+                );
+            }
+        );
+    }
+
+
+    // Mesma lógica, pros compradores: verifica no ML (uma vez só por
+    // buyer_id, pra sempre) quem ainda não está em
+    // compradores_perfil_ml — não atrasa o salvamento principal.
+    if (
+        buyersParaVerificar.size
+    ) {
+
+        verificarCompradoresNovosNFE(
+            Array.from(buyersParaVerificar)
+        ).catch(
+            error => {
+
+                console.warn(
+                    '⚠️ [NFE Concorrente] Falha na checagem automática de compradores:',
                     error
                 );
             }
