@@ -70,7 +70,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
     <style>
         /* ===== ESTILOS GERAIS (mantidos originais) ===== */
         :root {
@@ -7030,6 +7032,9 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="btn btn-success" id="btnExportarEstoque" onclick="exportarEstoqueExcel()">
                 <i class="fas fa-file-excel"></i> Exportar
             </button>
+            <button class="btn btn-outline-dark" onclick="window.abrirCatalogoProdutos()" title="Gerar catálogo em PDF (título + foto, sem preço)">
+                <i class="fas fa-book-open"></i> Catálogo de Produtos
+            </button>
         </div>
     </div>
 
@@ -7475,6 +7480,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="estoque.js"></script>
     <script src="nfe_manager.js?v=20260925-7"></script>
     <script src="estoque_gestao.js?v=20260924-7"></script>
+    <script src="catalogo_produtos.js?v=20260925-3"></script>
     <script src="estoque_analise.js?v=20260924-3"></script>
     <script src="regras_nivel_estoque.js?v=20260925-1"></script>
     <script src="precificacao_inteligente.js?v=20260924-17"></script>
