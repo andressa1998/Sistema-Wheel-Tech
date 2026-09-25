@@ -125,6 +125,13 @@
             .cat-btn-primary{background:#0a58ca;color:#fff;}
             .cat-btn-success{background:#198754;color:#fff;}
             .cat-btn-outline{background:#fff;color:#495057;border:1px solid #ced4da;}
+            .cat-multiselect{position:relative;}
+            .cat-multiselect-btn{border:1px solid #ced4da;border-radius:6px;padding:7px 10px;font-size:13px;background:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-width:220px;justify-content:space-between;}
+            .cat-multiselect-panel{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:#fff;border:1px solid #dee2e6;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.15);padding:8px;min-width:240px;max-height:280px;overflow-y:auto;}
+            .cat-multiselect-panel.aberto{display:block;}
+            .cat-multiselect-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;font-size:13px;cursor:pointer;}
+            .cat-multiselect-item:hover{background:#f1f3f5;}
+            .cat-grupo-titulo{font-size:15px;font-weight:800;color:#58595B;margin:16px 0 8px;padding-bottom:4px;border-bottom:2px solid #eef1f4;}
             .cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;}
             .cat-card{border:1px solid #e2e6ea;border-radius:9px;overflow:hidden;background:#fff;display:flex;flex-direction:column;}
             .cat-card.cat-inativo{opacity:.45;}
@@ -145,7 +152,8 @@
     // MODAL PRINCIPAL
     // ============================================================
 
-    let categoriaAtualCat = '';
+    let categoriasAtualCat = []; // array de nomes de categoria selecionados
+    let categoriasDisponiveisCat = [];
     let produtosCatalogoAtual = [];
 
     function criarModalCatalogo() {
@@ -159,13 +167,19 @@
                 <div class="cat-head">
                     <div>
                         <div style="font-size:19px;font-weight:800;"><i class="fas fa-book-open"></i> Catálogo de Produtos</div>
-                        <div style="font-size:11px;color:#6c757d;margin-top:2px;">Só título e foto — sem preço. Sincronize uma categoria por vez.</div>
+                        <div style="font-size:11px;color:#6c757d;margin-top:2px;">Só título e foto — sem preço. Escolha uma ou mais categorias.</div>
                     </div>
                     <button type="button" onclick="window.fecharCatalogoProdutos()" style="border:0;background:transparent;font-size:25px;cursor:pointer;">&times;</button>
                 </div>
                 <div class="cat-body">
                     <div class="cat-toolbar">
-                        <select id="catSelectCategoria"></select>
+                        <div class="cat-multiselect">
+                            <button type="button" class="cat-multiselect-btn" id="catBtnCategorias" onclick="window.alternarPainelCategoriasCatalogo()">
+                                <span id="catRotuloCategorias">Selecione as categorias...</span>
+                                <i class="fas fa-chevron-down" style="font-size:10px;"></i>
+                            </button>
+                            <div class="cat-multiselect-panel" id="catPainelCategorias"></div>
+                        </div>
                         <button type="button" class="cat-btn cat-btn-primary" id="catBtnSincronizar" onclick="window.sincronizarFotosCatalogoML()">
                             <i class="fas fa-sync-alt"></i> Sincronizar fotos do Mercado Livre
                         </button>
@@ -176,26 +190,51 @@
                             <i class="fas fa-file-pdf"></i> Gerar catálogo (PDF)
                         </button>
                     </div>
-                    <div id="catalogoLista"><div class="cat-vazio">Escolha uma categoria acima.</div></div>
+                    <div id="catalogoLista"><div class="cat-vazio">Escolha uma ou mais categorias acima.</div></div>
                     <div id="catalogoLinkResultado" style="margin-top:14px;"></div>
                 </div>
             </div>
         `;
-        ov.addEventListener('click', e => { if (e.target === ov) window.fecharCatalogoProdutos(); });
+        ov.addEventListener('click', e => {
+            if (e.target === ov) window.fecharCatalogoProdutos();
+            if (!e.target.closest('.cat-multiselect')) {
+                document.getElementById('catPainelCategorias')?.classList.remove('aberto');
+            }
+        });
         document.body.appendChild(ov);
-
-        document.getElementById('catSelectCategoria')
-            .addEventListener('change', e => {
-                categoriaAtualCat = e.target.value;
-                carregarListaCatalogo();
-            });
 
         return ov;
     }
 
+    window.alternarPainelCategoriasCatalogo = function () {
+        document.getElementById('catPainelCategorias')?.classList.toggle('aberto');
+    };
+
+    function atualizarRotuloCategoriasCat() {
+        const rotulo = document.getElementById('catRotuloCategorias');
+        if (!rotulo) return;
+        if (!categoriasAtualCat.length) {
+            rotulo.textContent = 'Selecione as categorias...';
+        } else if (categoriasAtualCat.length <= 2) {
+            rotulo.textContent = categoriasAtualCat.join(', ');
+        } else {
+            rotulo.textContent = `${categoriasAtualCat.length} categorias selecionadas`;
+        }
+    }
+
+    window.alternarCategoriaCatalogo = function (categoria, marcado) {
+        if (marcado) {
+            if (!categoriasAtualCat.includes(categoria)) categoriasAtualCat.push(categoria);
+        } else {
+            categoriasAtualCat = categoriasAtualCat.filter(c => c !== categoria);
+        }
+        atualizarRotuloCategoriasCat();
+        carregarListaCatalogo();
+    };
+
     async function popularSelectCategoriasCat() {
-        const select = document.getElementById('catSelectCategoria');
-        if (!select) return;
+        const painel = document.getElementById('catPainelCategorias');
+        if (!painel) return;
 
         const cli = sb();
         const categorias = new Set();
@@ -218,15 +257,16 @@
             console.warn('⚠️ [Catálogo] Erro lendo categorias:', error);
         }
 
-        const lista = Array.from(categorias).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        categoriasDisponiveisCat = Array.from(categorias).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
-        select.innerHTML =
-            '<option value="">Selecione uma categoria...</option>' +
-            lista.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+        painel.innerHTML = categoriasDisponiveisCat.map(c => `
+            <label class="cat-multiselect-item">
+                <input type="checkbox" value="${esc(c)}" ${categoriasAtualCat.includes(c) ? 'checked' : ''} onchange="window.alternarCategoriaCatalogo('${esc(c)}', this.checked)">
+                ${esc(c)}
+            </label>
+        `).join('') || '<div style="padding:8px;color:#6c757d;font-size:12px;">Nenhuma categoria encontrada.</div>';
 
-        if (categoriaAtualCat && lista.includes(categoriaAtualCat)) {
-            select.value = categoriaAtualCat;
-        }
+        atualizarRotuloCategoriasCat();
     }
 
     window.abrirCatalogoProdutos = async function () {
@@ -234,7 +274,7 @@
         const ov = criarModalCatalogo();
         (ov || document.getElementById('catalogoOverlay')).classList.remove('hidden-cat');
         await popularSelectCategoriasCat();
-        if (categoriaAtualCat) await carregarListaCatalogo();
+        if (categoriasAtualCat.length) await carregarListaCatalogo();
     };
 
     window.fecharCatalogoProdutos = function () {
@@ -246,9 +286,8 @@
     // ============================================================
 
     window.sincronizarFotosCatalogoML = async function () {
-        const categoria = document.getElementById('catSelectCategoria')?.value;
-        if (!categoria) {
-            window.showToast?.('Escolha uma categoria primeiro.', 'warning');
+        if (!categoriasAtualCat.length) {
+            window.showToast?.('Escolha uma ou mais categorias primeiro.', 'warning');
             return;
         }
 
@@ -257,6 +296,37 @@
         if (btn) btn.disabled = true;
 
         try {
+            let totalRegistros = 0;
+            let totalComFoto = 0;
+
+            for (let i = 0; i < categoriasAtualCat.length; i++) {
+                const categoria = categoriasAtualCat[i];
+                if (btn) btn.innerHTML = `<i class="fas fa-sync-alt fa-spin"></i> Categoria ${i + 1}/${categoriasAtualCat.length}: ${esc(categoria)}...`;
+                const resultado = await sincronizarUmaCategoriaCatalogoML(categoria, btn);
+                totalRegistros += resultado.total;
+                totalComFoto += resultado.comFoto;
+            }
+
+            window.showToast?.(
+                `✅ ${totalRegistros} produto(s) sincronizado(s) em ${categoriasAtualCat.length} categoria(s) — ${totalComFoto} com foto encontrada.`,
+                'success'
+            );
+
+            await carregarListaCatalogo();
+
+        } catch (error) {
+            console.error('❌ [Catálogo] Erro sincronizando:', error);
+            window.showToast?.('❌ Erro ao sincronizar: ' + error.message, 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = iconeOriginal;
+            }
+        }
+    };
+
+    async function sincronizarUmaCategoriaCatalogoML(categoria, btn) {
+        {
             const cli = sb();
 
             // 1) produtos da categoria (id, sku, nome, mlb_codes, dados_extra)
@@ -382,23 +452,9 @@
             const registros = [...registrosNovos, ...registrosExistentes];
             const comFoto = registros.filter(r => r.foto_url).length;
 
-            window.showToast?.(
-                `✅ ${registros.length} produto(s) sincronizado(s) — ${comFoto} com foto encontrada.`,
-                'success'
-            );
-
-            await carregarListaCatalogo();
-
-        } catch (error) {
-            console.error('❌ [Catálogo] Erro sincronizando:', error);
-            window.showToast?.('❌ Erro ao sincronizar: ' + error.message, 'error');
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = iconeOriginal;
-            }
+            return { total: registros.length, comFoto };
         }
-    };
+    }
 
     // ============================================================
     // LISTA / REVISÃO
@@ -408,8 +464,8 @@
         const container = document.getElementById('catalogoLista');
         if (!container) return;
 
-        if (!categoriaAtualCat) {
-            container.innerHTML = '<div class="cat-vazio">Escolha uma categoria acima.</div>';
+        if (!categoriasAtualCat.length) {
+            container.innerHTML = '<div class="cat-vazio">Escolha uma ou mais categorias acima.</div>';
             produtosCatalogoAtual = [];
             return;
         }
@@ -420,7 +476,8 @@
         const { data, error } = await cli
             .from(CFG_CAT.tabela)
             .select('*')
-            .eq('categoria', categoriaAtualCat)
+            .in('categoria', categoriasAtualCat)
+            .order('categoria', { ascending: true })
             .order('subcategoria', { ascending: true, nullsFirst: false })
             .order('titulo', { ascending: true });
 
@@ -440,7 +497,7 @@
         if (!produtosCatalogoAtual.length) {
             container.innerHTML = `
                 <div class="cat-vazio">
-                    Nenhum produto sincronizado ainda nessa categoria.<br>
+                    Nenhum produto sincronizado ainda nessas categorias.<br>
                     Clique em "Sincronizar fotos do Mercado Livre" acima.
                 </div>
             `;
@@ -448,13 +505,28 @@
         }
 
         const comFoto = produtosCatalogoAtual.filter(p => p.ativo && p.foto_url).length;
+        const multiplasCategorias = categoriasAtualCat.length > 1;
+
+        // agrupa por categoria só pra exibição (quando mais de uma
+        // categoria escolhida) — o card em si continua igual.
+        const gruposPorCategoria = [];
+        produtosCatalogoAtual.forEach(p => {
+            let grupo = gruposPorCategoria.find(g => g.categoria === p.categoria);
+            if (!grupo) {
+                grupo = { categoria: p.categoria, produtos: [] };
+                gruposPorCategoria.push(grupo);
+            }
+            grupo.produtos.push(p);
+        });
 
         container.innerHTML = `
             <div style="font-size:12px;color:#6c757d;margin-bottom:10px;">
-                ${produtosCatalogoAtual.length} produto(s) nessa categoria — ${comFoto} ativo(s) com foto (esses entram no catálogo)
+                ${produtosCatalogoAtual.length} produto(s) — ${comFoto} ativo(s) com foto (esses entram no catálogo)
             </div>
-            <div class="cat-grid">
-                ${produtosCatalogoAtual.map(p => `
+            ${gruposPorCategoria.map(grupo => `
+                ${multiplasCategorias ? `<div class="cat-grupo-titulo">${esc(grupo.categoria)}</div>` : ''}
+                <div class="cat-grid">
+                    ${grupo.produtos.map(p => `
                     <div class="cat-card ${p.ativo ? '' : 'cat-inativo'}" data-catalogo-card="${p.id}">
                         <div class="cat-card-img">
                             ${p.foto_url ? `<img src="${esc(p.foto_url)}" loading="lazy" alt="">` : '<i class="fas fa-image" style="color:#ced4da;font-size:30px;"></i>'}
@@ -478,8 +550,9 @@
                             </div>
                         </div>
                     </div>
-                `).join('')}
-            </div>
+                    `).join('')}
+                </div>
+            `).join('')}
         `;
     }
 
@@ -520,15 +593,28 @@
 
     const PRODUTOS_POR_PAGINA_CAT = 8; // 2 colunas x 4 linhas
 
-    function agruparPorSubcategoria(produtos) {
-        const grupos = new Map();
+    // Cada categoria escolhida vira um "capítulo" (header próprio nas
+    // páginas de produto), e dentro dela agrupa por subcategoria/grupo
+    // — igual já fazia com uma categoria só, só que agora repetido
+    // pra cada categoria selecionada, na ordem em que foram marcadas.
+    function agruparPorCategoriaESubcategoria(produtos) {
+        const porCategoria = new Map();
+
         produtos.forEach(p => {
+            if (!porCategoria.has(p.categoria)) porCategoria.set(p.categoria, new Map());
+            const porSub = porCategoria.get(p.categoria);
             const chave = p.subcategoria || 'Outros';
-            if (!grupos.has(chave)) grupos.set(chave, []);
-            grupos.get(chave).push(p);
+            if (!porSub.has(chave)) porSub.set(chave, []);
+            porSub.get(chave).push(p);
         });
-        return Array.from(grupos.entries())
-            .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
+
+        return categoriasAtualCat
+            .filter(c => porCategoria.has(c))
+            .map(categoria => ({
+                categoria,
+                subgrupos: Array.from(porCategoria.get(categoria).entries())
+                    .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
+            }));
     }
 
     function montarHtmlCabecalhoCat(categoria) {
@@ -640,26 +726,50 @@
         `;
     }
 
-    async function montarPaginaIndiceCat(grupos, mapaPaginaInicial) {
-        const pagina = montarPaginaOffscreen();
-        aplicarMarcaDaguaCat(pagina);
-
-        const conteudo = document.createElement('div');
-        conteudo.style.cssText = 'position:relative;z-index:1;';
-        conteudo.innerHTML = `
-            ${montarHtmlCabecalhoCat('Índice')}
-            <div style="margin:10px 50px;">
-                ${grupos.map(([nome], i) => `
-                    <div style="display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px dashed #dee2e6;font-size:15px;">
-                        <span style="font-weight:700;color:#58595B;">${esc(nome)}</span>
-                        <span style="color:#6c757d;">página ${mapaPaginaInicial[i]}</span>
+    // capitulos: [{ categoria, subgrupos: [{ nome, paginaInicial }] }]
+    // Uma página de índice pode não caber tudo se houver muitas
+    // categorias/grupos — nesse caso quebra em mais páginas de índice.
+    function montarBlocosIndiceCat(capitulos) {
+        const blocos = [];
+        capitulos.forEach(cap => {
+            blocos.push(`<div style="font-weight:900;font-size:17px;color:#00ADEE;margin-top:16px;">${esc((cap.categoria || '').toUpperCase())}</div>`);
+            cap.subgrupos.forEach(sub => {
+                blocos.push(`
+                    <div style="display:flex;justify-content:space-between;padding:9px 4px 9px 16px;border-bottom:1px dashed #dee2e6;font-size:14px;">
+                        <span style="font-weight:700;color:#58595B;">${esc(sub.nome)}</span>
+                        <span style="color:#6c757d;">página ${sub.paginaInicial}</span>
                     </div>
-                `).join('')}
-            </div>
-            ${montarHtmlRodapeCat()}
-        `;
-        pagina.appendChild(conteudo);
-        return pagina;
+                `);
+            });
+        });
+        return blocos;
+    }
+
+    const BLOCOS_INDICE_POR_PAGINA_CAT = 22;
+
+    async function montarPaginasIndiceCat(capitulos) {
+        const blocos = montarBlocosIndiceCat(capitulos);
+        const paginasIndice = [];
+
+        for (let i = 0; i < blocos.length; i += BLOCOS_INDICE_POR_PAGINA_CAT) {
+            const fatia = blocos.slice(i, i + BLOCOS_INDICE_POR_PAGINA_CAT);
+            const pagina = montarPaginaOffscreen();
+            aplicarMarcaDaguaCat(pagina);
+
+            const conteudo = document.createElement('div');
+            conteudo.style.cssText = 'position:relative;z-index:1;';
+            conteudo.innerHTML = `
+                ${montarHtmlCabecalhoCat('Índice')}
+                <div style="margin:10px 50px;">
+                    ${fatia.join('')}
+                </div>
+                ${montarHtmlRodapeCat()}
+            `;
+            pagina.appendChild(conteudo);
+            paginasIndice.push(pagina);
+        }
+
+        return paginasIndice;
     }
 
     async function montarPaginaProdutosCat(categoria, nomeGrupo, produtosDaPagina) {
@@ -685,8 +795,8 @@
     }
 
     window.gerarCatalogoPDF = async function () {
-        if (!categoriaAtualCat) {
-            window.showToast?.('Escolha uma categoria primeiro.', 'warning');
+        if (!categoriasAtualCat.length) {
+            window.showToast?.('Escolha uma ou mais categorias primeiro.', 'warning');
             return;
         }
 
@@ -706,30 +816,50 @@
             const produtosValidos = produtosCatalogoAtual.filter(p => p.ativo && p.foto_url);
 
             if (!produtosValidos.length) {
-                window.showToast?.('Nenhum produto ativo com foto nessa categoria.', 'warning');
+                window.showToast?.('Nenhum produto ativo com foto nessas categorias.', 'warning');
                 return;
             }
 
-            const grupos = agruparPorSubcategoria(produtosValidos);
+            const capitulos = agruparPorCategoriaESubcategoria(produtosValidos);
 
-            // monta a divisão de páginas por grupo (cada grupo sempre
-            // começa em página nova, pra bater com o índice)
-            const paginasPorGrupo = grupos.map(([nome, lista]) => {
-                const fatias = [];
-                for (let i = 0; i < lista.length; i += PRODUTOS_POR_PAGINA_CAT) {
-                    fatias.push(lista.slice(i, i + PRODUTOS_POR_PAGINA_CAT));
-                }
-                return { nome, fatias };
-            });
+            // monta a divisão de páginas por (categoria, subgrupo) — cada
+            // subgrupo sempre começa em página nova, pra bater com o índice
+            const capitulosComPaginas = capitulos.map(cap => ({
+                categoria: cap.categoria,
+                subgrupos: cap.subgrupos.map(([nome, lista]) => {
+                    const fatias = [];
+                    for (let i = 0; i < lista.length; i += PRODUTOS_POR_PAGINA_CAT) {
+                        fatias.push(lista.slice(i, i + PRODUTOS_POR_PAGINA_CAT));
+                    }
+                    return { nome, fatias };
+                })
+            }));
 
-            const temIndice = grupos.length > 1;
-            let paginaAtual = temIndice ? 2 : 1;
-            const paginaInicialPorGrupo = [];
+            const totalSubgrupos = capitulosComPaginas.reduce((soma, cap) => soma + cap.subgrupos.length, 0);
+            const temIndice = totalSubgrupos > 1;
 
-            paginasPorGrupo.forEach(g => {
-                paginaInicialPorGrupo.push(paginaAtual);
-                paginaAtual += g.fatias.length;
-            });
+            // primeiro, calcula quantas páginas de índice vão existir
+            // (o índice em si pode ocupar mais de uma página)
+            const blocosIndicePrevia = temIndice
+                ? montarBlocosIndiceCat(capitulosComPaginas.map(cap => ({
+                    categoria: cap.categoria,
+                    subgrupos: cap.subgrupos.map(s => ({ nome: s.nome, paginaInicial: 0 }))
+                })))
+                : [];
+            const paginasIndicePrevistas = temIndice
+                ? Math.ceil(blocosIndicePrevia.length / BLOCOS_INDICE_POR_PAGINA_CAT)
+                : 0;
+
+            let paginaAtual = paginasIndicePrevistas + 1;
+
+            const capitulosComPaginaInicial = capitulosComPaginas.map(cap => ({
+                categoria: cap.categoria,
+                subgrupos: cap.subgrupos.map(s => {
+                    const paginaInicial = paginaAtual;
+                    paginaAtual += s.fatias.length;
+                    return { ...s, paginaInicial };
+                })
+            }));
 
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [1240, 1754], compress: true });
@@ -747,21 +877,28 @@
             let primeira = true;
 
             if (temIndice) {
-                const paginaIndice = await montarPaginaIndiceCat(grupos, paginaInicialPorGrupo);
-                await imprimirPagina(paginaIndice, primeira);
-                primeira = false;
-            }
-
-            for (const grupo of paginasPorGrupo) {
-                for (let i = 0; i < grupo.fatias.length; i++) {
-                    if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Montando "${grupo.nome}"...`;
-                    const paginaProdutos = await montarPaginaProdutosCat(categoriaAtualCat, grupo.nome, grupo.fatias[i]);
-                    await imprimirPagina(paginaProdutos, primeira);
+                const paginasIndice = await montarPaginasIndiceCat(capitulosComPaginaInicial);
+                for (const paginaIndice of paginasIndice) {
+                    await imprimirPagina(paginaIndice, primeira);
                     primeira = false;
                 }
             }
 
-            const nomeArquivo = `catalogo-${categoriaAtualCat.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`;
+            for (const cap of capitulosComPaginaInicial) {
+                for (const grupo of cap.subgrupos) {
+                    for (let i = 0; i < grupo.fatias.length; i++) {
+                        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Montando "${cap.categoria} — ${grupo.nome}"...`;
+                        const paginaProdutos = await montarPaginaProdutosCat(cap.categoria, grupo.nome, grupo.fatias[i]);
+                        await imprimirPagina(paginaProdutos, primeira);
+                        primeira = false;
+                    }
+                }
+            }
+
+            const sufixoNome = categoriasAtualCat.length === 1
+                ? categoriasAtualCat[0].toLowerCase().replace(/[^a-z0-9]+/g, '-')
+                : `${categoriasAtualCat.length}-categorias`;
+            const nomeArquivo = `catalogo-${sufixoNome}-${new Date().toISOString().slice(0, 10)}.pdf`;
 
             // 1) baixa localmente, sempre funciona
             pdf.save(nomeArquivo);
