@@ -94,6 +94,16 @@
             #reclamacoesClientesTable th{cursor:default;}
             .rc-sync-spin{animation:rc-spin 1s linear infinite;}
             @keyframes rc-spin{to{transform:rotate(360deg);}}
+            .rc-modal.rc-modal-relatorio{max-width:900px;}
+            .rc-rel-resumo{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 18px;}
+            .rc-rel-card{border:1px solid #e2e8f0;border-radius:12px;padding:12px 16px;background:#f8fafc;min-width:160px;}
+            .rc-rel-card small{display:block;color:#64748b;font-size:11px;}
+            .rc-rel-card strong{font-size:20px;display:block;margin-top:2px;color:#0f172a;}
+            .rc-rel-tabela{width:100%;font-size:13px;border-collapse:collapse;}
+            .rc-rel-tabela th{text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;color:#475569;}
+            .rc-rel-tabela td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
+            .rc-rel-barra{height:8px;background:#eef2f7;border-radius:6px;overflow:hidden;min-width:80px;}
+            .rc-rel-barra span{display:block;height:100%;background:#0d6efd;}
         `;
         document.head.appendChild(st);
     }
@@ -131,6 +141,9 @@
                             </button>
                             <button class="btn btn-outline-success" onclick="window.exportarReclamacoesClientesExcel()">
                                 <i class="fas fa-file-excel"></i> Exportar Excel
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="window.abrirRelatorioMotivosRC()">
+                                <i class="fas fa-chart-bar"></i> Relatório de Motivos
                             </button>
                         </div>
                     </div>
@@ -200,6 +213,38 @@
 
         overlay.addEventListener('click', e => {
             if (e.target === overlay) window.fecharDetalhesReclamacaoCliente();
+        });
+    }
+
+    function criarModalRelatorioMotivosRC() {
+        if (document.getElementById('rcModalRelatorio')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'rcModalRelatorio';
+        overlay.className = 'rc-overlay hidden-rc';
+        overlay.innerHTML = `
+            <div class="rc-modal rc-modal-relatorio">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px;">
+                    <div>
+                        <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatório de motivos</h3>
+                        <div style="font-size:12px;color:#6c757d;margin-top:4px;">Reclamações de clientes agrupadas pelo motivo — do mais usado ao menos usado.</div>
+                    </div>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button class="btn btn-sm btn-outline-success" onclick="window.exportarRelatorioMotivosRCExcel()">
+                            <i class="fas fa-file-excel"></i> Exportar
+                        </button>
+                        <button onclick="window.fecharRelatorioMotivosRC()" style="background:none;border:none;font-size:22px;cursor:pointer;">&times;</button>
+                    </div>
+                </div>
+                <div id="rcRelCorpo">
+                    <div class="text-center py-4"><span class="spinner"></span> Carregando...</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', e => {
+            if (e.target === overlay) window.fecharRelatorioMotivosRC();
         });
     }
 
@@ -294,6 +339,147 @@
         XLSX.utils.book_append_sheet(wb, ws, 'Reclamacoes_Clientes');
         XLSX.writeFile(wb, `reclamacoes_clientes_${new Date().toISOString().slice(0, 10)}.xlsx`);
         showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
+    };
+
+    // ============================================================
+    // RELATÓRIO DE MOTIVOS
+    // ============================================================
+
+    let graficoMotivosRC = null;
+    let motivosAgrupadosRC = [];
+
+    function agruparPorMotivoRC() {
+        const mapa = new Map();
+        reclamacoesCache.forEach(r => {
+            const chave = String(r.motivo || '').trim() || 'Não informado';
+            mapa.set(chave, (mapa.get(chave) || 0) + 1);
+        });
+        return Array.from(mapa.entries())
+            .map(([motivo, quantidade]) => ({ motivo, quantidade }))
+            .sort((a, b) => b.quantidade - a.quantidade);
+    }
+
+    window.abrirRelatorioMotivosRC = function () {
+        criarModalRelatorioMotivosRC();
+        const overlay = document.getElementById('rcModalRelatorio');
+        overlay.classList.remove('hidden-rc');
+        renderizarRelatorioMotivosRC();
+    };
+
+    window.fecharRelatorioMotivosRC = function () {
+        document.getElementById('rcModalRelatorio')?.classList.add('hidden-rc');
+    };
+
+    function renderizarRelatorioMotivosRC() {
+        const corpo = document.getElementById('rcRelCorpo');
+        if (!corpo) return;
+
+        motivosAgrupadosRC = agruparPorMotivoRC();
+        const total = reclamacoesCache.length;
+
+        if (!total) {
+            corpo.innerHTML = `<div class="text-center text-muted py-5">Nenhuma reclamação carregada ainda. Sincronize com o Mercado Livre primeiro.</div>`;
+            return;
+        }
+
+        const maisUsado = motivosAgrupadosRC[0];
+
+        corpo.innerHTML = `
+            <div class="rc-rel-resumo">
+                <div class="rc-rel-card"><small>Total de reclamações</small><strong>${total}</strong></div>
+                <div class="rc-rel-card"><small>Motivos diferentes</small><strong>${motivosAgrupadosRC.length}</strong></div>
+                <div class="rc-rel-card" style="background:#eef6ff;border-color:#b6d4fe;"><small>Motivo mais usado</small><strong style="font-size:14px;line-height:1.3;">${esc(maisUsado.motivo)} <span style="color:#0d6efd;">(${maisUsado.quantidade})</span></strong></div>
+            </div>
+            <div style="height:${Math.max(220, motivosAgrupadosRC.length * 34)}px; max-height:420px; overflow-y:auto; margin-bottom:20px;">
+                <canvas id="rcGraficoMotivos"></canvas>
+            </div>
+            <div class="table-responsive">
+                <table class="rc-rel-tabela">
+                    <thead><tr><th>Motivo</th><th style="text-align:right;">Quantidade</th><th>% do total</th></tr></thead>
+                    <tbody>
+                        ${motivosAgrupadosRC.map(m => {
+                            const pct = total ? Math.round((m.quantidade / total) * 1000) / 10 : 0;
+                            return `
+                                <tr>
+                                    <td>${esc(m.motivo)}</td>
+                                    <td style="text-align:right;font-weight:700;">${m.quantidade}</td>
+                                    <td>
+                                        <div style="display:flex;align-items:center;gap:8px;">
+                                            <div class="rc-rel-barra" style="flex:1;"><span style="width:${pct}%;"></span></div>
+                                            <small style="color:#64748b;min-width:42px;">${pct}%</small>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        desenharGraficoMotivosRC();
+    }
+
+    function desenharGraficoMotivosRC() {
+        const canvas = document.getElementById('rcGraficoMotivos');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        if (graficoMotivosRC) {
+            graficoMotivosRC.destroy();
+            graficoMotivosRC = null;
+        }
+
+        // Barra horizontal: o primeiro item da lista (já ordenada do mais
+        // pro menos usado) fica no topo do gráfico.
+        const dados = motivosAgrupadosRC;
+        const cores = dados.map((_, i) => i === 0 ? '#0d6efd' : 'rgba(13,110,253,0.55)');
+
+        graficoMotivosRC = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: dados.map(m => m.motivo.length > 60 ? m.motivo.slice(0, 57) + '…' : m.motivo),
+                datasets: [{
+                    label: 'Reclamações',
+                    data: dados.map(m => m.quantidade),
+                    backgroundColor: cores,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (itens) => dados[itens[0].dataIndex]?.motivo || ''
+                        }
+                    }
+                },
+                scales: {
+                    x: { beginAtZero: true, ticks: { precision: 0 } }
+                }
+            }
+        });
+    }
+
+    window.exportarRelatorioMotivosRCExcel = function () {
+        if (!motivosAgrupadosRC.length) {
+            showToast('Nenhum dado para exportar', 'warning');
+            return;
+        }
+        const total = reclamacoesCache.length;
+        const dados = motivosAgrupadosRC.map(m => ({
+            'Motivo': m.motivo,
+            'Quantidade': m.quantidade,
+            '% do total': total ? Math.round((m.quantidade / total) * 1000) / 10 : 0
+        }));
+        const ws = XLSX.utils.json_to_sheet(dados);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Motivos');
+        XLSX.writeFile(wb, `reclamacoes_clientes_motivos_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        showToast('✅ Relatório exportado!', 'success');
     };
 
     function renderizarReclamacoesClientes() {

@@ -21,7 +21,10 @@
 
     const CFG_ATIV = {
         tabela: 'atividades_colaboradores',
-        tabelaAgenda: 'agenda_eventos'
+        tabelaAgenda: 'agenda_eventos',
+        // "Semana toda" / "Mês todo" são recorrentes: cada dia concluído vira
+        // uma linha aqui (não mexe no status da atividade em si).
+        tabelaConclusoes: 'atividades_conclusoes_dia'
     };
 
     const CORES_PRIORIDADE = {
@@ -50,6 +53,10 @@
     let filtroColaboradorAtiv = '';
     let filtroBuscaAtiv = '';
     let jaProrrogouHoje = false;
+
+    // id da atividade -> { concluido_por, concluido_em } — só do dia de hoje,
+    // só pra atividades de frequência 'semana'/'mes' (recorrentes).
+    let conclusoesHojeAtiv = new Map();
 
     // ============================================================
     // USUÁRIO / PERMISSÃO
@@ -153,6 +160,123 @@
         return { data_inicio: dataReferenciaIso, data_fim: dataReferenciaIso };
     }
 
+    function ehRecorrenteAtiv(atividade) {
+        return atividade.frequencia === 'semana' || atividade.frequencia === 'mes';
+    }
+
+    // Segue Date.getDay(): 0 = domingo ... 6 = sábado.
+    function diaDaSemanaIsoAtiv(iso) {
+        const [ano, mes, dia] = String(iso).split('-').map(Number);
+        return new Date(ano, mes - 1, dia, 12).getDay();
+    }
+
+    // A atividade recorrente pede ação hoje? (dentro do prazo e, se tiver
+    // dias específicos marcados, hoje precisa ser um deles)
+    function aplicavelHojeAtiv(atividade, hojeIso = hojeIsoAtiv()) {
+        if (!ehRecorrenteAtiv(atividade)) return true;
+        if (hojeIso < atividade.data_inicio || hojeIso > atividade.data_fim) return false;
+        if (Array.isArray(atividade.dias_semana) && atividade.dias_semana.length) {
+            return atividade.dias_semana.includes(diaDaSemanaIsoAtiv(hojeIso));
+        }
+        return true;
+    }
+
+    // Último dia dentro do prazo em que a atividade recorrente pede ação
+    // (usado pra saber, quando o prazo vence, se ela foi feita a tempo).
+    function ultimoDiaAplicavelAtiv(atividade) {
+        if (Array.isArray(atividade.dias_semana) && atividade.dias_semana.length) {
+            const dias = atividade.dias_semana;
+            for (let iso = atividade.data_fim; iso >= atividade.data_inicio; ) {
+                if (dias.includes(diaDaSemanaIsoAtiv(iso))) return iso;
+                const d = new Date(`${iso}T00:00:00`);
+                d.setDate(d.getDate() - 1);
+                iso = isoDataAtiv(d);
+            }
+            return null;
+        }
+        return atividade.data_fim;
+    }
+
+    // "Concluída" hoje, do jeito certo pra cada frequência: diária usa o
+    // status da própria linha; semanal/mensal usa a conclusão de hoje.
+    function concluidaHojeAtiv(atividade) {
+        return ehRecorrenteAtiv(atividade)
+            ? conclusoesHojeAtiv.has(atividade.id)
+            : atividade.status === 'concluida';
+    }
+
+    // Atividades semanal/mensal que ficaram "concluida" de vez (modelo
+    // antigo, antes de existir conclusão por dia) mas cujo prazo ainda não
+    // acabou: destrava sozinho, migrando a conclusão antiga pro dia em que
+    // ela realmente aconteceu, sem perder o histórico de quem fez e quando.
+    async function normalizarRecorrentesConcluidasAntigasAtiv(lista) {
+        const hoje = hojeIsoAtiv();
+        const travadas = lista.filter(a => ehRecorrenteAtiv(a) && a.status === 'concluida' && a.data_fim >= hoje);
+        if (!travadas.length) return;
+
+        console.log(`🩹 [Atividades] Destravando ${travadas.length} atividade(s) semanal/mensal concluída(s) no modelo antigo...`);
+
+        for (const a of travadas) {
+            try {
+                const diaConclusao = a.concluida_em ? String(a.concluida_em).slice(0, 10) : hoje;
+
+                await window.supabaseClient
+                    .from(CFG_ATIV.tabelaConclusoes)
+                    .upsert({
+                        atividade_id: a.id,
+                        data: diaConclusao,
+                        concluido_por: a.concluida_por || null,
+                        concluido_em: a.concluida_em || new Date().toISOString()
+                    }, { onConflict: 'atividade_id,data', ignoreDuplicates: true });
+
+                let agendaEventoId = a.agenda_evento_id;
+                if (!agendaEventoId) {
+                    agendaEventoId = await criarEspelhoAgendaAtiv(a);
+                }
+
+                await window.supabaseClient
+                    .from(CFG_ATIV.tabela)
+                    .update({
+                        status: 'pendente',
+                        concluida_em: null,
+                        concluida_por: null,
+                        agenda_evento_id: agendaEventoId,
+                        atualizado_em: new Date().toISOString()
+                    })
+                    .eq('id', a.id);
+
+                a.status = 'pendente';
+                a.concluida_em = null;
+                a.concluida_por = null;
+                a.agenda_evento_id = agendaEventoId;
+            } catch (error) {
+                console.warn('⚠️ [Atividades] Erro destravando recorrente antiga:', a.id, error);
+            }
+        }
+    }
+
+    async function carregarConclusoesHojeAtiv(lista) {
+        conclusoesHojeAtiv = new Map();
+        const ids = lista.filter(ehRecorrenteAtiv).map(a => a.id);
+        if (!ids.length) return;
+
+        try {
+            const { data, error } = await window.supabaseClient
+                .from(CFG_ATIV.tabelaConclusoes)
+                .select('atividade_id, concluido_por, concluido_em')
+                .eq('data', hojeIsoAtiv())
+                .in('atividade_id', ids);
+
+            if (error) throw error;
+
+            (data || []).forEach(row => {
+                conclusoesHojeAtiv.set(row.atividade_id, row);
+            });
+        } catch (error) {
+            console.warn('⚠️ [Atividades] Erro carregando conclusões de hoje:', error);
+        }
+    }
+
     function periodoTextoAtiv(atividade) {
         const periodo = atividade.data_inicio === atividade.data_fim
             ? formatarDataBrAtiv(atividade.data_inicio)
@@ -254,6 +378,40 @@
 
             for (const antiga of atrasadas) {
 
+                // Semanal/mensal: só prorroga se o último dia dentro do prazo
+                // ficou sem conclusão. Se foi feito, só fecha — sem duplicar.
+                if (ehRecorrenteAtiv(antiga)) {
+                    const ultimoDia = ultimoDiaAplicavelAtiv(antiga);
+                    let feitoNoUltimoDia = null;
+
+                    if (ultimoDia) {
+                        const { data: conclusao } = await window.supabaseClient
+                            .from(CFG_ATIV.tabelaConclusoes)
+                            .select('concluido_por, concluido_em')
+                            .eq('atividade_id', antiga.id)
+                            .eq('data', ultimoDia)
+                            .maybeSingle();
+                        feitoNoUltimoDia = conclusao || null;
+                    }
+
+                    if (feitoNoUltimoDia) {
+                        await window.supabaseClient
+                            .from(CFG_ATIV.tabela)
+                            .update({
+                                status: 'concluida',
+                                concluida_em: feitoNoUltimoDia.concluido_em,
+                                concluida_por: feitoNoUltimoDia.concluido_por,
+                                atualizado_em: new Date().toISOString()
+                            })
+                            .eq('id', antiga.id);
+
+                        await removerEspelhoAgendaAtiv(antiga.agenda_evento_id);
+                        continue;
+                    }
+                    // Não feito no último dia: cai no mesmo fluxo de
+                    // prorrogação de uma diária (abaixo).
+                }
+
                 const novaObservacao =
                     `Prorrogada automaticamente — não foi concluída até ${formatarDataBrAtiv(antiga.data_fim)}, então foi movida para hoje.`;
 
@@ -331,6 +489,8 @@
             if (error) throw error;
 
             atividadesCache = data || [];
+            await normalizarRecorrentesConcluidasAntigasAtiv(atividadesCache);
+            await carregarConclusoesHojeAtiv(atividadesCache);
             renderizarListaAtividadesAtiv();
             atualizarResumoAtiv();
 
@@ -357,8 +517,14 @@
             ? atividadesCache
             : atividadesCache.filter(a => a.designado_para === usernameAtiv());
 
-        const pendentes = base.filter(a => a.status === 'pendente').length;
-        const concluidas = base.filter(a => a.status === 'concluida').length;
+        const pendentes = base.filter(a =>
+            a.status === 'pendente' &&
+            (!ehRecorrenteAtiv(a) || (aplicavelHojeAtiv(a) && !concluidaHojeAtiv(a)))
+        ).length;
+        const concluidas = base.filter(a =>
+            a.status === 'concluida' ||
+            (ehRecorrenteAtiv(a) && a.status === 'pendente' && aplicavelHojeAtiv(a) && concluidaHojeAtiv(a))
+        ).length;
         const prorrogadas = base.filter(a => a.status === 'prorrogada').length;
         const hoje = hojeIsoAtiv();
         const atrasadasHoje = base.filter(a => a.status === 'pendente' && a.data_fim < hoje).length;
@@ -384,9 +550,15 @@
             : atividadesCache.filter(a => a.designado_para === usernameAtiv());
 
         if (filtroStatusAtiv === 'ativas') {
-            lista = lista.filter(a => a.status === 'pendente');
+            lista = lista.filter(a =>
+                a.status === 'pendente' &&
+                (!ehRecorrenteAtiv(a) || (aplicavelHojeAtiv(a) && !concluidaHojeAtiv(a)))
+            );
         } else if (filtroStatusAtiv === 'concluidas') {
-            lista = lista.filter(a => a.status === 'concluida');
+            lista = lista.filter(a =>
+                a.status === 'concluida' ||
+                (ehRecorrenteAtiv(a) && a.status === 'pendente' && aplicavelHojeAtiv(a) && concluidaHojeAtiv(a))
+            );
         } else if (filtroStatusAtiv === 'prorrogadas') {
             lista = lista.filter(a => a.status === 'prorrogada');
         }
@@ -466,8 +638,10 @@
         const hoje = hojeIsoAtiv();
         const admin = ehAdminAtiv();
         const atrasada = a.status === 'pendente' && a.data_fim < hoje;
-        const concluida = a.status === 'concluida';
+        const concluida = concluidaHojeAtiv(a);
         const prorrogada = a.status === 'prorrogada';
+        const recorrente = ehRecorrenteAtiv(a);
+        const conclusaoHojeInfo = recorrente ? conclusoesHojeAtiv.get(a.id) : null;
         const corPrioridade = CORES_PRIORIDADE[a.prioridade] || CORES_PRIORIDADE.normal;
 
         return `
@@ -478,7 +652,7 @@
                         ${concluida ? 'checked' : ''}
                         ${prorrogada ? 'disabled' : ''}
                         onchange="window.alternarConclusaoAtividade(${a.id}, this.checked)"
-                        title="${concluida ? 'Marcar como não concluída' : 'Marcar como concluída'}"
+                        title="${recorrente ? (concluida ? 'Desmarcar a conclusão de hoje' : 'Marcar como feita hoje') : (concluida ? 'Marcar como não concluída' : 'Marcar como concluída')}"
                     >
                 </div>
                 <div class="ativ-card-corpo">
@@ -492,7 +666,9 @@
                     <div class="ativ-meta">
                         <span><i class="fas fa-calendar"></i> ${NOMES_FREQUENCIA[a.frequencia] || a.frequencia} · ${periodoTextoAtiv(a)}</span>
                         <span><i class="fas fa-user-tie"></i> Designado por ${escapeAtiv(nomeExibicaoUsuarioAtiv(a.designado_por))}</span>
-                        ${concluida && a.concluida_em ? `<span class="text-success"><i class="fas fa-check-circle"></i> Concluída em ${new Date(a.concluida_em).toLocaleString('pt-BR')}</span>` : ''}
+                        ${recorrente
+                            ? (conclusaoHojeInfo ? `<span class="text-success"><i class="fas fa-check-circle"></i> Feita hoje às ${new Date(conclusaoHojeInfo.concluido_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>` : `<span class="text-muted"><i class="fas fa-rotate"></i> Repete todo dia dentro do prazo</span>`)
+                            : (concluida && a.concluida_em ? `<span class="text-success"><i class="fas fa-check-circle"></i> Concluída em ${new Date(a.concluida_em).toLocaleString('pt-BR')}</span>` : '')}
                     </div>
                     ${a.observacao ? `<div class="ativ-observacao"><i class="fas fa-exclamation-triangle"></i> ${escapeAtiv(a.observacao)}</div>` : ''}
                 </div>
@@ -514,11 +690,56 @@
     // CONCLUIR / DESMARCAR
     // ============================================================
 
+    // Semana toda / mês todo: marcar/desmarcar só grava (ou apaga) a
+    // conclusão de HOJE — a atividade em si continua "pendente" o prazo
+    // inteiro, pra amanhã voltar a pedir ação. O calendário mostra o
+    // período inteiro, então o espelho na agenda não é tocado aqui.
+    async function alternarConclusaoRecorrenteAtiv(atividade, concluida) {
+        const hoje = hojeIsoAtiv();
+
+        if (concluida) {
+            const registro = {
+                atividade_id: atividade.id,
+                data: hoje,
+                concluido_por: usernameAtiv(),
+                concluido_em: new Date().toISOString()
+            };
+
+            const { error } = await window.supabaseClient
+                .from(CFG_ATIV.tabelaConclusoes)
+                .upsert(registro, { onConflict: 'atividade_id,data' });
+
+            if (error) throw error;
+
+            conclusoesHojeAtiv.set(atividade.id, registro);
+            showToast('✅ Feita hoje! Amanhã volta a pedir de novo, até o prazo.', 'success');
+
+        } else {
+            const { error } = await window.supabaseClient
+                .from(CFG_ATIV.tabelaConclusoes)
+                .delete()
+                .eq('atividade_id', atividade.id)
+                .eq('data', hoje);
+
+            if (error) throw error;
+
+            conclusoesHojeAtiv.delete(atividade.id);
+            showToast('↩️ Conclusão de hoje desfeita.', 'success');
+        }
+    }
+
     window.alternarConclusaoAtividade = async function (id, concluida) {
         const atividade = atividadesCache.find(a => a.id === id);
         if (!atividade) return;
 
         try {
+            if (ehRecorrenteAtiv(atividade)) {
+                await alternarConclusaoRecorrenteAtiv(atividade, concluida);
+                renderizarListaAtividadesAtiv();
+                atualizarResumoAtiv();
+                return;
+            }
+
             const usuario = usuarioAtualAtiv();
 
             const atualizacao = concluida
