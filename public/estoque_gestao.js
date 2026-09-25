@@ -10823,22 +10823,41 @@ function alterarItensPorPaginaEstoque(valor) {
 
 async function registrarMovimentacao(produtoId, tipo, quantidade, numeroDocumento, tipoEntrada = null) {
     const numero = await gerarNumeroMovimentacao();
-    const usuario = (typeof currentUser !== 'undefined' && currentUser?.name) 
-                ? currentUser.name 
+    const usuario = (typeof currentUser !== 'undefined' && currentUser?.name)
+                ? currentUser.name
                 : localStorage.getItem('userName') || 'sistema';
-    
-    // Buscar saldo atual do produto
-    const produto = produtosEstoque.find(p => p.id == produtoId);
-    const saldoAtual = produto ? produto.quantidade : 0;
-    
-    // Calcular novo saldo
-    let novoSaldo = saldoAtual;
-    if (tipo === 'entrada') {
-        novoSaldo += quantidade;
-    } else {
-        novoSaldo -= quantidade;
+
+    // O saldo gravado no histórico vem do valor REAL no banco agora —
+    // não do array produtosEstoque em memória. Quem chama esta função
+    // já deve ter atualizado produtos_estoque.quantidade antes (é o
+    // padrão em todo o sistema: primeiro grava o novo saldo, depois
+    // registra o histórico); ler ao vivo aqui garante que o histórico
+    // sempre bate com o que está realmente salvo, mesmo se o cache
+    // local estiver desatualizado (foi exatamente isso que causou um
+    // saldo errado no histórico de um produto: o cache achava que o
+    // saldo era um valor que não batia com o banco).
+    let novoSaldo;
+    try {
+        const { data: produtoAtual, error: erroLeitura } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('quantidade')
+            .eq('id', produtoId)
+            .maybeSingle();
+
+        if (erroLeitura || !produtoAtual) throw erroLeitura || new Error('produto não encontrado');
+
+        novoSaldo = produtoAtual.quantidade;
+
+    } catch (erroLeitura) {
+        // Fallback: se a leitura ao vivo falhar por algum motivo,
+        // volta a estimar a partir do cache (comportamento antigo)
+        // em vez de travar o registro da movimentação.
+        console.warn('⚠️ Não deu pra ler o saldo real, estimando a partir do cache:', erroLeitura);
+        const produto = produtosEstoque.find(p => p.id == produtoId);
+        const saldoAtual = produto ? produto.quantidade : 0;
+        novoSaldo = tipo === 'entrada' ? saldoAtual + quantidade : saldoAtual - quantidade;
     }
-    
+
     const { error } = await window.supabaseClient
         .from('estoque_movimentacoes')
         .insert([{
