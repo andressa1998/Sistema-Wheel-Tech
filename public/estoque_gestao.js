@@ -3048,6 +3048,57 @@ function moverBotoesParaMenuAcessibilidadeEstoque() {
 
 
     // =====================================================
+    // SINCRONIZAR CATEGORIA (ML)
+    // =====================================================
+
+    const btnSincronizarCategoria =
+        document.getElementById(
+            'btnSincronizarCategoriaML'
+        );
+
+    if (btnSincronizarCategoria) {
+        candidatos.push({
+            botao: btnSincronizarCategoria,
+            ordem: 5
+        });
+    }
+
+
+    // =====================================================
+    // NOVO PRODUTO
+    // =====================================================
+
+    const btnNovoProduto =
+        document.getElementById(
+            'btnNovoProdutoEstoque'
+        );
+
+    if (btnNovoProduto) {
+        candidatos.push({
+            botao: btnNovoProduto,
+            ordem: 6
+        });
+    }
+
+
+    // =====================================================
+    // CATÁLOGO DE PRODUTOS
+    // =====================================================
+
+    const btnCatalogoProdutos =
+        document.getElementById(
+            'btnCatalogoProdutos'
+        );
+
+    if (btnCatalogoProdutos) {
+        candidatos.push({
+            botao: btnCatalogoProdutos,
+            ordem: 65
+        });
+    }
+
+
+    // =====================================================
     // LIMPAR FILTROS
     // =====================================================
 

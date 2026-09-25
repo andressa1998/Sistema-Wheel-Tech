@@ -7017,7 +7017,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="btn btn-primary" id="btnSincronizarCategoriaML" onclick="sincronizarEstoqueMLPorCategoria()" title="Sincronizar todos os produtos da categoria selecionada com o Mercado Livre">
             <i class="fas fa-sync-alt"></i> Sincronizar Categoria
             </button>
-            <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
+            <button class="btn btn-success" id="btnNovoProdutoEstoque" onclick="abrirModalProdutoEstoque()">
             <i class="fas fa-plus"></i> Novo Produto
             </button>
             <button class="btn btn-purple" onclick="abrirModalGerenciarCategorias()" title="Gerenciar categorias">
@@ -7032,7 +7032,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="btn btn-success" id="btnExportarEstoque" onclick="exportarEstoqueExcel()">
                 <i class="fas fa-file-excel"></i> Exportar
             </button>
-            <button class="btn btn-outline-dark" onclick="window.abrirCatalogoProdutos()" title="Gerar catálogo em PDF (título + foto, sem preço)">
+            <button class="btn btn-outline-dark" id="btnCatalogoProdutos" onclick="window.abrirCatalogoProdutos()" title="Gerar catálogo em PDF (título + foto, sem preço)">
                 <i class="fas fa-book-open"></i> Catálogo de Produtos
             </button>
         </div>
@@ -7479,7 +7479,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
     <script src="nfe_manager.js?v=20260925-7"></script>
-    <script src="estoque_gestao.js?v=20260924-7"></script>
+    <script src="estoque_gestao.js?v=20260925-1"></script>
     <script src="catalogo_produtos.js?v=20260925-3"></script>
     <script src="estoque_analise.js?v=20260924-3"></script>
     <script src="regras_nivel_estoque.js?v=20260925-1"></script>
