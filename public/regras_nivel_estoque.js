@@ -140,6 +140,49 @@
         } catch (e) { return null; }
     }
 
+    // ---------- promoção ativa (pra não mudar preço de anúncio em promoção sem avisar) ----------
+    const NOMES_TIPO_PROMO_RN = {
+        PRICE_DISCOUNT: 'Nova proposta para ganhar exposição',
+        DEAL: 'Oferta do dia',
+        SELLER_CAMPAIGN: 'Campanha do vendedor',
+        MARKETPLACE_CAMPAIGN: 'Campanha do Mercado Livre',
+        SELLER_COUPON_CAMPAIGN: 'Cupom do vendedor',
+        PRE_NEGOTIATED: 'Pré-negociado',
+        UNHEALTHY_STOCK: 'Acelere suas vendas do Full'
+    };
+    const cachePromoAtivaMLB = {};
+    // devolve null (sem promoção ativa agora) ou { nome, tipo, preco } — preco é
+    // o valor que está valendo pro comprador enquanto a promoção estiver rodando.
+    async function obterPromocaoAtivaMLB(mlb, token) {
+        const c = cachePromoAtivaMLB[mlb];
+        if (c && Date.now() - c.quando < 2 * 60000) return c.resultado;
+        let resultado = null;
+        try {
+            const lista = await mlGET(`${ML_BASE}/seller-promotions/items/${mlb}?app_version=v2`, token);
+            const ativa = (Array.isArray(lista) ? lista : []).find(pr => String(pr?.status || '').toLowerCase() === 'started');
+            if (ativa) {
+                let preco = Number(ativa.price) || 0;
+                if (!preco) preco = (await precoAtualMLB(mlb, token)) || 0;
+                resultado = {
+                    nome: ativa.name || NOMES_TIPO_PROMO_RN[ativa.type] || ativa.type || 'Promoção ativa',
+                    tipo: ativa.type || '',
+                    preco
+                };
+            }
+        } catch (e) { resultado = null; }
+        cachePromoAtivaMLB[mlb] = { quando: Date.now(), resultado };
+        return resultado;
+    }
+    // confere vários mlbs de uma vez — devolve só os que estão em promoção agora
+    async function obterPromocoesAtivasVarios(mlbs, token) {
+        const promos = {};
+        for (const mlb of mlbs) {
+            const p = await obterPromocaoAtivaMLB(mlb, token);
+            if (p) promos[mlb] = p;
+        }
+        return promos;
+    }
+
     // ---------- escada ------------------------------------
     // escada: [{nivel, modo:'pct'|'soma'|'fixo', valor}] do gatilho até 1
     // calcula o preço para o nível alvo a partir do preço base.
@@ -293,6 +336,7 @@
             let token = null;
             let houveMudanca = false;
             let houveNovoReset = false;
+            let houveNovaPromoPendente = false;
 
             for (const r of regras) {
                 const gatilho = r.gatilho_qtd;
@@ -335,9 +379,23 @@
                     if (nivelAlvo == null) {
                         if (estado) {
                             if (!token) token = await obterTokenML();
-                            const log = [];
                             const base = estado.precos_base || {};
-                            for (const mlb of Object.keys(base)) {
+                            const mlbsAlvo = Object.keys(base);
+
+                            // antes de voltar o preço, confere se algum mlb está
+                            // em promoção ativa agora — se estiver, não mexe
+                            // sozinho: deixa pendente de decisão do admin.
+                            const promos = await obterPromocoesAtivasVarios(mlbsAlvo, token);
+                            if (Object.keys(promos).length) {
+                                const precosAlvo = {};
+                                mlbsAlvo.forEach(mlb => { precosAlvo[mlb] = round2(base[mlb]); });
+                                await marcarPromocaoPendente(cli, r, p, qtd, null, base, promos, precosAlvo, estado);
+                                houveNovaPromoPendente = true;
+                                continue;
+                            }
+
+                            const log = [];
+                            for (const mlb of mlbsAlvo) {
                                 const alvo = round2(base[mlb]);
                                 const res = token ? await aplicarPreco(mlb, alvo, token) : { ok: false, erro: 'sem token' };
                                 log.push({ mlb, preco_novo: alvo, ok: res.ok, erro: res.erro || null, nota: 'voltou ao original' });
@@ -353,6 +411,10 @@
                     // a recomendação sozinho a cada ciclo).
                     if (estado && estado.reset_pendente) continue;
 
+                    // produto com troca de preço travada por promoção ativa:
+                    // idem — só volta a mexer depois que o admin decidir.
+                    if (estado && estado.promocao_pendente) continue;
+
                     // --- dentro da escada ---
                     if (estado && estado.nivel_atual === nivelAlvo) continue;
 
@@ -365,6 +427,11 @@
                     }
 
                     if (!token) token = await obterTokenML();
+
+                    // antes de sequer capturar preço base, já dá pra checar se
+                    // algum desses mlbs está em promoção — se estiver, ainda
+                    // assim segue pra capturar a base (precisa dela guardada)
+                    // e só então marca pendente, sem aplicar nada.
 
                     // captura preços base na 1ª vez — usa a referência
                     // que já foi salva NA REGRA quando ela foi criada
@@ -384,6 +451,19 @@
                             const pr = token ? await precoAtualMLB(mlb, token) : null;
                             base[mlb] = pr != null ? pr : 0;
                         }
+                    }
+
+                    const promosNaEscada = await obterPromocoesAtivasVarios(mlbs, token);
+                    if (Object.keys(promosNaEscada).length) {
+                        const precosAlvo = {};
+                        for (const mlb of mlbs) {
+                            const b = base[mlb] != null ? base[mlb] : 0;
+                            const overridesMlb = (r.overrides && r.overrides[mlb]) || {};
+                            precosAlvo[mlb] = precoNoNivel(b, r.escada, nivelAlvo, overridesMlb);
+                        }
+                        await marcarPromocaoPendente(cli, r, p, qtd, nivelAlvo, base, promosNaEscada, precosAlvo, estado);
+                        houveNovaPromoPendente = true;
+                        continue;
                     }
 
                     const log = [];
@@ -408,6 +488,10 @@
             }
             if (houveNovoReset) {
                 toast('📦 Estoque reposto em produto com preço reajustado — reveja o reset recomendado em Regras de nível → Disparos.', 'info');
+                atualizarSino(true);
+            }
+            if (houveNovaPromoPendente) {
+                toast('🏷️ Um produto mudaria de preço pela regra de nível, mas o anúncio está em promoção — decida em Regras de nível → Disparos.', 'info');
                 atualizarSino(true);
             }
         } catch (e) {
@@ -436,6 +520,38 @@
         } else {
             row.disparado_em = new Date().toISOString();
             await cli.from('regras_nivel_disparos').insert([row]);
+        }
+    }
+
+    // Produto que mudaria de nível/preço mas tem mlb em promoção ativa agora:
+    // não aplica nada sozinho, só registra a recomendação pendente (o admin
+    // decide em Disparos). nivelRecomendado null = "voltaria ao preço original".
+    async function marcarPromocaoPendente(cli, r, p, qtd, nivelRecomendado, base, promos, precosAlvo, estadoExistente) {
+        const camposPendente = {
+            estoque_no_disparo: qtd,
+            promocao_pendente: true,
+            promocao_nivel_recomendado: nivelRecomendado,
+            promocao_precos: precosAlvo,
+            promocao_info: promos,
+            promocao_detectado_em: new Date().toISOString()
+        };
+        if (estadoExistente) {
+            await cli.from('regras_nivel_disparos').update(camposPendente).eq('id', estadoExistente.id);
+        } else {
+            await cli.from('regras_nivel_disparos').insert([{
+                regra_id: r.id,
+                produto_id: String(p.id),
+                produto_sku: p.sku || null,
+                produto_nome: p.nome || null,
+                nivel_atual: null,
+                acao_descricao: `aguardando decisão sobre promoção ativa · nível recomendado ${nivelRecomendado == null ? 'original' : nivelRecomendado}`,
+                precos_base: base || {},
+                mlbs: [],
+                visto: false,
+                disparado_em: new Date().toISOString(),
+                atualizado_em: new Date().toISOString(),
+                ...camposPendente
+            }]);
         }
     }
 
@@ -517,6 +633,17 @@
             #rnModal .rn-regra .rn-acoes button{border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;background:#e2e8f0;color:#334155}
             #rnModal .rn-disparo{border:1px solid #eef0f4;border-left:3px solid #f59e0b;border-radius:8px;padding:10px;margin-bottom:8px;font-size:13px}
             #rnModal .rn-disparo.novo{background:#fffbeb}
+            #rnModal .rn-disparo-promo{border-color:#fde68a;border-left-color:#f59e0b;background:#fffbeb}
+            #rnModal .rn-promo-tag{display:inline-flex;align-items:center;gap:4px;background:#fef3c7;color:#92400e;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700;margin-left:4px}
+            #rnModal .rn-decisao-acoes{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+            #rnModal .rn-decisao-acoes button{border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;
+                display:inline-flex;align-items:center;gap:7px;transition:filter .15s,transform .1s}
+            #rnModal .rn-decisao-acoes button:hover{filter:brightness(.95)}
+            #rnModal .rn-decisao-acoes button:active{transform:scale(.97)}
+            #rnModal .rn-decisao-acoes button:disabled{opacity:.55;cursor:default}
+            #rnModal .rn-btn-aplicar{background:linear-gradient(180deg,#22c55e,#16a34a);color:#fff;box-shadow:0 2px 6px rgba(22,163,74,.3)}
+            #rnModal .rn-btn-manter{background:#fff;color:#475569;border:1px solid #cbd5e1 !important}
+            #rnModal .rn-btn-manter:hover{background:#f8fafc;border-color:#94a3b8 !important}
             #rnModal .mlb-ok{color:#166534}#rnModal .mlb-erro{color:#b91c1c}
             #rnModal .rn-vazio{text-align:center;color:#94a3b8;padding:24px}
             #wtRegrasNivelNotifBtn{position:relative}
@@ -1153,6 +1280,19 @@
         atualizarSino(true);
     }
 
+    function montarBotoesDecisaoRN(atributo, id) {
+        return `
+            <div class="rn-decisao-acoes">
+                <button type="button" class="rn-btn-aplicar" data-${atributo}-id="${id}" data-${atributo}-a="aplicar">
+                    <i class="fas fa-check"></i> Aplicar preço recomendado
+                </button>
+                <button type="button" class="rn-btn-manter" data-${atributo}-id="${id}" data-${atributo}-a="ignorar">
+                    <i class="fas fa-lock"></i> Manter preço atual
+                </button>
+            </div>
+        `;
+    }
+
     async function renderDisparos(corpo) {
         const cli = sb();
         corpo.innerHTML = `<div class="rn-vazio">Carregando…</div>`;
@@ -1162,24 +1302,45 @@
         if (!lista.length) { corpo.innerHTML = `<div class="rn-vazio">Nenhum produto entrou em regra ainda.</div>`; return; }
         const temNaoVisto = lista.some(d => !d.visto);
         const pendentes = lista.filter(d => d.reset_pendente);
-        const normais = lista.filter(d => !d.reset_pendente);
+        const promoPendentes = lista.filter(d => d.promocao_pendente);
+        const normais = lista.filter(d => !d.reset_pendente && !d.promocao_pendente);
         corpo.innerHTML = `
+            ${promoPendentes.length ? `
+                <h4 style="margin:0 0 10px;color:#92400e;">🏷️ Anúncio em promoção — decida o preço (${promoPendentes.length})</h4>
+                ${promoPendentes.map(d => {
+                    const precos = d.promocao_precos || {};
+                    const info = d.promocao_info || {};
+                    const voltaAoOriginal = d.promocao_nivel_recomendado == null;
+                    return `<div class="rn-disparo rn-disparo-promo" data-promo-id-box="${d.id}">
+                        <strong>${esc(d.produto_nome || d.produto_sku || d.produto_id)}</strong>
+                        — a regra pediria ${voltaAoOriginal ? 'voltar ao preço original' : 'mudar pro nível ' + d.promocao_nivel_recomendado}, mas tem anúncio em promoção agora
+                        <div style="font-size:11px;color:#92400e;">${d.promocao_detectado_em ? new Date(d.promocao_detectado_em).toLocaleString('pt-BR') : ''}</div>
+                        <div style="margin-top:6px;">
+                            ${Object.keys(precos).map(mlb => {
+                                const p = info[mlb];
+                                return `<div style="margin-bottom:3px;">
+                                    <code>${esc(mlb)}</code>: preço recomendado ${fmtBRL(precos[mlb])}
+                                    ${p ? `<span class="rn-promo-tag" title="${esc(p.tipo)}"><i class="fas fa-tag"></i> ${esc(p.nome)} — atual ${fmtBRL(p.preco)}</span>` : ''}
+                                </div>`;
+                            }).join('') || '<div style="font-size:12px;color:#94a3b8;">produto sem anúncios</div>'}
+                        </div>
+                        ${montarBotoesDecisaoRN('promo', d.id)}
+                    </div>`;
+                }).join('')}
+            ` : ''}
             ${pendentes.length ? `
                 <h4 style="margin:0 0 10px;color:#7c3aed;">📦 Estoque reposto — reveja o preço (${pendentes.length})</h4>
                 ${pendentes.map(d => {
                     const precos = d.reset_precos || {};
                     const voltaAoOriginal = d.reset_nivel_recomendado == null;
-                    return `<div class="rn-disparo" style="border-color:#c4b5fd;background:#f5f3ff;" data-reset-id="${d.id}">
+                    return `<div class="rn-disparo" style="border-color:#c4b5fd;background:#f5f3ff;">
                         <strong>${esc(d.produto_nome || d.produto_sku || d.produto_id)}</strong>
                         — estoque agora: ${d.reset_estoque_novo}${voltaAoOriginal ? ' (fora da faixa de gatilho)' : ' · novo nível: ' + d.reset_nivel_recomendado}
                         <div style="font-size:11px;color:#7c3aed;">${d.reset_detectado_em ? new Date(d.reset_detectado_em).toLocaleString('pt-BR') : ''}</div>
                         <div style="margin-top:5px;">
                             ${Object.keys(precos).map(mlb => `<div>${esc(mlb)}: sugestão ${fmtBRL(precos[mlb])}${voltaAoOriginal ? ' (preço original)' : ''}</div>`).join('') || '<div style="font-size:12px;color:#94a3b8;">produto sem anúncios</div>'}
                         </div>
-                        <div class="rn-acoes" style="margin-top:8px;">
-                            <button data-reset-a="aplicar">✅ Aplicar preço recomendado</button>
-                            <button data-reset-a="ignorar">Manter preço atual</button>
-                        </div>
+                        ${montarBotoesDecisaoRN('reset', d.id)}
                     </div>`;
                 }).join('')}
                 <h4 style="margin:16px 0 10px;">Histórico</h4>
@@ -1204,15 +1365,18 @@
             atualizarSino(true);
             renderDisparos(corpo);
         });
-        corpo.querySelectorAll('[data-reset-id]').forEach(el => {
-            const id = el.dataset.resetId;
-            el.querySelectorAll('button[data-reset-a]').forEach(b => b.addEventListener('click', async () => {
-                b.disabled = true;
-                if (b.dataset.resetA === 'aplicar') await aplicarResetProduto(id);
-                else await ignorarResetProduto(id);
-                renderDisparos(corpo);
-            }));
-        });
+        corpo.querySelectorAll('button[data-reset-a]').forEach(b => b.addEventListener('click', async () => {
+            corpo.querySelectorAll('button[data-reset-a],button[data-promo-a]').forEach(x => x.disabled = true);
+            if (b.dataset.resetA === 'aplicar') await aplicarResetProduto(b.dataset.resetId);
+            else await ignorarResetProduto(b.dataset.resetId);
+            renderDisparos(corpo);
+        }));
+        corpo.querySelectorAll('button[data-promo-a]').forEach(b => b.addEventListener('click', async () => {
+            corpo.querySelectorAll('button[data-reset-a],button[data-promo-a]').forEach(x => x.disabled = true);
+            if (b.dataset.promoA === 'aplicar') await aplicarPromocaoPendenteProduto(b.dataset.promoId);
+            else await ignorarPromocaoPendenteProduto(b.dataset.promoId);
+            renderDisparos(corpo);
+        }));
     }
 
     // ---------- RESET DE PREÇO POR REPOSIÇÃO DE ESTOQUE ----------
@@ -1224,6 +1388,21 @@
 
         const token = await obterTokenML();
         const recomendado = estado.reset_precos || {};
+
+        // antes de mudar o preço, confere se algum desses mlbs está em
+        // promoção ativa agora — se estiver, avisa e deixa o usuário decidir.
+        const emPromocao = await obterPromocoesAtivasVarios(Object.keys(recomendado), token);
+        if (Object.keys(emPromocao).length) {
+            const detalhe = Object.keys(emPromocao).map(mlb =>
+                `• ${mlb} — em promoção "${emPromocao[mlb].nome}", preço atual ${fmtBRL(emPromocao[mlb].preco)} (recomendado: ${fmtBRL(recomendado[mlb])})`
+            ).join('\n');
+            const seguir = confirm(
+                `${Object.keys(emPromocao).length} anúncio(s) deste produto está(ão) em promoção ativa agora:\n\n${detalhe}\n\n` +
+                `Aplicar o preço recomendado mesmo assim?\n\n(Cancelar = mantém o preço/promoção como está.)`
+            );
+            if (!seguir) { toast('Ok, mantido o preço da promoção.', 'info'); return; }
+        }
+
         const log = [];
         for (const mlb of Object.keys(recomendado)) {
             const alvo = round2(recomendado[mlb]);
@@ -1270,6 +1449,67 @@
             reset_detectado_em: null
         }).eq('id', id);
         toast('Ok, preço mantido como está.', 'info');
+    }
+
+    async function aplicarPromocaoPendenteProduto(id) {
+        const cli = sb();
+        if (!cli) return;
+        const { data: estado } = await cli.from('regras_nivel_disparos').select('*').eq('id', id).maybeSingle();
+        if (!estado || !estado.promocao_pendente) { toast('Nada pendente pra esse produto.', 'info'); return; }
+
+        const token = await obterTokenML();
+        const recomendado = estado.promocao_precos || {};
+        const log = [];
+        for (const mlb of Object.keys(recomendado)) {
+            const alvo = round2(recomendado[mlb]);
+            const res = token ? await aplicarPreco(mlb, alvo, token) : { ok: false, erro: 'sem token ML' };
+            log.push({
+                mlb, preco_novo: alvo, ok: res.ok, erro: res.erro || null,
+                nota: estado.promocao_nivel_recomendado == null ? 'voltou ao original (aplicado mesmo com promoção ativa)' : 'aplicado mesmo com promoção ativa'
+            });
+        }
+
+        if (estado.promocao_nivel_recomendado == null) {
+            await cli.from('regras_nivel_disparos').delete().eq('id', id);
+        } else {
+            await cli.from('regras_nivel_disparos').update({
+                nivel_atual: estado.promocao_nivel_recomendado,
+                mlbs: log,
+                promocao_pendente: false,
+                promocao_precos: null,
+                promocao_nivel_recomendado: null,
+                promocao_info: null,
+                promocao_detectado_em: null,
+                atualizado_em: new Date().toISOString()
+            }).eq('id', id);
+        }
+        toast('✅ Preço aplicado mesmo com a promoção ativa.', 'success');
+    }
+
+    async function ignorarPromocaoPendenteProduto(id) {
+        const cli = sb();
+        if (!cli) return;
+        const { data: estado } = await cli.from('regras_nivel_disparos').select('*').eq('id', id).maybeSingle();
+        if (!estado) return;
+
+        if (estado.promocao_nivel_recomendado == null) {
+            // saiu de vez da faixa de gatilho — não precisa mais do registro
+            await cli.from('regras_nivel_disparos').delete().eq('id', id);
+        } else {
+            // Considera esse nível como já resolvido (sem mudar o preço de
+            // verdade) — assim a regra não fica perguntando de novo a cada
+            // ciclo pro MESMO alvo. Se o estoque mudar de novo, reavalia normal.
+            await cli.from('regras_nivel_disparos').update({
+                nivel_atual: estado.promocao_nivel_recomendado,
+                promocao_pendente: false,
+                promocao_precos: null,
+                promocao_nivel_recomendado: null,
+                promocao_info: null,
+                promocao_detectado_em: null,
+                atualizado_em: new Date().toISOString()
+            }).eq('id', id);
+        }
+        toast('Ok, mantido o preço da promoção — não vamos perguntar de novo pra este mesmo nível.', 'info');
     }
 
     // ---------- hooks ----------------------------------
