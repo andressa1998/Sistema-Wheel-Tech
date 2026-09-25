@@ -8124,11 +8124,26 @@ function gaPrecisaCorrigirTipo(
 // tempo pra "rebaixar" o anúncio, só por estoque parado em
 // variações pequenas). Ver aplicarAlertasPorVariacaoGA(), que
 // calcula row._tipoRecomendadoPorVariacoes por item.
+//
+// PRIORIDADE ENTRE REGRAS: se o item também está há 30+ dias sem
+// vender, essa regra (que pede Premium) tem prioridade sobre a de
+// estoque por variação (que pediria Clássico) — o anúncio continua
+// Premium, não sugerimos rebaixar.
 // ============================================================
 
 function gaPrecisaMudarParaClassico(
     row
 ) {
+
+    if (
+        gaMaisDe30DiasSemVender(
+            row
+        )
+    ) {
+
+        return false;
+    }
+
 
     return (
         row?._tipoRecomendadoPorVariacoes ===
@@ -8630,9 +8645,10 @@ function aplicarAlertasPorVariacaoGA() {
             // 2. TIPO RECOMENDADO PELA QUANTIDADE NAS VARIAÇÕES
             //
             // Só se aplica quando o anúncio TEM variação de verdade.
-            // Complementares por definição: se nenhuma variação tem
-            // mais de 1 unidade no FULL, então todas têm 0 ou 1 —
-            // não precisa checar as duas condições separadamente.
+            // Variação zerada no FULL não entra na conta — sem
+            // produto lá, nenhuma regra vale pra ela (nem pra
+            // decidir o tipo, nem pra herdar a recomendação das
+            // variações-irmãs).
             // =====================================================
 
             const temVariacaoReal =
@@ -8641,14 +8657,23 @@ function aplicarAlertasPorVariacaoGA() {
 
             if (!temVariacaoReal) return;
 
+            const linhasComEstoqueFull =
+                linhas.filter(
+                    row => Number(row.full) > 0
+                );
+
+            // Nenhuma variação com estoque no FULL: nada pra
+            // recomendar, o item inteiro está fora do FULL.
+            if (!linhasComEstoqueFull.length) return;
+
             const recomendado =
-                linhas.some(
+                linhasComEstoqueFull.some(
                     row => Number(row.full) > 1
                 )
                     ? 'premium'
                     : 'classico';
 
-            linhas.forEach(
+            linhasComEstoqueFull.forEach(
                 row => {
                     row._tipoRecomendadoPorVariacoes = recomendado;
                 }
@@ -8820,6 +8845,14 @@ function render() {
     // =========================================================
 
     aplicarAlertasPorVariacaoGA();
+
+
+    // =========================================================
+    // ESTOQUE "A CAMINHO" PRO FULL (dispara 1x, re-renderiza
+    // sozinho quando terminar de carregar)
+    // =========================================================
+
+    gaGarantirEstoqueACaminhoCarregado();
 
 
     // =========================================================
@@ -9453,6 +9486,30 @@ function render() {
                                         `
                                 }
 
+                                ${
+                                    row.ativoNoFull &&
+                                    (!estoqueFull || estoqueFull <= 0) &&
+                                    gaObterEstoqueACaminho(row) > 0
+
+                                        ? `
+                                            <div
+                                                style="
+                                                    font-size:11px;
+                                                    color:#fd7e14;
+                                                    margin-top:2px;
+                                                    white-space:nowrap;
+                                                "
+                                                title="Estoque comprado ainda não chegou fisicamente — o anúncio já pode estar oferecendo envio FULL mesmo assim"
+                                            >
+                                                🚚 ${esc(
+                                                    gaObterEstoqueACaminho(row)
+                                                )} a caminho
+                                            </div>
+                                        `
+
+                                        : ''
+                                }
+
                             </td>
 
 
@@ -9955,14 +10012,94 @@ function gaPrecisaAjustarQuantidadeExposicao(
 
 
 // ============================================================
+// ESTOQUE "A CAMINHO" PRO FULL
+//
+// Reaproveita o mesmo rastreio de compras "a caminho" já usado na
+// Gestão de Estoque (rastreiosCompraPorProduto / dados_extra.
+// quantidade_a_caminho) pra explicar, na coluna FULL, um FULL
+// zerado (ou não consultado) quando o anúncio já está ativo pra
+// FULL — o produto comprado ainda não chegou fisicamente, mas o
+// anúncio já pode estar oferecendo envio FULL mesmo assim.
+// ============================================================
+
+GA._aCaminhoCarregado = GA._aCaminhoCarregado || false;
+
+function gaGarantirEstoqueACaminhoCarregado() {
+
+    if (GA._aCaminhoCarregado) return;
+
+    if (
+        typeof carregarPreEntradasRastreioEstoque !==
+        'function'
+    ) {
+        return;
+    }
+
+    GA._aCaminhoCarregado = true;
+
+    carregarPreEntradasRastreioEstoque()
+        .then(() => {
+
+            if (typeof render === 'function') {
+                render();
+            }
+
+        })
+        .catch(error => {
+
+            GA._aCaminhoCarregado = false;
+
+            console.warn(
+                '⚠️ Não foi possível carregar estoque "a caminho" pro FULL:',
+                error
+            );
+
+        });
+}
+
+function gaObterEstoqueACaminho(row) {
+
+    const sku =
+        String(row?.sku || '').trim().toUpperCase();
+
+    if (!sku) return 0;
+
+    if (
+        typeof produtosEstoque === 'undefined' ||
+        !Array.isArray(produtosEstoque)
+    ) {
+        return 0;
+    }
+
+    const produto =
+        produtosEstoque.find(
+            p => String(p.sku || '').trim().toUpperCase() === sku
+        );
+
+    if (!produto) return 0;
+
+    if (typeof obterQuantidadeACaminho !== 'function') return 0;
+
+    try {
+
+        return obterQuantidadeACaminho(produto) || 0;
+
+    } catch (error) {
+
+        return 0;
+    }
+}
+
+
+// ============================================================
 // DEPÓSITO PRECISA SER ZERADO — ITEM PARADO HÁ 30+ DIAS
 //
 // Objetivo do time: item que passou 30 dias sem vender deve ser
 // vendido só pelo FULL, sem estoque parado no depósito (fora do
 // FULL). Qualquer quantidade > 0 no depósito nessa situação é
-// alerta — independente de estar ou não ativo no FULL (mesmo se
-// hoje não oferece FULL, o estoque já devia estar migrando pra
-// lá, não parado no depósito).
+// alerta — MAS só faz sentido se o FULL realmente tem estoque pra
+// assumir a venda. Se o FULL está zerado, não tem pra onde migrar:
+// o depósito é a única fonte de venda e precisa continuar ativo.
 // ============================================================
 
 function gaPrecisaZerarDepositoPorInatividade(
@@ -9973,6 +10110,23 @@ function gaPrecisaZerarDepositoPorInatividade(
         !gaMaisDe30DiasSemVender(
             row
         )
+    ) {
+
+        return false;
+    }
+
+
+    const estoqueFull =
+        Number(
+            row?.full
+        );
+
+
+    if (
+        !Number.isFinite(
+            estoqueFull
+        ) ||
+        estoqueFull <= 0
     ) {
 
         return false;

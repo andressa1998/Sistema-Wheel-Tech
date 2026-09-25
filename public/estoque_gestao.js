@@ -3594,8 +3594,8 @@ window.adicionarItemEstoqueExtraManual = async function() {
 function criarModalEstoqueExtra() {
     const modal = document.createElement('div');
     modal.id = 'modalEstoqueExtra';
-    modal.className = 'modal';
-    modal.style.cssText = 'display:none;align-items:center;justify-content:center;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;';
+    modal.className = 'modal hidden';
+    modal.style.cssText = 'align-items:center;justify-content:center;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;';
 
     modal.innerHTML = `
         <div class="modal-content" style="max-width:920px;width:95%;background:white;padding:0;border-radius:12px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;">
@@ -3666,6 +3666,7 @@ window.abrirModalEstoqueExtra = async function() {
         modal = criarModalEstoqueExtra();
     }
 
+    modal.classList.remove('hidden');
     modal.style.display = 'flex';
 
     await carregarListaCompletaEstoqueExtra();
@@ -3674,7 +3675,9 @@ window.abrirModalEstoqueExtra = async function() {
 
 window.fecharModalEstoqueExtra = function() {
     const modal = document.getElementById('modalEstoqueExtra');
-    if (modal) modal.style.display = 'none';
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
 };
 
 
