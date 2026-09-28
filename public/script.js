@@ -24465,6 +24465,55 @@ window.abrirModalEdicaoOS =
             '';
 
 
+        // ========================================================
+        // RESPONSÁVEL "COMPOSTO" (ex: "Arthur e Elaine")
+        //
+        // Não existe como opção fixa do <select> — ao setar .value
+        // pra um valor sem <option> correspondente, o navegador
+        // zera o campo pra vazio. Sem isso, o dropdown fica em
+        // branco e QUALQUER salvamento (mesmo só adicionando um
+        // link) é lido como troca de responsável, disparando a
+        // validação de transferência à toa.
+        // ========================================================
+
+        if (
+            order.responsibleName &&
+            responsavelSelect.value !==
+                order.responsibleName
+        ) {
+
+            let opcaoComposta =
+                responsavelSelect.querySelector(
+                    'option[data-composto="1"]'
+                );
+
+            if (!opcaoComposta) {
+
+                opcaoComposta =
+                    document.createElement(
+                        'option'
+                    );
+
+                opcaoComposta.dataset.composto =
+                    '1';
+
+                responsavelSelect.insertBefore(
+                    opcaoComposta,
+                    responsavelSelect.firstChild
+                );
+            }
+
+            opcaoComposta.value =
+                order.responsibleName;
+
+            opcaoComposta.textContent =
+                order.responsibleName;
+
+            responsavelSelect.value =
+                order.responsibleName;
+        }
+
+
         document.getElementById(
             'editOriginalResponsibleName'
         ).value =

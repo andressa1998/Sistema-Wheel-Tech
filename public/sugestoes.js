@@ -17,7 +17,9 @@
     'use strict';
 
     const CFG_SUG = {
-        tabela: 'feedback_sugestoes'
+        tabela: 'feedback_sugestoes',
+        bucket: 'sugestoes',
+        maxImagem: 8 * 1024 * 1024
     };
 
     const STATUS_SUG = {
@@ -29,6 +31,11 @@
     let sugestoesCache = [];
     let filtroStatusSug = 'todas';
     let filtroBuscaSug = '';
+
+    // Estado do formulário de nova sugestão / edição.
+    let sugEditandoId = null;
+    let sugFormFotosPendentes = []; // { file, url } — ainda não enviadas
+    let sugFormFotosExistentes = []; // URLs já salvas (modo edição)
 
     // ============================================================
     // HELPERS / PERMISSÃO
@@ -71,6 +78,169 @@
     function fmtDataHoraSug(iso) {
         if (!iso) return '—';
         return new Date(iso).toLocaleString('pt-BR');
+    }
+
+    function souDonoSug(s) {
+        const u = usuarioAtualSug();
+        if (!u || !s) return false;
+        if (s.usuario_username) return s.usuario_username === usernameSug();
+        return s.usuario_nome === u.name;
+    }
+
+    // ============================================================
+    // FOTOS DE EXEMPLO (anexar ou colar, mais de uma)
+    // ============================================================
+
+    function validarImagemSug(file) {
+        if (!file) return 'Nenhuma imagem selecionada.';
+        if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
+            return 'Use uma imagem PNG, JPG, JPEG ou WEBP.';
+        }
+        if (file.size > CFG_SUG.maxImagem) {
+            return 'A imagem ultrapassa o limite de 8 MB.';
+        }
+        return '';
+    }
+
+    function extensaoImagemSug(file) {
+        const nome = file?.name || '';
+        const ext = nome.includes('.') ? nome.split('.').pop().toLowerCase() : '';
+        if (ext && /^[a-z0-9]+$/.test(ext)) return ext;
+        if (file?.type === 'image/webp') return 'webp';
+        if (file?.type === 'image/jpeg' || file?.type === 'image/jpg') return 'jpg';
+        return 'png';
+    }
+
+    function arquivosImagemClipboardSug(event) {
+        const items = event.clipboardData?.items || [];
+        const arquivos = [];
+        for (const item of items) {
+            if (item.type?.startsWith('image/')) {
+                const file = item.getAsFile();
+                if (file) arquivos.push(file);
+            }
+        }
+        return arquivos;
+    }
+
+    async function uploadImagemSug(file, pastaId) {
+        const erro = validarImagemSug(file);
+        if (erro) throw new Error(erro);
+
+        const nome = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extensaoImagemSug(file)}`;
+        const caminho = `${pastaId}/${usernameSug() || 'usuario'}/${nome}`;
+
+        const { error } = await window.supabaseClient.storage
+            .from(CFG_SUG.bucket)
+            .upload(caminho, file, {
+                cacheControl: '3600',
+                upsert: false,
+                contentType: file.type
+            });
+
+        if (error) {
+            throw new Error(`Erro ao enviar foto: ${error.message}`);
+        }
+
+        const { data } = window.supabaseClient.storage
+            .from(CFG_SUG.bucket)
+            .getPublicUrl(caminho);
+
+        if (!data?.publicUrl) {
+            throw new Error('Não foi possível obter a URL da foto. Confirme se o bucket "sugestoes" é público.');
+        }
+
+        return data.publicUrl;
+    }
+
+    async function enviarFotosPendentesSug(pastaId) {
+        const urls = [];
+        for (const item of sugFormFotosPendentes) {
+            const url = await uploadImagemSug(item.file, pastaId);
+            urls.push(url);
+        }
+        return urls;
+    }
+
+    function limparFotosPendentesSug() {
+        sugFormFotosPendentes.forEach(item => URL.revokeObjectURL(item.url));
+        sugFormFotosPendentes = [];
+        sugFormFotosExistentes = [];
+    }
+
+    function renderizarPreviewFotosSug() {
+        const container = document.getElementById('sugFormFotosPreview');
+        if (!container) return;
+
+        const existentesHtml = sugFormFotosExistentes.map((url, idx) => `
+            <div class="sug-foto-thumb">
+                <img src="${escSug(url)}" alt="Foto">
+                <button type="button" onclick="window.removerFotoExistenteSugestao(${idx})" title="Remover">&times;</button>
+            </div>
+        `).join('');
+
+        const pendentesHtml = sugFormFotosPendentes.map((item, idx) => `
+            <div class="sug-foto-thumb">
+                <img src="${item.url}" alt="Foto">
+                <button type="button" onclick="window.removerFotoPendenteSugestao(${idx})" title="Remover">&times;</button>
+            </div>
+        `).join('');
+
+        container.innerHTML = existentesHtml + pendentesHtml;
+    }
+
+    window.selecionarFotosSugestao = function (fileList) {
+        const arquivos = Array.from(fileList || []).filter(f => f.type?.startsWith('image/'));
+        arquivos.forEach(file => {
+            const erro = validarImagemSug(file);
+            if (erro) {
+                showToast(`⚠️ ${erro}`, 'warning');
+                return;
+            }
+            sugFormFotosPendentes.push({ file, url: URL.createObjectURL(file) });
+        });
+        renderizarPreviewFotosSug();
+    };
+
+    window.removerFotoPendenteSugestao = function (idx) {
+        const [removida] = sugFormFotosPendentes.splice(idx, 1);
+        if (removida) URL.revokeObjectURL(removida.url);
+        renderizarPreviewFotosSug();
+    };
+
+    window.removerFotoExistenteSugestao = function (idx) {
+        sugFormFotosExistentes.splice(idx, 1);
+        renderizarPreviewFotosSug();
+    };
+
+    function configurarUploadFotosSug() {
+        const modal = document.getElementById('modalNovaSugestaoSug');
+        const drop = document.getElementById('sugDropFotos');
+
+        if (!modal || !drop || modal.dataset.eventosFotos === '1') return;
+        modal.dataset.eventosFotos = '1';
+
+        modal.addEventListener('paste', e => {
+            const arquivos = arquivosImagemClipboardSug(e);
+            if (!arquivos.length) return;
+            e.preventDefault();
+            window.selecionarFotosSugestao(arquivos);
+        });
+
+        drop.addEventListener('dragover', e => {
+            e.preventDefault();
+            drop.classList.add('sug-drop-arrastando');
+        });
+
+        drop.addEventListener('dragleave', () => {
+            drop.classList.remove('sug-drop-arrastando');
+        });
+
+        drop.addEventListener('drop', e => {
+            e.preventDefault();
+            drop.classList.remove('sug-drop-arrastando');
+            window.selecionarFotosSugestao(e.dataTransfer?.files);
+        });
     }
 
     // ============================================================
@@ -187,10 +357,19 @@
         modal.className = 'modal hidden';
         modal.innerHTML = `
             <div class="modal-content" style="max-width:520px;">
-                <h3 style="margin-top:0;"><i class="fas fa-lightbulb"></i> Nova Sugestão de Melhoria</h3>
+                <h3 style="margin-top:0;" id="sugFormTitulo"><i class="fas fa-lightbulb"></i> Nova Sugestão de Melhoria</h3>
                 <div class="form-group">
                     <label>Descreva sua ideia *</label>
                     <textarea id="sugFormTexto" class="form-control" rows="5" placeholder="Conte sua sugestão de melhoria..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Fotos de exemplo <small class="text-muted">(opcional, pode anexar mais de uma)</small></label>
+                    <div id="sugDropFotos" class="sug-drop-fotos" onclick="document.getElementById('sugFormFotosInput').click()">
+                        <i class="fas fa-image"></i>
+                        Clique pra anexar, arraste um arquivo ou cole (Ctrl+V) uma imagem copiada
+                    </div>
+                    <input type="file" id="sugFormFotosInput" accept="image/png,image/jpeg,image/webp" multiple style="display:none;" onchange="window.selecionarFotosSugestao(this.files); this.value='';">
+                    <div id="sugFormFotosPreview" class="sug-fotos-preview"></div>
                 </div>
                 <div class="d-flex justify-content-end gap-2 mt-3">
                     <button class="btn btn-secondary" onclick="window.fecharModalNovaSugestao()">Cancelar</button>
@@ -201,16 +380,50 @@
             </div>
         `;
         document.body.appendChild(modal);
+        configurarUploadFotosSug();
     }
 
     window.abrirModalNovaSugestao = function () {
         criarModalNovaSugestaoSug();
+
+        sugEditandoId = null;
+        limparFotosPendentesSug();
+
+        document.getElementById('sugFormTitulo').innerHTML = '<i class="fas fa-lightbulb"></i> Nova Sugestão de Melhoria';
+        document.getElementById('sugBtnEnviar').innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
         document.getElementById('sugFormTexto').value = '';
+        renderizarPreviewFotosSug();
+        document.getElementById('modalNovaSugestaoSug').classList.remove('hidden');
+    };
+
+    window.abrirEdicaoSugestao = function (id) {
+        const s = sugestoesCache.find(x => x.id === id);
+        if (!s) return;
+
+        if (!souDonoSug(s)) {
+            showToast('🔒 Só quem criou a sugestão pode editá-la.', 'warning');
+            return;
+        }
+
+        criarModalNovaSugestaoSug();
+
+        sugEditandoId = id;
+        limparFotosPendentesSug();
+        sugFormFotosExistentes = Array.isArray(s.fotos) ? [...s.fotos] : [];
+
+        document.getElementById('sugFormTitulo').innerHTML = '<i class="fas fa-pen"></i> Editar Sugestão';
+        document.getElementById('sugBtnEnviar').innerHTML = '<i class="fas fa-save"></i> Salvar edição';
+        document.getElementById('sugFormTexto').value = s.sugestao || '';
+        renderizarPreviewFotosSug();
+
+        document.getElementById('modalDetalhesSugestao')?.remove();
         document.getElementById('modalNovaSugestaoSug').classList.remove('hidden');
     };
 
     window.fecharModalNovaSugestao = function () {
         document.getElementById('modalNovaSugestaoSug')?.classList.add('hidden');
+        sugEditandoId = null;
+        limparFotosPendentesSug();
     };
 
     window.enviarNovaSugestao = async function () {
@@ -221,25 +434,49 @@
         }
 
         const usuario = usuarioAtualSug();
+        const editando = sugEditandoId;
         const btn = document.getElementById('sugBtnEnviar');
         const htmlOriginal = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
 
         try {
-            const { error } = await window.supabaseClient
-                .from(CFG_SUG.tabela)
-                .insert([{
-                    usuario_nome: usuario.name,
-                    usuario_username: usernameSug(),
-                    sugestao: texto,
-                    data_criacao: new Date().toISOString(),
-                    status: 'aguardando'
-                }]);
+            const pastaId = editando ? `sug_${editando}` : `sug_novo_${Date.now()}`;
+            const novasUrls = await enviarFotosPendentesSug(pastaId);
+            const fotos = [...sugFormFotosExistentes, ...novasUrls];
 
-            if (error) throw error;
+            if (editando) {
 
-            showToast('✅ Sugestão enviada! Aguarde a avaliação.', 'success');
+                const { error } = await window.supabaseClient
+                    .from(CFG_SUG.tabela)
+                    .update({
+                        sugestao: texto,
+                        fotos: fotos.length ? fotos : null
+                    })
+                    .eq('id', editando);
+
+                if (error) throw error;
+
+                showToast('✅ Sugestão atualizada!', 'success');
+
+            } else {
+
+                const { error } = await window.supabaseClient
+                    .from(CFG_SUG.tabela)
+                    .insert([{
+                        usuario_nome: usuario.name,
+                        usuario_username: usernameSug(),
+                        sugestao: texto,
+                        fotos: fotos.length ? fotos : null,
+                        data_criacao: new Date().toISOString(),
+                        status: 'aguardando'
+                    }]);
+
+                if (error) throw error;
+
+                showToast('✅ Sugestão enviada! Aguarde a avaliação.', 'success');
+            }
+
             window.fecharModalNovaSugestao();
             await carregarSugestoesSug();
 
@@ -278,16 +515,34 @@
 
         const st = cfgStatusSug(s.status);
         const admin = ehAdminSug();
+        const souDono = souDonoSug(s);
+
+        const fotosHtml = Array.isArray(s.fotos) && s.fotos.length
+            ? `
+                <div class="sug-fotos-galeria mb-3">
+                    ${s.fotos.map(url => `
+                        <a href="${escSug(url)}" target="_blank" rel="noopener noreferrer">
+                            <img src="${escSug(url)}" alt="Foto de exemplo">
+                        </a>
+                    `).join('')}
+                </div>
+            `
+            : '';
 
         container.innerHTML = `
             <div class="d-flex justify-content-between align-items-start mb-2">
                 <h3 style="margin:0;"><i class="fas fa-lightbulb"></i> Sugestão</h3>
-                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('modalDetalhesSugestao').remove()">Fechar</button>
+                <div class="d-flex gap-2">
+                    ${souDono ? `<button class="btn btn-outline-primary btn-sm" onclick="window.abrirEdicaoSugestao(${s.id})"><i class="fas fa-pen"></i> Editar</button>` : ''}
+                    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('modalDetalhesSugestao').remove()">Fechar</button>
+                </div>
             </div>
 
             <div class="mb-2"><span class="sug-badge-status ${st.classe}">${st.icone} ${escSug(st.texto)}</span></div>
 
             <div style="background:#f8f9fa; padding:14px; border-radius:8px; margin-bottom:14px; white-space:pre-wrap;">${escSug(s.sugestao)}</div>
+
+            ${fotosHtml}
 
             <div class="d-flex flex-wrap gap-3 mb-3" style="font-size:13px; color:#6c757d;">
                 <div><strong>Enviada por:</strong> ${escSug(s.usuario_nome || '—')}</div>
@@ -441,6 +696,15 @@
             .sug-status-aprovado { background: #d1e7dd; color: #0f5132; }
             .sug-status-reprovado { background: #f8d7da; color: #721c24; }
             .sug-badge-premio { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #fff3cd; color: #856404; }
+            .sug-drop-fotos { border: 2px dashed #cfd8e3; border-radius: 8px; padding: 16px; text-align: center; color: #6c757d; font-size: 13px; cursor: pointer; transition: .15s; }
+            .sug-drop-fotos:hover { border-color: #7cb9f7; background: #f8fbff; }
+            .sug-drop-fotos.sug-drop-arrastando { border-color: #0d6efd; background: #eef6ff; color: #0d6efd; }
+            .sug-drop-fotos i { display: block; font-size: 20px; margin-bottom: 6px; }
+            .sug-fotos-preview, .sug-fotos-galeria { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+            .sug-foto-thumb { position: relative; width: 70px; height: 70px; }
+            .sug-foto-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; border: 1px solid #e9ecef; }
+            .sug-foto-thumb button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: none; background: #dc3545; color: #fff; font-size: 12px; line-height: 1; cursor: pointer; }
+            .sug-fotos-galeria img { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid #e9ecef; }
         `;
         document.head.appendChild(style);
     }
