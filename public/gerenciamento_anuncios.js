@@ -6267,6 +6267,21 @@ function applyFilters(
 
 
                 // =================================================
+                // PENDÊNCIA: ESTOQUE EM EXCESSO (MÉDIA 3 MESES)
+                // =================================================
+
+                const temEstoqueEmExcesso =
+                    typeof gaEstoqueEmExcesso ===
+                        'function'
+
+                        ? gaEstoqueEmExcesso(
+                            row
+                        )
+
+                        : false;
+
+
+                // =================================================
                 // FILTRO 30+
                 // =================================================
 
@@ -6357,6 +6372,24 @@ function applyFilters(
 
 
                 // =================================================
+                // FILTRO ESTOQUE EM EXCESSO
+                // =================================================
+
+                if (
+                    correcao ===
+                    'estoque_excesso'
+                ) {
+
+                    if (
+                        !temEstoqueEmExcesso
+                    ) {
+
+                        return false;
+                    }
+                }
+
+
+                // =================================================
                 // TODAS AS PENDÊNCIAS
                 //
                 // Aparece se tiver QUALQUER uma das pendências.
@@ -6372,7 +6405,8 @@ function applyFilters(
                         !precisaCorrigirEstoque &&
                         !precisaZerarDeposito &&
                         !precisaMudarClassico &&
-                        !precisaFullSemEstoque
+                        !precisaFullSemEstoque &&
+                        !temEstoqueEmExcesso
                     ) {
 
                         return false;
@@ -8856,6 +8890,20 @@ function render() {
 
 
     // =========================================================
+    // MÉDIA DE VENDAS 3 MESES (excesso de estoque) — 1x por sessão
+    // =========================================================
+
+    carregarMediaVendas3MesesGA();
+
+
+    // =========================================================
+    // HISTÓRICO DE 30+ DIAS SEM VENDER (throttle de 30s)
+    // =========================================================
+
+    sincronizarHistorico30DiasGA();
+
+
+    // =========================================================
     // 30+ DIAS SEM VENDER -> LISTA FIXA "SEMPRE PREMIUM"
     // =========================================================
 
@@ -9488,7 +9536,6 @@ function render() {
 
                                 ${
                                     row.ativoNoFull &&
-                                    (!estoqueFull || estoqueFull <= 0) &&
                                     gaObterEstoqueACaminho(row) > 0
 
                                         ? `
@@ -9499,11 +9546,31 @@ function render() {
                                                     margin-top:2px;
                                                     white-space:nowrap;
                                                 "
-                                                title="Estoque comprado ainda não chegou fisicamente — o anúncio já pode estar oferecendo envio FULL mesmo assim"
+                                                title="Estoque comprado ainda não chegou fisicamente — mostrado separado do que já está confirmado no FULL"
                                             >
-                                                🚚 ${esc(
+                                                🚚 ${esc(estoqueFull || 0)} no estoque + ${esc(
                                                     gaObterEstoqueACaminho(row)
                                                 )} a caminho
+                                            </div>
+                                        `
+
+                                        : ''
+                                }
+
+                                ${
+                                    gaEstoqueEmExcesso(row)
+
+                                        ? `
+                                            <div
+                                                style="
+                                                    font-size:11px;
+                                                    color:#dc3545;
+                                                    margin-top:2px;
+                                                    white-space:nowrap;
+                                                "
+                                                title="Estoque atual (depósito + FULL): ${esc(gaEstoqueAtualDoRow(row))} · Média de vendas nos últimos 3 meses: ${esc((gaMediaVendasMensalDoRow(row) || 0).toFixed(1))}/mês"
+                                            >
+                                                📦 Estoque em excesso
                                             </div>
                                         `
 
@@ -10089,6 +10156,772 @@ function gaObterEstoqueACaminho(row) {
         return 0;
     }
 }
+
+
+// ============================================================
+// ESTOQUE EM EXCESSO — MÉDIA DE VENDAS DOS ÚLTIMOS 3 MESES
+//
+// Regra: estoque atual (depósito + FULL) > média de vendas por mês
+// do produto (últimos 3 meses, vendas não canceladas) => sinaliza
+// excesso. Estoque atual <= média está certo, não sinaliza.
+// Cruza com vendas_nfe_cache (a mesma fonte usada em todo o resto
+// do sistema), somando a quantidade vendida por SKU nos últimos 90
+// dias e dividindo por 3.
+// ============================================================
+
+GA._mediaVendas3MesesPorSku = GA._mediaVendas3MesesPorSku || null;
+GA._mediaVendas3MesesCarregando = false;
+
+async function carregarMediaVendas3MesesGA() {
+
+    if (GA._mediaVendas3MesesPorSku || GA._mediaVendas3MesesCarregando) return;
+    if (!window.supabaseClient) return;
+
+    GA._mediaVendas3MesesCarregando = true;
+
+    try {
+
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+        const totalPorSku = new Map();
+        const tamanhoPagina = 1000;
+        let inicio = 0;
+        let continuar = true;
+
+        while (continuar) {
+
+            const { data, error } = await window.supabaseClient
+                .from('vendas_nfe_cache')
+                .select('cancelada:venda_json->venda_cancelada, itens:venda_json->order_items')
+                .gte('venda_json->>data_venda', cutoffStr)
+                .range(inicio, inicio + tamanhoPagina - 1);
+
+            if (error) throw error;
+
+            const lote = data || [];
+
+            lote.forEach(linha => {
+
+                if (linha.cancelada) return;
+
+                const itens = Array.isArray(linha.itens) ? linha.itens : [];
+
+                itens.forEach(item => {
+
+                    const sku = String(item?.item?.seller_sku || '').trim().toUpperCase();
+                    if (!sku) return;
+
+                    const qtd = Number(item?.quantity) || 1;
+                    totalPorSku.set(sku, (totalPorSku.get(sku) || 0) + qtd);
+                });
+            });
+
+            if (lote.length < tamanhoPagina) {
+                continuar = false;
+            } else {
+                inicio += tamanhoPagina;
+            }
+        }
+
+        const mediaPorSku = new Map();
+        totalPorSku.forEach((total, sku) => {
+            mediaPorSku.set(sku, total / 3);
+        });
+
+        GA._mediaVendas3MesesPorSku = mediaPorSku;
+
+        if (typeof render === 'function') render();
+
+    } catch (error) {
+
+        console.warn('⚠️ Não foi possível carregar a média de vendas de 3 meses:', error);
+
+    } finally {
+
+        GA._mediaVendas3MesesCarregando = false;
+    }
+}
+
+function gaMediaVendasMensalDoRow(row) {
+
+    if (!GA._mediaVendas3MesesPorSku) return null;
+
+    const sku = String(row?.sku || '').trim().toUpperCase();
+    if (!sku) return null;
+
+    return GA._mediaVendas3MesesPorSku.get(sku) || 0;
+}
+
+function gaEstoqueAtualDoRow(row) {
+
+    return (
+        (Number(row?.warehouse) || 0) +
+        (Number(row?.full) || 0)
+    );
+}
+
+function gaEstoqueEmExcesso(row) {
+
+    const media = gaMediaVendasMensalDoRow(row);
+    if (media === null) return false;
+
+    return gaEstoqueAtualDoRow(row) > media;
+}
+
+
+// ============================================================
+// HISTÓRICO DE "30+ DIAS SEM VENDER"
+//
+// Cada vez que um item (item+variação) passa a contar como 30+ dias
+// sem vender (mesma regra de gaMaisDe30DiasSemVender, ignorando
+// quem está sem estoque real no FULL — ver gaPrecisaCorrigirTipo),
+// abre um registro em full_historico_30_mais_dias. Quando ele deixa
+// de contar (vendeu de novo, ou saiu do FULL), fecha o registro com
+// a data de saída e o motivo. Só roda pra administrador (mesma
+// trava de verificarEAdicionarPremiumFixoGA) — é escrita automática
+// numa tabela compartilhada.
+// ============================================================
+
+GA._chaves30DiasAbertas = GA._chaves30DiasAbertas || null;
+GA._ultimoSync30Dias = GA._ultimoSync30Dias || 0;
+
+function gaChave30Dias(itemId, variationId) {
+    return `${itemId}|${variationId || ''}`;
+}
+
+async function carregarHistorico30DiasAbertoGA() {
+
+    if (GA._chaves30DiasAbertas) return;
+
+    GA._chaves30DiasAbertas = new Map();
+
+    if (!window.supabaseClient) return;
+
+    try {
+
+        const { data, error } = await window.supabaseClient
+            .from('full_historico_30_mais_dias')
+            .select('id, item_id, variation_id')
+            .is('data_saida', null);
+
+        if (error) throw error;
+
+        (data || []).forEach(registro => {
+            GA._chaves30DiasAbertas.set(
+                gaChave30Dias(registro.item_id, registro.variation_id),
+                registro.id
+            );
+        });
+
+    } catch (error) {
+
+        console.warn('⚠️ Não foi possível carregar histórico de 30+ dias:', error);
+    }
+}
+
+async function sincronizarHistorico30DiasGA() {
+
+    if (
+        !window.currentUser ||
+        String(window.currentUser.role || '').toLowerCase() !== 'administrador'
+    ) {
+        return;
+    }
+
+    if (!Array.isArray(GA.rows) || !GA.rows.length) return;
+
+    if (Date.now() - GA._ultimoSync30Dias < 30000) return;
+    GA._ultimoSync30Dias = Date.now();
+
+    await carregarHistorico30DiasAbertoGA();
+
+    const chavesAtuais = new Map();
+
+    GA.rows.forEach(row => {
+
+        if (!row.itemId) return;
+        if (row._fullAtivoSemEstoqueReal) return;
+        if (!gaMaisDe30DiasSemVender(row)) return;
+
+        chavesAtuais.set(gaChave30Dias(row.itemId, row.variationId), row);
+    });
+
+    // Abrir os que são novos na lista.
+    for (const [chave, row] of chavesAtuais.entries()) {
+
+        if (GA._chaves30DiasAbertas.has(chave)) continue;
+
+        try {
+
+            const { data, error } = await window.supabaseClient
+                .from('full_historico_30_mais_dias')
+                .insert([{
+                    item_id: row.itemId,
+                    variation_id: row.variationId || null,
+                    sku: row.sku || null,
+                    titulo: row.title || null,
+                    dias_parado_na_entrada: Number.isFinite(Number(row.diasSemVender)) ? Number(row.diasSemVender) : null
+                }])
+                .select('id')
+                .single();
+
+            if (!error && data) {
+                GA._chaves30DiasAbertas.set(chave, data.id);
+            }
+
+        } catch (error) {
+            console.warn('⚠️ Erro abrindo registro de 30+ dias:', error);
+        }
+    }
+
+    // Fechar os que saíram da lista.
+    for (const [chave, id] of Array.from(GA._chaves30DiasAbertas.entries())) {
+
+        if (chavesAtuais.has(chave)) continue;
+
+        const [itemId, variationId] = chave.split('|');
+        const row = GA.rows.find(
+            r => r.itemId === itemId && String(r.variationId || '') === variationId
+        );
+
+        const motivo = (row && !row.ativoNoFull) ? 'saiu_do_full' : 'vendeu';
+
+        try {
+
+            const { error } = await window.supabaseClient
+                .from('full_historico_30_mais_dias')
+                .update({
+                    data_saida: new Date().toISOString(),
+                    motivo_saida: motivo
+                })
+                .eq('id', id);
+
+            if (!error) {
+                GA._chaves30DiasAbertas.delete(chave);
+            }
+
+        } catch (error) {
+            console.warn('⚠️ Erro fechando registro de 30+ dias:', error);
+        }
+    }
+}
+
+
+// ============================================================
+// RELATÓRIO DO HISTÓRICO DE 30+ DIAS (modal)
+// ============================================================
+
+GA._relatorio30DiasCache = null;
+
+async function carregarRelatorio30DiasGA() {
+
+    const { data, error } = await window.supabaseClient
+        .from('full_historico_30_mais_dias')
+        .select('*')
+        .order('data_entrada', { ascending: false })
+        .limit(500);
+
+    if (error) throw error;
+
+    GA._relatorio30DiasCache = data || [];
+    return GA._relatorio30DiasCache;
+}
+
+function gaFormatarDuracaoDias(inicio, fim) {
+
+    const ms = new Date(fim) - new Date(inicio);
+    const dias = Math.floor(ms / (1000 * 60 * 60 * 24));
+
+    if (dias < 1) return 'menos de 1 dia';
+    if (dias === 1) return '1 dia';
+    return `${dias} dias`;
+}
+
+function gaNomeMotivoSaida(motivo) {
+
+    if (motivo === 'vendeu') return '✅ Voltou a vender';
+    if (motivo === 'saiu_do_full') return '📤 Saiu do FULL';
+    return motivo || '-';
+}
+
+function renderizarLinhasRelatorio30DiasGA(registros) {
+
+    const tbody = document.getElementById('ga30DiasTabelaBody');
+    if (!tbody) return;
+
+    if (!registros.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4" style="color:#6c757d;">
+                    Nenhum registro ainda. A lista se preenche sozinha conforme os anúncios entram/saem dos 30+ dias sem vender.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = registros.map(r => {
+
+        const aberto = !r.data_saida;
+        const duracao = gaFormatarDuracaoDias(r.data_entrada, r.data_saida || new Date().toISOString());
+
+        return `
+            <tr>
+                <td>
+                    <strong>${esc(r.titulo || r.item_id)}</strong><br>
+                    <small style="color:#6c757d;">${esc(r.sku || '-')} · ${esc(r.item_id)}${r.variation_id ? ' · var ' + esc(r.variation_id) : ''}</small>
+                </td>
+                <td>${new Date(r.data_entrada).toLocaleString('pt-BR')}</td>
+                <td>${r.data_saida ? new Date(r.data_saida).toLocaleString('pt-BR') : '—'}</td>
+                <td>${esc(duracao)}</td>
+                <td>${aberto ? '<span class="badge badge-warning">⏳ Ainda parado</span>' : gaNomeMotivoSaida(r.motivo_saida)}</td>
+                <td>${r.dias_parado_na_entrada != null ? esc(r.dias_parado_na_entrada) + ' dias' : '-'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.abrirRelatorio30DiasGA = async function () {
+
+    let modal = document.getElementById('modalGA30Dias');
+
+    if (!modal) {
+
+        modal = document.createElement('div');
+        modal.id = 'modalGA30Dias';
+        modal.className = 'modal hidden';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 1000px; max-height: 85vh; padding: 0;">
+                <div style="background: linear-gradient(135deg, #dc3545, #f08a8a); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0;"><i class="fas fa-history"></i> Relatório — Histórico de 30+ dias sem vender</h3>
+                    <button onclick="document.getElementById('modalGA30Dias').classList.add('hidden')" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
+                </div>
+                <div style="padding: 16px 20px; display:flex; justify-content: space-between; align-items:center; gap:10px; flex-wrap: wrap;">
+                    <div id="ga30DiasResumo" style="font-size: 13px; color:#6c757d;"></div>
+                    <button class="btn btn-sm btn-success" onclick="window.exportarRelatorio30DiasExcelGA()">
+                        <i class="fas fa-file-excel"></i> Exportar
+                    </button>
+                </div>
+                <div style="padding: 0 20px 20px; max-height: 60vh; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Anúncio</th>
+                                <th>Entrou na lista</th>
+                                <th>Saiu da lista</th>
+                                <th>Tempo parado</th>
+                                <th>Situação</th>
+                                <th>Dias sem vender na entrada</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ga30DiasTabelaBody">
+                            <tr><td colspan="6" class="text-center py-4"><span class="spinner"></span> Carregando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    modal.classList.remove('hidden');
+
+    try {
+
+        const registros = await carregarRelatorio30DiasGA();
+
+        const abertos = registros.filter(r => !r.data_saida).length;
+        const fechados = registros.length - abertos;
+
+        const resumo = document.getElementById('ga30DiasResumo');
+        if (resumo) {
+            resumo.textContent = `${registros.length} registro(s) · ${abertos} ainda parado(s) · ${fechados} já saíram da lista`;
+        }
+
+        renderizarLinhasRelatorio30DiasGA(registros);
+
+    } catch (error) {
+        console.error('Erro ao carregar relatório de 30+ dias:', error);
+        const tbody = document.getElementById('ga30DiasTabelaBody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4" style="color:#dc3545;">Erro ao carregar: ${esc(error.message)}</td></tr>`;
+        }
+    }
+};
+
+window.exportarRelatorio30DiasExcelGA = function () {
+
+    const registros = GA._relatorio30DiasCache || [];
+
+    if (!registros.length) {
+        window.showToast?.('Nenhum registro pra exportar.', 'warning');
+        return;
+    }
+
+    const linhas = registros.map(r => ({
+        'Anúncio': r.titulo || r.item_id,
+        'SKU': r.sku || '',
+        'Item ID': r.item_id,
+        'Variação': r.variation_id || '',
+        'Entrou na lista': r.data_entrada,
+        'Saiu da lista': r.data_saida || '',
+        'Tempo parado': gaFormatarDuracaoDias(r.data_entrada, r.data_saida || new Date().toISOString()),
+        'Situação': r.data_saida ? gaNomeMotivoSaida(r.motivo_saida) : 'Ainda parado',
+        'Dias sem vender na entrada': r.dias_parado_na_entrada ?? ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Historico30Dias');
+    XLSX.writeFile(wb, `historico_30_dias_full_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
+
+
+// ============================================================
+// EXTRAVIOS NO FULL — RECONCILIAÇÃO AUTOMÁTICA
+//
+// Por SKU: quanto foi ENVIADO pro FULL há 15+ dias (nosso histórico
+// interno, historico_baixas_full) vs quanto o PRÓPRIO Mercado Livre
+// confirma ter RECEBIDO (API real, evento INBOUND_RECEPTION do
+// endpoint /stock/fulfillment/operations/search — não é mais um
+// cálculo indireto por estoque atual). Se o ML confirma menos do
+// que enviamos, a diferença é o possível extravio — não importa o
+// que aconteceu depois (venda, devolução etc), esse número já saiu
+// do "o que deveria ter chegado e não chegou".
+//
+// Quando não achamos o inventory_id do SKU (anúncio pausado/
+// removido, por exemplo), caímos no cálculo antigo por estoque
+// atual - vendido, como aproximação.
+// ============================================================
+
+const GA_DIAS_MINIMO_EXTRAVIO = 15;
+
+GA._extraviosCache = null;
+
+function gaInventoryIdsPorSku(sku) {
+
+    const alvo = String(sku || '').trim().toUpperCase();
+    if (!alvo) return [];
+
+    const ids = new Set();
+
+    (GA.rows || []).forEach(row => {
+        if (String(row?.sku || '').trim().toUpperCase() === alvo && row.inventoryId) {
+            ids.add(String(row.inventoryId));
+        }
+    });
+
+    return Array.from(ids);
+}
+
+async function buscarRecebidoInboundFullGA(inventoryId, desdeMs) {
+
+    const sellerId = await getSellerId();
+
+    let totalRecebido = 0;
+    let cursorMs = desdeMs;
+    const hojeMs = Date.now();
+    const JANELA_MS = 59 * 24 * 60 * 60 * 1000; // limite da API é 60 dias por consulta
+
+    while (cursorMs <= hojeMs) {
+
+        const fimMs = Math.min(cursorMs + JANELA_MS, hojeMs);
+
+        const dataFrom = new Date(cursorMs).toISOString().slice(0, 10);
+        const dataTo = new Date(fimMs).toISOString().slice(0, 10);
+
+        try {
+
+            const resposta = await requisicaoOperacoesFull(
+                `/stock/fulfillment/operations/search?seller_id=${sellerId}&inventory_id=${encodeURIComponent(inventoryId)}&date_from=${dataFrom}&date_to=${dataTo}&type=INBOUND_RECEPTION&limit=1000`
+            );
+
+            (resposta?.results || []).forEach(op => {
+                const qtd = Number(op?.detail?.available_quantity ?? op?.result?.available_quantity) || 0;
+                totalRecebido += qtd;
+            });
+
+        } catch (error) {
+            console.warn(`⚠️ Erro consultando recebimentos FULL de ${inventoryId}:`, error);
+        }
+
+        await sleep(200);
+
+        cursorMs = fimMs + (24 * 60 * 60 * 1000);
+    }
+
+    return totalRecebido;
+}
+
+async function calcularExtraviosFullGA() {
+
+    const corteMs = Date.now() - (GA_DIAS_MINIMO_EXTRAVIO * 24 * 60 * 60 * 1000);
+
+    // 1) QUANTO FOI ENVIADO (só remessas com 15+ dias)
+    const { data: historicoBaixas, error: erroBaixas } = await window.supabaseClient
+        .from('historico_baixas_full')
+        .select('dados');
+
+    if (erroBaixas) throw erroBaixas;
+
+    const enviadoPorSku = new Map();
+
+    (historicoBaixas || []).forEach(linha => {
+
+        const reg = linha.dados;
+        if (!reg || !Array.isArray(reg.baixados)) return;
+
+        const dataEnvioMs = new Date(reg.criadoEm || reg.atualizadoEm || 0).getTime();
+        if (!dataEnvioMs || dataEnvioMs > corteMs) return;
+
+        reg.baixados.forEach(item => {
+
+            const sku = String(item.sku || '').trim().toUpperCase();
+            if (!sku) return;
+
+            const atual = enviadoPorSku.get(sku) || { quantidade: 0, nome: item.nome, maisAntigoMs: dataEnvioMs };
+            atual.quantidade += Number(item.quantidade) || 0;
+            atual.maisAntigoMs = Math.min(atual.maisAntigoMs, dataEnvioMs);
+            if (!atual.nome) atual.nome = item.nome;
+
+            enviadoPorSku.set(sku, atual);
+        });
+    });
+
+    if (!enviadoPorSku.size) return [];
+
+    // 2) FALLBACK: QUANTO FOI VENDIDO E QUANTO ESTÁ NO FULL AGORA
+    // (só usado pra SKUs sem inventory_id resolvido)
+    const vendidoPorSku = new Map();
+    const tamanhoPagina = 1000;
+    let inicio = 0;
+    let continuar = true;
+
+    while (continuar) {
+
+        const { data, error } = await window.supabaseClient
+            .from('vendas_nfe_cache')
+            .select('cancelada:venda_json->venda_cancelada, itens:venda_json->order_items')
+            .eq('venda_json->>is_full', 'true')
+            .range(inicio, inicio + tamanhoPagina - 1);
+
+        if (error) throw error;
+
+        const lote = data || [];
+
+        lote.forEach(linha => {
+
+            if (linha.cancelada) return;
+
+            const itens = Array.isArray(linha.itens) ? linha.itens : [];
+
+            itens.forEach(item => {
+
+                const sku = String(item?.item?.seller_sku || '').trim().toUpperCase();
+                if (!sku || !enviadoPorSku.has(sku)) return;
+
+                const qtd = Number(item?.quantity) || 1;
+                vendidoPorSku.set(sku, (vendidoPorSku.get(sku) || 0) + qtd);
+            });
+        });
+
+        if (lote.length < tamanhoPagina) continuar = false;
+        else inicio += tamanhoPagina;
+    }
+
+    const fullAtualPorSku = new Map();
+
+    (GA.rows || []).forEach(row => {
+
+        const sku = String(row?.sku || '').trim().toUpperCase();
+        if (!sku) return;
+
+        const atual = Number(row.full) || 0;
+        fullAtualPorSku.set(sku, (fullAtualPorSku.get(sku) || 0) + atual);
+    });
+
+    // 3) MONTAR RESULTADO — pra cada SKU, tenta a fonte real (API do
+    // ML) e só cai no cálculo indireto se não achar inventory_id.
+    const resultado = [];
+
+    for (const [sku, info] of enviadoPorSku.entries()) {
+
+        const inventoryIds = gaInventoryIdsPorSku(sku);
+
+        if (inventoryIds.length) {
+
+            let recebidoConfirmado = 0;
+
+            for (const inventoryId of inventoryIds) {
+                recebidoConfirmado += await buscarRecebidoInboundFullGA(inventoryId, info.maisAntigoMs);
+            }
+
+            const diferenca = info.quantidade - recebidoConfirmado;
+
+            if (diferenca > 0) {
+                resultado.push({
+                    sku,
+                    nome: info.nome || sku,
+                    enviado: info.quantidade,
+                    recebidoConfirmadoML: recebidoConfirmado,
+                    fonte: 'API do Mercado Livre (recebimento confirmado)',
+                    diferenca,
+                    remessaMaisAntigaEm: new Date(info.maisAntigoMs).toISOString()
+                });
+            }
+
+        } else {
+
+            // Fallback: não achou inventory_id (anúncio pausado/removido) —
+            // usa o cálculo indireto por estoque atual - vendido.
+            const vendido = vendidoPorSku.get(sku) || 0;
+            const estoqueAtual = fullAtualPorSku.get(sku) || 0;
+            const esperado = info.quantidade - vendido;
+            const diferenca = esperado - estoqueAtual;
+
+            if (diferenca > 0) {
+                resultado.push({
+                    sku,
+                    nome: info.nome || sku,
+                    enviado: info.quantidade,
+                    vendidoFull: vendido,
+                    estoqueFullAtual: estoqueAtual,
+                    fonte: 'estimativa (sem inventory_id — estoque atual - vendido)',
+                    diferenca,
+                    remessaMaisAntigaEm: new Date(info.maisAntigoMs).toISOString()
+                });
+            }
+        }
+    }
+
+    resultado.sort((a, b) => b.diferenca - a.diferenca);
+
+    GA._extraviosCache = resultado;
+    return resultado;
+}
+
+window.abrirExtraviosFullGA = async function () {
+
+    if (!Array.isArray(GA.rows) || !GA.rows.length) {
+        window.showToast?.('⚠️ Sincronize o Full - Gerenciamento antes de verificar extravios.', 'warning');
+        return;
+    }
+
+    let modal = document.getElementById('modalGAExtravios');
+
+    if (!modal) {
+
+        modal = document.createElement('div');
+        modal.id = 'modalGAExtravios';
+        modal.className = 'modal hidden';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 1000px; max-height: 85vh; padding: 0;">
+                <div style="background: linear-gradient(135deg, #dc3545, #f08a8a); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0;"><i class="fas fa-box-open"></i> Possíveis extravios no FULL</h3>
+                    <button onclick="document.getElementById('modalGAExtravios').classList.add('hidden')" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
+                </div>
+                <div style="padding: 14px 20px; display:flex; justify-content: space-between; align-items:center; gap:10px; flex-wrap: wrap;">
+                    <div style="font-size: 12px; color:#6c757d;">
+                        Compara o que foi enviado pro FULL há ${GA_DIAS_MINIMO_EXTRAVIO}+ dias com o que o Mercado Livre confirma ter recebido (direto da API deles). Quando não dá pra confirmar pela API, cai numa estimativa por estoque atual - vendido (marcado na coluna Fonte).
+                    </div>
+                    <button class="btn btn-sm btn-success" onclick="window.exportarExtraviosFullExcelGA()">
+                        <i class="fas fa-file-excel"></i> Exportar
+                    </button>
+                </div>
+                <div style="padding: 0 20px 20px; max-height: 60vh; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Produto</th>
+                                <th>Enviado (15+ dias)</th>
+                                <th>Recebido / Vendido</th>
+                                <th>Diferença (possível extravio)</th>
+                                <th>Fonte</th>
+                                <th>Remessa mais antiga considerada</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gaExtraviosTabelaBody">
+                            <tr><td colspan="6" class="text-center py-4"><span class="spinner"></span> Calculando (consulta a API real do ML, pode demorar um pouco)...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    modal.classList.remove('hidden');
+
+    const tbody = document.getElementById('gaExtraviosTabelaBody');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4"><span class="spinner"></span> Calculando...</td></tr>`;
+    }
+
+    try {
+
+        const resultado = await calcularExtraviosFullGA();
+
+        if (!resultado.length) {
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4" style="color:#28a745;"><i class="fas fa-check-circle"></i> Nenhuma diferença encontrada — tudo bateu.</td></tr>`;
+            }
+            return;
+        }
+
+        if (tbody) {
+            tbody.innerHTML = resultado.map(r => {
+
+                const recebidoVendidoHtml = r.recebidoConfirmadoML !== undefined
+                    ? `${esc(r.recebidoConfirmadoML)} recebido(s) confirmado(s)`
+                    : `${esc(r.vendidoFull)} vendido(s) · ${esc(r.estoqueFullAtual)} em estoque agora`;
+
+                return `
+                    <tr>
+                        <td><strong>${esc(r.nome)}</strong><br><small style="color:#6c757d;">${esc(r.sku)}</small></td>
+                        <td>${esc(r.enviado)}</td>
+                        <td>${recebidoVendidoHtml}</td>
+                        <td><strong style="color:#dc3545;">${esc(r.diferenca)}</strong></td>
+                        <td><small>${esc(r.fonte)}</small></td>
+                        <td>${new Date(r.remessaMaisAntigaEm).toLocaleDateString('pt-BR')}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+    } catch (error) {
+        console.error('Erro ao calcular extravios no FULL:', error);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4" style="color:#dc3545;">Erro ao calcular: ${esc(error.message)}</td></tr>`;
+        }
+    }
+};
+
+window.exportarExtraviosFullExcelGA = function () {
+
+    const resultado = GA._extraviosCache || [];
+
+    if (!resultado.length) {
+        window.showToast?.('Nenhum extravio pra exportar.', 'warning');
+        return;
+    }
+
+    const linhas = resultado.map(r => ({
+        'SKU': r.sku,
+        'Produto': r.nome,
+        'Enviado (15+ dias)': r.enviado,
+        'Vendido no FULL': r.vendidoFull,
+        'Estoque FULL atual': r.estoqueFullAtual,
+        'Diferença (possível extravio)': r.diferenca,
+        'Remessa mais antiga considerada': r.remessaMaisAntigaEm
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'ExtraviosFull');
+    XLSX.writeFile(wb, `extravios_full_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
 
 
 // ============================================================

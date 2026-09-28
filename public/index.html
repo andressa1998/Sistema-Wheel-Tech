@@ -1813,7 +1813,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="wt-nav-item" data-menu-visual-key="entradas" type="button" onclick="abrirSistemaEntradas()"><i class="fas fa-right-to-bracket"></i><span>Entradas</span></button>
             <button class="wt-nav-item" data-menu-visual-key="feedback" type="button" onclick="abrirSistemaFeedback()"><i class="fas fa-face-smile"></i><span>Feedback</span></button>
             <button class="wt-nav-item" data-menu-visual-key="gerenciar_frete" type="button" onclick="abrirSistemaFrete()"><i class="fas fa-truck"></i><span>Gerenciar Frete</span></button>
-            <button class="wt-nav-item" data-menu-visual-key="gerenciamento_de_anuncios" type="button" onclick="abrirSistemaGerenciamentoAnuncios()"><i class="fas fa-list-alt"></i><span>Gerenciamento de Anúncios</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="gerenciamento_de_anuncios" type="button" onclick="abrirSistemaGerenciamentoAnuncios()"><i class="fas fa-list-alt"></i><span>Full - Gerenciamento</span></button>
             <button class="wt-nav-item" data-menu-visual-key="gestao_de_estoque" type="button" onclick="abrirGestaoEstoque()"><i class="fas fa-box"></i><span>Gestão de Estoque</span></button>
             <button class="wt-nav-item" data-menu-visual-key="regras_alerta_estoque" type="button" onclick="window.RegrasAlertasEstoque && window.RegrasAlertasEstoque.abrirTela()"><i class="fas fa-sliders-h"></i><span>Regras de Alerta de Estoque</span></button>
             <button class="wt-nav-item" data-menu-visual-key="historico_de_acessos" type="button" onclick="abrirHistoricoAcessos()"><i class="fas fa-history"></i><span>Histórico de Acessos</span></button>
@@ -1850,7 +1850,7 @@ body:has(#loginScreen:not(.hidden)) {
                 <button class="wt-nav-item" data-menu-visual-key="entradas" type="button" onclick="abrirSistemaEntradas()"><i class="fas fa-right-to-bracket"></i><span>Entradas</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="feedback" type="button" onclick="abrirSistemaFeedback()"><i class="fas fa-face-smile"></i><span>Feedback</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="gerenciar_frete" type="button" onclick="abrirSistemaFrete()"><i class="fas fa-truck"></i><span>Gerenciar Frete</span></button>
-                <button class="wt-nav-item" data-menu-visual-key="gerenciamento_de_anuncios" type="button" onclick="abrirSistemaGerenciamentoAnuncios()"><i class="fas fa-list-alt"></i><span>Gerenciamento de Anúncios</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="gerenciamento_de_anuncios" type="button" onclick="abrirSistemaGerenciamentoAnuncios()"><i class="fas fa-list-alt"></i><span>Full - Gerenciamento</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="gestao_de_estoque" type="button" onclick="abrirGestaoEstoque()"><i class="fas fa-box"></i><span>Gestão de Estoque</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="regras_alerta_estoque" type="button" onclick="window.RegrasAlertasEstoque && window.RegrasAlertasEstoque.abrirTela()"><i class="fas fa-sliders-h"></i><span>Regras de Alerta de Estoque</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="historico_de_acessos" id="historicoMenuCard" type="button" onclick="abrirHistoricoAcessos()"><i class="fas fa-history"></i><span>Histórico de Acessos</span></button>
@@ -7273,7 +7273,7 @@ body:has(#loginScreen:not(.hidden)) {
             <div class="header-content">
                 <h1 style="display: flex; align-items: center; gap: 10px;">
                     <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
-                    <span id="caixaDateTitle">Gerenciamento de Anúncios FULL</span>
+                    <span id="caixaDateTitle">Full - Gerenciamento</span>
                 </h1>
                 
             </div>
@@ -7314,6 +7314,12 @@ body:has(#loginScreen:not(.hidden)) {
                 </button>
                     <button class="btn btn-success" onclick="exportarGerenciamentoAnunciosExcel()">
                         <i class="fas fa-file-excel"></i> Exportar
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="window.abrirRelatorio30DiasGA()" title="Histórico de quem entrou/saiu da lista de 30+ dias sem vender">
+                        <i class="fas fa-history"></i> Relatório 30+ dias
+                    </button>
+                    <button class="btn btn-outline-warning" onclick="window.abrirExtraviosFullGA()" title="Compara o que foi enviado pro FULL com o que foi vendido e o que está no estoque, pra achar possíveis extravios">
+                        <i class="fas fa-box-open"></i> Extravios no FULL
                     </button>
 
                     <div style="position: relative;">
@@ -7377,6 +7383,10 @@ body:has(#loginScreen:not(.hidden)) {
 
                     <option value="full_sem_estoque">
                         Oferece FULL sem estoque real
+                    </option>
+
+                    <option value="estoque_excesso">
+                        Estoque em excesso (média 3 meses)
                     </option>
 
                     <option value="pendencias">
@@ -7493,7 +7503,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="entradas.js?v=20260924-3"></script>
     <script src="promocoes_manager.js?v=20260924-1"></script>
     <script src="full_analysis.js"></script>
-    <script src="gerenciamento_anuncios.js?v=20260926-1"></script>
+    <script src="gerenciamento_anuncios.js?v=20260928-2"></script>
     <script src="chamados.js?v=20260922-4"></script>
     <script src="atividades.js?v=20260925-2"></script>
     <script src="projetos.js?v=20260917-3"></script>
