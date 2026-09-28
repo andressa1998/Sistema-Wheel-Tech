@@ -9110,6 +9110,38 @@ async function abrirModalEdicaoProdutos(orderId) {
             );
         }
 
+        // =====================================================
+        // GATE: só libera "Confirmar e Emitir NF-e" depois que
+        // uma transportadora for selecionada.
+        // =====================================================
+
+        const nfeTransportadoraSelectGate =
+            document.getElementById('nfeTransportadora');
+
+        const btnConfirmarEmissaoGate =
+            document.getElementById('confirmarProdutosFinalBtn');
+
+        const atualizarGateTransportadoraNFE = () => {
+            if (!btnConfirmarEmissaoGate) return;
+
+            const temTransportadora =
+                !!nfeTransportadoraSelectGate?.value;
+
+            btnConfirmarEmissaoGate.disabled = !temTransportadora;
+            btnConfirmarEmissaoGate.style.opacity = temTransportadora ? '' : '0.55';
+            btnConfirmarEmissaoGate.style.cursor = temTransportadora ? '' : 'not-allowed';
+            btnConfirmarEmissaoGate.title = temTransportadora
+                ? ''
+                : 'Selecione uma transportadora para liberar a emissão';
+        };
+
+        nfeTransportadoraSelectGate?.addEventListener(
+            'change',
+            atualizarGateTransportadoraNFE
+        );
+
+        atualizarGateTransportadoraNFE();
+
 
         // =====================================================
         // NATUREZAS DA OPERAÇÃO
@@ -68705,6 +68737,17 @@ console.log(
 
         showToast(
             `⚠️ UF "${uf}" inválida`,
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (!transportadoraId) {
+
+        showToast(
+            '⚠️ Selecione uma transportadora antes de emitir a NF-e',
             'warning'
         );
 
