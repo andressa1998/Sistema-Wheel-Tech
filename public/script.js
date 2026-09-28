@@ -4032,6 +4032,9 @@ let reembolsos = [];
 let currentReembolsoFilter = 'a_verificar';
 let editingReembolsoId = null;
 let notificacoes = [];
+// ===== REPUTAÇÃO (dentro do modal de reclamação) =====
+let enviosCorreioTemp = [];
+let _produtosEstoqueCacheReembolso = null;
 
 // ===== VARIÁVEIS PARA FOTOS =====
 let selectedPhotos = [];
@@ -6879,7 +6882,16 @@ async function loadReembolsos() {
             tipo_reclamacao: item.tipo_reclamacao || 'com_reembolso',
             resolvida: item.resolvida || false,
             responsabilidade: item.responsabilidade,
-            cliente_bloqueado: item.cliente_bloqueado
+            cliente_bloqueado: item.cliente_bloqueado,
+            afeta_reputacao: item.afeta_reputacao,
+            reputacao_responsavel: item.reputacao_responsavel,
+            reputacao_erro_nosso: item.reputacao_erro_nosso,
+            reputacao_resolvido_externo: item.reputacao_resolvido_externo,
+            reputacao_solucao_externa: item.reputacao_solucao_externa,
+            reputacao_demos_solucao: item.reputacao_demos_solucao,
+            reputacao_solucao_interna: item.reputacao_solucao_interna,
+            reputacao_custo: item.reputacao_custo,
+            reputacao_data_resolucao: item.reputacao_data_resolucao
         }));
 
         // Se não for administrador, filtra apenas os reembolsos criados pelo próprio usuário
@@ -7109,9 +7121,13 @@ function renderReembolsosTable() {
         const tipoReclamacao = reembolso.tipo_reclamacao || 'com_reembolso';
 
         // Badge do tipo
-        let tipoBadge = tipoReclamacao === 'sem_reembolso' 
+        let tipoBadge = tipoReclamacao === 'sem_reembolso'
             ? '<span class="badge badge-secondary">📋 Acompanhamento</span>'
             : '<span class="badge badge-primary">💰 Com reembolso</span>';
+
+        if (reembolso.afeta_reputacao) {
+            tipoBadge += ' <span class="badge badge-danger" title="Afeta nossa reputação"><i class="fas fa-star-half-alt"></i> Reputação</span>';
+        }
 
         // Status/Resolução
         let statusOrResolvida = '';
@@ -7243,6 +7259,49 @@ window.editarReembolso = async function(id) {
         document.getElementById('statusReembolso').closest('.form-group').style.display = 'block';
     }
 
+    // Acompanhamento (sempre preenchido, independente de afetar reputação)
+    const afetaReputacao = !!reembolso.afeta_reputacao;
+    document.querySelector(`input[name="afetaReputacao"][value="${afetaReputacao ? 'sim' : 'nao'}"]`).checked = true;
+    atualizarSinalizadorReputacao();
+
+    document.getElementById('reputacaoResponsavel').value = reembolso.reputacao_responsavel || '';
+
+    if (reembolso.reputacao_erro_nosso === true || reembolso.reputacao_erro_nosso === false) {
+        const erroTipo = reembolso.reputacao_erro_nosso ? 'nosso' : 'externo';
+        document.querySelector(`input[name="reputacaoErroNosso"][value="${erroTipo}"]`).checked = true;
+    } else {
+        document.querySelectorAll('input[name="reputacaoErroNosso"]').forEach(r => r.checked = false);
+    }
+    toggleReputacaoErroFields();
+
+    document.querySelector(`input[name="reputacaoResolvidoExterno"][value="${reembolso.reputacao_resolvido_externo ? 'sim' : 'nao'}"]`).checked = true;
+    document.getElementById('reputacaoSolucaoExterna').value = reembolso.reputacao_solucao_externa || '';
+
+    document.querySelector(`input[name="reputacaoDemosSolucao"][value="${reembolso.reputacao_demos_solucao ? 'sim' : 'nao'}"]`).checked = true;
+    document.getElementById('reputacaoSolucaoInterna').value = reembolso.reputacao_solucao_interna || '';
+
+    document.getElementById('reputacaoCusto').value = reembolso.reputacao_custo ?? '';
+
+    // Envios pelo correio já salvos
+    enviosCorreioTemp = [];
+    try {
+        const { data: envios } = await supabaseClient
+            .from('reembolsos_envios_correio')
+            .select('*')
+            .eq('reembolso_id', id);
+        if (envios && envios.length) {
+            document.querySelector('input[name="teveEnvioCorreio"][value="sim"]').checked = true;
+            enviosCorreioTemp = envios.map(e => ({ ...e }));
+        } else {
+            document.querySelector('input[name="teveEnvioCorreio"][value="nao"]').checked = true;
+        }
+    } catch (error) {
+        console.warn('Erro ao carregar envios de correio da reclamação:', error);
+        document.querySelector('input[name="teveEnvioCorreio"][value="nao"]').checked = true;
+    }
+    toggleEnviosCorreioSection();
+    renderizarListaEnviosCorreio();
+
     document.getElementById('reembolsoModal').classList.remove('hidden');
 };
 
@@ -7315,6 +7374,141 @@ window.excluirReembolso = async function(id) {
     }
 };
 
+// ============================================================
+// REPUTAÇÃO — campos condicionais + envios pelo correio
+// ============================================================
+
+function popularSelectResponsavelReputacao() {
+    const select = document.getElementById('reputacaoResponsavel');
+    if (!select || select.options.length > 1) return; // já populado
+    let usuarios = window.SYSTEM_USERS || [];
+    let nomes = usuarios.length
+        ? usuarios.map(u => u.name)
+        : ['Elaine', 'Arthur', 'Laura', 'Ronald', 'Bruna', 'Andressa', 'Thalyta', 'Leticia'];
+    select.innerHTML = '<option value="">Selecione</option>' +
+        nomes.map(n => `<option value="${n}">${n}</option>`).join('');
+}
+
+// Os campos de acompanhamento (responsável, erro nosso/externo, solução,
+// custo, envios) ficam sempre visíveis e preenchíveis em qualquer
+// reclamação — "afeta reputação" agora é só um sinalizador, não esconde
+// mais nada. Essa função só dá um destaque visual quando marcado "sim".
+window.atualizarSinalizadorReputacao = function() {
+    const afeta = document.querySelector('input[name="afetaReputacao"]:checked')?.value === 'sim';
+    const box = document.getElementById('camposReputacao');
+    if (box) {
+        box.style.background = afeta ? '#fff0f0' : '#fff8f0';
+        box.style.borderColor = afeta ? '#f1b0b0' : '#ffe0b2';
+    }
+    popularSelectResponsavelReputacao();
+};
+
+window.toggleReputacaoErroFields = function() {
+    const valor = document.querySelector('input[name="reputacaoErroNosso"]:checked')?.value;
+    document.getElementById('camposErroExterno')?.classList.toggle('hidden', valor !== 'externo');
+    document.getElementById('camposErroInterno')?.classList.toggle('hidden', valor !== 'nosso');
+};
+
+async function popularSelectProdutoEnvioCorreio() {
+    const select = document.getElementById('envioCorreioProduto');
+    if (!select || select.options.length > 1) return; // já populado
+
+    let produtos = (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length)
+        ? produtosEstoque
+        : _produtosEstoqueCacheReembolso;
+
+    if (!produtos) {
+        select.innerHTML = '<option value="">Carregando produtos...</option>';
+        const todos = [];
+        let inicio = 0;
+        let continuar = true;
+        while (continuar) {
+            const { data, error } = await supabaseClient
+                .from('produtos_estoque')
+                .select('id, sku, nome')
+                .order('nome', { ascending: true })
+                .range(inicio, inicio + 999);
+            if (error) break;
+            todos.push(...(data || []));
+            if (!data || data.length < 1000) continuar = false;
+            else inicio += 1000;
+        }
+        produtos = todos;
+        _produtosEstoqueCacheReembolso = todos;
+    }
+
+    select.innerHTML = '<option value="">Selecione um produto</option>' +
+        produtos.map(p => `<option value="${p.id}" data-sku="${(p.sku || '').replace(/"/g, '&quot;')}" data-nome="${(p.nome || '').replace(/"/g, '&quot;')}">${(p.nome || '')} (${p.sku || ''})</option>`).join('');
+}
+
+window.toggleEnviosCorreioSection = function() {
+    const tem = document.querySelector('input[name="teveEnvioCorreio"]:checked')?.value === 'sim';
+    document.getElementById('secaoEnviosCorreio')?.classList.toggle('hidden', !tem);
+    if (tem) popularSelectProdutoEnvioCorreio();
+};
+
+function renderizarListaEnviosCorreio() {
+    const container = document.getElementById('listaEnviosCorreio');
+    if (!container) return;
+    if (!enviosCorreioTemp.length) {
+        container.innerHTML = '<small style="color:#6c757d;">Nenhum envio adicionado.</small>';
+        return;
+    }
+    container.innerHTML = enviosCorreioTemp.map((e, idx) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border:1px solid #eee;border-radius:4px;margin-bottom:4px;font-size:12px;">
+            <div>
+                <strong>${e.produto_nome || ''}</strong> ${e.produto_sku ? '(' + e.produto_sku + ')' : ''} — rastreio ${e.codigo_rastreio || '-'}<br>
+                Cliente: ${e.nome_cliente || '-'} · Postado em ${e.data_postagem ? new Date(e.data_postagem + 'T00:00').toLocaleDateString('pt-BR') : '-'}${e.valor_frete ? ' · R$ ' + Number(e.valor_frete).toFixed(2) : ' · frete a preencher depois'}
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removerEnvioCorreio(${idx})"><i class="fas fa-trash"></i></button>
+        </div>
+    `).join('');
+}
+
+window.adicionarEnvioCorreio = function() {
+    const erro = document.getElementById('envioCorreioErro')?.value.trim() || '';
+    const selectProduto = document.getElementById('envioCorreioProduto');
+    const produtoId = selectProduto?.value;
+    const opcaoSelecionada = selectProduto?.options[selectProduto.selectedIndex];
+    const rastreio = document.getElementById('envioCorreioRastreio')?.value.trim() || '';
+    const embalagem = document.getElementById('envioCorreioEmbalagem')?.value.trim() || '';
+    const cliente = document.getElementById('envioCorreioCliente')?.value.trim() || '';
+    const dataPostagem = document.getElementById('envioCorreioData')?.value || '';
+    const valorFrete = document.getElementById('envioCorreioFrete')?.value || '';
+
+    if (!produtoId || !rastreio || !cliente || !dataPostagem) {
+        showToast('Preencha produto, código de rastreio, cliente e data de postagem.', 'warning');
+        return;
+    }
+
+    enviosCorreioTemp.push({
+        erro: erro || null,
+        produto_id: produtoId,
+        produto_sku: opcaoSelecionada?.dataset.sku || '',
+        produto_nome: opcaoSelecionada?.dataset.nome || '',
+        codigo_rastreio: rastreio,
+        tipo_embalagem: embalagem || null,
+        nome_cliente: cliente,
+        data_postagem: dataPostagem,
+        valor_frete: valorFrete ? parseFloat(valorFrete) : null
+    });
+
+    document.getElementById('envioCorreioErro').value = '';
+    if (selectProduto) selectProduto.value = '';
+    document.getElementById('envioCorreioRastreio').value = '';
+    document.getElementById('envioCorreioEmbalagem').value = '';
+    document.getElementById('envioCorreioCliente').value = '';
+    document.getElementById('envioCorreioData').value = '';
+    document.getElementById('envioCorreioFrete').value = '';
+
+    renderizarListaEnviosCorreio();
+};
+
+window.removerEnvioCorreio = function(idx) {
+    enviosCorreioTemp.splice(idx, 1);
+    renderizarListaEnviosCorreio();
+};
+
 // ===== FUNÇÃO PARA NOVO REEMBOLSO =====
 window.novoReembolso = function() {
     editingReembolsoId = null;
@@ -7341,6 +7535,22 @@ window.novoReembolso = function() {
     document.querySelector('input[name="clienteBloqueado"][value="nao"]').checked = true;
     document.getElementById('motivoReclamacaoExtra').value = '';
     document.getElementById('resolvida').value = 'nao';
+
+    // Reputação
+    document.querySelector('input[name="afetaReputacao"][value="nao"]').checked = true;
+    document.getElementById('reputacaoResponsavel').value = '';
+    document.querySelectorAll('input[name="reputacaoErroNosso"]').forEach(r => r.checked = false);
+    document.querySelector('input[name="reputacaoResolvidoExterno"][value="nao"]').checked = true;
+    document.getElementById('reputacaoSolucaoExterna').value = '';
+    document.querySelector('input[name="reputacaoDemosSolucao"][value="nao"]').checked = true;
+    document.getElementById('reputacaoSolucaoInterna').value = '';
+    document.getElementById('reputacaoCusto').value = '';
+    document.querySelector('input[name="teveEnvioCorreio"][value="nao"]').checked = true;
+    enviosCorreioTemp = [];
+    renderizarListaEnviosCorreio();
+    atualizarSinalizadorReputacao();
+    toggleReputacaoErroFields();
+    toggleEnviosCorreioSection();
 
     // Mostrar/ocultar campos conforme tipo
     toggleCamposReclamacao();
@@ -7522,6 +7732,44 @@ window.salvarReembolso = async function() {
         }
     }
     
+    // Acompanhamento (todos os campos são opcionais e valem pra qualquer
+    // reclamação — "afeta reputação" é só um sinalizador independente,
+    // não trava mais o preenchimento do resto).
+    const afetaReputacao = document.querySelector('input[name="afetaReputacao"]:checked')?.value === 'sim';
+    const reputacaoResponsavel = document.getElementById('reputacaoResponsavel')?.value || null;
+
+    let reputacaoErroNosso = null;
+    let reputacaoResolvidoExterno = null;
+    let reputacaoSolucaoExterna = null;
+    let reputacaoDemosSolucao = null;
+    let reputacaoSolucaoInterna = null;
+    let reputacaoCusto = null;
+    let reputacaoDataResolucao = null;
+
+    const reembolsoExistente = reembolsoId ? reembolsos.find(r => r.id == reembolsoId) : null;
+
+    const erroTipo = document.querySelector('input[name="reputacaoErroNosso"]:checked')?.value;
+    if (erroTipo) {
+        reputacaoErroNosso = (erroTipo === 'nosso');
+
+        if (erroTipo === 'externo') {
+            reputacaoResolvidoExterno = document.querySelector('input[name="reputacaoResolvidoExterno"]:checked')?.value === 'sim';
+            reputacaoSolucaoExterna = document.getElementById('reputacaoSolucaoExterna')?.value.trim() || null;
+            if (reputacaoResolvidoExterno) {
+                reputacaoDataResolucao = reembolsoExistente?.reputacao_data_resolucao || new Date().toISOString();
+            }
+        } else {
+            reputacaoDemosSolucao = document.querySelector('input[name="reputacaoDemosSolucao"]:checked')?.value === 'sim';
+            reputacaoSolucaoInterna = document.getElementById('reputacaoSolucaoInterna')?.value.trim() || null;
+            if (reputacaoDemosSolucao) {
+                reputacaoDataResolucao = reembolsoExistente?.reputacao_data_resolucao || new Date().toISOString();
+            }
+        }
+    }
+
+    const custoInput = document.getElementById('reputacaoCusto')?.value;
+    reputacaoCusto = custoInput ? parseFloat(custoInput) : null;
+
     // Monta o objeto para salvar
     const reembolsoData = {
         numero_venda: numeroVenda,
@@ -7540,9 +7788,18 @@ window.salvarReembolso = async function() {
         // 🔥 CORREÇÃO: para sem_reembolso, status = 'pendente'
         status: tipoReclamacao === 'com_reembolso' ? 'a_verificar' : 'pendente',
         status_reembolso: tipoReclamacao === 'com_reembolso' ? statusReembolso : null,
-        data_atualizacao: new Date().toISOString()
+        data_atualizacao: new Date().toISOString(),
+        afeta_reputacao: afetaReputacao,
+        reputacao_responsavel: reputacaoResponsavel,
+        reputacao_erro_nosso: reputacaoErroNosso,
+        reputacao_resolvido_externo: reputacaoResolvidoExterno,
+        reputacao_solucao_externa: reputacaoSolucaoExterna,
+        reputacao_demos_solucao: reputacaoDemosSolucao,
+        reputacao_solucao_interna: reputacaoSolucaoInterna,
+        reputacao_custo: reputacaoCusto,
+        reputacao_data_resolucao: reputacaoDataResolucao
     };
-    
+
     if (!reembolsoId) {
         reembolsoData.criado_por = currentUser.name;
     }
@@ -7576,6 +7833,39 @@ window.salvarReembolso = async function() {
         }
         
         if (result.success) {
+
+            // Sincroniza os envios pelo correio (apaga e recria — a lista
+            // costuma ser pequena, então é mais simples que fazer diff).
+            const reembolsoIdFinal = reembolsoId || result.data?.[0]?.id;
+            if (reembolsoIdFinal) {
+                try {
+                    await supabaseClient
+                        .from('reembolsos_envios_correio')
+                        .delete()
+                        .eq('reembolso_id', reembolsoIdFinal);
+
+                    if (enviosCorreioTemp.length) {
+                        const linhasEnvios = enviosCorreioTemp.map(e => ({
+                            reembolso_id: reembolsoIdFinal,
+                            erro: e.erro || null,
+                            produto_id: e.produto_id || null,
+                            produto_sku: e.produto_sku || null,
+                            produto_nome: e.produto_nome || null,
+                            codigo_rastreio: e.codigo_rastreio || null,
+                            tipo_embalagem: e.tipo_embalagem || null,
+                            nome_cliente: e.nome_cliente || null,
+                            data_postagem: e.data_postagem || null,
+                            valor_frete: e.valor_frete ?? null,
+                            criado_por: currentUser.name
+                        }));
+                        await supabaseClient.from('reembolsos_envios_correio').insert(linhasEnvios);
+                    }
+                } catch (erroEnvios) {
+                    console.warn('Erro ao salvar envios de correio da reclamação:', erroEnvios);
+                    showToast('Reclamação salva, mas houve erro ao salvar os envios de correio: ' + erroEnvios.message, 'warning');
+                }
+            }
+
             showToast(reembolsoId ? 'Reclamação atualizada!' : 'Reclamação criada!', 'success');
             closeReembolsoModal();
             await loadReembolsos();
@@ -8279,6 +8569,178 @@ window.gerarRelatorioReembolsos = async function() {
         console.error('❌ Erro ao gerar relatório:', error);
         showToast('Erro ao gerar relatório: ' + error.message, 'error');
     }
+};
+
+// ============================================================
+// RELATÓRIO DE REPUTAÇÃO — tempo de resolução por usuário e
+// custos com erros nossos
+// ============================================================
+
+let _relatorioReputacaoCache = { porUsuario: [], custos: [] };
+
+window.abrirRelatorioReputacao = function() {
+    const hoje = new Date();
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+    const campoInicio = document.getElementById('repDataInicio');
+    const campoFim = document.getElementById('repDataFim');
+    if (campoInicio && !campoInicio.value) campoInicio.value = inicioMes.toISOString().split('T')[0];
+    if (campoFim && !campoFim.value) campoFim.value = hoje.toISOString().split('T')[0];
+
+    document.getElementById('modalRelatorioReputacao').classList.remove('hidden');
+    window.gerarRelatorioReputacao();
+};
+
+function formatarDuracaoReputacao(ms) {
+    if (!Number.isFinite(ms) || ms < 0) return '-';
+    const horas = ms / (1000 * 60 * 60);
+    if (horas < 24) return `${horas.toFixed(1)}h`;
+    const dias = horas / 24;
+    return `${dias.toFixed(1)} dias`;
+}
+
+window.gerarRelatorioReputacao = async function() {
+    const dataInicio = document.getElementById('repDataInicio').value;
+    const dataFim = document.getElementById('repDataFim').value;
+
+    if (dataInicio && dataFim && new Date(dataInicio) > new Date(dataFim)) {
+        showToast('Data início não pode ser maior que data fim', 'warning');
+        return;
+    }
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('reembolsos_ml')
+            .select('*')
+            .eq('afeta_reputacao', true);
+
+        if (error) throw error;
+
+        const parseDate = (dateStr) => new Date(dateStr + 'T00:00:00');
+        let lista = data || [];
+
+        if (dataInicio && dataFim) {
+            const inicioDate = parseDate(dataInicio);
+            const fimDate = parseDate(dataFim);
+            lista = lista.filter(item => {
+                if (!item.data_operacao) return false;
+                const itemDate = parseDate(item.data_operacao);
+                return itemDate >= inicioDate && itemDate <= fimDate;
+            });
+        }
+
+        // ===== POR USUÁRIO =====
+        const porUsuarioMap = new Map();
+        lista.forEach(item => {
+            const responsavel = item.reputacao_responsavel || 'Sem responsável';
+            if (!porUsuarioMap.has(responsavel)) {
+                porUsuarioMap.set(responsavel, { total: 0, resolvidas: 0, somaDuracaoMs: 0, qtdComDuracao: 0 });
+            }
+            const info = porUsuarioMap.get(responsavel);
+            info.total++;
+
+            const resolvida = item.reputacao_erro_nosso ? !!item.reputacao_demos_solucao : !!item.reputacao_resolvido_externo;
+            if (resolvida) {
+                info.resolvidas++;
+                if (item.reputacao_data_resolucao && item.data_criacao) {
+                    const duracaoMs = new Date(item.reputacao_data_resolucao) - new Date(item.data_criacao);
+                    if (Number.isFinite(duracaoMs) && duracaoMs >= 0) {
+                        info.somaDuracaoMs += duracaoMs;
+                        info.qtdComDuracao++;
+                    }
+                }
+            }
+        });
+
+        const porUsuario = Array.from(porUsuarioMap.entries()).map(([responsavel, info]) => ({
+            responsavel,
+            total: info.total,
+            resolvidas: info.resolvidas,
+            emAberto: info.total - info.resolvidas,
+            tempoMedioMs: info.qtdComDuracao ? info.somaDuracaoMs / info.qtdComDuracao : null
+        })).sort((a, b) => b.total - a.total);
+
+        const tbodyUsuario = document.getElementById('repPorUsuarioBody');
+        if (!porUsuario.length) {
+            tbodyUsuario.innerHTML = '<tr><td colspan="5" class="text-center py-4" style="color:#6c757d;">Nenhuma reclamação com impacto de reputação nesse período.</td></tr>';
+        } else {
+            tbodyUsuario.innerHTML = porUsuario.map(u => `
+                <tr>
+                    <td>${u.responsavel}</td>
+                    <td>${u.total}</td>
+                    <td>${u.resolvidas}</td>
+                    <td>${u.emAberto}</td>
+                    <td>${formatarDuracaoReputacao(u.tempoMedioMs)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // ===== CUSTOS COM ERROS NOSSOS =====
+        const custos = lista
+            .filter(item => item.reputacao_erro_nosso && item.reputacao_custo > 0)
+            .sort((a, b) => new Date(b.data_operacao) - new Date(a.data_operacao));
+
+        const totalCustos = custos.reduce((soma, item) => soma + parseFloat(item.reputacao_custo || 0), 0);
+
+        const resumoCustos = document.getElementById('repCustosResumo');
+        resumoCustos.innerHTML = `<strong>Total: R$ ${totalCustos.toFixed(2)}</strong> em ${custos.length} reclamação(ões) com erro nosso e custo registrado.`;
+
+        const tbodyCustos = document.getElementById('repCustosBody');
+        if (!custos.length) {
+            tbodyCustos.innerHTML = '<tr><td colspan="6" class="text-center py-4" style="color:#6c757d;">Nenhum custo com erro nosso registrado nesse período.</td></tr>';
+        } else {
+            tbodyCustos.innerHTML = custos.map(item => `
+                <tr>
+                    <td>${item.data_operacao ? new Date(item.data_operacao).toLocaleDateString('pt-BR') : '-'}</td>
+                    <td>${item.reputacao_responsavel || '-'}</td>
+                    <td>${item.numero_venda || '-'}</td>
+                    <td>${item.numero_reclamacao || '-'}</td>
+                    <td>${(item.reputacao_solucao_interna || '-').slice(0, 60)}</td>
+                    <td>R$ ${parseFloat(item.reputacao_custo || 0).toFixed(2)}</td>
+                </tr>
+            `).join('');
+        }
+
+        _relatorioReputacaoCache = { porUsuario, custos };
+
+        showToast(`✅ Relatório gerado: ${lista.length} reclamação(ões) com impacto de reputação`, 'success');
+
+    } catch (error) {
+        console.error('❌ Erro ao gerar relatório de reputação:', error);
+        showToast('Erro ao gerar relatório: ' + error.message, 'error');
+    }
+};
+
+window.exportarRelatorioReputacaoExcel = function() {
+    const { porUsuario, custos } = _relatorioReputacaoCache;
+
+    if (!porUsuario.length && !custos.length) {
+        showToast('Gere o relatório antes de exportar.', 'warning');
+        return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    const linhasUsuario = porUsuario.map(u => ({
+        'Responsável': u.responsavel,
+        'Reclamações c/ reputação': u.total,
+        'Resolvidas': u.resolvidas,
+        'Em aberto': u.emAberto,
+        'Tempo médio de resolução': formatarDuracaoReputacao(u.tempoMedioMs)
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasUsuario), 'Por Usuário');
+
+    const linhasCustos = custos.map(item => ({
+        'Data': item.data_operacao || '',
+        'Responsável': item.reputacao_responsavel || '',
+        'Venda': item.numero_venda || '',
+        'Reclamação': item.numero_reclamacao || '',
+        'Solução': item.reputacao_solucao_interna || '',
+        'Custo': parseFloat(item.reputacao_custo || 0)
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasCustos), 'Custos Erros Nossos');
+
+    XLSX.writeFile(wb, `relatorio_reputacao_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
 // Gerar gráfico de reembolsos (simplificado)

@@ -104,6 +104,44 @@
             .rc-rel-tabela td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
             .rc-rel-barra{height:8px;background:#eef2f7;border-radius:6px;overflow:hidden;min-width:80px;}
             .rc-rel-barra span{display:block;height:100%;background:#0d6efd;}
+
+            .rc-acomp{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:18px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+            .rc-acomp-header{display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #f1f5f9;}
+            .rc-acomp-header h5{margin:0;font-size:15px;font-weight:700;color:#1e293b;display:flex;align-items:center;gap:8px;}
+            .rc-acomp-header h5 i{color:#94a3b8;}
+            .rc-acomp-flag{margin-left:auto;font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;white-space:nowrap;}
+            .rc-acomp-flag.on{background:#fde8ea;color:#a61b29;}
+            .rc-acomp-flag.off{background:#eef2f7;color:#64748b;}
+            .rc-field{margin-bottom:18px;}
+            .rc-field:last-child{margin-bottom:0;}
+            .rc-field>label{display:block;font-size:12.5px;font-weight:700;color:#334155;margin-bottom:8px;}
+            .rc-field>label i{color:#94a3b8;margin-right:5px;width:14px;text-align:center;}
+            .rc-field small{display:block;color:#94a3b8;font-size:11px;margin-top:6px;}
+            .rc-pills{display:flex;gap:8px;flex-wrap:wrap;}
+            .rc-pill{position:relative;cursor:pointer;}
+            .rc-pill input{position:absolute;opacity:0;inset:0;margin:0;width:100%;height:100%;cursor:pointer;}
+            .rc-pill span{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:20px;border:1.5px solid #e2e8f0;background:#f8fafc;font-size:12.5px;font-weight:600;color:#64748b;transition:.15s;}
+            .rc-pill:hover span{border-color:#cbd5e1;}
+            .rc-pill input:checked + span{border-color:#0d6efd;background:#eaf2ff;color:#0d6efd;}
+            .rc-pill.rc-pill-danger input:checked + span{border-color:#dc3545;background:#fde8ea;color:#a61b29;}
+            .rc-pill.rc-pill-success input:checked + span{border-color:#198754;background:#e3f7e8;color:#1c7a34;}
+            .rc-money{position:relative;max-width:220px;}
+            .rc-money::before{content:'R$';position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:12.5px;font-weight:700;color:#94a3b8;pointer-events:none;}
+            .rc-money input{padding-left:34px !important;}
+            .rc-subcard{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-top:12px;}
+            .rc-subcard-titulo{font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.03em;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+            .rc-envios-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+            .rc-envios-grid .full{grid-column:1/-1;}
+            .rc-envios-grid label{display:block;font-size:11px;font-weight:600;color:#64748b;margin-bottom:4px;}
+            .rc-envio-item{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:12.5px;}
+            .rc-envio-item .rc-envio-info strong{color:#1e293b;}
+            .rc-envio-item .rc-envio-meta{color:#64748b;margin-top:3px;line-height:1.5;}
+            .rc-envio-item .rc-envio-meta i{width:14px;color:#94a3b8;}
+
+            .rc-rel-tabs{display:flex;gap:8px;margin-bottom:18px;border-bottom:1px solid #e2e8f0;padding-bottom:14px;flex-wrap:wrap;}
+            .rc-rel-tab{background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;border-radius:20px;padding:8px 16px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.15s;}
+            .rc-rel-tab:hover{border-color:#cbd5e1;color:#334155;}
+            .rc-rel-tab.active{background:#0d6efd;border-color:#0d6efd;color:#fff;}
         `;
         document.head.appendChild(st);
     }
@@ -142,8 +180,8 @@
                             <button class="btn btn-outline-success" onclick="window.exportarReclamacoesClientesExcel()">
                                 <i class="fas fa-file-excel"></i> Exportar Excel
                             </button>
-                            <button class="btn btn-outline-primary" onclick="window.abrirRelatorioMotivosRC()">
-                                <i class="fas fa-chart-bar"></i> Relatório de Motivos
+                            <button class="btn btn-outline-primary" onclick="window.abrirRelatoriosRC()">
+                                <i class="fas fa-chart-bar"></i> Relatórios
                             </button>
                         </div>
                     </div>
@@ -216,27 +254,29 @@
         });
     }
 
-    function criarModalRelatorioMotivosRC() {
-        if (document.getElementById('rcModalRelatorio')) return;
+    function criarModalRelatoriosRC() {
+        if (document.getElementById('rcModalRelatorios')) return;
 
         const overlay = document.createElement('div');
-        overlay.id = 'rcModalRelatorio';
+        overlay.id = 'rcModalRelatorios';
         overlay.className = 'rc-overlay hidden-rc';
         overlay.innerHTML = `
             <div class="rc-modal rc-modal-relatorio">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px;">
-                    <div>
-                        <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatório de motivos</h3>
-                        <div style="font-size:12px;color:#6c757d;margin-top:4px;">Reclamações de clientes agrupadas pelo motivo — do mais usado ao menos usado.</div>
-                    </div>
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px;">
+                    <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatórios</h3>
                     <div class="d-flex gap-2 align-items-center">
-                        <button class="btn btn-sm btn-outline-success" onclick="window.exportarRelatorioMotivosRCExcel()">
+                        <button class="btn btn-sm btn-outline-success" onclick="window.exportarRelatorioAtualRC()">
                             <i class="fas fa-file-excel"></i> Exportar
                         </button>
-                        <button onclick="window.fecharRelatorioMotivosRC()" style="background:none;border:none;font-size:22px;cursor:pointer;">&times;</button>
+                        <button onclick="window.fecharRelatoriosRC()" style="background:none;border:none;font-size:22px;cursor:pointer;">&times;</button>
                     </div>
                 </div>
-                <div id="rcRelCorpo">
+                <div class="rc-rel-tabs">
+                    <button class="rc-rel-tab" data-aba-rel="motivos" onclick="window.trocarAbaRelatorioRC('motivos')"><i class="fas fa-list"></i> Motivos das reclamações</button>
+                    <button class="rc-rel-tab" data-aba-rel="reputacao" onclick="window.trocarAbaRelatorioRC('reputacao')"><i class="fas fa-star-half-alt"></i> Reputação</button>
+                    <button class="rc-rel-tab" data-aba-rel="envios" onclick="window.trocarAbaRelatorioRC('envios')"><i class="fas fa-truck"></i> Envio de correios</button>
+                </div>
+                <div id="rcRelatoriosCorpo">
                     <div class="text-center py-4"><span class="spinner"></span> Carregando...</div>
                 </div>
             </div>
@@ -244,9 +284,36 @@
         document.body.appendChild(overlay);
 
         overlay.addEventListener('click', e => {
-            if (e.target === overlay) window.fecharRelatorioMotivosRC();
+            if (e.target === overlay) window.fecharRelatoriosRC();
         });
     }
+
+    let abaRelatorioAtualRC = 'motivos';
+
+    window.abrirRelatoriosRC = function (aba) {
+        criarModalRelatoriosRC();
+        document.getElementById('rcModalRelatorios')?.classList.remove('hidden-rc');
+        window.trocarAbaRelatorioRC(aba || abaRelatorioAtualRC || 'motivos');
+    };
+
+    window.fecharRelatoriosRC = function () {
+        document.getElementById('rcModalRelatorios')?.classList.add('hidden-rc');
+    };
+
+    window.trocarAbaRelatorioRC = function (aba) {
+        abaRelatorioAtualRC = aba;
+        document.querySelectorAll('.rc-rel-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.abaRel === aba));
+
+        if (aba === 'motivos') renderizarRelatorioMotivosRC();
+        else if (aba === 'reputacao') window.gerarRelatorioReputacaoRC();
+        else if (aba === 'envios') window.gerarRelatorioEnviosCorreioRC();
+    };
+
+    window.exportarRelatorioAtualRC = function () {
+        if (abaRelatorioAtualRC === 'motivos') window.exportarRelatorioMotivosRCExcel();
+        else if (abaRelatorioAtualRC === 'reputacao') window.exportarRelatorioReputacaoRCExcel();
+        else if (abaRelatorioAtualRC === 'envios') window.exportarRelatorioEnviosCorreioRCExcel();
+    };
 
     // ============================================================
     // ABRIR SISTEMA
@@ -359,19 +426,8 @@
             .sort((a, b) => b.quantidade - a.quantidade);
     }
 
-    window.abrirRelatorioMotivosRC = function () {
-        criarModalRelatorioMotivosRC();
-        const overlay = document.getElementById('rcModalRelatorio');
-        overlay.classList.remove('hidden-rc');
-        renderizarRelatorioMotivosRC();
-    };
-
-    window.fecharRelatorioMotivosRC = function () {
-        document.getElementById('rcModalRelatorio')?.classList.add('hidden-rc');
-    };
-
     function renderizarRelatorioMotivosRC() {
-        const corpo = document.getElementById('rcRelCorpo');
+        const corpo = document.getElementById('rcRelatoriosCorpo');
         if (!corpo) return;
 
         motivosAgrupadosRC = agruparPorMotivoRC();
@@ -482,6 +538,354 @@
         showToast('✅ Relatório exportado!', 'success');
     };
 
+    // ============================================================
+    // RELATÓRIO DE REPUTAÇÃO
+    // ============================================================
+
+    let relatorioReputacaoRC = { porUsuario: [], custos: [], totalCustos: 0 };
+
+    function formatarDuracaoRC(ms) {
+        if (ms == null || isNaN(ms) || ms < 0) return '—';
+        const horas = ms / 3600000;
+        if (horas < 24) return `${horas.toFixed(1)}h`;
+        return `${(horas / 24).toFixed(1)}d`;
+    }
+
+    window.abrirRelatorioReputacaoRC = function () {
+        criarModalRelatorioReputacaoRC();
+        document.getElementById('rcModalRelatorioReputacao')?.classList.remove('hidden-rc');
+        window.gerarRelatorioReputacaoRC();
+    };
+
+    window.fecharRelatorioReputacaoRC = function () {
+        document.getElementById('rcModalRelatorioReputacao')?.classList.add('hidden-rc');
+    };
+
+    function seletorPeriodoRepHtml(periodoDias) {
+        return `
+            <div class="d-flex justify-content-end align-items-center gap-2 mb-3">
+                <label style="font-size:12px;margin:0;">Período:</label>
+                <select id="rcRepPeriodo" class="form-control form-control-sm" style="width:auto;" onchange="window.gerarRelatorioReputacaoRC()">
+                    <option value="30" ${periodoDias === 30 ? 'selected' : ''}>Últimos 30 dias</option>
+                    <option value="90" ${periodoDias === 90 ? 'selected' : ''}>Últimos 90 dias</option>
+                    <option value="365" ${periodoDias === 365 ? 'selected' : ''}>Último ano</option>
+                    <option value="0" ${periodoDias === 0 ? 'selected' : ''}>Todo o período</option>
+                </select>
+            </div>
+        `;
+    }
+
+    window.gerarRelatorioReputacaoRC = function () {
+        const corpo = document.getElementById('rcRelatoriosCorpo');
+        if (!corpo) return;
+
+        const periodoDias = parseInt(document.getElementById('rcRepPeriodo')?.value ?? '90', 10);
+        const limite = periodoDias ? Date.now() - periodoDias * 86400000 : null;
+
+        const lista = reclamacoesCache.filter(r => {
+            if (!r.afeta_reputacao) return false;
+            if (!limite) return true;
+            const data = new Date(r.ml_criado_em || r.criado_em).getTime();
+            return !isNaN(data) && data >= limite;
+        });
+
+        if (!lista.length) {
+            corpo.innerHTML = seletorPeriodoRepHtml(periodoDias) +
+                `<div class="text-center text-muted py-5">Nenhuma reclamação marcada como "afeta reputação" no período selecionado.</div>`;
+            relatorioReputacaoRC = { porUsuario: [], custos: [], totalCustos: 0 };
+            return;
+        }
+
+        // Agrupamento por responsável: total, resolvidas, tempo médio de resolução.
+        const mapaUsuario = new Map();
+        lista.forEach(r => {
+            const chave = r.responsavel || 'Sem responsável definido';
+            if (!mapaUsuario.has(chave)) mapaUsuario.set(chave, { responsavel: chave, total: 0, resolvidas: 0, somaMs: 0 });
+            const item = mapaUsuario.get(chave);
+            item.total++;
+            if (r.data_resolucao) {
+                item.resolvidas++;
+                const inicio = new Date(r.ml_criado_em || r.criado_em).getTime();
+                const fim = new Date(r.data_resolucao).getTime();
+                if (!isNaN(inicio) && !isNaN(fim) && fim >= inicio) item.somaMs += (fim - inicio);
+            }
+        });
+        const porUsuario = Array.from(mapaUsuario.values())
+            .map(item => ({ ...item, tempoMedioMs: item.resolvidas ? item.somaMs / item.resolvidas : null }))
+            .sort((a, b) => b.total - a.total);
+
+        // Custos com erros nossos.
+        const custos = lista
+            .filter(r => r.erro_nosso === true && r.custo != null && Number(r.custo) > 0)
+            .sort((a, b) => new Date(b.ml_criado_em || b.criado_em) - new Date(a.ml_criado_em || a.criado_em));
+        const totalCustos = custos.reduce((soma, r) => soma + Number(r.custo || 0), 0);
+
+        relatorioReputacaoRC = { porUsuario, custos, totalCustos };
+
+        corpo.innerHTML = seletorPeriodoRepHtml(periodoDias) + `
+            <div class="rc-rel-resumo">
+                <div class="rc-rel-card"><small>Reclamações c/ reputação afetada</small><strong>${lista.length}</strong></div>
+                <div class="rc-rel-card"><small>Resolvidas</small><strong>${lista.filter(r => r.data_resolucao).length}</strong></div>
+                <div class="rc-rel-card" style="background:#fff0f0;border-color:#f1b0b0;"><small>Custo total (erro nosso)</small><strong style="color:#a61b29;">R$ ${totalCustos.toFixed(2)}</strong></div>
+            </div>
+
+            <h4 style="font-size:14px;">Tempo de resolução e quantidade, por responsável</h4>
+            <div class="table-responsive mb-4">
+                <table class="rc-rel-tabela">
+                    <thead><tr><th>Responsável</th><th style="text-align:right;">Total</th><th style="text-align:right;">Resolvidas</th><th style="text-align:right;">Pendentes</th><th style="text-align:right;">Tempo médio</th></tr></thead>
+                    <tbody>
+                        ${porUsuario.map(u => `
+                            <tr>
+                                <td>${esc(u.responsavel)}</td>
+                                <td style="text-align:right;font-weight:700;">${u.total}</td>
+                                <td style="text-align:right;">${u.resolvidas}</td>
+                                <td style="text-align:right;">${u.total - u.resolvidas}</td>
+                                <td style="text-align:right;">${formatarDuracaoRC(u.tempoMedioMs)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <h4 style="font-size:14px;">Custos com erros nossos</h4>
+            ${custos.length === 0
+                ? '<div class="text-muted py-3">Nenhuma reclamação com erro nosso e custo registrado no período.</div>'
+                : `<div class="table-responsive">
+                    <table class="rc-rel-tabela">
+                        <thead><tr><th>Data</th><th>Responsável</th><th>Venda</th><th>Motivo</th><th>Solução</th><th style="text-align:right;">Custo</th></tr></thead>
+                        <tbody>
+                            ${custos.map(r => `
+                                <tr>
+                                    <td>${fmtData(r.ml_criado_em || r.criado_em)}</td>
+                                    <td>${esc(r.responsavel || '—')}</td>
+                                    <td>${esc(r.numero_venda || '—')}</td>
+                                    <td>${esc(r.motivo || '—')}</td>
+                                    <td>${esc(r.solucao_interna || '—')}</td>
+                                    <td style="text-align:right;font-weight:700;">R$ ${Number(r.custo).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div style="text-align:right;font-weight:700;margin-top:8px;">Total: R$ ${totalCustos.toFixed(2)} em ${custos.length} reclamação(ões) com erro nosso e custo registrado.</div>
+                </div>`
+            }
+        `;
+    };
+
+    window.exportarRelatorioReputacaoRCExcel = function () {
+        if (!relatorioReputacaoRC.porUsuario.length && !relatorioReputacaoRC.custos.length) {
+            showToast('Nenhum dado para exportar', 'warning');
+            return;
+        }
+        const wb = XLSX.utils.book_new();
+
+        const dadosUsuario = relatorioReputacaoRC.porUsuario.map(u => ({
+            'Responsável': u.responsavel,
+            'Total': u.total,
+            'Resolvidas': u.resolvidas,
+            'Pendentes': u.total - u.resolvidas,
+            'Tempo médio de resolução': formatarDuracaoRC(u.tempoMedioMs)
+        }));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dadosUsuario), 'Por responsavel');
+
+        const dadosCustos = relatorioReputacaoRC.custos.map(r => ({
+            'Data': fmtData(r.ml_criado_em || r.criado_em),
+            'Responsável': r.responsavel || '',
+            'Venda': r.numero_venda || '',
+            'Motivo': r.motivo || '',
+            'Solução': r.solucao_interna || '',
+            'Custo': Number(r.custo || 0)
+        }));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dadosCustos), 'Custos erro nosso');
+
+        XLSX.writeFile(wb, `reclamacoes_clientes_reputacao_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        showToast('✅ Relatório exportado!', 'success');
+    };
+
+    // ============================================================
+    // RELATÓRIO DE ENVIO DE CORREIOS
+    // ============================================================
+
+    let dadosEnviosCorreioRC = null; // cache: todos os envios já com a reclamação (erro_nosso) embutida
+    let relatorioEnviosCorreioRC = { porMes: [], anoSelecionado: null, totalErro: 0, totalAcerto: 0 };
+    let graficoEnviosCorreioRC = null;
+
+    async function carregarTodosEnviosCorreioRC() {
+        const cli = sb();
+        const todos = [];
+        let inicio = 0;
+        let continuar = true;
+        while (continuar) {
+            const { data, error } = await cli
+                .from('reclamacoes_clientes_envios_correio')
+                .select('*, reclamacoes_clientes(erro_nosso, numero_venda, responsavel)')
+                .order('data_postagem', { ascending: true })
+                .range(inicio, inicio + 999);
+            if (error) throw error;
+            todos.push(...(data || []));
+            if (!data || data.length < 1000) continuar = false;
+            else inicio += 1000;
+        }
+        dadosEnviosCorreioRC = todos;
+    }
+
+    window.gerarRelatorioEnviosCorreioRC = async function () {
+        const corpo = document.getElementById('rcRelatoriosCorpo');
+        if (!corpo) return;
+
+        if (!dadosEnviosCorreioRC) {
+            corpo.innerHTML = `<div class="text-center py-4"><span class="spinner"></span> Carregando...</div>`;
+            try {
+                await carregarTodosEnviosCorreioRC();
+            } catch (error) {
+                corpo.innerHTML = `<div class="text-danger py-4">Erro ao carregar: ${esc(error.message)}</div>`;
+                return;
+            }
+        }
+
+        if (!dadosEnviosCorreioRC.length) {
+            corpo.innerHTML = `<div class="text-center text-muted py-5">Nenhum envio de correio registrado ainda nas reclamações.</div>`;
+            relatorioEnviosCorreioRC = { porMes: [], anoSelecionado: null, totalErro: 0, totalAcerto: 0 };
+            return;
+        }
+
+        const anos = Array.from(new Set(dadosEnviosCorreioRC
+            .map(e => e.data_postagem ? new Date(e.data_postagem + 'T00:00').getFullYear() : null)
+            .filter(a => a != null))).sort((a, b) => b - a);
+
+        if (!anos.length) {
+            corpo.innerHTML = `<div class="text-center text-muted py-5">Nenhum envio com data de postagem preenchida ainda.</div>`;
+            relatorioEnviosCorreioRC = { porMes: [], anoSelecionado: null, totalErro: 0, totalAcerto: 0 };
+            return;
+        }
+
+        const anoSelectAtual = document.getElementById('rcEnvioAno');
+        const anoSelecionado = anoSelectAtual && anos.includes(parseInt(anoSelectAtual.value, 10))
+            ? parseInt(anoSelectAtual.value, 10)
+            : anos[0];
+
+        renderizarRelatorioEnviosCorreioRC(anos, anoSelecionado);
+    };
+
+    function renderizarRelatorioEnviosCorreioRC(anos, anoSelecionado) {
+        const corpo = document.getElementById('rcRelatoriosCorpo');
+        if (!corpo) return;
+
+        const nomesMeses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        const doAno = dadosEnviosCorreioRC.filter(e => e.data_postagem && new Date(e.data_postagem + 'T00:00').getFullYear() === anoSelecionado);
+
+        const porMes = nomesMeses.map((nome, idx) => {
+            const doMes = doAno.filter(e => new Date(e.data_postagem + 'T00:00').getMonth() === idx);
+            const comFrete = doMes.filter(e => e.valor_frete != null);
+            const erro = comFrete
+                .filter(e => e.reclamacoes_clientes?.erro_nosso === true)
+                .reduce((s, e) => s + Number(e.valor_frete), 0);
+            const acerto = comFrete
+                .filter(e => e.reclamacoes_clientes?.erro_nosso !== true)
+                .reduce((s, e) => s + Number(e.valor_frete), 0);
+            return { mes: nome, qtd: doMes.length, erro, acerto, total: erro + acerto, semFrete: doMes.length - comFrete.length };
+        });
+
+        const totalErro = porMes.reduce((s, m) => s + m.erro, 0);
+        const totalAcerto = porMes.reduce((s, m) => s + m.acerto, 0);
+        const totalSemFrete = porMes.reduce((s, m) => s + m.semFrete, 0);
+
+        relatorioEnviosCorreioRC = { porMes, anoSelecionado, totalErro, totalAcerto };
+
+        corpo.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-3" style="gap:10px;">
+                <div style="font-size:12px;color:#6c757d;max-width:520px;">Custo dos envios pelo correio feitos por causa de reclamações, separado entre reclamações com erro nosso e as demais (erro externo ou ainda não definido).</div>
+                <div class="d-flex gap-2 align-items-center">
+                    <label style="font-size:12px;margin:0;">Ano:</label>
+                    <select id="rcEnvioAno" class="form-control form-control-sm" style="width:auto;" onchange="window.gerarRelatorioEnviosCorreioRC()">
+                        ${anos.map(a => `<option value="${a}" ${a === anoSelecionado ? 'selected' : ''}>${a}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+
+            <div class="rc-rel-resumo">
+                <div class="rc-rel-card"><small>Envios no ano</small><strong>${doAno.length}</strong></div>
+                <div class="rc-rel-card" style="background:#fff0f0;border-color:#f1b0b0;"><small>Gasto com erro nosso</small><strong style="color:#a61b29;">R$ ${totalErro.toFixed(2)}</strong></div>
+                <div class="rc-rel-card" style="background:#e3f7e8;border-color:#b7e4c7;"><small>Gasto com acerto</small><strong style="color:#1c7a34;">R$ ${totalAcerto.toFixed(2)}</strong></div>
+                <div class="rc-rel-card"><small>Total gasto no ano</small><strong>R$ ${(totalErro + totalAcerto).toFixed(2)}</strong></div>
+                ${totalSemFrete ? `<div class="rc-rel-card" style="background:#fff8e1;border-color:#ffe0a3;"><small>Frete ainda não preenchido</small><strong style="color:#8a6d00;">${totalSemFrete}</strong></div>` : ''}
+            </div>
+
+            <div style="height:280px;margin-bottom:20px;">
+                <canvas id="rcGraficoEnviosCorreio"></canvas>
+            </div>
+
+            <div class="table-responsive">
+                <table class="rc-rel-tabela">
+                    <thead><tr><th>Mês</th><th style="text-align:right;">Envios</th><th style="text-align:right;">Erro nosso</th><th style="text-align:right;">Acerto</th><th style="text-align:right;">Total</th></tr></thead>
+                    <tbody>
+                        ${porMes.map(m => `
+                            <tr>
+                                <td>${m.mes}</td>
+                                <td style="text-align:right;">${m.qtd}</td>
+                                <td style="text-align:right;color:#a61b29;">${m.erro ? 'R$ ' + m.erro.toFixed(2) : '—'}</td>
+                                <td style="text-align:right;color:#1c7a34;">${m.acerto ? 'R$ ' + m.acerto.toFixed(2) : '—'}</td>
+                                <td style="text-align:right;font-weight:700;">R$ ${m.total.toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        desenharGraficoEnviosCorreioRC(porMes);
+    }
+
+    function desenharGraficoEnviosCorreioRC(porMes) {
+        const canvas = document.getElementById('rcGraficoEnviosCorreio');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        if (graficoEnviosCorreioRC) {
+            graficoEnviosCorreioRC.destroy();
+            graficoEnviosCorreioRC = null;
+        }
+
+        graficoEnviosCorreioRC = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: porMes.map(m => m.mes),
+                datasets: [
+                    { label: 'Erro nosso', data: porMes.map(m => m.erro), backgroundColor: '#dc3545', borderRadius: 4 },
+                    { label: 'Acerto', data: porMes.map(m => m.acerto), backgroundColor: '#198754', borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { callback: v => 'R$ ' + v } }
+                }
+            }
+        });
+    }
+
+    window.exportarRelatorioEnviosCorreioRCExcel = function () {
+        if (!relatorioEnviosCorreioRC.porMes || !relatorioEnviosCorreioRC.porMes.length) {
+            showToast('Nenhum dado para exportar', 'warning');
+            return;
+        }
+        const dados = relatorioEnviosCorreioRC.porMes.map(m => ({
+            'Ano': relatorioEnviosCorreioRC.anoSelecionado,
+            'Mês': m.mes,
+            'Envios': m.qtd,
+            'Gasto com erro nosso': m.erro,
+            'Gasto com acerto': m.acerto,
+            'Total': m.total,
+            'Sem frete preenchido': m.semFrete
+        }));
+        const ws = XLSX.utils.json_to_sheet(dados);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, `Envios_${relatorioEnviosCorreioRC.anoSelecionado}`);
+        XLSX.writeFile(wb, `reclamacoes_clientes_envios_correio_${relatorioEnviosCorreioRC.anoSelecionado}.xlsx`);
+        showToast('✅ Relatório exportado!', 'success');
+    };
+
     function renderizarReclamacoesClientes() {
         const tbody = document.getElementById('reclamacoesClientesBody');
         const contagem = document.getElementById('rcContagem');
@@ -515,7 +919,7 @@
                     <td>${esc(r.comprador_nome || r.comprador_nickname || '—')}</td>
                     <td style="max-width:220px;">${esc(r.motivo || '—')}</td>
                     <td>${r.valor != null ? 'R$ ' + Number(r.valor).toFixed(2) : '—'}</td>
-                    <td><span class="rc-badge ${st.classe}">${st.icone} ${esc(st.texto)}</span></td>
+                    <td><span class="rc-badge ${st.classe}">${st.icone} ${esc(st.texto)}</span>${r.afeta_reputacao ? ' <span class="rc-badge" style="background:#a61b29;color:#fff;">⭐ Reputação</span>' : ''}</td>
                     <td>${esc(r.responsavel || '—')}</td>
                     <td>${fmtData(r.ml_criado_em || r.criado_em)}</td>
                     <td>
@@ -1016,6 +1420,8 @@
 
     let reclamacaoAberta = null;
     let mensagensCacheRC = [];
+    let enviosCorreioTempRC = [];
+    let _produtosEstoqueCacheRC = null;
 
     window.abrirDetalhesReclamacaoCliente = async function (id) {
         const overlay = document.getElementById('rcModalDetalhes');
@@ -1042,8 +1448,26 @@
                 .order('criado_em', { ascending: true });
             if (erroMsgs) throw erroMsgs;
 
+            const { data: envios, error: erroEnvios } = await cli
+                .from('reclamacoes_clientes_envios_correio')
+                .select('*')
+                .eq('reclamacao_id', id)
+                .order('criado_em', { ascending: true });
+            if (erroEnvios) throw erroEnvios;
+
             reclamacaoAberta = reclamacao;
             mensagensCacheRC = mensagens || [];
+            enviosCorreioTempRC = (envios || []).map(e => ({
+                erro: e.erro,
+                produto_id: e.produto_id,
+                produto_sku: e.produto_sku,
+                produto_nome: e.produto_nome,
+                codigo_rastreio: e.codigo_rastreio,
+                tipo_embalagem: e.tipo_embalagem,
+                nome_cliente: e.nome_cliente,
+                data_postagem: e.data_postagem,
+                valor_frete: e.valor_frete
+            }));
 
             renderizarDetalhesRC();
 
@@ -1087,6 +1511,126 @@
                 </button>
             </div>
 
+            <div class="rc-acomp" id="rcCamposAcompanhamento">
+                <div class="rc-acomp-header">
+                    <h5><i class="fas fa-clipboard-list"></i> Acompanhamento</h5>
+                    <span class="rc-acomp-flag ${r.afeta_reputacao ? 'on' : 'off'}" id="rcAcompFlag">${r.afeta_reputacao ? '⭐ Afeta reputação' : 'Sem impacto na reputação'}</span>
+                </div>
+
+                <div class="rc-field">
+                    <label><i class="fas fa-star-half-alt"></i> Essa reclamação afeta nossa reputação?</label>
+                    <div class="rc-pills">
+                        <label class="rc-pill rc-pill-danger"><input type="radio" name="rcAfetaReputacao" value="sim" ${r.afeta_reputacao ? 'checked' : ''} onchange="window.atualizarSinalizadorRC()"><span><i class="fas fa-exclamation-circle"></i> Sim</span></label>
+                        <label class="rc-pill"><input type="radio" name="rcAfetaReputacao" value="nao" ${!r.afeta_reputacao ? 'checked' : ''} onchange="window.atualizarSinalizadorRC()"><span><i class="fas fa-check"></i> Não</span></label>
+                    </div>
+                </div>
+
+                <div class="rc-field">
+                    <label><i class="fas fa-balance-scale"></i> O erro é nosso ou não?</label>
+                    <div class="rc-pills">
+                        <label class="rc-pill rc-pill-danger"><input type="radio" name="rcErroNosso" value="nosso" ${r.erro_nosso === true ? 'checked' : ''} onchange="window.toggleRcErroFields()"><span><i class="fas fa-home"></i> Erro nosso (interno)</span></label>
+                        <label class="rc-pill"><input type="radio" name="rcErroNosso" value="externo" ${r.erro_nosso === false ? 'checked' : ''} onchange="window.toggleRcErroFields()"><span><i class="fas fa-external-link-square-alt"></i> Erro externo</span></label>
+                        <label class="rc-pill"><input type="radio" name="rcErroNosso" value="" ${r.erro_nosso == null ? 'checked' : ''} onchange="window.toggleRcErroFields()"><span><i class="fas fa-question"></i> Ainda não sei</span></label>
+                    </div>
+
+                    <div id="rcCamposErroExterno" class="rc-subcard ${r.erro_nosso === false ? '' : 'hidden'}">
+                        <div class="rc-subcard-titulo"><i class="fas fa-external-link-square-alt"></i> Erro externo</div>
+                        <div class="rc-field">
+                            <label>Foi resolvido?</label>
+                            <div class="rc-pills">
+                                <label class="rc-pill rc-pill-success"><input type="radio" name="rcResolvidoExterno" value="sim" ${r.resolvido_externo ? 'checked' : ''}><span><i class="fas fa-check"></i> Sim</span></label>
+                                <label class="rc-pill"><input type="radio" name="rcResolvidoExterno" value="nao" ${r.resolvido_externo === false ? 'checked' : ''}><span><i class="fas fa-times"></i> Não</span></label>
+                            </div>
+                        </div>
+                        <div class="rc-field" style="margin-bottom:0;">
+                            <label>Qual a solução?</label>
+                            <textarea id="rcSolucaoExterna" class="form-control" rows="2" placeholder="Descreva a solução...">${esc(r.solucao_externa || '')}</textarea>
+                        </div>
+                    </div>
+
+                    <div id="rcCamposErroInterno" class="rc-subcard ${r.erro_nosso === true ? '' : 'hidden'}">
+                        <div class="rc-subcard-titulo"><i class="fas fa-home"></i> Erro interno</div>
+                        <div class="rc-field">
+                            <label>Demos solução?</label>
+                            <div class="rc-pills">
+                                <label class="rc-pill rc-pill-success"><input type="radio" name="rcDemosSolucao" value="sim" ${r.demos_solucao ? 'checked' : ''}><span><i class="fas fa-check"></i> Sim</span></label>
+                                <label class="rc-pill"><input type="radio" name="rcDemosSolucao" value="nao" ${r.demos_solucao === false ? 'checked' : ''}><span><i class="fas fa-times"></i> Não</span></label>
+                            </div>
+                        </div>
+                        <div class="rc-field" style="margin-bottom:0;">
+                            <label>Qual?</label>
+                            <textarea id="rcSolucaoInterna" class="form-control" rows="2" placeholder="Descreva a solução...">${esc(r.solucao_interna || '')}</textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rc-field">
+                    <label><i class="fas fa-coins"></i> Custo gerado</label>
+                    <div class="rc-money">
+                        <input type="number" id="rcCusto" class="form-control" step="0.01" min="0" value="${r.custo ?? ''}" placeholder="0,00">
+                    </div>
+                    <small>Ex: postagem/correio, produto perdido, etc. — pode preencher independente do tipo de erro.</small>
+                </div>
+
+                <div class="rc-field" style="margin-bottom:0;">
+                    <label><i class="fas fa-box"></i> Teve envio pelo correio por causa dessa reclamação?</label>
+                    <div class="rc-pills">
+                        <label class="rc-pill"><input type="radio" name="rcTeveEnvio" value="sim" ${enviosCorreioTempRC.length ? 'checked' : ''} onchange="window.toggleRcEnviosSection()"><span><i class="fas fa-check"></i> Sim</span></label>
+                        <label class="rc-pill"><input type="radio" name="rcTeveEnvio" value="nao" ${enviosCorreioTempRC.length ? '' : 'checked'} onchange="window.toggleRcEnviosSection()"><span><i class="fas fa-times"></i> Não</span></label>
+                    </div>
+
+                    <div id="rcSecaoEnvios" class="rc-subcard ${enviosCorreioTempRC.length ? '' : 'hidden'}">
+                        <div class="rc-subcard-titulo"><i class="fas fa-truck"></i> Envios de correio</div>
+                        <div id="rcListaEnvios"></div>
+                        <div class="rc-envios-form">
+                            <div class="rc-envios-grid">
+                                <div class="full">
+                                    <label>Qual erro?</label>
+                                    <input type="text" id="rcEnvioErro" class="form-control form-control-sm" placeholder="Ex: enviamos a peça errada">
+                                </div>
+                                <div class="full">
+                                    <label>Produto (do estoque)</label>
+                                    <select id="rcEnvioProduto" class="form-control form-control-sm">
+                                        <option value="">Selecione um produto</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label>Código de rastreio</label>
+                                    <input type="text" id="rcEnvioRastreio" class="form-control form-control-sm" placeholder="AA123456789BR">
+                                </div>
+                                <div>
+                                    <label>Tipo de embalagem</label>
+                                    <input type="text" id="rcEnvioEmbalagem" class="form-control form-control-sm" placeholder="Ex: caixa pequena">
+                                </div>
+                                <div>
+                                    <label>Nome do cliente</label>
+                                    <input type="text" id="rcEnvioCliente" class="form-control form-control-sm" placeholder="Nome completo">
+                                </div>
+                                <div>
+                                    <label>Data de postagem</label>
+                                    <input type="date" id="rcEnvioData" class="form-control form-control-sm">
+                                </div>
+                                <div class="full">
+                                    <label>Valor do frete <span style="font-weight:400;color:#94a3b8;">(opcional — geralmente só se sabe no mês seguinte)</span></label>
+                                    <input type="number" id="rcEnvioFrete" class="form-control form-control-sm" step="0.01" min="0" placeholder="Preencher depois se ainda não souber">
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-end mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.adicionarEnvioRC()">
+                                    <i class="fas fa-plus"></i> Adicionar envio
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end mt-3">
+                    <button class="btn btn-sm btn-primary" onclick="window.salvarAcompanhamentoRC(${r.id})">
+                        <i class="fas fa-save"></i> Salvar acompanhamento
+                    </button>
+                </div>
+            </div>
+
             <h4 style="font-size:14px;margin-bottom:6px;"><i class="fas fa-comments"></i> Conversa</h4>
             <div class="rc-thread" id="rcThread">
                 ${mensagensCacheRC.length === 0
@@ -1120,12 +1664,16 @@
                 Mercado Livre ainda não está ativo — responda também por lá quando for o caso.
             </div>
         `;
+
+        renderizarListaEnviosRC();
+        if (enviosCorreioTempRC.length) popularSelectProdutoRC();
     }
 
     window.fecharDetalhesReclamacaoCliente = function () {
         document.getElementById('rcModalDetalhes')?.classList.add('hidden-rc');
         reclamacaoAberta = null;
         mensagensCacheRC = [];
+        enviosCorreioTempRC = [];
     };
 
     window.salvarStatusReclamacaoCliente = async function (id) {
@@ -1146,6 +1694,202 @@
 
         } catch (error) {
             console.error('❌ [Reclamações Clientes] Erro ao salvar status:', error);
+            showToast?.('❌ Erro ao salvar: ' + error.message, 'error');
+        }
+    };
+
+    // ============================================================
+    // ACOMPANHAMENTO (reputação, erro nosso/externo, custo, envios)
+    // ============================================================
+
+    window.atualizarSinalizadorRC = function () {
+        const afeta = document.querySelector('input[name="rcAfetaReputacao"]:checked')?.value === 'sim';
+        const flag = document.getElementById('rcAcompFlag');
+        if (flag) {
+            flag.classList.toggle('on', afeta);
+            flag.classList.toggle('off', !afeta);
+            flag.textContent = afeta ? '⭐ Afeta reputação' : 'Sem impacto na reputação';
+        }
+    };
+
+    window.toggleRcErroFields = function () {
+        const valor = document.querySelector('input[name="rcErroNosso"]:checked')?.value;
+        document.getElementById('rcCamposErroExterno')?.classList.toggle('hidden', valor !== 'externo');
+        document.getElementById('rcCamposErroInterno')?.classList.toggle('hidden', valor !== 'nosso');
+    };
+
+    window.toggleRcEnviosSection = function () {
+        const tem = document.querySelector('input[name="rcTeveEnvio"]:checked')?.value === 'sim';
+        document.getElementById('rcSecaoEnvios')?.classList.toggle('hidden', !tem);
+        if (tem) popularSelectProdutoRC();
+    };
+
+    async function popularSelectProdutoRC() {
+        const select = document.getElementById('rcEnvioProduto');
+        if (!select || select.options.length > 1) return;
+
+        let produtos = (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length)
+            ? produtosEstoque
+            : _produtosEstoqueCacheRC;
+
+        if (!produtos) {
+            select.innerHTML = '<option value="">Carregando produtos...</option>';
+            const cli = sb();
+            const todos = [];
+            let inicio = 0;
+            let continuar = true;
+            while (continuar) {
+                const { data, error } = await cli
+                    .from('produtos_estoque')
+                    .select('id, sku, nome')
+                    .order('nome', { ascending: true })
+                    .range(inicio, inicio + 999);
+                if (error) break;
+                todos.push(...(data || []));
+                if (!data || data.length < 1000) continuar = false;
+                else inicio += 1000;
+            }
+            produtos = todos;
+            _produtosEstoqueCacheRC = todos;
+        }
+
+        select.innerHTML = '<option value="">Selecione um produto</option>' +
+            produtos.map(p => `<option value="${p.id}" data-sku="${esc(p.sku || '')}" data-nome="${esc(p.nome || '')}">${esc(p.nome || '')} (${esc(p.sku || '')})</option>`).join('');
+    }
+
+    function renderizarListaEnviosRC() {
+        const container = document.getElementById('rcListaEnvios');
+        if (!container) return;
+        if (!enviosCorreioTempRC.length) {
+            container.innerHTML = '<small style="color:#94a3b8;">Nenhum envio adicionado ainda.</small>';
+            return;
+        }
+        container.innerHTML = enviosCorreioTempRC.map((e, idx) => `
+            <div class="rc-envio-item">
+                <div class="rc-envio-info">
+                    <strong>${esc(e.produto_nome || '')}</strong> ${e.produto_sku ? '<span style="color:#94a3b8;">(' + esc(e.produto_sku) + ')</span>' : ''}
+                    <div class="rc-envio-meta">
+                        ${e.erro ? `<div><i class="fas fa-exclamation-triangle"></i> ${esc(e.erro)}</div>` : ''}
+                        <div><i class="fas fa-barcode"></i> ${esc(e.codigo_rastreio || '-')}${e.tipo_embalagem ? ' · ' + esc(e.tipo_embalagem) : ''}</div>
+                        <div><i class="fas fa-user"></i> ${esc(e.nome_cliente || '-')} · <i class="fas fa-calendar"></i> ${e.data_postagem ? new Date(e.data_postagem + 'T00:00').toLocaleDateString('pt-BR') : '-'} · ${e.valor_frete ? 'R$ ' + Number(e.valor_frete).toFixed(2) : 'frete a preencher depois'}</div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.removerEnvioRC(${idx})"><i class="fas fa-trash"></i></button>
+            </div>
+        `).join('');
+    }
+
+    window.adicionarEnvioRC = function () {
+        const erro = document.getElementById('rcEnvioErro')?.value.trim() || '';
+        const selectProduto = document.getElementById('rcEnvioProduto');
+        const produtoId = selectProduto?.value;
+        const opcaoSelecionada = selectProduto?.options[selectProduto.selectedIndex];
+        const rastreio = document.getElementById('rcEnvioRastreio')?.value.trim() || '';
+        const embalagem = document.getElementById('rcEnvioEmbalagem')?.value.trim() || '';
+        const cliente = document.getElementById('rcEnvioCliente')?.value.trim() || '';
+        const dataPostagem = document.getElementById('rcEnvioData')?.value || '';
+        const valorFrete = document.getElementById('rcEnvioFrete')?.value || '';
+
+        if (!produtoId || !rastreio || !cliente || !dataPostagem) {
+            showToast?.('Preencha produto, código de rastreio, cliente e data de postagem.', 'warning');
+            return;
+        }
+
+        enviosCorreioTempRC.push({
+            erro: erro || null,
+            produto_id: produtoId,
+            produto_sku: opcaoSelecionada?.dataset.sku || '',
+            produto_nome: opcaoSelecionada?.dataset.nome || '',
+            codigo_rastreio: rastreio,
+            tipo_embalagem: embalagem || null,
+            nome_cliente: cliente,
+            data_postagem: dataPostagem,
+            valor_frete: valorFrete ? parseFloat(valorFrete) : null
+        });
+
+        document.getElementById('rcEnvioErro').value = '';
+        if (selectProduto) selectProduto.value = '';
+        document.getElementById('rcEnvioRastreio').value = '';
+        document.getElementById('rcEnvioEmbalagem').value = '';
+        document.getElementById('rcEnvioCliente').value = '';
+        document.getElementById('rcEnvioData').value = '';
+        document.getElementById('rcEnvioFrete').value = '';
+
+        renderizarListaEnviosRC();
+    };
+
+    window.removerEnvioRC = function (idx) {
+        enviosCorreioTempRC.splice(idx, 1);
+        renderizarListaEnviosRC();
+    };
+
+    window.salvarAcompanhamentoRC = async function (id) {
+        const cli = sb();
+
+        const afetaReputacao = document.querySelector('input[name="rcAfetaReputacao"]:checked')?.value === 'sim';
+        const erroNossoValor = document.querySelector('input[name="rcErroNosso"]:checked')?.value;
+        const erroNosso = erroNossoValor === 'nosso' ? true : (erroNossoValor === 'externo' ? false : null);
+        const resolvidoExterno = document.querySelector('input[name="rcResolvidoExterno"]:checked')?.value === 'sim';
+        const solucaoExterna = document.getElementById('rcSolucaoExterna')?.value?.trim() || null;
+        const demosSolucao = document.querySelector('input[name="rcDemosSolucao"]:checked')?.value === 'sim';
+        const solucaoInterna = document.getElementById('rcSolucaoInterna')?.value?.trim() || null;
+        const custoTexto = document.getElementById('rcCusto')?.value;
+        const custo = custoTexto ? parseFloat(custoTexto) : null;
+
+        const jaResolvida = reclamacaoAberta?.data_resolucao;
+        const ficouResolvida = (erroNosso === false && resolvidoExterno) || (erroNosso === true && demosSolucao);
+
+        try {
+            const { error } = await cli
+                .from(CFG_RC.tabela)
+                .update({
+                    afeta_reputacao: afetaReputacao,
+                    erro_nosso: erroNosso,
+                    resolvido_externo: erroNosso === false ? resolvidoExterno : null,
+                    solucao_externa: erroNosso === false ? solucaoExterna : null,
+                    demos_solucao: erroNosso === true ? demosSolucao : null,
+                    solucao_interna: erroNosso === true ? solucaoInterna : null,
+                    custo: custo,
+                    data_resolucao: ficouResolvida ? (jaResolvida || new Date().toISOString()) : null,
+                    atualizado_em: new Date().toISOString()
+                })
+                .eq('id', id);
+            if (error) throw error;
+
+            const { error: erroDelete } = await cli
+                .from('reclamacoes_clientes_envios_correio')
+                .delete()
+                .eq('reclamacao_id', id);
+            if (erroDelete) throw erroDelete;
+
+            if (enviosCorreioTempRC.length) {
+                const u = usuarioAtual();
+                const { error: erroInsert } = await cli
+                    .from('reclamacoes_clientes_envios_correio')
+                    .insert(enviosCorreioTempRC.map(e => ({
+                        reclamacao_id: id,
+                        erro: e.erro,
+                        produto_id: e.produto_id,
+                        produto_sku: e.produto_sku,
+                        produto_nome: e.produto_nome,
+                        codigo_rastreio: e.codigo_rastreio,
+                        tipo_embalagem: e.tipo_embalagem,
+                        nome_cliente: e.nome_cliente,
+                        data_postagem: e.data_postagem,
+                        valor_frete: e.valor_frete,
+                        criado_por: u?.name || u?.username || null
+                    })));
+                if (erroInsert) throw erroInsert;
+            }
+
+            dadosEnviosCorreioRC = null; // invalida o cache do relatório de envios de correio
+
+            showToast?.('✅ Acompanhamento salvo', 'success');
+            await window.carregarReclamacoesClientes();
+            await window.abrirDetalhesReclamacaoCliente(id);
+
+        } catch (error) {
+            console.error('❌ [Reclamações Clientes] Erro ao salvar acompanhamento:', error);
             showToast?.('❌ Erro ao salvar: ' + error.message, 'error');
         }
     };

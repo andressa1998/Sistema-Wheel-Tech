@@ -3049,6 +3049,9 @@ body:has(#loginScreen:not(.hidden)) {
                         <button onclick="openRelatorioReembolsos()" class="btn btn-info" id="btnRelatorio">
                             <i class="fas fa-chart-line"></i> Relatório
                         </button>
+                        <button onclick="window.abrirRelatorioReputacao()" class="btn btn-outline-danger" id="btnRelatorioReputacao">
+                            <i class="fas fa-star-half-alt"></i> Relatório de Reputação
+                        </button>
                         <button onclick="novoReembolso()" class="btn btn-success">
                             <i class="fas fa-plus-circle"></i> Nova Reclamação
                         </button>
@@ -3678,7 +3681,120 @@ body:has(#loginScreen:not(.hidden)) {
                     </label>
                 </div>
             </div>
-            
+
+            <div id="camposReputacao" style="background:#fff8f0;border:1px solid #ffe0b2;border-radius:8px;padding:14px;margin-bottom:16px;">
+                <h5 style="margin-top:0;font-size:14px;"><i class="fas fa-clipboard-list"></i> Acompanhamento</h5>
+
+                <!-- Afeta reputação (agora é só um sinalizador, não esconde os campos abaixo) -->
+                <div class="form-group mb-3">
+                    <label><i class="fas fa-star-half-alt"></i> Essa reclamação afeta nossa reputação?</label>
+                    <div class="d-flex gap-3">
+                        <label><input type="radio" name="afetaReputacao" value="sim" onchange="atualizarSinalizadorReputacao()"> Sim</label>
+                        <label><input type="radio" name="afetaReputacao" value="nao" checked onchange="atualizarSinalizadorReputacao()"> Não</label>
+                    </div>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label for="reputacaoResponsavel"><i class="fas fa-user"></i> Quem está cuidando</label>
+                    <select id="reputacaoResponsavel" class="form-control">
+                        <option value="">Selecione</option>
+                    </select>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label><i class="fas fa-balance-scale"></i> O erro é nosso ou não?</label>
+                    <div class="d-flex gap-3">
+                        <label><input type="radio" name="reputacaoErroNosso" value="nosso" onchange="toggleReputacaoErroFields()"> Erro nosso (interno)</label>
+                        <label><input type="radio" name="reputacaoErroNosso" value="externo" onchange="toggleReputacaoErroFields()"> Erro externo</label>
+                    </div>
+                </div>
+
+                <div id="camposErroExterno" class="hidden">
+                    <div class="form-group mb-3">
+                        <label><i class="fas fa-check-circle"></i> Foi resolvido?</label>
+                        <div class="d-flex gap-3">
+                            <label><input type="radio" name="reputacaoResolvidoExterno" value="sim"> Sim</label>
+                            <label><input type="radio" name="reputacaoResolvidoExterno" value="nao" checked> Não</label>
+                        </div>
+                    </div>
+                    <div class="form-group mb-3">
+                        <label for="reputacaoSolucaoExterna"><i class="fas fa-comment-dots"></i> Qual a solução?</label>
+                        <textarea id="reputacaoSolucaoExterna" class="form-control" rows="2" placeholder="Descreva a solução..."></textarea>
+                    </div>
+                </div>
+
+                <div id="camposErroInterno" class="hidden">
+                    <div class="form-group mb-3">
+                        <label><i class="fas fa-check-circle"></i> Demos solução?</label>
+                        <div class="d-flex gap-3">
+                            <label><input type="radio" name="reputacaoDemosSolucao" value="sim"> Sim</label>
+                            <label><input type="radio" name="reputacaoDemosSolucao" value="nao" checked> Não</label>
+                        </div>
+                    </div>
+                    <div class="form-group mb-3">
+                        <label for="reputacaoSolucaoInterna"><i class="fas fa-comment-dots"></i> Qual?</label>
+                        <textarea id="reputacaoSolucaoInterna" class="form-control" rows="2" placeholder="Descreva a solução..."></textarea>
+                    </div>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label for="reputacaoCusto"><i class="fas fa-coins"></i> Custo gerado (R$)</label>
+                    <input type="number" id="reputacaoCusto" class="form-control" step="0.01" min="0" placeholder="0,00">
+                    <small style="color:#6c757d;">Ex: correio, produto perdido, etc. — independente de qual, pode colocar aqui.</small>
+                </div>
+
+                <div class="form-group mb-2">
+                    <label><i class="fas fa-shipping-fast"></i> Teve envio pelo correio pra essa reclamação?</label>
+                    <div class="d-flex gap-3">
+                        <label><input type="radio" name="teveEnvioCorreio" value="sim" onchange="toggleEnviosCorreioSection()"> Sim</label>
+                        <label><input type="radio" name="teveEnvioCorreio" value="nao" checked onchange="toggleEnviosCorreioSection()"> Não</label>
+                    </div>
+                </div>
+
+                <div id="secaoEnviosCorreio" class="hidden" style="background:white;border:1px solid #eee;border-radius:6px;padding:12px;">
+                    <div class="form-group mb-2">
+                        <label style="font-size:12px;">Erro</label>
+                        <input type="text" id="envioCorreioErro" class="form-control form-control-sm" placeholder="Ex: enviamos peça errada">
+                    </div>
+                    <div class="form-group mb-2">
+                        <label style="font-size:12px;">Produto</label>
+                        <select id="envioCorreioProduto" class="form-control form-control-sm">
+                            <option value="">Selecione um produto</option>
+                        </select>
+                    </div>
+                    <div class="d-flex gap-2 mb-2">
+                        <div style="flex:1;">
+                            <label style="font-size:12px;">Código de rastreio</label>
+                            <input type="text" id="envioCorreioRastreio" class="form-control form-control-sm">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:12px;">Tipo de embalagem</label>
+                            <input type="text" id="envioCorreioEmbalagem" class="form-control form-control-sm" placeholder="Ex: caixa pequena">
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 mb-2">
+                        <div style="flex:1;">
+                            <label style="font-size:12px;">Nome do cliente</label>
+                            <input type="text" id="envioCorreioCliente" class="form-control form-control-sm">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:12px;">Data de postagem</label>
+                            <input type="date" id="envioCorreioData" class="form-control form-control-sm">
+                        </div>
+                    </div>
+                    <div class="form-group mb-2">
+                        <label style="font-size:12px;">Valor do frete (R$) <small style="color:#6c757d;">(pode preencher depois — geralmente só sai no mês seguinte)</small></label>
+                        <input type="number" id="envioCorreioFrete" class="form-control form-control-sm" step="0.01" min="0" placeholder="0,00">
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="adicionarEnvioCorreio()">
+                            <i class="fas fa-plus"></i> Adicionar envio
+                        </button>
+                    </div>
+                    <div id="listaEnviosCorreio" style="margin-top:10px;"></div>
+                </div>
+            </div>
+
             <!-- Valor e Data -->
             <div class="d-flex gap-3 mb-3">
                 <div style="flex: 1;">
@@ -3880,6 +3996,92 @@ body:has(#loginScreen:not(.hidden)) {
                         <button onclick="imprimirRelatorio()" class="btn btn-primary btn-sm">
                             <i class="fas fa-print"></i> Imprimir
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Relatório de Reputação -->
+    <div id="modalRelatorioReputacao" class="modal hidden">
+        <div class="modal-content" style="max-width: 950px; max-height: 90vh; padding: 0;">
+            <div style="background: linear-gradient(135deg, #dc3545, #f08a8a); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin: 0; font-weight: 600;">
+                        <i class="fas fa-star-half-alt"></i> Relatório de Reputação
+                    </h3>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
+                        Tempo de resolução por usuário e custos com erros nossos
+                    </p>
+                </div>
+                <button onclick="document.getElementById('modalRelatorioReputacao').classList.add('hidden')" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; color: white; font-size: 20px;">
+                    &times;
+                </button>
+            </div>
+
+            <div style="padding: 20px; overflow-y: auto; max-height: 78vh;">
+                <div class="card mb-4">
+                    <div class="d-flex flex-wrap gap-3 align-items-end">
+                        <div style="flex: 1; min-width: 180px;">
+                            <div class="form-group">
+                                <label for="repDataInicio"><i class="fas fa-calendar-alt"></i> Data início</label>
+                                <input type="date" id="repDataInicio" class="form-control">
+                            </div>
+                        </div>
+                        <div style="flex: 1; min-width: 180px;">
+                            <div class="form-group">
+                                <label for="repDataFim"><i class="fas fa-calendar-alt"></i> Data fim</label>
+                                <input type="date" id="repDataFim" class="form-control">
+                            </div>
+                        </div>
+                        <button onclick="window.gerarRelatorioReputacao()" class="btn btn-primary">
+                            <i class="fas fa-chart-bar"></i> Gerar
+                        </button>
+                        <button onclick="window.exportarRelatorioReputacaoExcel()" class="btn btn-outline-success">
+                            <i class="fas fa-file-excel"></i> Exportar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <h4 style="margin-bottom: 15px;"><i class="fas fa-users"></i> Por usuário — quantidade e tempo de resolução</h4>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Responsável</th>
+                                    <th>Reclamações c/ reputação</th>
+                                    <th>Resolvidas</th>
+                                    <th>Ainda em aberto</th>
+                                    <th>Tempo médio de resolução</th>
+                                </tr>
+                            </thead>
+                            <tbody id="repPorUsuarioBody">
+                                <tr><td colspan="5" class="text-center py-4" style="color:#6c757d;">Escolha o período e clique em Gerar.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h4 style="margin-bottom: 15px;"><i class="fas fa-coins"></i> Custos com erros nossos</h4>
+                    <div id="repCustosResumo" class="mb-3" style="font-size: 14px; color: #6c757d;"></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Responsável</th>
+                                    <th>Venda</th>
+                                    <th>Reclamação</th>
+                                    <th>Solução</th>
+                                    <th>Custo</th>
+                                </tr>
+                            </thead>
+                            <tbody id="repCustosBody">
+                                <tr><td colspan="6" class="text-center py-4" style="color:#6c757d;">Escolha o período e clique em Gerar.</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -7481,7 +7683,7 @@ body:has(#loginScreen:not(.hidden)) {
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="script.js?v=20260928-1"></script>
+    <script src="script.js?v=20260929-3"></script>
     <script src="historico_downloads_excel.js?v=20260918-1"></script>
     <script src="sessoes_ativas.js?v=20260924-1"></script>
     <script src="ml_token_manager.js"></script>
@@ -7503,13 +7705,13 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="entradas.js?v=20260924-3"></script>
     <script src="promocoes_manager.js?v=20260924-1"></script>
     <script src="full_analysis.js"></script>
-    <script src="gerenciamento_anuncios.js?v=20260928-2"></script>
+    <script src="gerenciamento_anuncios.js?v=20260928-6"></script>
     <script src="chamados.js?v=20260922-4"></script>
     <script src="atividades.js?v=20260925-2"></script>
     <script src="projetos.js?v=20260917-3"></script>
     <script src="patrimonios.js?v=20260917-1"></script>
     <script src="sugestoes.js?v=20260926-1"></script>
-    <script src="reclamacoes_clientes.js?v=20260925-2"></script>
+    <script src="reclamacoes_clientes.js?v=20260928-3"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
     <script src="menu_favoritos.js?v=20260916-1"></script>
     <script src="notificacoes_chamados.js"></script>

@@ -10616,11 +10616,80 @@ function gaInventoryIdsPorSku(sku) {
     return Array.from(ids);
 }
 
+// Casar por texto de SKU falha sempre que o campo SKU do anúncio no
+// próprio Mercado Livre não é idêntico ao SKU interno (ex: produto
+// com vários códigos MLB, só um com o SKU certinho preenchido lá).
+// Muito mais confiável: usar o produto_id da baixa pra achar os
+// códigos MLB cadastrados (dados_extra.mlb_codes) e procurar essas
+// MLBs diretamente entre os itemId das linhas do Gerenciamento.
+async function gaInventoryIdsPorProdutoId(produtoId, skuFallback) {
+
+    const ids = new Set();
+
+    let mlbCodes = null;
+
+    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+        const produto = produtosEstoque.find(p => String(p.id) === String(produtoId));
+        if (produto?.dados_extra?.mlb_codes) {
+            mlbCodes = produto.dados_extra.mlb_codes;
+        }
+    }
+
+    if (!mlbCodes && produtoId && window.supabaseClient) {
+        try {
+            const { data } = await window.supabaseClient
+                .from('produtos_estoque')
+                .select('dados_extra')
+                .eq('id', produtoId)
+                .maybeSingle();
+            mlbCodes = data?.dados_extra?.mlb_codes || null;
+        } catch (error) {
+            console.warn(`⚠️ Erro buscando mlb_codes do produto ${produtoId}:`, error);
+        }
+    }
+
+    const listaMlb = (
+        Array.isArray(mlbCodes)
+            ? mlbCodes
+            : (mlbCodes ? String(mlbCodes).split(',') : [])
+    )
+        .map(m => String(m).trim().toUpperCase())
+        .filter(Boolean);
+
+    // Limita a 1 inventory_id — produto com várias MLB cadastradas
+    // (ex: reaproveitado em vários anúncios) multiplicaria as consultas
+    // à API, que já tem cota apertada. Pega só a primeira ativa como
+    // representante; é o suficiente pra sinalizar o extravio.
+    for (const mlb of listaMlb) {
+        const linha = (GA.rows || []).find(
+            row => String(row?.itemId || '').toUpperCase() === mlb && row.inventoryId
+        );
+        if (linha) {
+            ids.add(String(linha.inventoryId));
+            break;
+        }
+    }
+
+    if (!ids.size && skuFallback) {
+        gaInventoryIdsPorSku(skuFallback).slice(0, 1).forEach(id => ids.add(id));
+    }
+
+    return Array.from(ids);
+}
+
+// Retorna { total, indisponivel }. indisponivel=true quer dizer que
+// não deu pra confirmar (cota da API estourada, erro etc) — nesse
+// caso o chamador NÃO deve tratar como "recebeu 0", senão gera falso
+// positivo. O endpoint de operações do FULL tem uma cota bem
+// apertada (erro visto na prática: "over_quota"), então aqui a
+// tentativa é única (sem re-tentativa com espera longa) — melhor
+// pular esse produto agora do que travar o relatório inteiro.
 async function buscarRecebidoInboundFullGA(inventoryId, desdeMs) {
 
     const sellerId = await getSellerId();
 
     let totalRecebido = 0;
+    let indisponivel = false;
     let cursorMs = desdeMs;
     const hojeMs = Date.now();
     const JANELA_MS = 59 * 24 * 60 * 60 * 1000; // limite da API é 60 dias por consulta
@@ -10635,7 +10704,8 @@ async function buscarRecebidoInboundFullGA(inventoryId, desdeMs) {
         try {
 
             const resposta = await requisicaoOperacoesFull(
-                `/stock/fulfillment/operations/search?seller_id=${sellerId}&inventory_id=${encodeURIComponent(inventoryId)}&date_from=${dataFrom}&date_to=${dataTo}&type=INBOUND_RECEPTION&limit=1000`
+                `/stock/fulfillment/operations/search?seller_id=${sellerId}&inventory_id=${encodeURIComponent(inventoryId)}&date_from=${dataFrom}&date_to=${dataTo}&type=INBOUND_RECEPTION&limit=1000`,
+                1
             );
 
             (resposta?.results || []).forEach(op => {
@@ -10644,18 +10714,20 @@ async function buscarRecebidoInboundFullGA(inventoryId, desdeMs) {
             });
 
         } catch (error) {
+
             console.warn(`⚠️ Erro consultando recebimentos FULL de ${inventoryId}:`, error);
+            indisponivel = true;
         }
 
-        await sleep(200);
+        await sleep(300);
 
         cursorMs = fimMs + (24 * 60 * 60 * 1000);
     }
 
-    return totalRecebido;
+    return { total: totalRecebido, indisponivel };
 }
 
-async function calcularExtraviosFullGA() {
+async function calcularExtraviosFullGA(onProgress) {
 
     const corteMs = Date.now() - (GA_DIAS_MINIMO_EXTRAVIO * 24 * 60 * 60 * 1000);
 
@@ -10666,7 +10738,10 @@ async function calcularExtraviosFullGA() {
 
     if (erroBaixas) throw erroBaixas;
 
-    const enviadoPorSku = new Map();
+    // Agrupado por produto_id (não por texto de SKU) — o produto_id é
+    // o identificador estável do nosso cadastro; o texto do SKU pode
+    // divergir do que está de fato preenchido no anúncio do ML.
+    const enviadoPorProduto = new Map();
 
     (historicoBaixas || []).forEach(linha => {
 
@@ -10678,22 +10753,36 @@ async function calcularExtraviosFullGA() {
 
         reg.baixados.forEach(item => {
 
+            const produtoId = item.produtoId != null ? String(item.produtoId) : null;
             const sku = String(item.sku || '').trim().toUpperCase();
-            if (!sku) return;
+            const chave = produtoId || sku;
+            if (!chave) return;
 
-            const atual = enviadoPorSku.get(sku) || { quantidade: 0, nome: item.nome, maisAntigoMs: dataEnvioMs };
+            const atual = enviadoPorProduto.get(chave) || {
+                produtoId,
+                sku,
+                quantidade: 0,
+                nome: item.nome,
+                maisAntigoMs: dataEnvioMs
+            };
             atual.quantidade += Number(item.quantidade) || 0;
             atual.maisAntigoMs = Math.min(atual.maisAntigoMs, dataEnvioMs);
             if (!atual.nome) atual.nome = item.nome;
 
-            enviadoPorSku.set(sku, atual);
+            enviadoPorProduto.set(chave, atual);
         });
     });
 
-    if (!enviadoPorSku.size) return [];
+    if (!enviadoPorProduto.size) return [];
 
     // 2) FALLBACK: QUANTO FOI VENDIDO E QUANTO ESTÁ NO FULL AGORA
-    // (só usado pra SKUs sem inventory_id resolvido)
+    // (só usado pra produtos sem inventory_id resolvido)
+    const skusRelevantes = new Set(
+        Array.from(enviadoPorProduto.values())
+            .map(info => info.sku)
+            .filter(Boolean)
+    );
+
     const vendidoPorSku = new Map();
     const tamanhoPagina = 1000;
     let inicio = 0;
@@ -10720,7 +10809,7 @@ async function calcularExtraviosFullGA() {
             itens.forEach(item => {
 
                 const sku = String(item?.item?.seller_sku || '').trim().toUpperCase();
-                if (!sku || !enviadoPorSku.has(sku)) return;
+                if (!sku || !skusRelevantes.has(sku)) return;
 
                 const qtd = Number(item?.quantity) || 1;
                 vendidoPorSku.set(sku, (vendidoPorSku.get(sku) || 0) + qtd);
@@ -10742,20 +10831,46 @@ async function calcularExtraviosFullGA() {
         fullAtualPorSku.set(sku, (fullAtualPorSku.get(sku) || 0) + atual);
     });
 
-    // 3) MONTAR RESULTADO — pra cada SKU, tenta a fonte real (API do
-    // ML) e só cai no cálculo indireto se não achar inventory_id.
+    // 3) MONTAR RESULTADO — pra cada produto, tenta a fonte real (API
+    // do ML) e só cai no cálculo indireto se não achar inventory_id.
     const resultado = [];
+    const listaProdutos = Array.from(enviadoPorProduto.values());
+    let processados = 0;
 
-    for (const [sku, info] of enviadoPorSku.entries()) {
+    for (const info of listaProdutos) {
 
-        const inventoryIds = gaInventoryIdsPorSku(sku);
+        processados++;
+        if (typeof onProgress === 'function') {
+            onProgress(processados, listaProdutos.length);
+        }
+
+        const sku = info.sku || info.produtoId;
+        const inventoryIds = await gaInventoryIdsPorProdutoId(info.produtoId, info.sku);
 
         if (inventoryIds.length) {
 
             let recebidoConfirmado = 0;
+            let indisponivelEmAlgum = false;
 
             for (const inventoryId of inventoryIds) {
-                recebidoConfirmado += await buscarRecebidoInboundFullGA(inventoryId, info.maisAntigoMs);
+                const resposta = await buscarRecebidoInboundFullGA(inventoryId, info.maisAntigoMs);
+                recebidoConfirmado += resposta.total;
+                if (resposta.indisponivel) indisponivelEmAlgum = true;
+            }
+
+            // Se a API não respondeu direito (cota estourada etc), não
+            // dá pra confirmar nada — melhor pular do que arriscar um
+            // falso positivo achando que "recebido = 0".
+            if (indisponivelEmAlgum) {
+                resultado.push({
+                    sku,
+                    nome: info.nome || sku,
+                    enviado: info.quantidade,
+                    fonte: '⚠️ não verificado (cota da API do ML esgotada agora — tente de novo mais tarde)',
+                    diferenca: null,
+                    remessaMaisAntigaEm: new Date(info.maisAntigoMs).toISOString()
+                });
+                continue;
             }
 
             const diferenca = info.quantidade - recebidoConfirmado;
@@ -10774,10 +10889,11 @@ async function calcularExtraviosFullGA() {
 
         } else {
 
-            // Fallback: não achou inventory_id (anúncio pausado/removido) —
-            // usa o cálculo indireto por estoque atual - vendido.
-            const vendido = vendidoPorSku.get(sku) || 0;
-            const estoqueAtual = fullAtualPorSku.get(sku) || 0;
+            // Fallback: não achou inventory_id (nenhuma MLB cadastrada
+            // pra esse produto está ativa no Full agora) — usa o
+            // cálculo indireto por estoque atual - vendido.
+            const vendido = vendidoPorSku.get(info.sku) || 0;
+            const estoqueAtual = fullAtualPorSku.get(info.sku) || 0;
             const esperado = info.quantidade - vendido;
             const diferenca = esperado - estoqueAtual;
 
@@ -10788,7 +10904,7 @@ async function calcularExtraviosFullGA() {
                     enviado: info.quantidade,
                     vendidoFull: vendido,
                     estoqueFullAtual: estoqueAtual,
-                    fonte: 'estimativa (sem inventory_id — estoque atual - vendido)',
+                    fonte: 'estimativa (nenhuma MLB desse produto está ativa no Full agora)',
                     diferenca,
                     remessaMaisAntigaEm: new Date(info.maisAntigoMs).toISOString()
                 });
@@ -10796,7 +10912,7 @@ async function calcularExtraviosFullGA() {
         }
     }
 
-    resultado.sort((a, b) => b.diferenca - a.diferenca);
+    resultado.sort((a, b) => (b.diferenca ?? -1) - (a.diferenca ?? -1));
 
     GA._extraviosCache = resultado;
     return resultado;
@@ -10861,7 +10977,11 @@ window.abrirExtraviosFullGA = async function () {
 
     try {
 
-        const resultado = await calcularExtraviosFullGA();
+        const resultado = await calcularExtraviosFullGA((atual, total) => {
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4"><span class="spinner"></span> Verificando ${atual}/${total} produtos na API do ML...</td></tr>`;
+            }
+        });
 
         if (!resultado.length) {
             if (tbody) {
@@ -10873,16 +10993,23 @@ window.abrirExtraviosFullGA = async function () {
         if (tbody) {
             tbody.innerHTML = resultado.map(r => {
 
-                const recebidoVendidoHtml = r.recebidoConfirmadoML !== undefined
-                    ? `${esc(r.recebidoConfirmadoML)} recebido(s) confirmado(s)`
-                    : `${esc(r.vendidoFull)} vendido(s) · ${esc(r.estoqueFullAtual)} em estoque agora`;
+                let recebidoVendidoHtml = '—';
+                if (r.recebidoConfirmadoML !== undefined) {
+                    recebidoVendidoHtml = `${esc(r.recebidoConfirmadoML)} recebido(s) confirmado(s)`;
+                } else if (r.vendidoFull !== undefined) {
+                    recebidoVendidoHtml = `${esc(r.vendidoFull)} vendido(s) · ${esc(r.estoqueFullAtual)} em estoque agora`;
+                }
+
+                const diferencaHtml = r.diferenca === null
+                    ? '<span style="color:#6c757d;">—</span>'
+                    : `<strong style="color:#dc3545;">${esc(r.diferenca)}</strong>`;
 
                 return `
                     <tr>
                         <td><strong>${esc(r.nome)}</strong><br><small style="color:#6c757d;">${esc(r.sku)}</small></td>
                         <td>${esc(r.enviado)}</td>
                         <td>${recebidoVendidoHtml}</td>
-                        <td><strong style="color:#dc3545;">${esc(r.diferenca)}</strong></td>
+                        <td>${diferencaHtml}</td>
                         <td><small>${esc(r.fonte)}</small></td>
                         <td>${new Date(r.remessaMaisAntigaEm).toLocaleDateString('pt-BR')}</td>
                     </tr>
@@ -10911,9 +11038,11 @@ window.exportarExtraviosFullExcelGA = function () {
         'SKU': r.sku,
         'Produto': r.nome,
         'Enviado (15+ dias)': r.enviado,
-        'Vendido no FULL': r.vendidoFull,
-        'Estoque FULL atual': r.estoqueFullAtual,
+        'Recebido confirmado (API ML)': r.recebidoConfirmadoML ?? '',
+        'Vendido no FULL (estimativa)': r.vendidoFull ?? '',
+        'Estoque FULL atual (estimativa)': r.estoqueFullAtual ?? '',
         'Diferença (possível extravio)': r.diferenca,
+        'Fonte': r.fonte,
         'Remessa mais antiga considerada': r.remessaMaisAntigaEm
     }));
 
