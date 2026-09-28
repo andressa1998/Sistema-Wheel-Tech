@@ -181,6 +181,13 @@
         return true;
     }
 
+    // Vale pra qualquer frequência (inclusive atividades avulsas de um dia
+    // só): se a data de início ainda não chegou, ela não deve aparecer como
+    // pendente hoje — só a partir do dia em que realmente começa.
+    function aindaNaoComecouAtiv(atividade, hojeIso = hojeIsoAtiv()) {
+        return !!atividade.data_inicio && hojeIso < atividade.data_inicio;
+    }
+
     // Último dia dentro do prazo em que a atividade recorrente pede ação
     // (usado pra saber, quando o prazo vence, se ela foi feita a tempo).
     function ultimoDiaAplicavelAtiv(atividade) {
@@ -519,6 +526,7 @@
 
         const pendentes = base.filter(a =>
             a.status === 'pendente' &&
+            !aindaNaoComecouAtiv(a) &&
             (!ehRecorrenteAtiv(a) || (aplicavelHojeAtiv(a) && !concluidaHojeAtiv(a)))
         ).length;
         const concluidas = base.filter(a =>
@@ -552,6 +560,7 @@
         if (filtroStatusAtiv === 'ativas') {
             lista = lista.filter(a =>
                 a.status === 'pendente' &&
+                !aindaNaoComecouAtiv(a) &&
                 (!ehRecorrenteAtiv(a) || (aplicavelHojeAtiv(a) && !concluidaHojeAtiv(a)))
             );
         } else if (filtroStatusAtiv === 'concluidas') {
@@ -637,7 +646,7 @@
     function renderizarCardAtividadeAtiv(a) {
         const hoje = hojeIsoAtiv();
         const admin = ehAdminAtiv();
-        const atrasada = a.status === 'pendente' && a.data_fim < hoje;
+        const atrasada = (a.status === 'pendente' && a.data_fim < hoje) || a.status === 'prorrogada';
         const concluida = concluidaHojeAtiv(a);
         const prorrogada = a.status === 'prorrogada';
         const recorrente = ehRecorrenteAtiv(a);
@@ -650,9 +659,8 @@
                     <input
                         type="checkbox"
                         ${concluida ? 'checked' : ''}
-                        ${prorrogada ? 'disabled' : ''}
                         onchange="window.alternarConclusaoAtividade(${a.id}, this.checked)"
-                        title="${recorrente ? (concluida ? 'Desmarcar a conclusão de hoje' : 'Marcar como feita hoje') : (concluida ? 'Marcar como não concluída' : 'Marcar como concluída')}"
+                        title="${recorrente ? (concluida ? 'Desmarcar a conclusão de hoje' : 'Marcar como feita hoje') : (concluida ? 'Marcar como não concluída' : (prorrogada ? 'Marcar como feita (com atraso)' : 'Marcar como concluída'))}"
                     >
                 </div>
                 <div class="ativ-card-corpo">
@@ -728,6 +736,49 @@
         }
     }
 
+    // Uma atividade que já foi prorrogada automaticamente (virou uma cópia
+    // nova pra hoje) pode, mesmo assim, ser marcada como feita — a pessoa
+    // demorou, mas fez. Isso fecha também a cópia gerada pra hoje, senão
+    // ela fica pendente à toa depois que a original já foi concluída.
+    async function fecharCadeiaProrrogacaoAtiv(idOriginal) {
+        let atualId = idOriginal;
+        const vistos = new Set();
+
+        while (atualId && !vistos.has(atualId)) {
+            vistos.add(atualId);
+            const filha = atividadesCache.find(a => a.prorrogada_de_id === atualId);
+            if (!filha) return;
+
+            if (filha.status === 'pendente') {
+                const atualizacao = {
+                    status: 'concluida',
+                    concluida_em: new Date().toISOString(),
+                    concluida_por: usernameAtiv(),
+                    atualizado_em: new Date().toISOString()
+                };
+
+                await window.supabaseClient
+                    .from(CFG_ATIV.tabela)
+                    .update(atualizacao)
+                    .eq('id', filha.id);
+
+                Object.assign(filha, atualizacao);
+
+                await removerEspelhoAgendaAtiv(filha.agenda_evento_id);
+                filha.agenda_evento_id = null;
+                await window.supabaseClient
+                    .from(CFG_ATIV.tabela)
+                    .update({ agenda_evento_id: null })
+                    .eq('id', filha.id);
+
+                return;
+            }
+
+            // A cópia também já foi prorrogada de novo — segue a cadeia.
+            atualId = filha.id;
+        }
+    }
+
     window.alternarConclusaoAtividade = async function (id, concluida) {
         const atividade = atividadesCache.find(a => a.id === id);
         if (!atividade) return;
@@ -740,6 +791,7 @@
                 return;
             }
 
+            const eraProrrogada = atividade.status === 'prorrogada';
             const usuario = usuarioAtualAtiv();
 
             const atualizacao = concluida
@@ -774,6 +826,12 @@
                     .from(CFG_ATIV.tabela)
                     .update({ agenda_evento_id: null })
                     .eq('id', id);
+
+                if (eraProrrogada) {
+                    await fecharCadeiaProrrogacaoAtiv(id);
+                    renderizarListaAtividadesAtiv();
+                    atualizarResumoAtiv();
+                }
             } else {
                 atividade.agenda_evento_id = await criarEspelhoAgendaAtiv(atividade);
                 await window.supabaseClient
@@ -782,7 +840,12 @@
                     .eq('id', id);
             }
 
-            showToast(concluida ? '✅ Atividade concluída!' : '↩️ Atividade reaberta.', 'success');
+            showToast(
+                concluida
+                    ? (eraProrrogada ? '✅ Atividade marcada como feita (com atraso)!' : '✅ Atividade concluída!')
+                    : '↩️ Atividade reaberta.',
+                'success'
+            );
 
         } catch (error) {
             console.error('❌ [Atividades] Erro ao atualizar conclusão:', error);

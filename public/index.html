@@ -1807,6 +1807,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="wt-nav-item" data-menu-visual-key="avaliacoes" type="button" onclick="abrirSistemaReviews()"><i class="fas fa-star"></i><span>Avaliações</span></button>
             <button class="wt-nav-item" data-menu-visual-key="calendario_de_folgas" type="button" onclick="abrirSistemaFolgas()"><i class="fas fa-calendar-alt"></i><span>Calendário</span></button>
             <button class="wt-nav-item" data-menu-visual-key="chamados" type="button" onclick="abrirSistemaChamados()"><i class="fas fa-headset"></i><span>Chamados</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="concorrentes" type="button" onclick="abrirSistemaConcorrentes()"><i class="fas fa-chart-line"></i><span>Concorrentes</span></button>
             <button class="wt-nav-item" data-menu-visual-key="conferencia_caixa" type="button" onclick="abrirSistemaCaixa()"><i class="fas fa-cash-register"></i><span>Conferência Caixa</span></button>
             <button class="wt-nav-item" data-menu-visual-key="controle_de_atividades" type="button" onclick="abrirSistemaAtividades()"><i class="fas fa-list-check"></i><span>Controle de Atividades</span></button>
             <button class="wt-nav-item" data-menu-visual-key="emissao_nf_e" type="button" onclick="abrirSistemaNFE()"><i class="fas fa-boxes"></i><span>Emissão NF-e</span></button>
@@ -1844,6 +1845,7 @@ body:has(#loginScreen:not(.hidden)) {
                 <button class="wt-nav-item" data-menu-visual-key="avaliacoes" type="button" onclick="abrirSistemaReviews()"><i class="fas fa-star"></i><span>Avaliações</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="calendario_de_folgas" type="button" onclick="abrirSistemaFolgas()"><i class="fas fa-calendar-alt"></i><span>Calendário</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="chamados" type="button" onclick="abrirSistemaChamados()"><i class="fas fa-headset"></i><span>Chamados</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="concorrentes" type="button" onclick="abrirSistemaConcorrentes()"><i class="fas fa-chart-line"></i><span>Concorrentes</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="conferencia_caixa" type="button" onclick="abrirSistemaCaixa()"><i class="fas fa-cash-register"></i><span>Conferência Caixa</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="controle_de_atividades" type="button" onclick="abrirSistemaAtividades()"><i class="fas fa-list-check"></i><span>Controle de Atividades</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="emissao_nf_e" id="menuCardNFE" type="button" onclick="abrirSistemaNFE()"><i class="fas fa-boxes"></i><span>Emissão NF-e</span></button>
@@ -4377,7 +4379,7 @@ body:has(#loginScreen:not(.hidden)) {
                     </div>
                     <div class="col-md-4">
                         <div class="form-group">
-                            <label> </label>
+                            <label> </label>
                             <button onclick="carregarHistoricoDias()" class="btn btn-primary btn-block">
                                 <i class="fas fa-sync-alt"></i> Atualizar
                             </button>
@@ -7690,6 +7692,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="folgas.js?v=20260924-1"></script>
     <script src="agenda_importantes.js?v=20260924-1"></script>
     <script src="shipping_simple.js?v=20260928-1"></script>
+    <script src="concorrentes.js?v=20260928-3"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
@@ -7719,7 +7722,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="regras_alertas_estoque.js?v=20260910-7"></script>
     <script src="usuarios_gestao.js?v=20260915-1"></script>
     <script src="carrossel_menu.js?v=20260915-4"></script>
-    <script src="atividades_dashboard.js?v=20260925-1"></script>
+    <script src="atividades_dashboard.js?v=20260928-1"></script>
 
     <script>
     // ===== LOGIN / CADASTRO COM ROTACAO 3D =====
