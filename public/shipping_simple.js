@@ -3825,9 +3825,6 @@ function onStatusChange() {
         }
     }
 
-    const operacao = document.getElementById('campoNumeroOperacaoWrap');
-    if (operacao) operacao.style.display = status === 'resolvido' ? 'block' : 'none';
-
     const labelValor = document.getElementById('labelReclamacaoValor');
     if (labelValor) {
         labelValor.innerHTML = status === 'resolvido'
@@ -3929,7 +3926,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
         status: document.getElementById('reclamacaoStatus'),
         data: document.getElementById('reclamacaoData'),
         numeroReclamacao: document.getElementById('reclamacaoNumeroReclamacao'),
-        numeroOperacao: document.getElementById('reclamacaoNumeroOperacao'),
         observacoes: document.getElementById('reclamacaoObservacoes'),
         justificativa: document.getElementById('reclamacaoJustificativa'),
         numeroTransacao: document.getElementById('reclamacaoNumeroTransacao'),
@@ -3979,7 +3975,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
     elementos.numeroVendaDisplay.textContent = vendaId || '-';
     
     elementos.numeroReclamacao.value = '';
-    elementos.numeroOperacao.value = '';
     elementos.observacoes.value = '';
     elementos.justificativa.value = '';
     elementos.numeroTransacao.value = '';
@@ -4027,7 +4022,6 @@ async function carregarReclamacaoExistente(vendaId) {
             currentReclamacaoId = recl.id;
             document.getElementById('reclamacaoId').value = recl.id;
             document.getElementById('reclamacaoNumeroReclamacao').value = recl.numero_reclamacao || '';
-            document.getElementById('reclamacaoNumeroOperacao').value = recl.numero_operacao || '';
             document.getElementById('reclamacaoValor').value = recl.valor || 0;
             document.getElementById('reclamacaoData').value = recl.data_reclamacao ? recl.data_reclamacao.split('T')[0] : new Date().toISOString().split('T')[0];
             document.getElementById('reclamacaoMotivo').value = recl.motivo || '';
@@ -4065,7 +4059,6 @@ async function salvarReclamacaoCompleta() {
     const vendaId = document.getElementById('reclamacaoVendaId').value;
     const id = document.getElementById('reclamacaoId').value;
     const numeroReclamacao = document.getElementById('reclamacaoNumeroReclamacao').value.trim();
-    const numeroOperacao = document.getElementById('reclamacaoNumeroOperacao').value.trim();
     const valor = parseFloat(document.getElementById('reclamacaoValor').value) || 0;
     const data = document.getElementById('reclamacaoData').value;
     const motivo = document.getElementById('reclamacaoMotivo').value;
@@ -4116,10 +4109,30 @@ async function salvarReclamacaoCompleta() {
         return;
     }
 
+    if (numeroTransacao) {
+        let queryDuplicidade = window.supabaseClient
+            .from('reclamacoes_frete')
+            .select('id, venda_id')
+            .eq('numero_transacao', numeroTransacao)
+            .limit(1);
+
+        if (id) {
+            queryDuplicidade = queryDuplicidade.neq('id', id);
+        }
+
+        const { data: transacaoDuplicada, error: erroDuplicidade } = await queryDuplicidade.maybeSingle();
+
+        if (erroDuplicidade) {
+            console.error('Erro ao verificar número da transação:', erroDuplicidade);
+        } else if (transacaoDuplicada) {
+            showToast(`⚠️ Já existe uma venda (${transacaoDuplicada.venda_id}) com esse número de transação.`, 'error');
+            return;
+        }
+    }
+
     const dados = {
         venda_id: vendaId,
         numero_reclamacao: numeroReclamacao,
-        numero_operacao: numeroOperacao,
         protocolos: protocolosTemp,
         valor: valor,
         data_reclamacao: data,
@@ -4188,7 +4201,11 @@ async function salvarReclamacaoCompleta() {
 
     } catch (error) {
         console.error('Erro ao salvar reclamação:', error);
-        showToast('Erro ao salvar: ' + error.message, 'error');
+        if (error.code === '23505' && String(error.message || '').includes('numero_transacao')) {
+            showToast('⚠️ Já existe uma venda com esse número de transação.', 'error');
+        } else {
+            showToast('Erro ao salvar: ' + error.message, 'error');
+        }
     }
 }
 
@@ -4448,7 +4465,6 @@ async function editarReclamacao(id) {
 
     document.getElementById('reclamacaoId').value = recl.id;
     document.getElementById('reclamacaoNumeroReclamacao').value = recl.numero_reclamacao || '';
-    document.getElementById('reclamacaoNumeroOperacao').value = recl.numero_operacao || '';
     document.getElementById('reclamacaoValor').value = recl.valor || 0;
     document.getElementById('reclamacaoData').value = recl.data_reclamacao ? recl.data_reclamacao.split('T')[0] : '';
     document.getElementById('reclamacaoMotivo').value = recl.motivo || '';
