@@ -185,6 +185,15 @@ function vendaEhConcorrenteDescartadoNFE(venda) {
     return window._buyerIdsDescartadosConcorrenteNFE.has(String(buyerId));
 }
 
+// Possível concorrente ainda sem decisão ("É" / "Não é") — enquanto
+// estiver assim, o botão de emitir NF-e fica travado.
+function vendaAguardandoDecisaoConcorrenteNFE(venda) {
+    if (!venda) return false;
+    if (vendaEhClienteConcorrenteConfirmadoNFE(venda)) return false;
+    return vendaEhPossivelConcorrenteNFE(venda);
+}
+window.vendaAguardandoDecisaoConcorrenteNFE = vendaAguardandoDecisaoConcorrenteNFE;
+
 // Roda no fundo, sem travar o sync de vendas — pra cada buyer_id
 // novo (que ainda não está em compradores_perfil_ml), busca o
 // perfil público (mesma chamada já usada na modal de detalhes,
@@ -1539,7 +1548,236 @@ function atualizarContadorBotaoDevolucoesNFE() {
             }
         })
         .catch(() => {});
+
+    atualizarAlertaDevolucoesAtrasadasNFE();
 }
+
+// =========================================================
+// DEVOLUÇÕES ATRASADAS
+//
+// Passou da previsão de chegada e o pacote ainda não chegou
+// (sem devolucao_chegou_em e status diferente de entregue/
+// cancelada). Aparece como alerta na aba NF-e (embaixo do
+// alerta de separação) e num card da tela principal.
+// =========================================================
+
+window._devolucoesAtrasadasNFE =
+    Array.isArray(window._devolucoesAtrasadasNFE)
+        ? window._devolucoesAtrasadasNFE
+        : [];
+
+function devolucaoEstaAtrasadaNFE(v) {
+
+    if (!v?.devolucao_previsao_chegada) return false;
+    if (v.devolucao_chegou_em) return false;
+
+    const status = String(v.devolucao_status || '').toLowerCase();
+    if (status === 'delivered' || status === 'cancelled') return false;
+
+    const previsao = new Date(v.devolucao_previsao_chegada);
+    if (Number.isNaN(previsao.getTime())) return false;
+
+    return previsao.getTime() < Date.now();
+}
+
+async function buscarDevolucoesAtrasadasNFE() {
+
+    const cli =
+        window.supabaseClient;
+
+    if (!cli) return null;
+
+    const linhas = [];
+    let inicio = 0;
+
+    while (true) {
+
+        const { data, error } =
+            await cli
+                .from('vendas_nfe_cache')
+                .select('id_venda_ml, cliente, sku, devolucao_status, devolucao_status_nome, devolucao_previsao_chegada, devolucao_chegou_em, devolucao_rastreio, devolucao_transportadora')
+                .eq('venda_cancelada', true)
+                .eq('eh_devolucao', true)
+                .is('devolucao_chegou_em', null)
+                .not('devolucao_previsao_chegada', 'is', null)
+                .lt('devolucao_previsao_chegada', new Date().toISOString())
+                .order('devolucao_previsao_chegada', { ascending: true })
+                .range(inicio, inicio + 999);
+
+        if (error) {
+
+            console.warn(
+                '⚠️ [NFE Devolução] Erro buscando devoluções atrasadas:',
+                error
+            );
+
+            return null;
+        }
+
+        linhas.push(...(data || []));
+
+        if (!data || data.length < 1000) break;
+
+        inicio += 1000;
+    }
+
+    return linhas.filter(devolucaoEstaAtrasadaNFE);
+}
+window.buscarDevolucoesAtrasadasNFE = buscarDevolucoesAtrasadasNFE;
+
+async function atualizarAlertaDevolucoesAtrasadasNFE() {
+
+    try {
+
+        const atrasadas =
+            await buscarDevolucoesAtrasadasNFE();
+
+        if (atrasadas) {
+            window._devolucoesAtrasadasNFE = atrasadas;
+        }
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ [NFE Devolução] Falha atualizando alerta de atrasadas:',
+            error
+        );
+    }
+
+    renderizarAlertaDevolucoesAtrasadasNFE();
+}
+window.atualizarAlertaDevolucoesAtrasadasNFE = atualizarAlertaDevolucoesAtrasadasNFE;
+
+// Síncrono, a partir do cache — chamado junto com o alerta de
+// separação, que é redesenhado toda vez que o painel é remontado.
+function renderizarAlertaDevolucoesAtrasadasNFE() {
+
+    const alertaSeparacao =
+        document.getElementById(
+            'alertaProdutosSemSepararNFE'
+        );
+
+    let alerta =
+        document.getElementById(
+            'alertaDevolucoesAtrasadasNFE'
+        );
+
+    if (!alerta) {
+
+        if (!alertaSeparacao?.parentNode) return;
+
+        alerta =
+            document.createElement('div');
+
+        alerta.id =
+            'alertaDevolucoesAtrasadasNFE';
+
+        alerta.style.cssText = `
+            padding:10px 12px;
+            margin-bottom:10px;
+            border-radius:8px;
+            background:#fdecea;
+            border:1px solid #f5c2c0;
+        `;
+
+        alertaSeparacao.parentNode.insertBefore(
+            alerta,
+            alertaSeparacao.nextSibling
+        );
+    }
+
+    const atrasadas =
+        window._devolucoesAtrasadasNFE || [];
+
+    if (!atrasadas.length) {
+
+        alerta.style.display = 'none';
+        alerta.innerHTML = '';
+        return;
+    }
+
+    alerta.style.display = '';
+
+    const exemplos =
+        atrasadas
+            .slice(0, 3)
+            .map(v => `${escaparHTMLNFE(v.id_venda_ml)} (previsão ${escaparHTMLNFE(formatarDataHoraDetalhesNFE(v.devolucao_previsao_chegada))})`)
+            .join(' · ');
+
+    alerta.innerHTML = `
+        <div
+            style="
+                display:flex;
+                align-items:center;
+                gap:12px;
+                flex-wrap:wrap;
+            "
+        >
+            <div
+                style="
+                    width:36px;
+                    height:36px;
+                    border-radius:50%;
+                    background:#dc3545;
+                    color:#fff;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    flex-shrink:0;
+                    font-size:15px;
+                "
+            >
+                <i class="fas fa-truck"></i>
+            </div>
+
+            <div style="min-width:190px;flex:1;">
+                <div
+                    style="
+                        font-size:13px;
+                        font-weight:800;
+                        color:#a61b29;
+                    "
+                >
+                    ${atrasadas.length}
+                    ${
+                        atrasadas.length === 1
+                            ? 'devolução atrasada — passou da previsão e não chegou'
+                            : 'devoluções atrasadas — passaram da previsão e não chegaram'
+                    }
+                </div>
+
+                <div
+                    style="
+                        font-size:10px;
+                        color:#8a4a4f;
+                        margin-top:2px;
+                    "
+                >
+                    ${exemplos}${atrasadas.length > 3 ? ' …' : ''}
+                </div>
+            </div>
+
+            <button
+                type="button"
+                onclick="window.abrirModalDevolucoesNFE()"
+                style="
+                    border:1px solid #dc3545;
+                    background:#fff;
+                    color:#a61b29;
+                    border-radius:7px;
+                    padding:6px 9px;
+                    font-size:10px;
+                    font-weight:700;
+                    cursor:pointer;
+                "
+            >
+                <i class="fas fa-undo-alt"></i>
+                Ver devoluções
+            </button>
+        </div>
+    `;
+}
+window.renderizarAlertaDevolucoesAtrasadasNFE = renderizarAlertaDevolucoesAtrasadasNFE;
 
 // O botão "Ver" (olhinho) de cada linha do modal de devoluções
 // chama abrirDetalhesVendaNFE, que só sabe abrir vendas que já
@@ -1679,7 +1917,7 @@ window.abrirModalDevolucoesNFE = async function () {
             const { data, error } =
                 await cli
                     .from('vendas_nfe_cache')
-                    .select('id_venda_ml, cliente, sku, venda_cancelada_em, devolucao_motivo, devolucao_status_nome, devolucao_despachada_em, devolucao_previsao_chegada, devolucao_chegou_em, devolucao_rastreio, devolucao_transportadora')
+                    .select('id_venda_ml, cliente, sku, venda_cancelada_em, devolucao_motivo, devolucao_status, devolucao_status_nome, devolucao_despachada_em, devolucao_previsao_chegada, devolucao_chegou_em, devolucao_rastreio, devolucao_transportadora')
                     .eq('venda_cancelada', true)
                     .eq('eh_devolucao', true)
                     .order('devolucao_verificada_em', { ascending: false })
@@ -1705,9 +1943,30 @@ window.abrirModalDevolucoesNFE = async function () {
             return;
         }
 
+        // atrasadas primeiro, mantendo a ordem original entre elas
+        const atrasadas =
+            linhas.filter(devolucaoEstaAtrasadaNFE);
+
+        linhas.sort(
+            (a, b) =>
+                Number(devolucaoEstaAtrasadaNFE(b)) -
+                Number(devolucaoEstaAtrasadaNFE(a))
+        );
+
+        window._devolucoesAtrasadasNFE = atrasadas;
+        renderizarAlertaDevolucoesAtrasadasNFE();
+
         corpo.innerHTML = `
             <div style="font-size:12px;color:#6c757d;margin-bottom:10px;">
                 ${linhas.length} venda(s) em devolução
+                ${
+                    atrasadas.length
+                        ? `<span style="margin-left:8px;padding:2px 7px;border-radius:5px;background:#fdecea;border:1px solid #f5c2c0;color:#a61b29;font-weight:800;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            ${atrasadas.length} atrasada(s)
+                        </span>`
+                        : ''
+                }
             </div>
             <table style="width:100%;font-size:12px;border-collapse:collapse;">
                 <thead>
@@ -1726,14 +1985,23 @@ window.abrirModalDevolucoesNFE = async function () {
                 </thead>
                 <tbody>
                     ${linhas.map(v => `
-                        <tr style="border-bottom:1px solid #f1f5f9;">
+                        <tr style="border-bottom:1px solid #f1f5f9;${devolucaoEstaAtrasadaNFE(v) ? 'background:#fdecea;' : ''}">
                             <td style="padding:6px 8px;"><code>${escaparHTMLNFE(v.id_venda_ml)}</code></td>
                             <td style="padding:6px 8px;">${escaparHTMLNFE(v.cliente || '-')}</td>
                             <td style="padding:6px 8px;"><code>${escaparHTMLNFE(v.sku || '-')}</code></td>
                             <td style="padding:6px 8px;max-width:180px;">${escaparHTMLNFE(v.devolucao_motivo || '-')}</td>
                             <td style="padding:6px 8px;color:#0a58ca;font-weight:700;">${escaparHTMLNFE(v.devolucao_status_nome || '-')}</td>
                             <td style="padding:6px 8px;">${escaparHTMLNFE(formatarDataHoraDetalhesNFE(v.devolucao_despachada_em))}</td>
-                            <td style="padding:6px 8px;">${escaparHTMLNFE(formatarDataHoraDetalhesNFE(v.devolucao_previsao_chegada))}</td>
+                            <td style="padding:6px 8px;">
+                                ${escaparHTMLNFE(formatarDataHoraDetalhesNFE(v.devolucao_previsao_chegada))}
+                                ${
+                                    devolucaoEstaAtrasadaNFE(v)
+                                        ? `<div style="margin-top:3px;color:#a61b29;font-size:10px;font-weight:800;white-space:nowrap;">
+                                            <i class="fas fa-exclamation-triangle"></i> Atrasada
+                                        </div>`
+                                        : ''
+                                }
+                            </td>
                             <td style="padding:6px 8px;">${v.devolucao_chegou_em ? escaparHTMLNFE(formatarDataHoraDetalhesNFE(v.devolucao_chegou_em)) : '-'}</td>
                             <td style="padding:6px 8px;font-size:10px;">${escaparHTMLNFE(v.devolucao_rastreio || '-')}${v.devolucao_transportadora ? ' · ' + escaparHTMLNFE(v.devolucao_transportadora) : ''}</td>
                             <td style="padding:6px 8px;">
@@ -16480,6 +16748,31 @@ function aplicarEstadoSeparacaoBotoesNFE() {
 
 
                 if (
+                    vendaAguardandoDecisaoConcorrenteNFE(
+                        venda
+                    )
+                ) {
+
+                    btn.disabled =
+                        true;
+
+                    btn.classList.remove(
+                        'btn-success'
+                    );
+
+                    btn.classList.add(
+                        'btn-secondary'
+                    );
+
+                    btn.title =
+                        'Possível concorrente — abra o olhinho e marque se é ou não é concorrente antes de emitir';
+
+                    btn.innerHTML = `
+                        <i class="fas fa-lock"></i>
+                        Decida concorrente
+                    `;
+
+                } else if (
                     separado
                 ) {
 
@@ -29803,6 +30096,25 @@ async function handleEmitirNFEClick(
 
         showToast(
             '🚫 Esta venda foi cancelada. Não é possível emitir NF-e.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // POSSÍVEL CONCORRENTE SEM DECISÃO
+    // =====================================================
+
+    if (
+        vendaAguardandoDecisaoConcorrenteNFE(
+            venda
+        )
+    ) {
+
+        showToast(
+            '🔒 Possível concorrente: abra os detalhes (olhinho) e marque se é ou não é concorrente antes de emitir.',
             'warning'
         );
 
@@ -47546,18 +47858,36 @@ function renderizarVendasNFETabela(vendas) {
                         `;
 
 
-                        acoes = `
-                            <button
-                                type="button"
-                                class="btn btn-sm btn-success btn-emitir-nfe"
-                                data-venda-id="${escaparHTMLNFE(
-                                    vendaId
-                                )}"
-                            >
-                                <i class="fas fa-file-invoice"></i>
-                                Emitir NF-e
-                            </button>
-                        `;
+                        acoes =
+                            vendaAguardandoDecisaoConcorrenteNFE(
+                                venda
+                            )
+                                ? `
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-secondary btn-emitir-nfe"
+                                        data-venda-id="${escaparHTMLNFE(
+                                            vendaId
+                                        )}"
+                                        disabled
+                                        title="Possível concorrente — abra o olhinho e marque se é ou não é concorrente antes de emitir"
+                                    >
+                                        <i class="fas fa-lock"></i>
+                                        Decida concorrente
+                                    </button>
+                                `
+                                : `
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-success btn-emitir-nfe"
+                                        data-venda-id="${escaparHTMLNFE(
+                                            vendaId
+                                        )}"
+                                    >
+                                        <i class="fas fa-file-invoice"></i>
+                                        Emitir NF-e
+                                    </button>
+                                `;
                     }
 
 
@@ -61010,6 +61340,11 @@ function renderizarAlertaProdutosSemSepararNFE() {
     }
 
 
+    // o painel é remontado do zero várias vezes — redesenha junto
+    // o alerta de devoluções atrasadas (a partir do cache)
+    renderizarAlertaDevolucoesAtrasadasNFE();
+
+
     const resumo =
         calcularAlertaProdutosSemSepararNFE();
 
@@ -61301,6 +61636,11 @@ async function atualizarAlertaProdutosSemSepararNFE(
     const consultarBanco =
         opcoes.consultarBanco !==
         false;
+
+
+    if (consultarBanco) {
+        atualizarAlertaDevolucoesAtrasadasNFE();
+    }
 
 
     let vendas =

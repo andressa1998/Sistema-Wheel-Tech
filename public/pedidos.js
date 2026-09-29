@@ -4,10 +4,12 @@
 //
 // Monta a lista de compra de dois jeitos:
 //
-//   • Por fornecedor: escolhe um fornecedor salvo (tabela
-//     `fornecedores`, o mesmo mapeamento SKU fornecedor → SKU do
-//     sistema usado nas Entradas) e vêm todos os produtos dele com o
-//     estoque atual.
+//   • Por fornecedor: escolhe um fornecedor e vêm todos os produtos
+//     dele com o estoque atual. A lista de fornecedores é montada na
+//     hora, a cada abertura/Atualizar, a partir da tabela
+//     `fornecedores` + itens de todas as Entradas (inclusive as de
+//     XML antigo, só registro) + fornecedor gravado no produto — ver
+//     carregarLigacoesFornecedorPed.
 //   • Por produto: filtra por categoria e/ou busca (mesma busca da
 //     Gestão de Estoque) e a lista mostra fornecedor + estoque.
 //
@@ -207,33 +209,90 @@
         });
     }
 
-    async function carregarFornecedoresPed() {
-        const linhas = await buscarTudoPed(CFG_PED.tabelaFornecedores, 'id, cd_fornecedor, nome_fornecedor, sku_fornecedor, sku_sistema');
+    // Ligações fornecedor ↔ produto vêm de três lugares, pra lista
+    // estar sempre em dia com as Entradas (sem depender de alguém
+    // vincular o SKU na tabela `fornecedores`):
+    //   1. tabela `fornecedores` (mapeamento SKU fornecedor → SKU sistema)
+    //   2. itens de TODAS as entradas — XML, Excel, rastreio e também as
+    //      de "XML antigo" (só registro de custo/fornecedor, sem estoque),
+    //      inclusive as ainda pendentes; só ignorados/rejeitados ficam de fora
+    //   3. fornecedor gravado no próprio produto (dados_extra.fornecedor_nome,
+    //      preenchido ao confirmar uma entrada de XML antigo)
+    async function carregarLigacoesFornecedorPed() {
+        const [mapeamentos, itensEntrada, cardsEntrada] = await Promise.all([
+            buscarTudoPed(CFG_PED.tabelaFornecedores, 'id, nome_fornecedor, sku_fornecedor, sku_sistema'),
+            buscarTudoPed('entrada_items', 'id, entrada_id, produto_id, sku_original, sku_match, cd_fornecedor, fornecedor_nome, status'),
+            buscarTudoPed('entradas_cards', 'id, fornecedor')
+        ]);
 
-        definirRaizesFornecedorPed(linhas.map(l => l.nome_fornecedor));
+        const produtoPorId = {};
+        produtosPed.forEach(p => { produtoPorId[String(p.id)] = p; });
+
+        const ligacoes = [];
+
+        mapeamentos.forEach(l => {
+            ligacoes.push({ nome: l.nome_fornecedor, produto: produtoPorSkuSistemaPed(l.sku_sistema), skuFornecedor: l.sku_fornecedor });
+        });
+
+        const fornecedorDoCard = {};
+        cardsEntrada.forEach(c => { fornecedorDoCard[String(c.id)] = c.fornecedor || ''; });
+
+        itensEntrada.forEach(it => {
+            const status = String(it.status || '').toLowerCase();
+            if (status === 'ignorado' || status === 'rejeitado') return;
+            const produto = (it.produto_id && produtoPorId[String(it.produto_id)]) ||
+                produtoPorSkuSistemaPed(it.sku_match) || produtoPorSkuSistemaPed(it.sku_original);
+            ligacoes.push({
+                nome: it.fornecedor_nome || fornecedorDoCard[String(it.entrada_id)],
+                produto,
+                skuFornecedor: it.cd_fornecedor || it.sku_original
+            });
+        });
+
+        produtosPed.forEach(p => {
+            const extra = p.dados_extra || {};
+            if (extra.fornecedor_nome) {
+                ligacoes.push({ nome: extra.fornecedor_nome, produto: p, skuFornecedor: extra.cd_fornecedor });
+            }
+        });
+
+        return ligacoes.filter(l => l.produto && String(l.nome || '').trim());
+    }
+
+    async function carregarFornecedoresPed() {
+        const ligacoes = await carregarLigacoesFornecedorPed();
+
+        definirRaizesFornecedorPed(ligacoes.map(l => l.nome));
 
         const porChave = {};
         fornecedoresPorProdutoPed = {};
 
-        linhas.forEach(l => {
-            const chave = chaveFornecedorPed(l.nome_fornecedor);
+        ligacoes.forEach(l => {
+            const chave = chaveFornecedorPed(l.nome);
             if (!chave) return;
 
             if (!porChave[chave]) {
-                porChave[chave] = { chave, nome: '', itens: [], idsVistos: new Set() };
+                porChave[chave] = { chave, nome: '', itens: [], itemPorProduto: {} };
             }
             const forn = porChave[chave];
             // Mostra a grafia mais completa do nome.
-            const nome = String(l.nome_fornecedor || '').trim().replace(/\s+/g, ' ');
+            const nome = String(l.nome || '').trim().replace(/\s+/g, ' ');
             if (nome.length > forn.nome.length) forn.nome = nome;
 
-            const produto = produtoPorSkuSistemaPed(l.sku_sistema);
-            if (!produto || forn.idsVistos.has(produto.id)) return;
-            forn.idsVistos.add(produto.id);
-            forn.itens.push({ produto, skuFornecedor: l.sku_fornecedor || '' });
+            const skuFornecedor = String(l.skuFornecedor || '').trim();
+            const jaTem = forn.itemPorProduto[l.produto.id];
+            if (jaTem) {
+                // mesmo produto por outra fonte: só completa o SKU do fornecedor
+                if (!jaTem.skuFornecedor && skuFornecedor) jaTem.skuFornecedor = skuFornecedor;
+                return;
+            }
 
-            (fornecedoresPorProdutoPed[produto.id] = fornecedoresPorProdutoPed[produto.id] || []).push({
-                chave, skuFornecedor: l.sku_fornecedor || '', get nome() { return forn.nome; }
+            const item = { produto: l.produto, skuFornecedor };
+            forn.itemPorProduto[l.produto.id] = item;
+            forn.itens.push(item);
+
+            (fornecedoresPorProdutoPed[l.produto.id] = fornecedoresPorProdutoPed[l.produto.id] || []).push({
+                chave, get skuFornecedor() { return item.skuFornecedor; }, get nome() { return forn.nome; }
             });
         });
 

@@ -1945,6 +1945,8 @@ body:has(#loginScreen:not(.hidden)) {
             <section class="wt-wide-grid">
                 <article class="wt-wide-card" data-menu-visual-depends="emissao_nf_e" onclick="abrirSistemaNFE()"><div class="wt-summary-icon"><i class="fas fa-file-invoice"></i></div><div><strong class="wt-wide-number" id="wtCountNFE">—</strong><div class="wt-wide-label">emissões de NF-e pendentes</div></div><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div></article>
                 <article class="wt-wide-card purple" data-menu-visual-depends="conferencia_caixa" onclick="abrirSistemaCaixa()"><div class="wt-summary-icon"><i class="fas fa-cash-register"></i></div><div><strong class="wt-wide-number" id="wtCountCaixa">—</strong><div class="wt-wide-label">conferências de caixa pendentes</div></div><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div></article>
+                <!-- só aparece quando há devolução que passou da previsão e não chegou -->
+                <article class="wt-wide-card wt-alert-red" id="wtCardDevolucoesAtrasadas" data-menu-visual-depends="emissao_nf_e" style="display:none; grid-column:1 / -1;" onclick="abrirSistemaNFE(); setTimeout(() => window.abrirModalDevolucoesNFE && window.abrirModalDevolucoesNFE(), 400);"><div class="wt-summary-icon"><i class="fas fa-truck"></i></div><div><strong class="wt-wide-number" id="wtCountDevolucoesAtrasadas">—</strong><div class="wt-wide-label">devoluções atrasadas — passaram da previsão de chegada e não chegaram</div></div><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div></article>
             </section>
 
             <section class="wt-bottom-grid">
@@ -7717,7 +7719,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="atividades.js?v=20260929-1"></script>
     <script src="projetos.js?v=20260917-3"></script>
     <script src="patrimonios.js?v=20260917-1"></script>
-    <script src="pedidos.js?v=20260929-3"></script>
+    <script src="pedidos.js?v=20260929-4"></script>
     <script src="sugestoes.js?v=20260929-1"></script>
     <script src="reclamacoes_clientes.js?v=20260928-3"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
@@ -7946,6 +7948,17 @@ body:has(#loginScreen:not(.hidden)) {
                 texto('wtCountBaixa', classificadas.filter(v =>
                     v.estoque_baixado !== true && v._estoque_baixado !== true
                 ).length);
+            }
+
+            // Devoluções que passaram da previsão de chegada e não chegaram —
+            // o card só aparece quando existe alguma.
+            if (typeof window.buscarDevolucoesAtrasadasNFE === 'function') {
+                window.buscarDevolucoesAtrasadasNFE().then(atrasadas => {
+                    if (!Array.isArray(atrasadas)) return;
+                    texto('wtCountDevolucoesAtrasadas', atrasadas.length);
+                    const card = document.getElementById('wtCardDevolucoesAtrasadas');
+                    if (card) card.style.display = atrasadas.length ? '' : 'none';
+                }).catch(() => {});
             }
 
             const perguntas = valor(2); if (perguntas && !perguntas.error) texto('wtCountPerguntas', perguntas.count ?? 0);
@@ -8477,6 +8490,20 @@ document.addEventListener('click', function(e) {
         #menuSystem .wt-wide-card.purple .wt-summary-icon {
             color: #076CF0 !important;
             background: #EDF5FF !important;
+        }
+
+        #menuSystem .wt-wide-card.wt-alert-red {
+            background: linear-gradient(110deg, #fff, #fdecea) !important;
+            border-color: #f5c2c0 !important;
+        }
+
+        #menuSystem .wt-wide-card.wt-alert-red .wt-summary-icon,
+        #menuSystem .wt-wide-card.wt-alert-red .wt-wide-number {
+            color: #a61b29 !important;
+        }
+
+        #menuSystem .wt-wide-card.wt-alert-red .wt-summary-icon {
+            background: #fdecea !important;
         }
 
         /* Cores semânticas permanecem preservadas */
