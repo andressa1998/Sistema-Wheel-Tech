@@ -9,7 +9,13 @@ let supabaseClient = null;
 
 // ===== VARIÁVEIS PARA CONTROLE DE SESSÃO =====
 const SESSION_TIMEOUT = 3600000; // 1 horas em milissegundos
+// Limite absoluto: mesmo usando o tempo todo, a sessão acaba e
+// é preciso entrar de novo.
+const SESSION_MAX_DURATION = 12 * 60 * 60 * 1000; // 12 horas
+const INTERVALO_VERIFICACAO_SESSAO = 30 * 1000;
 let sessionTimer = null;
+let intervaloVerificacaoSessao = null;
+let encerrandoSessaoForcada = false;
 let refreshTokenInterval = null;
 let reembolsoNotificationCount = null;
 let reembolsoNotificationBell = null;
@@ -135,7 +141,13 @@ async function handleLogin(e) {
         atualizarTodosAvatares();
         saveSessionToStorage();
         startSessionTimer();
-        
+        setupActivityDetectors();
+
+        // Um usuário = um dispositivo: este login derruba os outros.
+        if (typeof window.registrarLoginExclusivoSessao === 'function') {
+            window.registrarLoginExclusivoSessao();
+        }
+
         if (userName) userName.textContent = foundUser.name;
         if (userAvatar) userAvatar.textContent = foundUser.avatar;
         if (userRole) userRole.textContent = foundUser.role;
@@ -5569,9 +5581,13 @@ function loadSessionFromStorage() {
         const session = JSON.parse(sessionData);
         const user = JSON.parse(userData);
         
-        // Verificar se a sessão expirou
+        // Verificar se a sessão expirou (inatividade ou limite de 12 h)
         const now = Date.now();
-        if (now > session.expiresAt) {
+        if (
+            now > session.expiresAt ||
+            !session.loginTime ||
+            now - session.loginTime > SESSION_MAX_DURATION
+        ) {
             console.log('❌ Sessão expirada');
             clearSessionStorage();
             return false;
@@ -5648,19 +5664,21 @@ function startSessionTimer() {
 
     sessionTimer =
         setTimeout(
-            () => {
-
-                showToast(
-                    '⏰ Sua sessão expirou por inatividade',
-                    'warning'
-                );
-
-
-                handleLogout();
-
-            },
+            verificarValidadeSessao,
             SESSION_TIMEOUT
         );
+
+
+    // Conferência periódica: cobre PC que dormiu, aba em segundo
+    // plano (timers atrasam) e logout/login feito em outra aba.
+    if (!intervaloVerificacaoSessao) {
+
+        intervaloVerificacaoSessao =
+            setInterval(
+                verificarValidadeSessao,
+                INTERVALO_VERIFICACAO_SESSAO
+            );
+    }
 
 
     // ========================================================
@@ -5701,12 +5719,8 @@ function startSessionTimer() {
                 }
 
 
-                console.log(
-                    '🔄 Atualizando sessão...'
-                );
-
-
-                saveSessionToStorage();
+                // Não renova a sessão aqui: só atividade real do
+                // usuário (resetSessionTimer) estende o prazo.
 
 
                 // =================================================
@@ -5815,49 +5829,145 @@ function resetSessionTimer() {
         }
         _ultimoResetSessionTimer = agora;
 
-        // Atualizar tempo de expiração
-        const sessionData = {
+        // Nunca recria uma sessão que já acabou (vencida, encerrada
+        // em outra aba ou trocada por outro usuário) — primeiro confere.
+        const sessao = lerSessaoArmazenada();
+        if (
+            !sessao ||
+            sessao.user?.username !== currentUser.username ||
+            agora > sessao.expiresAt ||
+            !sessao.loginTime ||
+            agora - sessao.loginTime > SESSION_MAX_DURATION
+        ) {
+            verificarValidadeSessao();
+            return;
+        }
+
+        // Estende só a inatividade; a hora do login é mantida para
+        // o limite de 12 h.
+        localStorage.setItem('wheeltech_session', JSON.stringify({
+            ...sessao,
             user: currentUser,
-            loginTime: Date.now(),
-            expiresAt: Date.now() + SESSION_TIMEOUT
-        };
-        
-        localStorage.setItem('wheeltech_session', JSON.stringify(sessionData));
-        
+            expiresAt: Math.min(
+                agora + SESSION_TIMEOUT,
+                sessao.loginTime + SESSION_MAX_DURATION
+            )
+        }));
+
         // Reiniciar timer
         if (sessionTimer) {
             clearTimeout(sessionTimer);
         }
-        
-        sessionTimer = setTimeout(() => {
-            showToast('⏰ Sua sessão expirou por inatividade', 'warning');
-            handleLogout();
-        }, SESSION_TIMEOUT);
-        
+
+        sessionTimer = setTimeout(verificarValidadeSessao, SESSION_TIMEOUT);
+
         console.log('🔄 Timer de sessão reiniciado');
     }
 }
 
+function lerSessaoArmazenada() {
+    try {
+        return JSON.parse(localStorage.getItem('wheeltech_session') || 'null');
+    } catch (e) {
+        return null;
+    }
+}
+
+// Confere a sessão salva (compartilhada entre as abas) e encerra
+// esta aba se ela não vale mais. Nada de confirm(): sessão vencida
+// sai sozinha, mesmo sem ninguém na frente do computador.
+function verificarValidadeSessao() {
+    if (!currentUser || encerrandoSessaoForcada) return;
+
+    const sessao = lerSessaoArmazenada();
+    const agora = Date.now();
+
+    // Outra aba saiu ou entrou com outro usuário: só recarrega esta
+    // aba (sem limpar nada, para não derrubar quem entrou).
+    if (!sessao || sessao.user?.username !== currentUser.username) {
+        encerrarSessaoForcada(
+            '🔒 Sua sessão foi encerrada em outra aba. Entre novamente.',
+            false
+        );
+        return;
+    }
+
+    if (!sessao.loginTime || agora - sessao.loginTime > SESSION_MAX_DURATION) {
+        encerrarSessaoForcada(
+            '⏰ Sua sessão atingiu o limite de 12 horas. Entre novamente.',
+            true
+        );
+        return;
+    }
+
+    if (agora > sessao.expiresAt) {
+        encerrarSessaoForcada(
+            '⏰ Sua sessão expirou por inatividade.',
+            true
+        );
+    }
+}
+window.verificarValidadeSessao = verificarValidadeSessao;
+
+function encerrarSessaoForcada(mensagem, limparSessao) {
+    if (encerrandoSessaoForcada) return;
+    encerrandoSessaoForcada = true;
+
+    try { showToast(mensagem, 'warning'); } catch (e) {}
+
+    if (limparSessao) {
+        try {
+            (window.handleLogout || handleLogout)({ semConfirmar: true });
+        } catch (e) {
+            clearSessionStorage();
+        }
+    }
+
+    setTimeout(() => location.reload(), 1500);
+}
+
 // Detectar atividade do usuário para resetar timer
+let detectoresAtividadeInstalados = false;
 function setupActivityDetectors() {
-    // Resetar timer em qualquer interação do usuário
-    const events = ['mousemove', 'keypress', 'click', 'scroll', 'touchstart'];
-    
+    if (detectoresAtividadeInstalados) return;
+    detectoresAtividadeInstalados = true;
+
+    // Só interação real conta. Sem "scroll" (a tela rola sozinha ao
+    // atualizar listas) e mousemove só com o mouse realmente mexendo
+    // (o navegador dispara mousemove falso quando o conteúdo muda
+    // embaixo do cursor parado) — senão a sessão nunca vencia.
+    const events = ['keydown', 'click', 'wheel', 'touchstart'];
+
     events.forEach(event => {
-        document.addEventListener(event, () => {
-            if (currentUser) {
+        document.addEventListener(event, (e) => {
+            if (currentUser && e.isTrusted) {
                 resetSessionTimer();
             }
         }, { passive: true });
     });
-    
-    // Resetar timer quando a janela ganha foco
-    window.addEventListener('focus', () => {
-        if (currentUser) {
-            resetSessionTimer();
+
+    let ultimoMouseX = null;
+    let ultimoMouseY = null;
+    document.addEventListener('mousemove', (e) => {
+        if (!currentUser || !e.isTrusted) return;
+        if (e.screenX === ultimoMouseX && e.screenY === ultimoMouseY) return;
+        ultimoMouseX = e.screenX;
+        ultimoMouseY = e.screenY;
+        resetSessionTimer();
+    }, { passive: true });
+
+    // Logout/login em outra aba, ou PC voltando da suspensão
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'wheeltech_session' || e.key === null) {
+            verificarValidadeSessao();
         }
     });
-    
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            verificarValidadeSessao();
+        }
+    });
+
     console.log('👀 Detectores de atividade configurados');
 }
 
@@ -9001,9 +9111,15 @@ function abrirSistemaReembolsos() {
 // LOGOUT
 // ============================================================
 
-function handleLogout() {
+function handleLogout(opcoes) {
+
+    // Sessão vencida / derrubada sai sem perguntar — antes ficava
+    // esperando o "OK" e, com "Cancelar", a pessoa nunca saía.
+    const semConfirmar =
+        opcoes?.semConfirmar === true;
 
     if (
+        !semConfirmar &&
         !confirm(
             'Deseja realmente sair do sistema?'
         )

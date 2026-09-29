@@ -18,6 +18,8 @@
     const ONLINE_ATE_MS = 90 * 1000;              // visto há menos que isso = online
     const JANELA_LISTA_MS = 12 * 60 * 60 * 1000;  // lista quem foi visto nas últimas 12 h
     const ADMINS_DESCONEXAO = ['andressamiotto', 'ronald'];
+    // revogada_por gravado quando o mesmo usuário entra em outro aparelho
+    const MOTIVO_OUTRO_DISPOSITIVO = 'Login em outro dispositivo';
 
     let tabelaIndisponivel = false;
     let derrubando = false;
@@ -70,7 +72,12 @@
         derrubando = true;
         try { if (typeof clearSessionStorage === 'function') clearSessionStorage(); } catch (_) { /* segue */ }
         try { localStorage.removeItem(CHAVE_LOCAL); } catch (_) { /* segue */ }
-        toast(`⛔ Você foi desconectado por ${por || 'um administrador'}.`, 'error');
+        toast(
+            por === MOTIVO_OUTRO_DISPOSITIVO
+                ? '⛔ Seu usuário entrou em outro dispositivo. Esta sessão foi encerrada.'
+                : `⛔ Você foi desconectado por ${por || 'um administrador'}.`,
+            'error'
+        );
         setTimeout(() => location.reload(), 1800);
     }
 
@@ -91,7 +98,12 @@
         try {
             const usuario = usuarioAtual();
             if (!usuario) {
-                await encerrarSessaoLocalSeExistir();
+                // Aba na tela de login não encerra a sessão de outra aba
+                // ainda logada neste navegador (isso gerava uma sessão
+                // nova por minuto e deixava a sessão "sem fim").
+                let outraAbaLogada = false;
+                try { outraAbaLogada = !!localStorage.getItem('wheeltech_session'); } catch (_) { /* segue */ }
+                if (!outraAbaLogada) await encerrarSessaoLocalSeExistir();
                 return;
             }
 
@@ -132,6 +144,37 @@
             batendo = false;
         }
     }
+
+    // Chamado logo após um login com usuário e senha: abre uma sessão
+    // nova neste navegador e derruba as outras do mesmo usuário (PC x
+    // celular). O aparelho antigo sai no próximo batimento (até 30 s,
+    // ou na hora em que a tela dele voltar a ficar visível).
+    window.registrarLoginExclusivoSessao = async function () {
+        const usuario = usuarioAtual();
+        if (!usuario || !sb() || tabelaIndisponivel) return;
+        try {
+            await encerrarSessaoLocalSeExistir();
+            const id = idDestaSessao(true);
+
+            const { error } = await sb().from(TABELA)
+                .update({
+                    revogada_em: new Date().toISOString(),
+                    revogada_por: MOTIVO_OUTRO_DISPOSITIVO
+                })
+                .eq('username', usuario)
+                .neq('session_id', id)
+                .is('revogada_em', null);
+
+            if (error && erroDeTabela(error)) {
+                tabelaIndisponivel = true;
+                return;
+            }
+
+            await batimento();
+        } catch (_) {
+            /* sem internet: o login segue, o batimento tenta depois */
+        }
+    };
 
     setInterval(batimento, INTERVALO_BATIMENTO_MS);
     setTimeout(batimento, 4000);
