@@ -9659,7 +9659,7 @@ function render() {
                                                     margin-top:2px;
                                                     white-space:nowrap;
                                                 "
-                                                title="Estoque atual (depósito + FULL): ${esc(gaEstoqueAtualDoRow(row))} · Média de vendas nos últimos 3 meses: ${esc((gaMediaVendasMensalDoRow(row) || 0).toFixed(1))}/mês"
+                                                title="Estoque FULL: ${esc(gaEstoqueFullDoRow(row))} · Média de vendas FULL nos últimos 3 meses: ${esc((gaMediaVendasMensalDoRow(row) || 0).toFixed(1))}/mês (mínimo 1)"
                                             >
                                                 📦 Estoque em excesso
                                             </div>
@@ -10258,13 +10258,17 @@ function gaObterEstoqueACaminho(row) {
 // ============================================================
 // ESTOQUE EM EXCESSO — MÉDIA DE VENDAS DOS ÚLTIMOS 3 MESES
 //
-// Regra: estoque atual (depósito + FULL) > média de vendas por mês
-// do produto (últimos 3 meses, vendas não canceladas) => sinaliza
-// excesso. Estoque atual <= média está certo, não sinaliza.
+// Regra: estoque FULL > média de vendas FULL por mês do produto
+// (últimos 3 meses, vendas não canceladas) => sinaliza excesso.
+// Estoque FULL <= média está certo, não sinaliza. O depósito não
+// entra na conta.
 // Cruza com vendas_nfe_cache (a mesma fonte usada em todo o resto
-// do sistema), somando a quantidade vendida por SKU nos últimos 90
-// dias e dividindo por 3.
+// do sistema), somando a quantidade vendida no FULL por SKU nos
+// últimos 90 dias e dividindo por 3. Média de 0 a 0,9 (inclusive
+// SKU sem venda) conta como 1.
 // ============================================================
+
+const GA_MEDIA_VENDAS_MINIMA = 1;
 
 GA._mediaVendas3MesesPorSku = GA._mediaVendas3MesesPorSku || null;
 GA._mediaVendas3MesesCarregando = false;
@@ -10292,6 +10296,7 @@ async function carregarMediaVendas3MesesGA() {
             const { data, error } = await window.supabaseClient
                 .from('vendas_nfe_cache')
                 .select('cancelada:venda_json->venda_cancelada, itens:venda_json->order_items')
+                .eq('is_full', true)
                 .gte('venda_json->>data_venda', cutoffStr)
                 .range(inicio, inicio + tamanhoPagina - 1);
 
@@ -10324,7 +10329,7 @@ async function carregarMediaVendas3MesesGA() {
 
         const mediaPorSku = new Map();
         totalPorSku.forEach((total, sku) => {
-            mediaPorSku.set(sku, total / 3);
+            mediaPorSku.set(sku, Math.max(GA_MEDIA_VENDAS_MINIMA, total / 3));
         });
 
         GA._mediaVendas3MesesPorSku = mediaPorSku;
@@ -10348,15 +10353,13 @@ function gaMediaVendasMensalDoRow(row) {
     const sku = String(row?.sku || '').trim().toUpperCase();
     if (!sku) return null;
 
-    return GA._mediaVendas3MesesPorSku.get(sku) || 0;
+    // SKU sem venda FULL no período também conta como 1.
+    return GA._mediaVendas3MesesPorSku.get(sku) || GA_MEDIA_VENDAS_MINIMA;
 }
 
-function gaEstoqueAtualDoRow(row) {
+function gaEstoqueFullDoRow(row) {
 
-    return (
-        (Number(row?.warehouse) || 0) +
-        (Number(row?.full) || 0)
-    );
+    return Number(row?.full) || 0;
 }
 
 // Só administradores veem o alerta de estoque em excesso.
@@ -10367,7 +10370,7 @@ function gaEstoqueEmExcesso(row) {
     const media = gaMediaVendasMensalDoRow(row);
     if (media === null) return false;
 
-    return gaEstoqueAtualDoRow(row) > media;
+    return gaEstoqueFullDoRow(row) > media;
 }
 
 
@@ -11183,7 +11186,7 @@ async function calcularExtraviosFullGA(onProgress) {
 window.abrirExtraviosFullGA = async function () {
 
     if (!Array.isArray(GA.rows) || !GA.rows.length) {
-        window.showToast?.('⚠️ Sincronize o Full - Gerenciamento antes de verificar extravios.', 'warning');
+        window.showToast?.('⚠️ Sincronize o Full - Gerenciamento antes de verificar os envios.', 'warning');
         return;
     }
 
@@ -11197,7 +11200,7 @@ window.abrirExtraviosFullGA = async function () {
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 1000px; max-height: 85vh; padding: 0;">
                 <div style="background: linear-gradient(135deg, #dc3545, #f08a8a); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
-                    <h3 style="margin: 0;"><i class="fas fa-box-open"></i> Possíveis extravios no FULL</h3>
+                    <h3 style="margin: 0;"><i class="fas fa-box-open"></i> Possíveis divergências de envio no FULL</h3>
                     <button onclick="document.getElementById('modalGAExtravios').classList.add('hidden')" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
                 </div>
                 <div style="padding: 14px 20px; display:flex; justify-content: space-between; align-items:center; gap:10px; flex-wrap: wrap;">
@@ -11215,7 +11218,7 @@ window.abrirExtraviosFullGA = async function () {
                                 <th>Produto</th>
                                 <th>Enviado (15+ dias)</th>
                                 <th>Recebido / Vendido</th>
-                                <th>Diferença (possível extravio)</th>
+                                <th>Diferença (possível divergência de envio)</th>
                                 <th>Fonte</th>
                                 <th>Remessa mais antiga considerada</th>
                             </tr>
@@ -11292,7 +11295,7 @@ window.exportarExtraviosFullExcelGA = function () {
     const resultado = GA._extraviosCache || [];
 
     if (!resultado.length) {
-        window.showToast?.('Nenhum extravio pra exportar.', 'warning');
+        window.showToast?.('Nenhuma divergência de envio pra exportar.', 'warning');
         return;
     }
 
@@ -11303,15 +11306,15 @@ window.exportarExtraviosFullExcelGA = function () {
         'Recebido confirmado (API ML)': r.recebidoConfirmadoML ?? '',
         'Vendido no FULL (estimativa)': r.vendidoFull ?? '',
         'Estoque FULL atual (estimativa)': r.estoqueFullAtual ?? '',
-        'Diferença (possível extravio)': r.diferenca,
+        'Diferença (possível divergência de envio)': r.diferenca,
         'Fonte': r.fonte,
         'Remessa mais antiga considerada': r.remessaMaisAntigaEm
     }));
 
     const ws = XLSX.utils.json_to_sheet(linhas);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'ExtraviosFull');
-    XLSX.writeFile(wb, `extravios_full_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'EnviosFull');
+    XLSX.writeFile(wb, `envios_full_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
 

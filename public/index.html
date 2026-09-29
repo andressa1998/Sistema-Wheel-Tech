@@ -7530,8 +7530,8 @@ body:has(#loginScreen:not(.hidden)) {
                     <button class="btn btn-outline-danger" onclick="window.abrirRelatorio30DiasGA()" title="Histórico de quem entrou/saiu da lista de 30+ dias sem vender">
                         <i class="fas fa-history"></i> Relatório 30+ dias
                     </button>
-                    <button class="btn btn-outline-warning" onclick="window.abrirExtraviosFullGA()" title="Compara o que foi enviado pro FULL com o que foi vendido e o que está no estoque, pra achar possíveis extravios">
-                        <i class="fas fa-box-open"></i> Extravios no FULL
+                    <button class="btn btn-outline-warning" onclick="window.abrirExtraviosFullGA()" title="Compara o que foi enviado pro FULL com o que foi vendido e o que está no estoque, pra achar possíveis divergências de envio">
+                        <i class="fas fa-box-open"></i> Envios no FULL
                     </button>
 
                     <div style="position: relative;">
@@ -7598,7 +7598,7 @@ body:has(#loginScreen:not(.hidden)) {
                     </option>
 
                     <option value="estoque_excesso">
-                        Estoque em excesso (média 3 meses)
+                        Estoque em excesso (FULL, média 3 meses)
                     </option>
 
                     <option value="pendencias">
@@ -7719,7 +7719,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="promocoes_historico.js?v=20260929-4"></script>
     <script src="promocoes_regras_lote.js?v=20260929-5"></script>
     <script src="full_analysis.js"></script>
-    <script src="gerenciamento_anuncios.js?v=20260929-1"></script>
+    <script src="gerenciamento_anuncios.js?v=20260929-2"></script>
     <script src="full_planos.js?v=20260929-2"></script>
     <script src="chamados.js?v=20260929-2"></script>
     <script src="atividades.js?v=20260929-1"></script>
