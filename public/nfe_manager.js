@@ -34942,7 +34942,8 @@ async function restaurarEstoqueVendaCanceladaNFE(
                     separado,
                     estoque_baixado,
                     estoque_status,
-                    estoque_detalhes
+                    estoque_detalhes,
+                    estoque_restaurado_cancelamento
                 `)
             .eq(
                 'id_venda_ml',
@@ -35297,6 +35298,229 @@ async function restaurarEstoqueVendaCanceladaNFE(
 
 
 // =========================================================
+// RESTAURAÇÃO AUTOMÁTICA — VENDA CANCELADA ANTES DE SAIR
+//
+// Venda que teve baixa de estoque (envio do dia ou dos próximos
+// dias) e foi cancelada pelo cliente ANTES de ser despachada:
+// o produto continua na prateleira, então a quantidade baixada
+// volta sozinha para o estoque.
+//
+// Se o produto JÁ SAIU (shipped / delivered), não mexe: a volta
+// ao estoque é feita pelo fluxo de devolução, quando o produto
+// chega de volta — senão entraria em dobro.
+// =========================================================
+
+const DIAS_JANELA_RESTAURACAO_CANCELADAS_NFE = 3;
+
+// true = saiu do depósito | false = não saiu | null = não dá pra saber
+function vendaCanceladaSaiuDoDepositoNFE(
+    vendaJson
+) {
+
+    let venda = vendaJson;
+
+    if (typeof venda === 'string') {
+        try {
+            venda = JSON.parse(venda);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    if (!venda || typeof venda !== 'object') {
+        return null;
+    }
+
+    const historico =
+        venda._shipment_status_history ||
+        venda.shipment_status_history ||
+        null;
+
+    if (historico?.date_shipped) {
+        return true;
+    }
+
+    const statusEnvio =
+        String(
+            venda._shipment_status ||
+            venda.shipment_status ||
+            venda.shipping?.status ||
+            venda.informacoes_envio?.status ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+    if (
+        [
+            'shipped',
+            'delivered',
+            'not_delivered'
+        ].includes(statusEnvio)
+    ) {
+        return true;
+    }
+
+    if (
+        [
+            'cancelled',
+            'canceled',
+            'pending',
+            'handling',
+            'ready_to_ship'
+        ].includes(statusEnvio)
+    ) {
+        return false;
+    }
+
+    return null;
+}
+
+
+async function processarRestauracoesEstoqueCanceladasNFE() {
+
+    if (!window.supabaseClient) {
+        return;
+    }
+
+    if (window._restaurandoEstoqueCanceladasNFE) {
+        return;
+    }
+
+    window._restaurandoEstoqueCanceladasNFE = true;
+
+    try {
+
+        const inicioJanela = new Date();
+        inicioJanela.setDate(
+            inicioJanela.getDate() -
+            DIAS_JANELA_RESTAURACAO_CANCELADAS_NFE
+        );
+
+        const dataMinimaEnvio =
+            `${inicioJanela.getFullYear()}-${String(inicioJanela.getMonth() + 1).padStart(2, '0')}-${String(inicioJanela.getDate()).padStart(2, '0')}`;
+
+        const {
+            data: candidatas,
+            error
+        } =
+            await window.supabaseClient
+                .from('vendas_nfe_cache')
+                .select('id_venda_ml, eh_devolucao, venda_json')
+                .eq('venda_cancelada', true)
+                .eq('estoque_baixado', true)
+                .eq('is_full', false)
+                .or('estoque_restaurado_cancelamento.is.null,estoque_restaurado_cancelamento.eq.false')
+                .gte('data_envio', dataMinimaEnvio);
+
+        if (error) {
+            throw error;
+        }
+
+        if (!candidatas?.length) {
+            return;
+        }
+
+        let restauradas = 0;
+
+        for (const venda of candidatas) {
+
+            const vendaId =
+                normalizarOrderIdML(
+                    venda.id_venda_ml
+                );
+
+            if (!vendaId) {
+                continue;
+            }
+
+            if (venda.eh_devolucao === true) {
+                continue;
+            }
+
+            if (
+                vendaCanceladaSaiuDoDepositoNFE(
+                    venda.venda_json
+                ) !== false
+            ) {
+                continue;
+            }
+
+            try {
+
+                // Trava extra contra entrada em dobro: se já existe
+                // a movimentação de estorno, só corrige a marcação.
+                const {
+                    data: estornoExistente
+                } =
+                    await window.supabaseClient
+                        .from('estoque_movimentacoes')
+                        .select('id')
+                        .eq('numero_documento', `CANCELAMENTO-ML-${vendaId}`)
+                        .limit(1);
+
+                if (estornoExistente?.length) {
+
+                    await window.supabaseClient
+                        .from('vendas_nfe_cache')
+                        .update({
+                            estoque_restaurado_cancelamento: true,
+                            atualizado_em: new Date().toISOString()
+                        })
+                        .eq('id_venda_ml', vendaId);
+
+                    continue;
+                }
+
+                const resultado =
+                    await restaurarEstoqueVendaCanceladaNFE(
+                        vendaId
+                    );
+
+                if (resultado?.restaurado === true) {
+                    restauradas++;
+                }
+
+            } catch (erroVenda) {
+
+                console.warn(
+                    `⚠️ [NFE] Falha restaurando estoque da venda cancelada ${vendaId}:`,
+                    erroVenda
+                );
+            }
+        }
+
+        if (restauradas > 0) {
+
+            console.log(
+                `♻️ [NFE] ${restauradas} venda(s) cancelada(s) antes do envio — estoque restaurado.`
+            );
+
+            showToast(
+                `♻️ ${restauradas} venda(s) cancelada(s) antes do envio: estoque devolvido automaticamente.`,
+                'success'
+            );
+
+            try {
+                await window.atualizarListaNFE?.();
+            } catch (erroRefresh) {}
+        }
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ [NFE] Erro na restauração automática de canceladas:',
+            error
+        );
+
+    } finally {
+
+        window._restaurandoEstoqueCanceladasNFE = false;
+    }
+}
+
+
+// =========================================================
 // VERIFICAR TODAS AS VENDAS CANCELADAS
 // =========================================================
 
@@ -35340,6 +35564,9 @@ window.buscarVendasCanceladasMLNFE =
 
 window.restaurarEstoqueVendaCanceladaNFE =
     restaurarEstoqueVendaCanceladaNFE;
+
+window.processarRestauracoesEstoqueCanceladasNFE =
+    processarRestauracoesEstoqueCanceladasNFE;
 
 window.verificarCancelamentosVendasNFE =
     verificarCancelamentosVendasNFE;
@@ -58457,6 +58684,20 @@ async function salvarVendasCacheNFE(
             }
         );
     }
+
+
+    // Venda com baixa que foi cancelada antes de sair do depósito
+    // -> devolve a quantidade ao estoque. Em segundo plano; a
+    // varredura também pega cancelamentos que outro caminho marcou.
+    window.processarRestauracoesEstoqueCanceladasNFE?.()?.catch(
+        error => {
+
+            console.warn(
+                '⚠️ [NFE] Falha na restauração automática de canceladas:',
+                error
+            );
+        }
+    );
 
 
     // Mesma lógica, pros compradores: verifica no ML (uma vez só por
