@@ -60,6 +60,7 @@
         atividadesSystem: 'Controle de Atividades',
         projetosSystem: 'Projetos / Tarefas',
         patrimoniosSystem: 'Patrimônios WT',
+        pedidosSystem: 'Pedidos',
         sugestoesSystem: 'Sugestões de Melhoria',
         regrasAlertaEstoqueSystem: 'Regras de Alerta de Estoque'
     };
