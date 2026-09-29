@@ -4,8 +4,13 @@
    Gera um catálogo em PDF (só título + foto, sem preço) a partir
    de uma tabela local (catalogo_produtos) que guarda apenas a URL
    da foto principal do Mercado Livre — não a imagem em si, nem o
-   preço. Sincroniza uma categoria por vez, sob demanda, pra não
-   gastar requisição nenhuma com os ~3 mil produtos do estoque.
+   preço. Sincroniza só os produtos do filtro atual, sob demanda,
+   pra não gastar requisição nenhuma com os ~3 mil produtos do
+   estoque.
+
+   Filtro: uma ou mais categorias, uma busca (ex.: "Nomad" — acha no
+   nome, SKU, MLB ou nas especificações do produto, igual à busca da
+   Gestão de Estoque), ou as duas coisas juntas.
    ============================================================ */
 (function () {
     'use strict';
@@ -155,6 +160,79 @@
     let categoriasAtualCat = []; // array de nomes de categoria selecionados
     let categoriasDisponiveisCat = [];
     let produtosCatalogoAtual = [];
+    let buscaAtualCat = '';            // texto da busca (minúsculo)
+    let naoSincronizadosCat = 0;       // produtos do filtro que ainda não estão na tabela do catálogo
+    let timerBuscaCat = null;
+    let seqCarregamentoCat = 0;        // descarta respostas de buscas antigas
+
+    const MSG_SEM_FILTRO_CAT = 'Escolha uma ou mais categorias e/ou digite uma busca acima.';
+
+    function temFiltroCat() {
+        return categoriasAtualCat.length > 0 || !!buscaAtualCat;
+    }
+
+    function palavrasBuscaCat() {
+        return buscaAtualCat.split(/\s+/).filter(Boolean);
+    }
+
+    // Mesma busca da Gestão de Estoque (nome, SKU, categoria, MLBs e
+    // tudo que está em dados_extra = especificações). Todas as palavras
+    // precisam aparecer, em qualquer campo.
+    function produtoBateBuscaCat(produto, palavras) {
+        return palavras.every(palavra => {
+            if (typeof produtoCorrespondeTermoBuscaEstoque === 'function') {
+                return produtoCorrespondeTermoBuscaEstoque(produto, palavra);
+            }
+            return [produto.nome, produto.sku, produto.categoria, JSON.stringify(produto.dados_extra || {})]
+                .some(campo => String(campo || '').toLowerCase().includes(palavra));
+        });
+    }
+
+    // Produtos do estoque que batem com o filtro atual (categorias + busca).
+    async function buscarProdutosEstoqueFiltradosCat() {
+        const cli = sb();
+        const produtos = [];
+        let inicio = 0;
+        while (true) {
+            // "mlb_codes" NÃO é coluna própria — só existe dentro do
+            // jsonb dados_extra (selecionar direto dá erro 42703).
+            let consulta = cli
+                .from('produtos_estoque')
+                .select('sku, nome, categoria, dados_extra')
+                .order('id', { ascending: true });
+            if (categoriasAtualCat.length) consulta = consulta.in('categoria', categoriasAtualCat);
+            const { data, error } = await consulta.range(inicio, inicio + 999);
+            if (error) throw error;
+            produtos.push(...(data || []));
+            if (!data || data.length < 1000) break;
+            inicio += 1000;
+        }
+
+        const palavras = palavrasBuscaCat();
+        return palavras.length ? produtos.filter(p => produtoBateBuscaCat(p, palavras)) : produtos;
+    }
+
+    // Linhas da tabela do catálogo para uma lista de SKUs (em lotes,
+    // pra não estourar o tamanho da URL do filtro "in").
+    async function buscarCatalogoPorSkusCat(skus) {
+        const linhas = [];
+        const TAMANHO = 150;
+        for (let i = 0; i < skus.length; i += TAMANHO) {
+            const { data, error } = await sb()
+                .from(CFG_CAT.tabela)
+                .select('*')
+                .in('sku', skus.slice(i, i + TAMANHO));
+            if (error) throw error;
+            linhas.push(...(data || []));
+        }
+        return linhas;
+    }
+
+    window.buscarNoCatalogo = function (valor) {
+        buscaAtualCat = String(valor || '').trim().toLowerCase();
+        clearTimeout(timerBuscaCat);
+        timerBuscaCat = setTimeout(carregarListaCatalogo, 400);
+    };
 
     function criarModalCatalogo() {
         if (document.getElementById('catalogoOverlay')) return;
@@ -167,7 +245,7 @@
                 <div class="cat-head">
                     <div>
                         <div style="font-size:19px;font-weight:800;"><i class="fas fa-book-open"></i> Catálogo de Produtos</div>
-                        <div style="font-size:11px;color:#6c757d;margin-top:2px;">Só título e foto — sem preço. Escolha uma ou mais categorias.</div>
+                        <div style="font-size:11px;color:#6c757d;margin-top:2px;">Só título e foto — sem preço. Filtre por categoria, por busca ou pelos dois.</div>
                     </div>
                     <button type="button" onclick="window.fecharCatalogoProdutos()" style="border:0;background:transparent;font-size:25px;cursor:pointer;">&times;</button>
                 </div>
@@ -180,6 +258,7 @@
                             </button>
                             <div class="cat-multiselect-panel" id="catPainelCategorias"></div>
                         </div>
+                        <input type="search" id="catBusca" placeholder="🔍 Buscar (ex.: Nomad) — nome, SKU ou especificações" style="min-width:280px;flex:1;max-width:380px;" oninput="window.buscarNoCatalogo(this.value)">
                         <button type="button" class="cat-btn cat-btn-primary" id="catBtnSincronizar" onclick="window.sincronizarFotosCatalogoML()">
                             <i class="fas fa-sync-alt"></i> Sincronizar fotos do Mercado Livre
                         </button>
@@ -190,7 +269,7 @@
                             <i class="fas fa-file-pdf"></i> Gerar catálogo (PDF)
                         </button>
                     </div>
-                    <div id="catalogoLista"><div class="cat-vazio">Escolha uma ou mais categorias acima.</div></div>
+                    <div id="catalogoLista"><div class="cat-vazio">${MSG_SEM_FILTRO_CAT}</div></div>
                     <div id="catalogoLinkResultado" style="margin-top:14px;"></div>
                 </div>
             </div>
@@ -274,7 +353,7 @@
         const ov = criarModalCatalogo();
         (ov || document.getElementById('catalogoOverlay')).classList.remove('hidden-cat');
         await popularSelectCategoriasCat();
-        if (categoriasAtualCat.length) await carregarListaCatalogo();
+        if (temFiltroCat()) await carregarListaCatalogo();
     };
 
     window.fecharCatalogoProdutos = function () {
@@ -286,8 +365,8 @@
     // ============================================================
 
     window.sincronizarFotosCatalogoML = async function () {
-        if (!categoriasAtualCat.length) {
-            window.showToast?.('Escolha uma ou mais categorias primeiro.', 'warning');
+        if (!temFiltroCat()) {
+            window.showToast?.('Escolha uma categoria e/ou digite uma busca primeiro.', 'warning');
             return;
         }
 
@@ -296,19 +375,19 @@
         if (btn) btn.disabled = true;
 
         try {
-            let totalRegistros = 0;
-            let totalComFoto = 0;
+            if (btn) btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Buscando produtos do filtro...';
+            const produtos = await buscarProdutosEstoqueFiltradosCat();
 
-            for (let i = 0; i < categoriasAtualCat.length; i++) {
-                const categoria = categoriasAtualCat[i];
-                if (btn) btn.innerHTML = `<i class="fas fa-sync-alt fa-spin"></i> Categoria ${i + 1}/${categoriasAtualCat.length}: ${esc(categoria)}...`;
-                const resultado = await sincronizarUmaCategoriaCatalogoML(categoria, btn);
-                totalRegistros += resultado.total;
-                totalComFoto += resultado.comFoto;
+            if (!produtos.length) {
+                window.showToast?.('Nenhum produto encontrado com esse filtro.', 'info');
+                return;
             }
 
+            const resultado = await sincronizarProdutosCatalogoML(produtos, btn);
+            if (!resultado) return;
+
             window.showToast?.(
-                `✅ ${totalRegistros} produto(s) sincronizado(s) em ${categoriasAtualCat.length} categoria(s) — ${totalComFoto} com foto encontrada.`,
+                `✅ ${resultado.total} produto(s) sincronizado(s) — ${resultado.comFoto} com foto encontrada.`,
                 'success'
             );
 
@@ -325,52 +404,16 @@
         }
     };
 
-    async function sincronizarUmaCategoriaCatalogoML(categoria, btn) {
+    // produtos: linhas de produtos_estoque (sku, nome, categoria, dados_extra)
+    async function sincronizarProdutosCatalogoML(produtos, btn) {
         {
             const cli = sb();
 
-            // 1) produtos da categoria (id, sku, nome, mlb_codes, dados_extra)
-            const produtos = [];
-            {
-                let inicio = 0;
-                while (true) {
-                    const { data, error } = await cli
-                        .from('produtos_estoque')
-                        // "mlb_codes" NÃO é coluna própria — só existe
-                        // dentro do jsonb dados_extra (confirmado ao vivo:
-                        // selecionar mlb_codes direto dá erro 42703).
-                        .select('sku, nome, categoria, dados_extra')
-                        .eq('categoria', categoria)
-                        .range(inicio, inicio + 999);
-                    if (error) throw error;
-                    produtos.push(...(data || []));
-                    if (!data || data.length < 1000) break;
-                    inicio += 1000;
-                }
-            }
-
-            if (!produtos.length) {
-                window.showToast?.('Nenhum produto nessa categoria.', 'info');
-                return;
-            }
-
             // Quem já está sincronizado antes (pra não sobrescrever um
             // "grupo" que o admin já editou manualmente na tela de revisão).
-            const jaExistentes = new Set();
-            {
-                let inicio = 0;
-                while (true) {
-                    const { data, error } = await cli
-                        .from(CFG_CAT.tabela)
-                        .select('sku')
-                        .eq('categoria', categoria)
-                        .range(inicio, inicio + 999);
-                    if (error) break;
-                    (data || []).forEach(r => jaExistentes.add(r.sku));
-                    if (!data || data.length < 1000) break;
-                    inicio += 1000;
-                }
-            }
+            const jaExistentes = new Set(
+                (await buscarCatalogoPorSkusCat(produtos.map(p => p.sku).filter(Boolean))).map(r => r.sku)
+            );
 
             // 2) monta lista de mlb -> produto (só quem tem mlb cadastrado)
             const mlbParaProduto = new Map();
@@ -387,7 +430,7 @@
             const token = await tokenMLCatalogo();
             if (!token) {
                 window.showToast?.('❌ Token do Mercado Livre indisponível.', 'error');
-                return;
+                return null;
             }
 
             const mlbs = Array.from(mlbParaProduto.keys());
@@ -464,30 +507,55 @@
         const container = document.getElementById('catalogoLista');
         if (!container) return;
 
-        if (!categoriasAtualCat.length) {
-            container.innerHTML = '<div class="cat-vazio">Escolha uma ou mais categorias acima.</div>';
+        const seq = ++seqCarregamentoCat;
+
+        if (!temFiltroCat()) {
+            container.innerHTML = `<div class="cat-vazio">${MSG_SEM_FILTRO_CAT}</div>`;
             produtosCatalogoAtual = [];
+            naoSincronizadosCat = 0;
             return;
         }
 
         container.innerHTML = '<div class="cat-vazio"><i class="fas fa-spinner fa-spin"></i> Carregando...</div>';
 
-        const cli = sb();
-        const { data, error } = await cli
-            .from(CFG_CAT.tabela)
-            .select('*')
-            .in('categoria', categoriasAtualCat)
-            .order('categoria', { ascending: true })
-            .order('subcategoria', { ascending: true, nullsFirst: false })
-            .order('titulo', { ascending: true });
+        try {
+            let linhas;
+            let faltando = 0;
 
-        if (error) {
+            if (buscaAtualCat) {
+                // Com busca: filtra no estoque (onde estão as
+                // especificações) e traz as linhas do catálogo desses SKUs.
+                const produtos = await buscarProdutosEstoqueFiltradosCat();
+                linhas = await buscarCatalogoPorSkusCat(produtos.map(p => p.sku).filter(Boolean));
+                const sincronizados = new Set(linhas.map(l => l.sku));
+                faltando = produtos.filter(p => p.sku && !sincronizados.has(p.sku)).length;
+            } else {
+                const { data, error } = await sb()
+                    .from(CFG_CAT.tabela)
+                    .select('*')
+                    .in('categoria', categoriasAtualCat);
+                if (error) throw error;
+                linhas = data || [];
+            }
+
+            if (seq !== seqCarregamentoCat) return; // chegou uma busca mais nova
+
+            const cmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'pt-BR');
+            linhas.sort((a, b) =>
+                cmp(a.categoria, b.categoria) ||
+                // sem grupo vai pro fim, igual ao nullsFirst:false de antes
+                (!a.subcategoria - !b.subcategoria) || cmp(a.subcategoria, b.subcategoria) ||
+                cmp(a.titulo, b.titulo)
+            );
+
+            produtosCatalogoAtual = linhas;
+            naoSincronizadosCat = faltando;
+            renderizarListaCatalogo();
+
+        } catch (error) {
+            if (seq !== seqCarregamentoCat) return;
             container.innerHTML = `<div class="cat-vazio">Erro ao carregar: ${esc(error.message)}</div>`;
-            return;
         }
-
-        produtosCatalogoAtual = data || [];
-        renderizarListaCatalogo();
     }
 
     function renderizarListaCatalogo() {
@@ -495,9 +563,11 @@
         if (!container) return;
 
         if (!produtosCatalogoAtual.length) {
-            container.innerHTML = `
+            container.innerHTML = buscaAtualCat && !naoSincronizadosCat
+                ? `<div class="cat-vazio">Nenhum produto encontrado com essa busca.</div>`
+                : `
                 <div class="cat-vazio">
-                    Nenhum produto sincronizado ainda nessas categorias.<br>
+                    ${buscaAtualCat ? `${naoSincronizadosCat} produto(s) encontrado(s), mas nenhum sincronizado ainda.` : 'Nenhum produto sincronizado ainda nessas categorias.'}<br>
                     Clique em "Sincronizar fotos do Mercado Livre" acima.
                 </div>
             `;
@@ -505,7 +575,10 @@
         }
 
         const comFoto = produtosCatalogoAtual.filter(p => p.ativo && p.foto_url).length;
-        const multiplasCategorias = categoriasAtualCat.length > 1;
+        const multiplasCategorias = new Set(produtosCatalogoAtual.map(p => p.categoria)).size > 1;
+        const avisoNaoSincronizados = naoSincronizadosCat
+            ? ` · <span style="color:#b45309;">${naoSincronizadosCat} produto(s) da busca ainda não sincronizado(s) — clique em "Sincronizar fotos do Mercado Livre"</span>`
+            : '';
 
         // agrupa por categoria só pra exibição (quando mais de uma
         // categoria escolhida) — o card em si continua igual.
@@ -521,7 +594,7 @@
 
         container.innerHTML = `
             <div style="font-size:12px;color:#6c757d;margin-bottom:10px;">
-                ${produtosCatalogoAtual.length} produto(s) — ${comFoto} ativo(s) com foto (esses entram no catálogo)
+                ${produtosCatalogoAtual.length} produto(s) — ${comFoto} ativo(s) com foto (esses entram no catálogo)${avisoNaoSincronizados}
             </div>
             ${gruposPorCategoria.map(grupo => `
                 ${multiplasCategorias ? `<div class="cat-grupo-titulo">${esc(grupo.categoria)}</div>` : ''}
@@ -608,8 +681,16 @@
             porSub.get(chave).push(p);
         });
 
-        return categoriasAtualCat
-            .filter(c => porCategoria.has(c))
+        // Categorias marcadas primeiro (na ordem em que foram marcadas);
+        // as que vieram só pela busca entram depois, em ordem alfabética.
+        const ordem = [
+            ...categoriasAtualCat.filter(c => porCategoria.has(c)),
+            ...Array.from(porCategoria.keys())
+                .filter(c => !categoriasAtualCat.includes(c))
+                .sort((a, b) => String(a || '').localeCompare(String(b || ''), 'pt-BR'))
+        ];
+
+        return ordem
             .map(categoria => ({
                 categoria,
                 subgrupos: Array.from(porCategoria.get(categoria).entries())
@@ -795,8 +876,8 @@
     }
 
     window.gerarCatalogoPDF = async function () {
-        if (!categoriasAtualCat.length) {
-            window.showToast?.('Escolha uma ou mais categorias primeiro.', 'warning');
+        if (!temFiltroCat()) {
+            window.showToast?.('Escolha uma categoria e/ou digite uma busca primeiro.', 'warning');
             return;
         }
 
@@ -816,7 +897,7 @@
             const produtosValidos = produtosCatalogoAtual.filter(p => p.ativo && p.foto_url);
 
             if (!produtosValidos.length) {
-                window.showToast?.('Nenhum produto ativo com foto nessas categorias.', 'warning');
+                window.showToast?.('Nenhum produto ativo com foto nesse filtro.', 'warning');
                 return;
             }
 
@@ -895,9 +976,12 @@
                 }
             }
 
-            const sufixoNome = categoriasAtualCat.length === 1
-                ? categoriasAtualCat[0].toLowerCase().replace(/[^a-z0-9]+/g, '-')
-                : `${categoriasAtualCat.length}-categorias`;
+            const slugCat = v => String(v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            const sufixoNome = [
+                categoriasAtualCat.length === 1 ? slugCat(categoriasAtualCat[0])
+                    : categoriasAtualCat.length > 1 ? `${categoriasAtualCat.length}-categorias` : '',
+                buscaAtualCat ? slugCat(buscaAtualCat) : ''
+            ].filter(Boolean).join('-');
             const nomeArquivo = `catalogo-${sufixoNome}-${new Date().toISOString().slice(0, 10)}.pdf`;
 
             // 1) baixa localmente, sempre funciona

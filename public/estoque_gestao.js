@@ -3625,7 +3625,7 @@ function criarModalEstoqueExtra() {
             <div style="background:linear-gradient(135deg,#00ADEE,#0087b8);color:white;padding:18px 26px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
                 <div>
                     <h3 style="margin:0;font-size:19px;"><i class="fas fa-warehouse"></i> Estoque Extra</h3>
-                    <p style="margin:4px 0 0 0;opacity:0.9;font-size:13px;">Itens guardados em locais separados (Buraco, Mezanino, Parte de baixo, etc.)</p>
+                    <p style="margin:4px 0 0 0;opacity:0.9;font-size:13px;">Itens guardados em locais separados (Buraco, Mezanino, Parte de baixo, Ronald, etc.)</p>
                 </div>
                 <button onclick="window.fecharModalEstoqueExtra()" style="background:rgba(255,255,255,0.2);border:none;width:36px;height:36px;border-radius:50%;cursor:pointer;color:white;font-size:18px;">&times;</button>
             </div>
@@ -3656,6 +3656,7 @@ function criarModalEstoqueExtra() {
                             <option value="Buraco">
                             <option value="Mezanino">
                             <option value="Parte de baixo">
+                            <option value="Ronald">
                         </datalist>
                     </div>
                     <div style="flex:1;min-width:180px;">
