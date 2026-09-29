@@ -31,8 +31,31 @@
   const sameId = (a, b) => String(a) === String(b);
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const safe = async fn => { try { return await fn(); } catch { return null; } };
-  const state = {competitors: [], selected: null, period: 30, metric: 'total', collecting: false, chart: null, timer: null};
+  const state = {competitors: [], selected: null, marked: new Set(), period: 30, metric: 'total', collecting: false, chart: null, timer: null};
   const panelId = 'concorrentesSystem';
+
+  // ---------- Concorrentes marcados (comparação + histórico) ----------
+  // Guardado no navegador, por usuário. Concorrente que ainda não era
+  // conhecido entra marcado, para não sumir da comparação ao ser cadastrado.
+  const markKey = () => 'wt_concorrentes_marcados_' + String(window.currentUser?.username || '').toLowerCase();
+  function loadMarks() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(markKey()) || 'null'); } catch { saved = null; }
+    const known = new Set((saved?.conhecidos || []).map(String));
+    const marked = new Set((saved?.marcados || []).map(String));
+    state.marked = new Set(state.competitors.map(c => String(c.id)).filter(id => marked.has(id) || !known.has(id)));
+    saveMarks();
+  }
+  function saveMarks() {
+    try {
+      localStorage.setItem(markKey(), JSON.stringify({
+        marcados: [...state.marked], conhecidos: state.competitors.map(c => String(c.id))
+      }));
+    } catch { /* sem localStorage: a seleção vale só nesta sessão */ }
+  }
+  const isMarked = c => state.marked.has(String(c.id));
+  const markedCompetitors = () => state.competitors.filter(isMarked);
+  const colorOf = c => COLORS[state.competitors.indexOf(c) % COLORS.length];
 
   const parseCount = value => {
     if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : null;
@@ -139,6 +162,7 @@
         total: row.total_negociacoes, anuncios: row.anuncios_ativos, nivel: row.nivel, source: row.origem});
     }
     state.competitors = [...byId.values()];
+    loadMarks();
     render();
   }
   async function refresh() {
@@ -286,21 +310,27 @@
     const rows = state.competitors.map(c => {
       const h = latest(c), prev = c.history[c.history.length - 2];
       const warn = c.ultimo_erro ? ` <span title="${esc(c.ultimo_erro)}" style="color:#b45309;cursor:help">⚠</span>` : '';
-      return `<tr${sameId(c.id, state.selected) ? ' style="background:#f1f5ff"' : ''}>
-        <td><a href="${esc(profileUrl(c))}" target="_blank" rel="noopener">${esc(c.nickname)}</a>${c.ml_user_id ? `<div style="font-size:11px;color:#888">ID ${esc(c.ml_user_id)}</div>` : ''}</td>
+      return `<tr${isMarked(c) ? ' style="background:#f1f5ff"' : ''}>
+        <td><input type="checkbox" class="cc-mark" data-id="${esc(c.id)}"${isMarked(c) ? ' checked' : ''} title="Mostrar na comparação e no histórico"></td>
+        <td><span class="cc-dot" style="background:${colorOf(c)}"></span><a href="${esc(profileUrl(c))}" target="_blank" rel="noopener">${esc(c.nickname)}</a>${c.ml_user_id ? `<div style="font-size:11px;color:#888">ID ${esc(c.ml_user_id)}</div>` : ''}</td>
         <td>${situacao(h)}</td><td>${h ? nivelBadge(h.nivel) : '—'}</td>
         <td>${h ? fmt(h.total) : '—'}</td><td>${h ? deltaCell(h.total, prev?.total) : '—'}</td>
         ${anunciosCells(c)}
         <td>${date(c.ultima_consulta || h?.at)}${warn}</td>
         <td style="white-space:nowrap"><button type="button" class="btn btn-sm btn-outline-primary" data-action="collect" data-busy data-id="${esc(c.id)}" title="Consultar agora"><i class="fas fa-sync-alt"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-action="select" data-id="${esc(c.id)}">Histórico</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-action="select" data-id="${esc(c.id)}" title="ID do vendedor / medição manual"><i class="fas fa-pen"></i> Ajustar</button>
         <button type="button" class="btn btn-sm btn-outline-danger" data-action="remove" data-id="${esc(c.id)}">Excluir</button></td></tr>`;
     }).join('');
-    $('#concorrentesRows').innerHTML = rows || '<tr><td colspan="9">Nenhum concorrente cadastrado.</td></tr>';
+    $('#concorrentesRows').innerHTML = rows || '<tr><td colspan="10">Nenhum concorrente cadastrado.</td></tr>';
+    const all = $('#concorrentesMarkAll');
+    const total = state.competitors.length, marked = markedCompetitors().length;
+    all.checked = total > 0 && marked === total;
+    all.indeterminate = marked > 0 && marked < total;
+    $('#concorrentesMarkCount').textContent = total ? `${marked} de ${total} marcado(s) para comparação e histórico` : '';
   }
   function renderGrowth() {
     const key = state.metric, days = state.period;
-    const items = state.competitors.map((c, index) => ({c, index, total: growth(c, 'total', days), anuncios: growth(c, 'anuncios', days)}))
+    const items = markedCompetitors().map(c => ({c, total: growth(c, 'total', days), anuncios: growth(c, 'anuncios', days)}))
       .filter(x => x.total || x.anuncios)
       .sort((a, b) => ((b[key]?.diff ?? -Infinity) - (a[key]?.diff ?? -Infinity)));
     const cell = (g, field) => {
@@ -313,9 +343,9 @@
     $('#concorrentesGrowthRows').innerHTML = items.map((x, rank) => {
       const first = periodStart(x.c.history, days), last = latest(x.c);
       const nivel = first && last && first.nivel !== last.nivel ? `${nivelBadge(first.nivel)} → ${nivelBadge(last.nivel)}` : nivelBadge(last?.nivel);
-      return `<tr><td>${rank + 1}º</td><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${COLORS[x.index % COLORS.length]};margin-right:6px"></span>${esc(x.c.nickname)}</td>
+      return `<tr><td>${rank + 1}º</td><td><span class="cc-dot" style="background:${colorOf(x.c)}"></span>${esc(x.c.nickname)}</td>
         ${cell(x.total, 'total')}${cell(x.anuncios, 'anuncios')}<td>${nivel}</td><td>${situacao(last)}</td></tr>`;
-    }).join('') || '<tr><td colspan="10">Sem dados suficientes para comparar. A comparação aparece após as coletas.</td></tr>';
+    }).join('') || `<tr><td colspan="10">${state.marked.size ? 'Sem dados suficientes para comparar. A comparação aparece após as coletas.' : 'Marque na tabela acima os concorrentes que quer comparar.'}</td></tr>`;
     renderChart();
   }
   function renderChart() {
@@ -323,15 +353,16 @@
     if (state.chart) { state.chart.destroy(); state.chart = null; }
     if (!canvas || typeof Chart === 'undefined') return;
     const key = state.metric, days = state.period;
-    const series = state.competitors.map((c, index) => {
+    const series = markedCompetitors().map(c => {
       const points = c.history.filter(h => h[key] !== null && h[key] !== undefined);
       if (!points.length) return null;
       const start = periodStart(points, days);
       const byDay = new Map();
       for (const p of points.slice(points.indexOf(start))) byDay.set(dayKey(p.at), p[key]);
-      return {c, index, byDay};
+      return {c, byDay};
     }).filter(Boolean);
     const labels = [...new Set(series.flatMap(s => [...s.byDay.keys()]))].sort();
+    $('#concorrentesChartEmpty').textContent = state.marked.size ? 'Sem dados no período.' : 'Nenhum concorrente marcado.';
     $('#concorrentesChartEmpty').style.display = labels.length ? 'none' : 'flex';
     if (!labels.length) return;
     state.chart = new Chart(canvas, {
@@ -340,7 +371,7 @@
         labels: labels.map(dayLabel),
         datasets: series.map(s => ({
           label: s.c.nickname, data: labels.map(d => s.byDay.get(d) ?? null), spanGaps: true, tension: 0.25,
-          borderColor: COLORS[s.index % COLORS.length], backgroundColor: COLORS[s.index % COLORS.length], pointRadius: 3
+          borderColor: colorOf(s.c), backgroundColor: colorOf(s.c), pointRadius: 3
         }))
       },
       options: {
@@ -350,18 +381,28 @@
       }
     });
   }
-  function renderSelected() {
-    const c = selected();
-    $('#concorrentesSelected').textContent = c ? c.nickname : 'Selecione um concorrente';
-    $('#concorrentesSnapshot').hidden = !c;
-    if (!c) return;
-    $('#concorrentesHistory').innerHTML = c.history.slice().reverse().map((h, index, reversed) => {
-      const previous = reversed[index + 1];
-      return `<tr><td>${date(h.at)}</td><td>${situacao(h)}</td>
+  function renderHistory() {
+    const list = markedCompetitors();
+    $('#concorrentesHistoryTitle').textContent = !list.length ? 'nenhum concorrente marcado'
+      : list.length === 1 ? list[0].nickname : `${list.length} concorrentes marcados`;
+    // Variação de cada registro é contra o registro anterior DO MESMO vendedor.
+    const rows = list.flatMap(c => c.history.map((h, i) => ({c, h, previous: c.history[i - 1]})))
+      .sort((a, b) => Date.parse(b.h.at) - Date.parse(a.h.at));
+    $('#concorrentesHistory').innerHTML = rows.map(({c, h, previous}) => `<tr>
+        <td><span class="cc-dot" style="background:${colorOf(c)}"></span>${esc(c.nickname)}</td>
+        <td>${date(h.at)}</td><td>${situacao(h)}</td>
         <td>${fmt(h.total)}</td><td>${deltaCell(h.total, previous?.total)}</td>
         <td>${fmt(h.anuncios)}</td><td>${deltaCell(h.anuncios, previous?.anuncios)}</td>
-        <td>${nivelBadge(h.nivel)}</td><td>${h.source === 'API' ? 'Automático' : esc(h.source)}</td></tr>`;
-    }).join('') || '<tr><td colspan="8">Nenhum registro no histórico.</td></tr>';
+        <td>${nivelBadge(h.nivel)}</td><td>${h.source === 'API' ? 'Automático' : esc(h.source)}</td></tr>`).join('')
+      || `<tr><td colspan="9">${list.length ? 'Nenhum registro no histórico.' : 'Marque na tabela "Situação atual" os concorrentes que quer ver.'}</td></tr>`;
+  }
+  function renderSelected() {
+    renderHistory();
+    const c = selected();
+    $('#concorrentesSelected').innerHTML = `<option value="">Selecione um concorrente</option>` +
+      state.competitors.map(x => `<option value="${esc(x.id)}"${sameId(x.id, state.selected) ? ' selected' : ''}>${esc(x.nickname)}</option>`).join('');
+    $('#concorrentesSnapshot').hidden = !c;
+    if (!c) return;
     $('#concorrentesMlId').value = c.ml_user_id || '';
     const h = latest(c);
     $('#concorrentesAtivo').value = h ? String(h.ativo) : 'true';
@@ -394,7 +435,7 @@
   function init() {
     if ($('#' + panelId)) return;
     const style = document.createElement('style');
-    style.textContent = '#concorrentesSystem{max-width:none;margin:0;padding:0}#concorrentesSystem .cc-content{padding-bottom:30px}#concorrentesSystem .main-header{margin-bottom:30px}#concorrentesSystem .cc-card{background:#fff;border:1px solid #dce2eb;border-radius:12px;padding:20px;margin-bottom:18px}#concorrentesSystem .cc-table{overflow-x:auto}#concorrentesSystem table{width:100%;min-width:850px;border-collapse:collapse}#concorrentesSystem th,#concorrentesSystem td{padding:9px;border-bottom:1px solid #eee;text-align:left;vertical-align:middle}#concorrentesSystem th{font-size:13px;color:#475569;background:#f8fafc}#concorrentesSystem .cc-fields{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px}#concorrentesSystem .cc-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}#concorrentesSystem .cc-add{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}#concorrentesSystem .cc-add label{flex:1;min-width:260px}#concorrentesSystem .cc-chart{position:relative;height:320px;margin:14px 0}#concorrentesSystem details summary{cursor:pointer;color:#2563eb;margin:14px 0 8px}#concorrentesMessage{margin-top:10px;color:#334155;min-height:1.2em}@media(max-width:850px){#concorrentesSystem .cc-fields{grid-template-columns:1fr 1fr}}';
+    style.textContent = '#concorrentesSystem{max-width:none;margin:0;padding:0}#concorrentesSystem .cc-content{padding-bottom:30px}#concorrentesSystem .main-header{margin-bottom:30px}#concorrentesSystem .cc-card{background:#fff;border:1px solid #dce2eb;border-radius:12px;padding:20px;margin-bottom:18px}#concorrentesSystem .cc-table{overflow-x:auto}#concorrentesSystem table{width:100%;min-width:850px;border-collapse:collapse}#concorrentesSystem th,#concorrentesSystem td{padding:9px;border-bottom:1px solid #eee;text-align:left;vertical-align:middle}#concorrentesSystem th{font-size:13px;color:#475569;background:#f8fafc}#concorrentesSystem .cc-fields{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px}#concorrentesSystem .cc-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}#concorrentesSystem .cc-add{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}#concorrentesSystem .cc-add label{flex:1;min-width:260px}#concorrentesSystem .cc-chart{position:relative;height:320px;margin:14px 0}#concorrentesSystem details summary{cursor:pointer;color:#2563eb;margin:14px 0 8px}#concorrentesMessage{margin-top:10px;color:#334155;min-height:1.2em}#concorrentesSystem .cc-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}#concorrentesSystem .cc-mark,#concorrentesMarkAll{width:16px;height:16px;cursor:pointer}#concorrentesMarkCount{font-size:13px;color:#64748b;margin-bottom:8px}@media(max-width:850px){#concorrentesSystem .cc-fields{grid-template-columns:1fr 1fr}}';
     document.head.appendChild(style);
     const root = document.createElement('div');
     root.id = panelId;
@@ -408,15 +449,17 @@
       <div id="concorrentesMessage" role="status" aria-live="polite"></div></div>
       <div class="cc-card"><form id="concorrentesAdd" class="cc-add"><label>Nome do vendedor no Mercado Livre <input class="form-control" name="nickname" maxlength="300" required placeholder="Ex.: LOJA_EXEMPLO (ou link do perfil/anúncio, ou ID)"></label>
       <button class="btn btn-primary" type="submit" data-busy>Adicionar concorrente</button></form></div>
-      <div class="cc-card cc-table"><h3>Situação atual</h3><table><thead><tr><th>Vendedor</th><th>Situação</th><th>Nível</th><th>Negociações</th><th>Variação</th><th>Anúncios ativos</th><th>Variação</th><th>Última consulta</th><th>Ações</th></tr></thead><tbody id="concorrentesRows"></tbody></table></div>
+      <div class="cc-card cc-table"><h3>Situação atual</h3><div id="concorrentesMarkCount"></div><table><thead><tr><th><input type="checkbox" id="concorrentesMarkAll" title="Marcar / desmarcar todos"></th><th>Vendedor</th><th>Situação</th><th>Nível</th><th>Negociações</th><th>Variação</th><th>Anúncios ativos</th><th>Variação</th><th>Última consulta</th><th>Ações</th></tr></thead><tbody id="concorrentesRows"></tbody></table></div>
       <div class="cc-card"><h3>Comparação de crescimento</h3>
       <div class="cc-toolbar"><label>Período <select id="concorrentesPeriod" class="form-control form-control-sm">${PERIODS.map(([d, label]) => `<option value="${d}"${d === state.period ? ' selected' : ''}>${label}</option>`).join('')}</select></label>
       <label>Métrica <select id="concorrentesMetric" class="form-control form-control-sm"><option value="total">Total de negociações</option><option value="anuncios">Anúncios ativos</option></select></label></div>
       <div class="cc-chart"><canvas id="concorrentesChart"></canvas><p id="concorrentesChartEmpty" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:#888">Sem dados no período.</p></div>
       <div class="cc-table"><table><thead><tr><th>#</th><th>Vendedor</th><th>Negociações (início → atual)</th><th>Crescimento</th><th>Média/dia</th><th>Anúncios (início → atual)</th><th>Crescimento</th><th>Média/dia</th><th>Nível</th><th>Situação</th></tr></thead><tbody id="concorrentesGrowthRows"></tbody></table></div></div>
-      <div class="cc-card"><h3>Histórico: <span id="concorrentesSelected">Selecione um concorrente</span></h3>
+      <div class="cc-card"><h3>Histórico: <span id="concorrentesHistoryTitle"></span></h3>
+      <div class="cc-table"><table><thead><tr><th>Vendedor</th><th>Data</th><th>Situação</th><th>Negociações</th><th>Variação</th><th>Anúncios</th><th>Variação</th><th>Nível</th><th>Origem</th></tr></thead><tbody id="concorrentesHistory"></tbody></table></div></div>
+      <div class="cc-card"><h3>Ajustes manuais</h3>
+      <label style="max-width:360px;display:block">Concorrente <select id="concorrentesSelected" class="form-control"></select></label>
       <div id="concorrentesSnapshot" hidden>
-      <div class="cc-table"><table><thead><tr><th>Data</th><th>Situação</th><th>Negociações</th><th>Variação</th><th>Anúncios</th><th>Variação</th><th>Nível</th><th>Origem</th></tr></thead><tbody id="concorrentesHistory"></tbody></table></div>
       <details><summary>ID do vendedor no Mercado Livre (se não for localizado automaticamente)</summary>
       <form id="concorrentesIdForm" class="cc-add"><label>ID do vendedor, link do perfil ou link de um anúncio dele<input id="concorrentesMlId" class="form-control"></label>
       <button type="submit" class="btn btn-outline-primary" data-busy>Salvar e consultar</button></form></details>
@@ -444,10 +487,20 @@
       catch (error) { setMessage('Erro ao adicionar: ' + error.message); }
       finally { toggleBusy(state.collecting); }
     };
+    $('#concorrentesMarkAll').onchange = event => {
+      state.marked = event.target.checked ? new Set(state.competitors.map(c => String(c.id))) : new Set();
+      saveMarks(); render();
+    };
+    $('#concorrentesSelected').onchange = event => { state.selected = event.target.value || null; renderSelected(); };
+    $('#concorrentesRows').onchange = event => {
+      const box = event.target.closest('.cc-mark'); if (!box) return;
+      if (box.checked) state.marked.add(String(box.dataset.id)); else state.marked.delete(String(box.dataset.id));
+      saveMarks(); render();
+    };
     $('#concorrentesRows').onclick = async event => {
       const button = event.target.closest('button[data-action]'); if (!button) return;
       const c = state.competitors.find(x => sameId(x.id, button.dataset.id)); if (!c) return;
-      if (button.dataset.action === 'select') { state.selected = c.id; render(); $('#concorrentesSelected').scrollIntoView({behavior: 'smooth', block: 'start'}); return; }
+      if (button.dataset.action === 'select') { state.selected = c.id; renderSelected(); $('#concorrentesSelected').scrollIntoView({behavior: 'smooth', block: 'center'}); return; }
       if (button.dataset.action === 'collect') { await collectAll(true, [c]); return; }
       if (button.dataset.action === 'anuncios') { await informAnuncios(c); return; }
       if (!confirm('Excluir ' + c.nickname + ' e todo o histórico?')) return;

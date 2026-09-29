@@ -613,7 +613,7 @@ function renderizarPerguntas() {
                     <button class="btn btn-sm btn-secondary" onclick="abrirPerfilComprador('${escapeHtml(p.comprador_nome)}', ${p.comprador_id ? `'${p.comprador_id}'` : 'null'})" title="Perfil completo: compras e todas as perguntas deste comprador">
                         <i class="fas fa-id-card"></i> Perfil
                     </button>
-                    ${!p.excluida ? `
+                    ${!p.excluida && podeExcluirPergunta() ? `
                         <button class="btn btn-sm btn-danger" onclick="excluirPergunta('${p.id}')" title="Excluir esta pergunta da lista">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -914,7 +914,22 @@ function tempoRespostaPergunta(p) {
 // ============================================
 // EXCLUIR PERGUNTA (soft delete — fica salva pro histórico)
 // ============================================
+// Esses usuários não veem a lixeira nem conseguem excluir perguntas.
+const USUARIOS_SEM_EXCLUIR_PERGUNTA = ['arthur'];
+
+function podeExcluirPergunta() {
+    const username = (typeof currentUser !== 'undefined' && currentUser)
+        ? String(currentUser.username || '').trim().toLowerCase()
+        : '';
+    return !USUARIOS_SEM_EXCLUIR_PERGUNTA.includes(username);
+}
+
 window.excluirPergunta = async function(id) {
+    if (!podeExcluirPergunta()) {
+        showToast('Você não tem permissão para excluir perguntas.', 'warning');
+        return;
+    }
+
     const pergunta = perguntas.find(p => String(p.id) === String(id));
     if (!pergunta) {
         showToast('Pergunta não encontrada', 'error');
