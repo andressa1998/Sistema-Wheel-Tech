@@ -3679,6 +3679,7 @@ function criarModalReclamacaoCompleta() {
                         <div class="d-flex gap-3">
                             <label><input type="radio" name="tipoReclamacao" value="com_reembolso" checked onchange="toggleCamposReclamacao()"> Com reembolso</label>
                             <label><input type="radio" name="tipoReclamacao" value="sem_reembolso" onchange="toggleCamposReclamacao()"> Sem reembolso (apenas acompanhamento)</label>
+                            <label><input type="radio" name="tipoReclamacao" value="reembolso_venda" onchange="toggleCamposReclamacao()"> Reembolso direto na venda</label>
                         </div>
                     </div>
 
@@ -3790,6 +3791,12 @@ function toggleReferenciaFields() {
     if (campoNumeroVenda) {
         campoNumeroVenda.style.display = tipo === 'venda' ? 'block' : 'none';
     }
+}
+
+// "Com reembolso" e "Reembolso direto na venda" trazem dinheiro de volta:
+// exigem valor ao resolver e vão para a coordenação conferir.
+function tipoGeraReembolso(tipo) {
+    return tipo === 'com_reembolso' || tipo === 'reembolso_venda';
 }
 
 function toggleCamposReclamacao() {
@@ -4098,7 +4105,7 @@ async function salvarReclamacaoCompleta() {
         return;
     }
 
-    if (status === 'resolvido' && tipoReclamacao === 'com_reembolso' && !(valor > 0)) {
+    if (status === 'resolvido' && tipoGeraReembolso(tipoReclamacao) && !(valor > 0)) {
         showToast('Informe o valor do reembolso obtido para resolver a reclamação', 'warning');
         document.getElementById('reclamacaoValor')?.focus();
         return;
@@ -4186,12 +4193,12 @@ async function salvarReclamacaoCompleta() {
             reclId = insertResult.data?.[0]?.id;
         }
 
-        if (status === 'resolvido' && tipoReclamacao === 'com_reembolso') {
+        if (status === 'resolvido' && tipoGeraReembolso(tipoReclamacao)) {
             await criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId);
         }
 
         showToast(
-            status === 'resolvido' && tipoReclamacao === 'com_reembolso'
+            status === 'resolvido' && tipoGeraReembolso(tipoReclamacao)
                 ? '✅ Reclamação resolvida! Ela foi enviada à coordenação para conferir o reembolso.'
                 : (id ? '✅ Reclamação atualizada!' : '✅ Reclamação aberta! A venda ficou em andamento.'),
             'success'
@@ -4245,6 +4252,7 @@ async function criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId) {
         // se perder.
         const observacoesCompletas =
             [
+                dados.tipo_reclamacao === 'reembolso_venda' ? 'Reembolso direto na venda' : '',
                 dados.observacoes || '',
                 dados.numero_transacao ? `Nº transação: ${dados.numero_transacao}` : '',
                 Array.isArray(dados.protocolos) && dados.protocolos.length
@@ -4264,7 +4272,9 @@ async function criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId) {
             data_operacao: dados.data_reclamacao || new Date().toISOString(),
             motivo: dados.motivo || 'Frete',
             observacoes: observacoesCompletas,
-            tipo_reclamacao: dados.tipo_reclamacao || 'com_reembolso',
+            // A aba Reembolsos só conhece com/sem reembolso; o "direto na
+            // venda" entra como com_reembolso e fica identificado nas observações.
+            tipo_reclamacao: tipoGeraReembolso(dados.tipo_reclamacao) ? 'com_reembolso' : (dados.tipo_reclamacao || 'com_reembolso'),
             responsabilidade: null,
             cliente_bloqueado: null,
             resolvida: false,
@@ -4415,7 +4425,7 @@ async function mudarStatusReclamacao(id, novoStatus) {
             updateData.resolvido_por = nomeUsuario;
             updateData.data_resolucao = new Date().toISOString();
             
-            if (reclAtual && reclAtual.tipo_reclamacao === 'com_reembolso') {
+            if (reclAtual && tipoGeraReembolso(reclAtual.tipo_reclamacao)) {
                 await criarReclamacaoNaAbaReembolsos(reclAtual.venda_id, reclAtual, id);
             }
         }

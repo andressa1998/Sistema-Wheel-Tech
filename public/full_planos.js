@@ -322,31 +322,32 @@
         const mlbsNoFull = new Set(rowsAtivas.map(row => row.itemId));
         const novos = new Map(); // chave mlb|variação
 
+        // Anúncio com variação vira uma linha por variação: a planilha
+        // do ML precisa do número da variação pra identificar o produto.
         const criados = await anunciosCriadosNoPeriodo(inicio, fim);
         for (const item of criados) {
             if (String(item.status || '').toLowerCase() === 'closed') continue;
-            const sku = I().extractSku(item) || I().skuInternoPorMlb(item.id);
-            novos.set(`${item.id}|`, {
-                mlb: item.id,
-                variationId: null,
-                sku,
-                titulo: item.title || '',
-                motivos: ['criado'],
-                criadoEm: item.date_created,
-                vendasLocal: 0,
-                estoqueMontavel: estoqueMontavel(sku, item.id),
-                jaNoFull: mlbsNoFull.has(item.id),
-                quantidade: 0
-            });
+            const variacoes = Array.isArray(item.variations) && item.variations.length ? item.variations : [null];
+            for (const variacao of variacoes) {
+                const sku = I().extractSku(item, variacao) || I().skuInternoPorMlb(item.id);
+                novos.set(`${item.id}|${variacao?.id || ''}`, {
+                    mlb: item.id,
+                    variationId: variacao?.id || null,
+                    sku,
+                    titulo: item.title || '',
+                    motivos: ['criado'],
+                    criadoEm: item.date_created,
+                    vendasLocal: 0,
+                    estoqueMontavel: estoqueMontavel(sku, item.id),
+                    jaNoFull: mlbsNoFull.has(item.id),
+                    quantidade: 0
+                });
+            }
         }
 
         const vendas = await vendasPorAnuncio(inicio, fim);
-        const vendasPorMlb = new Map();
-        for (const venda of vendas.values()) {
-            vendasPorMlb.set(venda.mlb, (vendasPorMlb.get(venda.mlb) || 0) + venda.unidades);
-        }
-        // Os criados no período mostram quanto venderam.
-        for (const novo of novos.values()) novo.vendasLocal = vendasPorMlb.get(novo.mlb) || 0;
+        // Os criados no período mostram quanto venderam (por variação).
+        for (const [chave, novo] of novos) novo.vendasLocal = vendas.get(chave)?.unidades || 0;
 
         for (const venda of vendas.values()) {
             // Quem já está no FULL entra pela reposição, não aqui.
@@ -355,9 +356,9 @@
             const estoque = estoqueMontavel(venda.sku, venda.mlb);
             if (!(estoque >= minEstoque)) continue;
 
-            const chaveItem = `${venda.mlb}|`;
-            const existente = novos.get(chaveItem);
-            if (existente && !existente.variationId) {
+            const chave = `${venda.mlb}|${venda.variationId || ''}`;
+            const existente = novos.get(chave);
+            if (existente) {
                 // Criado no período e também vende no local.
                 if (!existente.motivos.includes('vende_local')) existente.motivos.push('vende_local');
                 existente.estoqueMontavel = existente.estoqueMontavel ?? estoque;
@@ -365,7 +366,7 @@
                 continue;
             }
 
-            novos.set(`${venda.mlb}|${venda.variationId || ''}`, {
+            novos.set(chave, {
                 mlb: venda.mlb,
                 variationId: venda.variationId,
                 sku: venda.sku || I().skuInternoPorMlb(venda.mlb),
@@ -503,7 +504,7 @@
                         <td>${formatarDataHora(p.criado_em)}<br><small class="text-muted">${esc(p.criado_por || '')}</small></td>
                         <td style="white-space:nowrap;">
                             <button type="button" class="btn btn-sm btn-primary" onclick="abrirPlanoFullGA(${Number(p.id)})"><i class="fas fa-folder-open"></i> Abrir</button>
-                            <button type="button" class="btn btn-sm btn-outline-success" onclick="exportarPlanoFullGA(${Number(p.id)})" title="Excel para o ML"><i class="fas fa-file-excel"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-success" onclick="exportarPlanoFullGA(${Number(p.id)})" title="Planilha no modelo do ML"><i class="fas fa-file-excel"></i></button>
                             <button type="button" class="btn btn-sm btn-outline-danger" onclick="excluirPlanoFullGA(${Number(p.id)})" title="Excluir"><i class="fas fa-trash"></i></button>
                         </td>
                     </tr>`).join('')
@@ -699,7 +700,8 @@
                                 `<option value="${v}" ${plano.status === v ? 'selected' : ''}>${r}</option>`).join('')}
                         </select>
                         <button type="button" class="btn btn-secondary" onclick="voltarListaPlanosFullGA()"><i class="fas fa-arrow-left"></i> Voltar</button>
-                        <button type="button" class="btn btn-outline-success" onclick="exportarPlanoFullGA()"><i class="fas fa-file-excel"></i> Excel para o ML</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="exportarDetalhePlanoFullGA()" title="Excel de conferência com todos os dados do plano"><i class="fas fa-file-alt"></i> Excel detalhado</button>
+                        <button type="button" class="btn btn-outline-success" onclick="exportarPlanoFullGA()" title="Planilha no modelo do ML (Seleção de produtos para enviar ao centro de distribuição)"><i class="fas fa-file-excel"></i> Planilha para o ML</button>
                         <button type="button" class="btn btn-success" onclick="salvarPlanoFullGA()"><i class="fas fa-save"></i> Salvar plano</button>
                     </div>
                 </div>
@@ -793,19 +795,109 @@
         }
     };
 
-    window.exportarPlanoFullGA = function(id) {
+    function planoParaExportar(id) {
         const p = id ? planos.find(x => Number(x.id) === Number(id)) : plano;
-        if (!p) return;
+        if (!p) return null;
         if (typeof XLSX === 'undefined') {
             toast('❌ Biblioteca de Excel não carregada', 'error');
-            return;
+            return null;
         }
+        return p;
+    }
 
-        const envio = [
+    function itensParaEnvio(p) {
+        return [
             ...(p.itens || []).map(item => ({ ...item, origem: 'Reposição' })),
             ...(p.novos_itens || []).map(item => ({ ...item, origem: 'Novo item' }))
         ].filter(item => Number(item.quantidade) > 0);
+    }
 
+    function nomeArquivoPlano(p, sufixo) {
+        const base = String(p.nome || 'plano_full').normalize('NFD').replace(/[̀-ͯ]/g, '')
+            .replace(/[^\w-]+/g, '_').replace(/_+/g, '_');
+        return `${base}${sufixo}.xlsx`;
+    }
+
+    // ------------------------------------------------------------
+    // PLANILHA NO MODELO DO ML ("Seleção de produtos para enviar ao
+    // centro de distribuição"): aba "Seleção de produtos" com os
+    // cabeçalhos nas linhas 4 e 5 e os produtos a partir da linha 6.
+    // Colunas: SKU | Código universal | Código ML | N.º do anúncio |
+    // N.º da variação | Quantidade de unidades.
+    //
+    // Preenche Código ML (inventory_id), N.º do anúncio (só os
+    // números, como no exemplo do ML) e N.º da variação. SKU e código
+    // universal ficam em branco de propósito: o ML pede um código só,
+    // e o SKU que o sistema tem pode ser o do produto interno em vez
+    // do que está no anúncio.
+    // ------------------------------------------------------------
+    window.exportarPlanoFullGA = function(id) {
+        const p = planoParaExportar(id);
+        if (!p) return;
+
+        const envio = itensParaEnvio(p);
+        if (!envio.length) {
+            toast('⚠️ Nenhum item com quantidade para enviar', 'warning');
+            return;
+        }
+
+        const semCodigo = envio.filter(item => !item.inventoryId && !item.mlb);
+        if (semCodigo.length) {
+            toast(`⚠️ ${semCodigo.length} item(ns) sem código ficaram de fora`, 'warning');
+        }
+
+        const linhas = [
+            ['Adicione pelo menos um código de cada produto e quantas unidades você vai enviar'],
+            ['Os códigos devem ser os mesmos que estão informados no anúncio.'],
+            [],
+            ['SKU', 'Código universal do produto', 'Código ML', 'N.º do anúncio', 'N.º da variação', 'Quantidade de unidades'],
+            [
+                'Encontre-o no detalhe do Anúncio.',
+                'Encontre-o no detalhe do Anúncio.',
+                'Encontre-o na seção "Envios e controle de estoque", juntamente com o produto.',
+                'Encontre-o na lista de Anúncios, juntamente com o produto.',
+                'Adicione este código somente se o seu produto for uma variação.',
+                ''
+            ],
+            ...envio
+                .filter(item => item.inventoryId || item.mlb)
+                .map(item => [
+                    '',
+                    '',
+                    item.inventoryId || '',
+                    String(item.mlb || '').replace(/^MLB/i, ''),
+                    item.variationId ? String(item.variationId) : '',
+                    Number(item.quantidade) || 0
+                ])
+        ];
+
+        const selecao = XLSX.utils.aoa_to_sheet(linhas);
+        selecao['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }
+        ];
+        selecao['!cols'] = [{ wch: 22 }, { wch: 26 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 20 }];
+
+        const ajuda = XLSX.utils.aoa_to_sheet([
+            ['Seleção de produtos para enviar ao centro de distribuição'],
+            ['Gerado pelo sistema a partir do plano:', p.nome || ''],
+            ['Período de vendas:', `${formatarData(p.periodo_inicio)} a ${formatarData(p.periodo_fim)}`],
+            ['Produtos:', envio.length],
+            ['Unidades:', envio.reduce((s, item) => s + (Number(item.quantidade) || 0), 0)]
+        ]);
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ajuda, 'Ajuda');
+        XLSX.utils.book_append_sheet(wb, selecao, 'Seleção de produtos');
+        XLSX.writeFile(wb, nomeArquivoPlano(p, '_envio_ML'));
+    };
+
+    // Excel de conferência, com tudo que o plano tem.
+    window.exportarDetalhePlanoFullGA = function(id) {
+        const p = planoParaExportar(id);
+        if (!p) return;
+
+        const envio = itensParaEnvio(p);
         if (!envio.length) {
             toast('⚠️ Nenhum item com quantidade para enviar', 'warning');
             return;
@@ -847,8 +939,6 @@
             Enviar: Number(item.quantidade) || 0
         }))), 'Novos itens');
 
-        const nomeArquivo = String(p.nome || 'plano_full').normalize('NFD').replace(/[̀-ͯ]/g, '')
-            .replace(/[^\w-]+/g, '_').replace(/_+/g, '_');
-        XLSX.writeFile(wb, `${nomeArquivo}.xlsx`);
+        XLSX.writeFile(wb, nomeArquivoPlano(p, '_detalhado'));
     };
 })();
