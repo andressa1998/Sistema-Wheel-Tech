@@ -139,6 +139,11 @@
             });
 
         if (error) {
+            // RLS do Storage sem política de INSERT pro bucket — ver
+            // SETUP_SUGESTOES_FOTOS.sql
+            if (/row-level security/i.test(error.message || '')) {
+                throw new Error('o banco não está permitindo salvar fotos em Sugestões (falta a permissão do bucket "sugestoes"). Avise o administrador.');
+            }
             throw new Error(`Erro ao enviar foto: ${error.message}`);
         }
 

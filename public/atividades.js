@@ -124,8 +124,13 @@
     // DATAS
     // ============================================================
 
+    // Data LOCAL (não UTC) — com toISOString, depois das 21h no
+    // horário de Brasília o "hoje" já virava o dia seguinte.
     function isoDataAtiv(d) {
-        return d.toISOString().slice(0, 10);
+        const ano = d.getFullYear();
+        const mes = String(d.getMonth() + 1).padStart(2, '0');
+        const dia = String(d.getDate()).padStart(2, '0');
+        return `${ano}-${mes}-${dia}`;
     }
 
     function hojeIsoAtiv() {
@@ -1252,7 +1257,7 @@
         modal.innerHTML = `
             <div class="modal-content" style="max-width:820px;">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h3 style="margin:0;"><i class="fas fa-chart-pie"></i> Relatório de Atividades</h3>
+                    <h3 style="margin:0;"><i class="fas fa-chart-pie"></i> Relatório de Atividades — hoje (${formatarDataBrAtiv(hojeIsoAtiv())})</h3>
                     <button class="btn btn-secondary btn-sm" onclick="document.getElementById('modalRelatorioAtividades').remove()">Fechar</button>
                 </div>
                 <div class="row">
@@ -1267,29 +1272,100 @@
         `;
         document.body.appendChild(modal);
 
-        // O cache só é preenchido ao abrir a tela de Atividades; o relatório aberto pela
-        // tela inicial precisa buscar os dados por conta própria.
-        let lista = atividadesCache;
+        let lista = [];
         try {
-            const { data, error } = await window.supabaseClient
-                .from(CFG_ATIV.tabela)
-                .select('id,status,designado_para')
-                .range(0, 4999);
-            if (error) throw error;
-            lista = data || [];
+            lista = await carregarAtividadesDoDiaAtiv();
         } catch (error) {
-            console.warn('⚠️ [Atividades] Relatório: falha ao buscar atividades:', error);
+            console.warn('⚠️ [Atividades] Relatório: falha ao buscar atividades do dia:', error);
         }
 
         if (!document.getElementById('modalRelatorioAtividades')) return;
         montarRelatorioAtividadesAtiv(lista);
     };
 
-    function montarRelatorioAtividadesAtiv(lista = atividadesCache) {
+    // ============================================================
+    // ATIVIDADES DO DIA (relatório + card da tela inicial)
+    //
+    // Cada atividade que pede ação hoje, classificada em:
+    //  - concluida: feita hoje (diária/avulsa concluída hoje, ou
+    //    semanal/mensal com conclusão registrada hoje)
+    //  - pendente:  é de hoje e ainda não foi feita
+    //  - atrasada:  veio de dia anterior sem conclusão (cópia
+    //    prorrogada, ou prazo vencido ainda não prorrogado)
+    // Linhas "prorrogada" são histórico (a cópia viva é que conta).
+    // ============================================================
+
+    async function carregarAtividadesDoDiaAtiv() {
+        const hoje = hojeIsoAtiv();
+        const inicioDoDia = new Date(`${hoje}T00:00:00`).toISOString();
+
+        const { data, error } = await window.supabaseClient
+            .from(CFG_ATIV.tabela)
+            .select('id,status,designado_para,frequencia,dias_semana,data_inicio,data_fim,concluida_em,prorrogada_de_id')
+            .lte('data_inicio', hoje)
+            .or(`status.eq.pendente,concluida_em.gte.${inicioDoDia}`)
+            .range(0, 4999);
+
+        if (error) throw error;
+
+        const atividades = (data || []).map(a => ({
+            ...a,
+            data_inicio: String(a.data_inicio || '').slice(0, 10),
+            data_fim: String(a.data_fim || '').slice(0, 10)
+        }));
+
+        const idsRecorrentes = atividades.filter(ehRecorrenteAtiv).map(a => a.id);
+        const feitasHoje = new Set();
+
+        if (idsRecorrentes.length) {
+            const { data: conclusoes, error: erroConclusoes } = await window.supabaseClient
+                .from(CFG_ATIV.tabelaConclusoes)
+                .select('atividade_id')
+                .eq('data', hoje)
+                .in('atividade_id', idsRecorrentes);
+
+            if (erroConclusoes) throw erroConclusoes;
+            (conclusoes || []).forEach(c => feitasHoje.add(c.atividade_id));
+        }
+
+        const resultado = [];
+
+        atividades.forEach(a => {
+            let situacao = null;
+
+            if (ehRecorrenteAtiv(a)) {
+                if (feitasHoje.has(a.id)) {
+                    situacao = 'concluida';
+                } else if (a.status === 'pendente') {
+                    if (a.data_fim && a.data_fim < hoje) situacao = 'atrasada';
+                    else if (aplicavelHojeAtiv(a, hoje)) situacao = 'pendente';
+                }
+            } else if (a.status === 'concluida') {
+                if (a.concluida_em && isoDataAtiv(new Date(a.concluida_em)) === hoje) {
+                    situacao = 'concluida';
+                }
+            } else if (a.status === 'pendente') {
+                if (a.prorrogada_de_id || (a.data_fim && a.data_fim < hoje)) situacao = 'atrasada';
+                else situacao = 'pendente';
+            }
+
+            if (situacao) resultado.push({ ...a, situacao });
+        });
+
+        return resultado;
+    }
+
+    function contarSituacoesDoDiaAtiv(lista) {
+        return {
+            concluidas: lista.filter(a => a.situacao === 'concluida').length,
+            pendentes: lista.filter(a => a.situacao === 'pendente').length,
+            atrasadas: lista.filter(a => a.situacao === 'atrasada').length
+        };
+    }
+
+    function montarRelatorioAtividadesAtiv(lista = []) {
         const total = lista.length;
-        const concluidas = lista.filter(a => a.status === 'concluida').length;
-        const pendentes = lista.filter(a => a.status === 'pendente').length;
-        const prorrogadas = lista.filter(a => a.status === 'prorrogada').length;
+        const { concluidas, pendentes, atrasadas } = contarSituacoesDoDiaAtiv(lista);
 
         const ctx = document.getElementById('ativGraficoPizza');
         if (ctx && typeof Chart !== 'undefined') {
@@ -1299,10 +1375,10 @@
             window.ativGraficoPizza = new Chart(ctx, {
                 type: 'pie',
                 data: {
-                    labels: ['Concluídas', 'Pendentes', 'Prorrogadas'],
+                    labels: ['Concluídas', 'Pendentes', 'Atrasadas'],
                     datasets: [{
-                        data: [concluidas, pendentes, prorrogadas],
-                        backgroundColor: ['#198754', '#ffc107', '#6f1d91'],
+                        data: [concluidas, pendentes, atrasadas],
+                        backgroundColor: ['#198754', '#ffc107', '#dc3545'],
                         borderWidth: 2
                     }]
                 },
@@ -1310,7 +1386,7 @@
                     responsive: true,
                     plugins: {
                         legend: { position: 'bottom' },
-                        title: { display: true, text: `${total} atividade(s) no total` }
+                        title: { display: true, text: `${total} atividade(s) hoje` }
                     }
                 }
             });
@@ -1318,45 +1394,45 @@
 
         const porColaborador = new Map();
         obterColaboradoresAtiv().forEach(u => {
-            porColaborador.set(u.username, { nome: u.name, concluidas: 0, pendentes: 0, prorrogadas: 0 });
+            porColaborador.set(u.username, { nome: u.name, concluidas: 0, pendentes: 0, atrasadas: 0 });
         });
         lista.forEach(a => {
             if (!porColaborador.has(a.designado_para)) {
-                porColaborador.set(a.designado_para, { nome: nomeExibicaoUsuarioAtiv(a.designado_para), concluidas: 0, pendentes: 0, prorrogadas: 0 });
+                porColaborador.set(a.designado_para, { nome: nomeExibicaoUsuarioAtiv(a.designado_para), concluidas: 0, pendentes: 0, atrasadas: 0 });
             }
             const registro = porColaborador.get(a.designado_para);
-            if (a.status === 'concluida') registro.concluidas++;
-            else if (a.status === 'pendente') registro.pendentes++;
-            else if (a.status === 'prorrogada') registro.prorrogadas++;
+            if (a.situacao === 'concluida') registro.concluidas++;
+            else if (a.situacao === 'pendente') registro.pendentes++;
+            else if (a.situacao === 'atrasada') registro.atrasadas++;
         });
 
         const container = document.getElementById('ativRelatorioPorColaborador');
         if (!container) return;
 
         const linhas = [...porColaborador.values()]
-            .filter(r => r.concluidas + r.pendentes + r.prorrogadas > 0)
-            .sort((a, b) => (b.concluidas + b.pendentes + b.prorrogadas) - (a.concluidas + a.pendentes + a.prorrogadas));
+            .filter(r => r.concluidas + r.pendentes + r.atrasadas > 0)
+            .sort((a, b) => (b.concluidas + b.pendentes + b.atrasadas) - (a.concluidas + a.pendentes + a.atrasadas));
 
         if (!linhas.length) {
-            container.innerHTML = `<p class="text-muted text-center py-4">Nenhuma atividade registrada ainda.</p>`;
+            container.innerHTML = `<p class="text-muted text-center py-4">Nenhuma atividade para hoje.</p>`;
             return;
         }
 
         container.innerHTML = `
             <table class="table table-sm">
                 <thead>
-                    <tr><th>Colaborador</th><th class="text-center">Concluídas</th><th class="text-center">Pendentes</th><th class="text-center">Prorrogadas</th><th>% concluído</th></tr>
+                    <tr><th>Colaborador</th><th class="text-center">Concluídas</th><th class="text-center">Pendentes</th><th class="text-center">Atrasadas</th><th>% concluído</th></tr>
                 </thead>
                 <tbody>
                     ${linhas.map(r => {
-                        const totalLinha = r.concluidas + r.pendentes + r.prorrogadas;
+                        const totalLinha = r.concluidas + r.pendentes + r.atrasadas;
                         const percentual = totalLinha ? Math.round((r.concluidas / totalLinha) * 100) : 0;
                         return `
                             <tr>
                                 <td>${escapeAtiv(r.nome)}</td>
                                 <td class="text-center text-success">${r.concluidas}</td>
                                 <td class="text-center text-warning">${r.pendentes}</td>
-                                <td class="text-center" style="color:#6f1d91;">${r.prorrogadas}</td>
+                                <td class="text-center text-danger">${r.atrasadas}</td>
                                 <td>
                                     <div class="progress" style="height:16px;">
                                         <div class="progress-bar bg-success" style="width:${percentual}%;">${percentual}%</div>
@@ -1534,17 +1610,9 @@
         card.style.display = '';
 
         try {
-            const { data, error } = await window.supabaseClient
-                .from(CFG_ATIV.tabela)
-                .select('status');
-
-            if (error) throw error;
-
-            const linhas = data || [];
-            const concluidas = linhas.filter(a => a.status === 'concluida').length;
-            const pendentes = linhas.filter(a => a.status === 'pendente').length;
-            const prorrogadas = linhas.filter(a => a.status === 'prorrogada').length;
-            const total = concluidas + pendentes + prorrogadas;
+            const linhas = await carregarAtividadesDoDiaAtiv();
+            const { concluidas, pendentes, atrasadas } = contarSituacoesDoDiaAtiv(linhas);
+            const total = concluidas + pendentes + atrasadas;
             const percentual = total ? Math.round((concluidas / total) * 100) : 0;
 
             const percentualEl = document.getElementById('wtAtivGoalPercent');
@@ -1555,7 +1623,7 @@
 
             if (!total) {
                 if (percentualEl) percentualEl.textContent = '—';
-                if (valorEl) valorEl.textContent = 'Nenhuma atividade cadastrada';
+                if (valorEl) valorEl.textContent = 'Nenhuma atividade para hoje';
                 if (totalEl) totalEl.textContent = 'Designe atividades para a equipe';
                 ring?.style.setProperty('--wt-goal', '0%');
                 barra?.style.setProperty('--wt-goal', '0%');
@@ -1563,8 +1631,8 @@
             }
 
             if (percentualEl) percentualEl.textContent = `${percentual}%`;
-            if (valorEl) valorEl.textContent = `${concluidas} de ${total} concluída(s)`;
-            if (totalEl) totalEl.textContent = `${pendentes} pendente(s) · ${prorrogadas} prorrogada(s)`;
+            if (valorEl) valorEl.textContent = `${concluidas} de ${total} concluída(s) hoje`;
+            if (totalEl) totalEl.textContent = `${pendentes} pendente(s) · ${atrasadas} atrasada(s)`;
             ring?.style.setProperty('--wt-goal', `${percentual}%`);
             barra?.style.setProperty('--wt-goal', `${percentual}%`);
 

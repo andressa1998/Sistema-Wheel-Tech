@@ -42297,6 +42297,10 @@ function montarFatosRegrasEstoqueNFE(dados) {
     return {
         mlb: dados.mlb || null,
 
+        // SKUs da venda — o motor usa pra achar a categoria do produto
+        // e aplicar as regras próprias dela (se tiver)
+        skus: Array.isArray(dados.skus) ? dados.skus : [],
+
         exposicao_atual:
             listingParaNome(dados.listingTypeAtual),
 
@@ -42338,9 +42342,41 @@ function montarFatosRegrasEstoqueNFE(dados) {
     };
 }
 
+// SKUs que identificam o(s) produto(s) da venda (simples, kit ou
+// order_items do ML) — usados pra achar a categoria nas regras.
+function obterSkusVendaRegrasNFE(venda) {
+
+    const skus = new Set();
+
+    const adicionar = valor => {
+        const sku = String(valor || '').trim();
+        if (sku && sku !== 'SEM_SKU' && sku !== 'N/A') skus.add(sku);
+    };
+
+    adicionar(venda?.sku);
+    adicionar(venda?.seller_sku);
+
+    (Array.isArray(venda?.skus_kit) ? venda.skus_kit : [])
+        .forEach(item => adicionar(item?.sku));
+
+    (Array.isArray(venda?.order_items) ? venda.order_items : [])
+        .forEach(item => adicionar(item?.item?.seller_sku));
+
+    [venda?._estoque_detalhes, venda?.estoque_detalhes]
+        .filter(Array.isArray)
+        .forEach(lista => lista.forEach(item => adicionar(item?.sku)));
+
+    return [...skus];
+}
+
 function obterAlertasExposicaoVendaNFE(
     venda
 ) {
+
+    const skusRegrasVenda =
+        obterSkusVendaRegrasNFE(
+            venda
+        );
 
     const snapshots =
         Array.isArray(
@@ -42378,10 +42414,11 @@ function obterAlertasExposicaoVendaNFE(
         typeof window.RegrasAlertasEstoque.estaAtivo === 'function' &&
         window.RegrasAlertasEstoque.estaAtivo();
 
+    // regras da categoria do produto (ou as padrão, se ela não tiver)
     const cfgExposicao =
         (motorExposicaoAtivo &&
             typeof window.RegrasAlertasEstoque.obterConfig === 'function')
-            ? window.RegrasAlertasEstoque.obterConfig()
+            ? window.RegrasAlertasEstoque.obterConfig({ skus: skusRegrasVenda })
             : null;
 
 
@@ -43049,6 +43086,7 @@ function obterAlertasExposicaoVendaNFE(
                     const fatos =
                         montarFatosRegrasEstoqueNFE({
                             mlb,
+                            skus: skusRegrasVenda,
                             snapshot,
                             listingTypeAtual,
                             regraFixa,

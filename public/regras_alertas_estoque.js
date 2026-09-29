@@ -49,7 +49,8 @@
             registrar_historico: true,
             restaurar_ao_cancelar: true,
             recalcular_exposicao: true
-        }
+        },
+        por_categoria: {}
     };
 
     let config = clonar(PADRAO);
@@ -62,16 +63,16 @@
         return Number.isFinite(n) ? n : padrao;
     }
 
-    function normalizar(bruto) {
+    // Seções que podem ser diferentes por categoria. "ativo" (liga/
+    // desliga geral) e "vendas_full" valem pro sistema todo.
+    function normalizarSecoes(bruto) {
         const b = (bruto && typeof bruto === 'object') ? bruto : {};
         const p = b.prioridade || {};
         const sv = b.sem_variacoes || {};
         const cv = b.com_variacoes || {};
         const fl = b.full_local || {};
         const fz = b.full_zerado || {};
-        const vf = b.vendas_full || {};
         return {
-            ativo: b.ativo === true,
             prioridade: {
                 mlbs_fixos_prevalecem: p.mlbs_fixos_prevalecem !== false
             },
@@ -93,13 +94,123 @@
             full_zerado: {
                 alertar: fz.alertar !== false,
                 exigir_estoque_local: fz.exigir_estoque_local !== false
-            },
+            }
+        };
+    }
+
+    function normalizar(bruto) {
+        const b = (bruto && typeof bruto === 'object') ? bruto : {};
+        const vf = b.vendas_full || {};
+
+        // regras próprias por categoria: { "Gancheiras": {secoes...} }
+        const porCategoria = {};
+        if (b.por_categoria && typeof b.por_categoria === 'object') {
+            Object.keys(b.por_categoria).forEach((cat) => {
+                const nome = String(cat || '').trim();
+                if (nome && b.por_categoria[cat]) porCategoria[nome] = normalizarSecoes(b.por_categoria[cat]);
+            });
+        }
+
+        return {
+            ativo: b.ativo === true,
+            ...normalizarSecoes(b),
             vendas_full: {
                 registrar_historico: vf.registrar_historico !== false,
                 restaurar_ao_cancelar: vf.restaurar_ao_cancelar !== false,
                 recalcular_exposicao: vf.recalcular_exposicao !== false
-            }
+            },
+            por_categoria: porCategoria
         };
+    }
+
+    // Config que vale pra uma categoria: as regras próprias dela (se
+    // tiver) por cima das regras padrão.
+    function configEfetiva(cfg, categoria) {
+        const proprias = categoria && cfg.por_categoria && cfg.por_categoria[categoria];
+        if (!proprias) return cfg;
+        return { ...cfg, ...clonar(proprias) };
+    }
+
+    // =====================================================
+    // CATEGORIA DO PRODUTO VENDIDO (pelo SKU)
+    // =====================================================
+
+    let skuCategoria = new Map();          // SKU completo -> categoria
+    let skuCategoriaPrefixo = new Map();   // 8 primeiros caracteres -> categoria
+    let categoriasLista = [];
+    let categoriasCarregadasEm = 0;
+    let carregandoCategorias = null;
+
+    async function carregarCategoriasProdutos(forcar) {
+        if (!forcar && Date.now() - categoriasCarregadasEm < 10 * 60 * 1000) return;
+        if (!window.supabaseClient) return;
+        if (carregandoCategorias) return carregandoCategorias;
+
+        carregandoCategorias = (async () => {
+            try {
+                const porSku = new Map();
+                const porPrefixo = new Map();
+                const categorias = new Set();
+                let inicio = 0;
+
+                while (true) {
+                    const { data, error } = await window.supabaseClient
+                        .from('produtos_estoque')
+                        .select('sku, categoria')
+                        .range(inicio, inicio + 999);
+                    if (error) throw error;
+                    if (!data || !data.length) break;
+
+                    data.forEach((p) => {
+                        const cat = String(p.categoria || '').trim();
+                        const sku = String(p.sku || '').trim().toUpperCase();
+                        if (!cat) return;
+                        categorias.add(cat);
+                        if (!sku) return;
+                        porSku.set(sku, cat);
+                        const prefixo = sku.slice(0, 8);
+                        if (!porPrefixo.has(prefixo)) porPrefixo.set(prefixo, cat);
+                    });
+
+                    if (data.length < 1000) break;
+                    inicio += 1000;
+                }
+
+                skuCategoria = porSku;
+                skuCategoriaPrefixo = porPrefixo;
+                categoriasLista = [...categorias].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+                categoriasCarregadasEm = Date.now();
+            } catch (e) {
+                console.warn('⚠️ [REGRAS EXPOSIÇÃO] Não foi possível carregar categorias dos produtos:', e);
+            } finally {
+                carregandoCategorias = null;
+            }
+        })();
+
+        return carregandoCategorias;
+    }
+
+    function categoriaDoSku(sku) {
+        const s = String(sku || '').trim().toUpperCase();
+        if (!s) return null;
+        return skuCategoria.get(s) || skuCategoriaPrefixo.get(s.slice(0, 8)) || null;
+    }
+
+    // fatos.categoria (se vier pronta) ou a 1ª categoria dos SKUs da
+    // venda que tenha regras próprias.
+    function categoriaDosFatos(fatos, cfg) {
+        cfg = cfg || config;
+        if (fatos && fatos.categoria) return String(fatos.categoria).trim();
+
+        // mantém o mapa atualizado sem travar a avaliação
+        if (Date.now() - categoriasCarregadasEm > 10 * 60 * 1000) carregarCategoriasProdutos().catch(() => {});
+
+        const skus = (fatos && Array.isArray(fatos.skus)) ? fatos.skus : [];
+        for (const sku of skus) {
+            const cat = categoriaDoSku(sku);
+            if (cat && cfg.por_categoria && cfg.por_categoria[cat]) return cat;
+        }
+        return null;
     }
 
     // =====================================================
@@ -129,27 +240,34 @@
 
     /**
      * fatos -> ver montarFatosRegrasEstoqueNFE() em nfe_manager.js
-     * retorna { casou, resultado:'classico'|'premium'|null, motivo }
+     *          (fatos.skus / fatos.categoria escolhem as regras da categoria)
+     * retorna { casou, resultado:'classico'|'premium'|null, motivo, categoria }
      */
     function avaliar(fatos) {
-        if (!config.ativo) return { casou: false, resultado: null, motivo: 'desativado' };
+        const categoria = categoriaDosFatos(fatos, config);
+        const r = avaliarCom(configEfetiva(config, categoria), fatos);
+        return { ...r, categoria: categoria || null };
+    }
+
+    function avaliarCom(cfg, fatos) {
+        if (!cfg.ativo) return { casou: false, resultado: null, motivo: 'desativado' };
         if (!fatos) return { casou: false, resultado: null, motivo: 'sem_fatos' };
 
         // ---- PRIORIDADE: MLB fixo ----
         if (
-            config.prioridade.mlbs_fixos_prevalecem &&
+            cfg.prioridade.mlbs_fixos_prevalecem &&
             (fatos.lista_fixa === 'classico' || fatos.lista_fixa === 'premium')
         ) {
             return { casou: true, resultado: fatos.lista_fixa, motivo: 'mlb_fixo' };
         }
 
-        const minPremium = config.sem_variacoes.estoque_minimo_premium;
+        const minPremium = cfg.sem_variacoes.estoque_minimo_premium;
         const temVar = fatos.tem_variacoes === true &&
             Array.isArray(fatos.variacoes) && fatos.variacoes.length > 0;
 
         // ---- FULL + LOCAL ----
         if (fatos.full_ativo === true && fatos.local_ativo === true) {
-            const prio = config.full_local.prioridade;
+            const prio = cfg.full_local.prioridade;
             let base = null;
             if (prio === 'full') base = n(fatos.estoque_full);
             else if (prio === 'local') base = n(fatos.estoque_local);
@@ -161,7 +279,7 @@
 
         // ---- COM VARIAÇÕES ----
         if (temVar) {
-            const crit = config.com_variacoes.criterio;
+            const crit = cfg.com_variacoes.criterio;
 
             if (crit === 'soma') {
                 const r = porLimiar(fatos.soma_variacoes, minPremium);
@@ -170,7 +288,7 @@
                 const r = porLimiar(fatos.estoque_variacao_vendida, minPremium);
                 if (r) return { casou: true, resultado: r, motivo: 'variacao_vendida' };
             } else {
-                const cv = config.com_variacoes;
+                const cv = cfg.com_variacoes;
                 const ehPremium = quantificadorCasa(
                     cv.premium_quantificador, fatos.variacoes, (e) => e >= cv.premium_min
                 );
@@ -266,14 +384,28 @@
         salvar,
         avaliar,
         estaAtivo: () => config.ativo === true,
-        obterConfig: () => config,
+        // sem argumento = regras padrão; com { skus } ou { categoria }
+        // = regras da categoria do produto (se ela tiver regras próprias)
+        obterConfig: (fatos) => fatos ? configEfetiva(config, categoriaDosFatos(fatos, config)) : config,
+        categoriaDoSku,
         abrirTela
     };
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => carregar().catch(() => {}));
-    } else {
+    const iniciar = () => {
         carregar().catch(() => {});
+        // mapa SKU -> categoria (pras regras por categoria); espera o
+        // cliente do Supabase existir
+        const tentarCategorias = () => {
+            if (window.supabaseClient) carregarCategoriasProdutos().catch(() => {});
+            else setTimeout(tentarCategorias, 3000);
+        };
+        tentarCategorias();
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', iniciar);
+    } else {
+        iniciar();
     }
 
     /* =================================================================
@@ -282,6 +414,9 @@
 
     let telaEl = null;
     let rascunho = null;
+    // '' = regras padrão (todas as categorias); senão, o nome da
+    // categoria cujas regras estão sendo vistas/editadas
+    let visaoCategoria = '';
 
     function css() {
         if (document.getElementById('wtRegrasExpoCss')) return;
@@ -386,8 +521,12 @@
         t('regrasExpoUserRole', u.role || '');
         t('regrasExpoUserAvatar', (u.avatar || (u.name || 'R')[0] || 'R'));
 
-        carregar().then(() => {
+        Promise.all([
+            carregar(),
+            carregarCategoriasProdutos(true).catch(() => {})
+        ]).then(() => {
             rascunho = normalizar(clonar(config));
+            visaoCategoria = '';
             esconderOutrosSistemas();
             telaEl.classList.remove('hidden');
             window.scrollTo(0, 0);
@@ -414,27 +553,62 @@
         ['maior', 'O maior dos dois']
     ];
 
+    function escHtml(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function opcoesCategoria() {
+        const comRegras = Object.keys(rascunho.por_categoria || {});
+        const todas = [...new Set([...categoriasLista, ...comRegras])]
+            .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+
+        return `<option value=""${visaoCategoria === '' ? ' selected' : ''}>Todas as categorias (regras padrão)</option>` +
+            todas.map((cat) =>
+                `<option value="${escHtml(cat)}"${cat === visaoCategoria ? ' selected' : ''}>${escHtml(cat)}${comRegras.includes(cat) ? ' — regras próprias' : ''}</option>`
+            ).join('');
+    }
+
     function render() {
         const c = telaEl.querySelector('#regrasExpoConteudo');
         if (!c) return;
-        const r = rascunho;
+        const cat = visaoCategoria;
+        const temProprias = !!(cat && rascunho.por_categoria[cat]);
+        const r = cat ? configEfetiva(rascunho, cat) : rascunho;
+
+        const infoCategoria = !cat
+            ? 'Valem para todas as categorias que não têm regras próprias.'
+            : temProprias
+                ? `Regras próprias de <b>${escHtml(cat)}</b> — só valem para produtos desta categoria.`
+                : `<b>${escHtml(cat)}</b> ainda usa as regras padrão (mostradas abaixo). Mude o que quiser e clique em Salvar para criar regras próprias desta categoria.`;
 
         c.innerHTML = `
         <div class="card mb-4">
             <div class="card-header">
                 <h2 class="card-title"><i class="fas fa-eye"></i> Regras de Exposição</h2>
                 <div class="d-flex gap-2 align-items-center">
-                    <span class="rex-tag ${r.ativo ? 'on' : 'off'}" id="rexStatusTag">${r.ativo ? 'ATIVAS' : 'DESATIVADAS'}</span>
+                    <span class="rex-tag ${rascunho.ativo ? 'on' : 'off'}" id="rexStatusTag">${rascunho.ativo ? 'ATIVAS' : 'DESATIVADAS'}</span>
                     <button class="btn btn-success" id="rexSalvar"><i class="fas fa-save"></i> Salvar</button>
                 </div>
             </div>
 
+            <div class="rex-linha">
+                <span class="rex-rot">Aplicar estas regras a:</span>
+                <select id="rexCategoria">${opcoesCategoria()}</select>
+            </div>
+            <div class="rex-sub" style="margin:0 0 12px">${infoCategoria}</div>
+            ${temProprias ? `
+                <div class="rex-linha">
+                    <button class="rex-mini-btn" id="rexRemoverCategoria"><i class="fas fa-undo"></i> Voltar a usar as regras padrão nesta categoria</button>
+                </div>` : ''}
+
+            ${!cat ? `
             <label class="rex-chk" style="margin-bottom:6px">
                 <input type="checkbox" id="rexAtivo" ${r.ativo ? 'checked' : ''}>
                 <span>Aplicar estas regras nos alertas de exposição da NF-e
-                    <span class="rex-sub" style="margin:0">Desmarcado = comportamento antigo (1 un = Clássico, 2+ = Premium).</span>
+                    <span class="rex-sub" style="margin:0">Desmarcado = comportamento antigo (1 un = Clássico, 2+ = Premium). Vale para todas as categorias.</span>
                 </span>
-            </label>
+            </label>` : ''}
         </div>
 
         <div class="card mb-4">
@@ -525,8 +699,8 @@
                 </label>
             </div>
 
-            <!-- VENDAS FULL -->
-            <div class="rex-sec">
+            <!-- VENDAS FULL (vale pro sistema todo — só nas regras padrão) -->
+            <div class="rex-sec" ${cat ? 'hidden' : ''}>
                 <h3>Vendas Full</h3><hr>
                 <label class="rex-chk" style="margin-bottom:10px">
                     <input type="checkbox" id="rexVfHist" ${r.vendas_full.registrar_historico ? 'checked' : ''}>
@@ -573,10 +747,24 @@
         rodarTeste();
     }
 
-    function lerRascunho() {
+    // criarSeFaltar: numa categoria que ainda usa o padrão, só cria as
+    // regras próprias dela quando a pessoa mexe em algo (não ao salvar
+    // sem ter alterado nada).
+    function lerRascunho(criarSeFaltar) {
         const q = (id) => telaEl.querySelector('#' + id);
-        const r = rascunho;
-        r.ativo = q('rexAtivo').checked;
+        const cat = visaoCategoria;
+
+        if (!cat) {
+            if (q('rexAtivo')) rascunho.ativo = q('rexAtivo').checked;
+            rascunho.vendas_full.registrar_historico = q('rexVfHist').checked;
+            rascunho.vendas_full.restaurar_ao_cancelar = q('rexVfRest').checked;
+            rascunho.vendas_full.recalcular_exposicao = q('rexVfRecalc').checked;
+        } else if (!rascunho.por_categoria[cat]) {
+            if (!criarSeFaltar) return;
+            rascunho.por_categoria[cat] = normalizarSecoes(clonar(rascunho));
+        }
+
+        const r = cat ? rascunho.por_categoria[cat] : rascunho;
         r.prioridade.mlbs_fixos_prevalecem = q('rexMlbFixo').checked;
         r.sem_variacoes.estoque_minimo_premium = Math.max(2, num(q('rexMinPremium').value, 3));
         r.com_variacoes.criterio = q('rexCriterio').value;
@@ -589,9 +777,6 @@
         r.full_local.ajustar_local_auto = q('rexAjustarLocal').checked;
         r.full_zerado.alertar = q('rexFzAlertar').checked;
         r.full_zerado.exigir_estoque_local = q('rexFzExigirLocal').checked;
-        r.vendas_full.registrar_historico = q('rexVfHist').checked;
-        r.vendas_full.restaurar_ao_cancelar = q('rexVfRest').checked;
-        r.vendas_full.recalcular_exposicao = q('rexVfRecalc').checked;
     }
 
     function ligar() {
@@ -599,25 +784,63 @@
 
         telaEl.querySelectorAll('#regrasExpoConteudo input, #regrasExpoConteudo select').forEach((el) => {
             if (el.hasAttribute('data-t')) return; // inputs do teste
+            if (el.id === 'rexCategoria') return;  // troca de categoria tem handler próprio
             el.addEventListener('input', () => {
-                lerRascunho();
+                lerRascunho(true);
                 q('rexStatusTag').className = 'rex-tag ' + (rascunho.ativo ? 'on' : 'off');
                 q('rexStatusTag').textContent = rascunho.ativo ? 'ATIVAS' : 'DESATIVADAS';
                 const bloco = q('rexBlocoIndividual');
-                if (bloco) bloco.hidden = rascunho.com_variacoes.criterio !== 'individual';
+                const efetiva = configEfetiva(rascunho, visaoCategoria);
+                if (bloco) bloco.hidden = efetiva.com_variacoes.criterio !== 'individual';
                 atualizarExemplo();
                 rodarTeste();
             });
         });
 
+        // Trocar a categoria mantém o que já foi mexido nas outras (tudo
+        // é salvo junto ao clicar em Salvar).
+        q('rexCategoria').onchange = (e) => {
+            lerRascunho(false);
+            visaoCategoria = e.target.value || '';
+            render();
+        };
+
+        const btnRemover = q('rexRemoverCategoria');
+        if (btnRemover) {
+            btnRemover.onclick = async () => {
+                const cat = visaoCategoria;
+                if (!cat || !confirm(`Apagar as regras próprias de "${cat}"? A categoria volta a usar as regras padrão.`)) return;
+                lerRascunho(false);
+                delete rascunho.por_categoria[cat];
+                config = normalizar(rascunho);
+                const ok = await salvar();
+                if (ok) {
+                    carregado = true;
+                    rascunho = normalizar(clonar(config));
+                    if (typeof showToast === 'function') showToast(`"${cat}" voltou a usar as regras padrão.`, 'success');
+                    render();
+                }
+            };
+        }
+
         q('rexSalvar').onclick = async () => {
-            lerRascunho();
+            lerRascunho(false);
             config = normalizar(rascunho);
             const ok = await salvar();
             if (ok) {
                 carregado = true;
                 rascunho = normalizar(clonar(config));
-                if (typeof showToast === 'function') showToast('Regras de exposição salvas.', 'success');
+                if (typeof showToast === 'function') {
+                    const cat = visaoCategoria;
+                    showToast(
+                        !cat
+                            ? 'Regras de exposição padrão salvas.'
+                            : config.por_categoria[cat]
+                                ? `Regras de "${cat}" salvas.`
+                                : `Nada mudou em "${cat}" — ela continua usando as regras padrão.`,
+                        'success'
+                    );
+                }
                 render();
             }
         };
@@ -650,7 +873,7 @@
     function atualizarExemplo() {
         const el = telaEl.querySelector('#rexExemplo');
         if (!el) return;
-        const cfg = normalizar(rascunho);
+        const cfg = configEfetiva(normalizar(rascunho), visaoCategoria);
 
         const simular = (arr) => {
             const fatos = {
@@ -660,9 +883,7 @@
                 full_ativo: false, local_ativo: false,
                 lista_fixa: 'nenhuma'
             };
-            const salvo = config; config = cfg;
-            const r = avaliar(fatos);
-            config = salvo;
+            const r = avaliarCom(cfg, fatos);
             return r.casou ? (r.resultado === 'premium' ? 'PREMIUM' : 'CLÁSSICO') : 'sem decisão';
         };
 
@@ -694,10 +915,8 @@
             else f[k] = Number(el.value);
         });
 
-        const cfg = normalizar(rascunho);
-        const salvo = config; config = { ...cfg, ativo: true };
-        const r = avaliar(f);
-        config = salvo;
+        const cfg = configEfetiva(normalizar(rascunho), visaoCategoria);
+        const r = avaliarCom({ ...cfg, ativo: true }, f);
 
         if (r.casou) {
             box.textContent = '➡️ ' + (r.resultado === 'premium' ? 'PREMIUM' : 'CLÁSSICO') + '  (' + r.motivo + ')';
