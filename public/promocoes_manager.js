@@ -99,6 +99,7 @@
         await carregarAgendamentosPromocoes();
         await verificarAvisosPromocoesAgendadas();
         await window.iniciarPromocoesHistorico?.();
+        await window.iniciarPromocoesRegrasLote?.();
 
         showToast('📋 Gestão de Promoções em Lote carregada', 'info');
         log('Sistema carregado com sucesso', 'success');
@@ -136,6 +137,49 @@ function criarInterfaceBulk() {
                 </div>
             </div>
         </header>
+
+        <style>
+            .promo-lote-menu {
+                position: sticky; top: 0; z-index: 20;
+                display: flex; flex-wrap: wrap; gap: 6px;
+                padding: 8px; margin-bottom: 16px;
+                background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
+                box-shadow: 0 2px 6px rgba(0,0,0,.05);
+            }
+            .promo-lote-menu button, .promo-lote-submenu button {
+                border: 1px solid transparent; background: transparent;
+                padding: 8px 14px; border-radius: 8px; cursor: pointer;
+                font-size: 14px; color: #444; display: inline-flex; align-items: center; gap: 6px;
+            }
+            .promo-lote-menu button:hover, .promo-lote-submenu button:hover { background: #f1f4f8; }
+            .promo-lote-menu button.ativo { background: #2563eb; color: #fff; }
+            .promo-lote-submenu { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+            .promo-lote-submenu button { border-color: #e3e6ea; }
+            .promo-lote-submenu button.ativo { border-color: #2563eb; color: #2563eb; background: #eef3ff; font-weight: 600; }
+            .promo-lote-contador { background: #e9ecef; color: #333; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+            .promo-lote-menu button.ativo .promo-lote-contador { background: rgba(255,255,255,.25); color: #fff; }
+        </style>
+
+        <!-- MENU DE ACESSO -->
+        <nav class="promo-lote-menu" id="promoLoteMenu">
+            <button type="button" data-aba="principal" class="ativo" onclick="abrirAbaPromocoesLote('principal')">
+                <i class="fas fa-calendar-alt"></i> Programação
+            </button>
+            <button type="button" data-aba="massa" onclick="abrirAbaPromocoesLote('massa')">
+                <i class="fas fa-bolt"></i> Ativação em massa por regras
+            </button>
+            <button type="button" data-aba="excluidos" onclick="abrirAbaPromocoesLote('excluidos')">
+                <i class="fas fa-ban"></i> Listas de MLBs excluídos
+            </button>
+            <button type="button" data-aba="historico" onclick="abrirAbaPromocoesLote('historico')">
+                <i class="fas fa-history"></i> Histórico de MLBs em promoções
+            </button>
+            <button type="button" data-aba="analise" onclick="abrirAbaPromocoesLote('analise')">
+                <i class="fas fa-exchange-alt"></i> Origem × Destino
+            </button>
+        </nav>
+
+        <section class="promo-lote-aba" data-aba="principal">
 
         <!-- AGENDAMENTO MANUAL DE PROMOÇÕES -->
         <div class="card mb-4">
@@ -434,8 +478,19 @@ function criarInterfaceBulk() {
             </div>
         </div>
 
-        <!-- MLBs NOVOS (40 DIAS) E HISTÓRICO — promocoes_historico.js -->
-        <div id="bulkPromocoesHistoricoArea"></div>
+        </section>
+
+        <!-- ATIVAÇÃO EM MASSA POR REGRAS — promocoes_regras_lote.js -->
+        <section class="promo-lote-aba hidden" data-aba="massa">
+            <div id="promoRegrasLoteArea"></div>
+        </section>
+
+        <!-- HISTÓRICO — promocoes_historico.js -->
+        <section class="promo-lote-aba hidden" data-aba="historico">
+            <div id="bulkHistoricoArea"></div>
+        </section>
+
+        <section class="promo-lote-aba hidden" data-aba="analise">
 
         <!-- CONFIGURAR ANÁLISE -->
         <div class="card mb-4">
@@ -559,6 +614,44 @@ function criarInterfaceBulk() {
             </div>
         </div>
 
+        </section>
+
+        <!-- LISTAS DE MLBs EXCLUÍDOS -->
+        <section class="promo-lote-aba hidden" data-aba="excluidos">
+            <div class="promo-lote-submenu" id="promoLoteSubmenu">
+                <button type="button" data-lista="novos" class="ativo" onclick="abrirListaExcluidos('novos')">
+                    <i class="fas fa-seedling"></i> Criados nos últimos 40 dias
+                    <span class="promo-lote-contador" id="promoContador_novos">0</span>
+                </button>
+                <button type="button" data-lista="bloqueados" onclick="abrirListaExcluidos('bloqueados')">
+                    <i class="fas fa-ban"></i> Bloqueados
+                    <span class="promo-lote-contador" id="promoContador_bloqueados">0</span>
+                </button>
+                <button type="button" data-lista="vendidos" onclick="abrirListaExcluidos('vendidos')">
+                    <i class="fas fa-shopping-cart"></i> Venderam nos últimos 40 dias
+                    <span class="promo-lote-contador" id="promoContador_vendidos">0</span>
+                </button>
+                <button type="button" data-lista="classicos" onclick="abrirListaExcluidos('classicos')">
+                    <i class="fas fa-tag"></i> Clássicos (Gestão de Estoque)
+                    <span class="promo-lote-contador" id="promoContador_classicos">0</span>
+                </button>
+                <button type="button" data-lista="semME" onclick="abrirListaExcluidos('semME')">
+                    <i class="fas fa-truck"></i> Sem Mercado Envios
+                    <span class="promo-lote-contador" id="promoContador_semME">0</span>
+                </button>
+                <button type="button" data-lista="categorias" onclick="abrirListaExcluidos('categorias')">
+                    <i class="fas fa-folder-minus"></i> Categorias excluídas
+                    <span class="promo-lote-contador" id="promoContador_categorias">0</span>
+                </button>
+            </div>
+
+            <!-- Preenchido pelo promocoes_historico.js -->
+            <div class="promo-lote-lista" data-lista="novos">
+                <div id="bulkMlbsNovosArea"></div>
+            </div>
+
+            <div class="promo-lote-lista hidden" data-lista="bloqueados">
+
         <!-- MLBs BLOQUEADOS -->
         <div class="card mb-4">
             <div class="card-header">
@@ -636,6 +729,19 @@ function criarInterfaceBulk() {
                 ></div>
             </div>
         </div>
+
+                <!-- Preço de venda dos bloqueados — promocoes_regras_lote.js -->
+                <div id="promoListaArea_bloqueados"></div>
+            </div>
+
+            <!-- Preenchidos pelo promocoes_regras_lote.js -->
+            <div class="promo-lote-lista hidden" data-lista="vendidos"><div id="promoListaArea_vendidos"></div></div>
+            <div class="promo-lote-lista hidden" data-lista="classicos"><div id="promoListaArea_classicos"></div></div>
+            <div class="promo-lote-lista hidden" data-lista="semME"><div id="promoListaArea_semME"></div></div>
+            <div class="promo-lote-lista hidden" data-lista="categorias"><div id="promoListaArea_categorias"></div></div>
+        </section>
+
+        <section class="promo-lote-aba hidden" data-aba="analise">
 
         <!-- RESULTADO DA ANÁLISE -->
         <div class="card mb-4">
@@ -765,12 +871,36 @@ function criarInterfaceBulk() {
                 </div>
             </div>
         </div>
+
+        </section>
     `;
 
     log('Interface criada', 'success');
 
     return div;
 }
+
+    // ============================================================
+    // MENU DE ACESSO (ABAS) E SUBMENU DAS LISTAS DE EXCLUÍDOS
+    // ============================================================
+    window.abrirAbaPromocoesLote = function(aba) {
+        const raiz = document.getElementById('bulkPromotionSystem');
+        if (!raiz) return;
+        raiz.querySelectorAll('.promo-lote-aba').forEach(secao =>
+            secao.classList.toggle('hidden', secao.dataset.aba !== aba));
+        raiz.querySelectorAll('#promoLoteMenu button').forEach(botao =>
+            botao.classList.toggle('ativo', botao.dataset.aba === aba));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.abrirListaExcluidos = function(lista) {
+        const raiz = document.getElementById('bulkPromotionSystem');
+        if (!raiz) return;
+        raiz.querySelectorAll('.promo-lote-lista').forEach(painel =>
+            painel.classList.toggle('hidden', painel.dataset.lista !== lista));
+        raiz.querySelectorAll('#promoLoteSubmenu button').forEach(botao =>
+            botao.classList.toggle('ativo', botao.dataset.lista === lista));
+    };
 
     // ============================================================
 // FUNÇÃO: APLICAR REGRA DE FILTRO
@@ -892,6 +1022,8 @@ function aplicarRegraFiltro(item, regra) {
             });
             log(`Select destino preenchido com ${todasPromocoes.length} opções`, 'debug');
         }
+
+        window.preencherPromocoesRegrasLote?.();
     }
 
     function converterDataAgendaParaInputLocal(valor) {
@@ -3399,6 +3531,7 @@ async function buscarOfferIdDoItemAlternativo(itemId, promotionId, token) {
         try {
             localStorage.setItem('mlbs_bloqueados_promocao', JSON.stringify(mlbsBloqueados));
             atualizarInterfaceMLBsBloqueados();
+            window.promoListasExcluidasAtualizadas?.();
             log(`${mlbsBloqueados.length} MLBs salvos`, 'debug');
         } catch (e) {
             log(`Erro ao salvar MLBs: ${e.message}`, 'error');
@@ -7533,6 +7666,11 @@ window.iniciarMonitorGlobalAvisosPromocoes = iniciarMonitorGlobalAvisosPromocoes
 
     iniciarMonitorGlobalAvisosPromocoes();
     iniciarMonitorRegrasPromocoesFull();
+
+    // Usados pelo promocoes_regras_lote.js (ativação em massa por regras).
+    window.ativarItemPromocaoML = ativarItemPromocao;
+    window.obterPromocoesAtivasLote = () => todasPromocoes.slice();
+    window.obterMLBsBloqueadosPromocao = () => mlbsBloqueados.slice();
 
     // ============================================================
     // INICIALIZAÇÃO

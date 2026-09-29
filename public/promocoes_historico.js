@@ -181,7 +181,7 @@
     // ============================================================
     // INTERFACE
     // ============================================================
-    function htmlCards() {
+    function htmlCardMlbsNovos() {
         return `
         <!-- MLBs CRIADOS NOS ÚLTIMOS 40 DIAS -->
         <div class="card mb-4" id="cardMlbsNovos">
@@ -225,8 +225,11 @@
                     </table>
                 </div>
             </div>
-        </div>
+        </div>`;
+    }
 
+    function htmlCardHistorico() {
+        return `
         <!-- HISTÓRICO DE MLBs EM PROMOÇÕES -->
         <div class="card mb-4" id="cardHistoricoPromocoes">
             <div class="card-header">
@@ -296,9 +299,13 @@
 
     // Chamado pelo promocoes_manager.js ao abrir a tela.
     window.iniciarPromocoesHistorico = async function() {
-        const alvo = document.getElementById('bulkPromocoesHistoricoArea');
-        if (alvo && !document.getElementById('cardMlbsNovos')) {
-            alvo.innerHTML = htmlCards();
+        const alvoNovos = document.getElementById('bulkMlbsNovosArea');
+        if (alvoNovos && !document.getElementById('cardMlbsNovos')) {
+            alvoNovos.innerHTML = htmlCardMlbsNovos();
+        }
+        const alvoHistorico = document.getElementById('bulkHistoricoArea');
+        if (alvoHistorico && !document.getElementById('cardHistoricoPromocoes')) {
+            alvoHistorico.innerHTML = htmlCardHistorico();
         }
 
         await Promise.all([
@@ -358,6 +365,7 @@
 
         mlbsNovos = data || [];
         renderizarMlbsNovos();
+        window.promoListasExcluidasAtualizadas?.();
     }
 
     function tabelaNaoExiste(error) {
@@ -413,8 +421,8 @@
     }
 
     // Lê os detalhes (data de criação etc.) de uma lista de IDs.
-    async function buscarDetalhesItens(ids, token, aoProgredir) {
-        const atributos = 'id,title,price,status,date_created,permalink,thumbnail';
+    async function buscarDetalhesItens(ids, token, aoProgredir,
+        atributos = 'id,title,price,status,date_created,permalink,thumbnail') {
         const itens = [];
 
         await emLotes(ids, 20, async (grupo, inicio) => {
@@ -583,6 +591,7 @@
             return;
         }
         campo.value = mlbsNovos.map(item => item.mlb).join('\n');
+        window.abrirAbaPromocoesLote?.('principal');
         campo.scrollIntoView({ behavior: 'smooth', block: 'center' });
         toast(`📋 ${mlbsNovos.length} MLB(s) colados em "Agendar lista de MLBs"`, 'info');
     };
@@ -717,6 +726,7 @@
     const ROTULOS_ORIGEM = {
         sincronizacao: 'Sincronização ML',
         ativacao_em_massa: 'Ativação em massa',
+        ativacao_regras: 'Ativação em massa por regras',
         agendamento: 'Agendamento'
     };
 
@@ -1329,4 +1339,23 @@
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), nomeAba);
         XLSX.writeFile(wb, `${prefixoArquivo}_${new Date().toISOString().slice(0, 10)}.xlsx`);
     }
+
+    // Compartilhado com o promocoes_regras_lote.js.
+    window.obterMlbsNovosPromocoes = () => mlbsNovos.slice();
+    window.PromoML = {
+        SELLER_ID,
+        mlGet,
+        obterToken,
+        emLotes,
+        dormir,
+        buscarDetalhesItens,
+        buscarItensPromocao,
+        buscarPedidosPagos,
+        supabase,
+        escaparHtml,
+        formatarMoeda,
+        formatarDataHora,
+        exportarExcel,
+        toast
+    };
 })();
