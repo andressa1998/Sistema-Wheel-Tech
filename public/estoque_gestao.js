@@ -3179,6 +3179,29 @@ function moverBotoesParaMenuAcessibilidadeEstoque() {
 
             }
         );
+
+    ordenarMenuAcessibilidadeEstoqueAlfabetico(menu);
+}
+
+
+// =========================================================
+// ORDEM ALFABÉTICA DO MENU ACESSIBILIDADE
+// Vários módulos adicionam itens no menu em momentos
+// diferentes, então a ordenação roda ao montar e ao abrir.
+// =========================================================
+
+function ordenarMenuAcessibilidadeEstoqueAlfabetico(menu) {
+
+    menu = menu || document.getElementById('menuAcessibilidadeEstoqueDropdown');
+    if (!menu) return;
+
+    const itens = Array.from(menu.children);
+    // ignora emoji/símbolo no começo do texto pra não bagunçar a ordem
+    const textoDe = el => (el.textContent || '').replace(/\s+/g, ' ').trim().replace(/^[^\p{L}\p{N}]+/u, '');
+
+    itens
+        .sort((a, b) => textoDe(a).localeCompare(textoDe(b), 'pt-BR', { sensitivity: 'base' }))
+        .forEach(el => menu.appendChild(el));
 }
 
 
@@ -4021,6 +4044,8 @@ function toggleMenuAcessibilidadeEstoque() {
         if (typeof adicionarBotaoAutorizacaoCorrecaoEstoque === 'function') {
             adicionarBotaoAutorizacaoCorrecaoEstoque();
         }
+
+        ordenarMenuAcessibilidadeEstoqueAlfabetico(menu);
 
     }
 

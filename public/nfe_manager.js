@@ -119,24 +119,46 @@ window._buyerIdsPossiveisConcorrentesNFE = window._buyerIdsPossiveisConcorrentes
         ? window._buyerIdsPossiveisConcorrentesNFE
         : new Set();
 
+// Compradores que o admin marcou como "Não é concorrente".
+// Fica gravado em compradores_perfil_ml: tem_historico_vendedor
+// vai pra false, mas total_vendas_vendedor / power_seller continuam
+// mostrando que ele vende — essa combinação só existe quando alguém
+// descartou manualmente (a verificação automática nunca gera isso).
+window._buyerIdsDescartadosConcorrenteNFE = window._buyerIdsDescartadosConcorrenteNFE instanceof Set
+        ? window._buyerIdsDescartadosConcorrenteNFE
+        : new Set();
+
+async function carregarBuyerIdsCompradoresPerfilNFE(cli, montarQuery) {
+    const set = new Set();
+    let inicio = 0;
+    while (true) {
+        const { data, error } = await montarQuery(
+            cli.from('compradores_perfil_ml').select('buyer_id')
+        ).range(inicio, inicio + 999);
+        if (error || !data || !data.length) break;
+        data.forEach(r => set.add(String(r.buyer_id)));
+        if (data.length < 1000) break;
+        inicio += 1000;
+    }
+    return set;
+}
+
 async function carregarCompradoresPossiveisConcorrentesNFE() {
     try {
         const cli = window.supabaseClient;
         if (!cli) return;
 
-        const novoSet = new Set();
-        let inicio = 0;
-        while (true) {
-            const { data, error } = await cli
-                .from('compradores_perfil_ml')
-                .select('buyer_id')
-                .eq('tem_historico_vendedor', true)
-                .range(inicio, inicio + 999);
-            if (error || !data || !data.length) break;
-            data.forEach(r => novoSet.add(String(r.buyer_id)));
-            if (data.length < 1000) break;
-            inicio += 1000;
-        }
+        const novoSet = await carregarBuyerIdsCompradoresPerfilNFE(
+            cli,
+            q => q.eq('tem_historico_vendedor', true)
+        );
+
+        window._buyerIdsDescartadosConcorrenteNFE = await carregarBuyerIdsCompradoresPerfilNFE(
+            cli,
+            q => q
+                .eq('tem_historico_vendedor', false)
+                .or('total_vendas_vendedor.gt.0,power_seller.eq.true')
+        );
 
         window._buyerIdsPossiveisConcorrentesNFE = novoSet;
 
@@ -153,7 +175,14 @@ window.carregarCompradoresPossiveisConcorrentesNFE = carregarCompradoresPossivei
 function vendaEhPossivelConcorrenteNFE(venda) {
     const buyerId = obterBuyerIdVendaListaNFE(venda);
     if (!buyerId) return false;
+    if (window._buyerIdsDescartadosConcorrenteNFE.has(String(buyerId))) return false;
     return window._buyerIdsPossiveisConcorrentesNFE.has(String(buyerId));
+}
+
+function vendaEhConcorrenteDescartadoNFE(venda) {
+    const buyerId = obterBuyerIdVendaListaNFE(venda);
+    if (!buyerId) return false;
+    return window._buyerIdsDescartadosConcorrenteNFE.has(String(buyerId));
 }
 
 // Roda no fundo, sem travar o sync de vendas — pra cada buyer_id
@@ -44514,6 +44543,17 @@ function montarAvisoConcorrenteCacheNFE(
     }
 
 
+    // admin já disse que não é concorrente
+    if (
+        vendaEhConcorrenteDescartadoNFE(
+            venda
+        )
+    ) {
+
+        return '';
+    }
+
+
     if (
         !(
             window._cacheConcorrentesNFE
@@ -53304,6 +53344,31 @@ async function buscarDetalhesCompletosVendaNFE(
                 error
             );
         }
+
+        try {
+
+            const { data: perfilSalvo } =
+                await window.supabaseClient
+                    .from('compradores_perfil_ml')
+                    .select('tem_historico_vendedor, total_vendas_vendedor, power_seller')
+                    .eq('buyer_id', String(perfilComprador.id))
+                    .maybeSingle();
+
+            // mesma regra de carregarCompradoresPossiveisConcorrentesNFE
+            perfilComprador.concorrente_descartado =
+                perfilSalvo?.tem_historico_vendedor === false &&
+                (
+                    Number(perfilSalvo?.total_vendas_vendedor || 0) > 0 ||
+                    perfilSalvo?.power_seller === true
+                );
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ [Concorrente] Falha lendo "não é concorrente":',
+                error
+            );
+        }
     }
 
 
@@ -53608,6 +53673,51 @@ function renderizarModalDetalhesVendaNFE(
 
     } else if (
         comprador
+            ?.concorrente_descartado ===
+        true
+    ) {
+
+        clienteHtml += `
+            <div
+                style="
+                    margin-top:8px;
+                    padding:8px 10px;
+                    background:#f1f3f5;
+                    border:1px solid #dee2e6;
+                    border-radius:7px;
+                "
+            >
+                <div
+                    style="
+                        color:#495057;
+                        font-weight:700;
+                        font-size:12px;
+                    "
+                >
+                    <i class="fas fa-check-circle"></i>
+                    Marcado como não concorrente
+                </div>
+
+                <div style="margin-top:3px;font-size:10px;color:#6c757d;">
+                    Este cliente também vende no Mercado Livre, mas o aviso de "possível concorrente" foi descartado.
+                </div>
+
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    style="margin-top:7px;font-size:11px;"
+                    data-concorrente-buyer-id="${escaparHTMLNFE(comprador.id)}"
+                    data-concorrente-venda-id="${escaparHTMLNFE(dados.venda_id)}"
+                    onclick="window.desfazerNaoConcorrenteNFE(this)"
+                >
+                    <i class="fas fa-undo"></i>
+                    Desfazer
+                </button>
+            </div>
+        `;
+
+    } else if (
+        comprador
             ?.tem_anuncios ===
         true
     ) {
@@ -53684,6 +53794,21 @@ function renderizarModalDetalhesVendaNFE(
                     >
                         <i class="fas fa-exclamation-triangle"></i>
                         É concorrente
+                    </button>
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        data-concorrente-buyer-id="${escaparHTMLNFE(comprador.id)}"
+                        data-concorrente-nickname="${escaparHTMLNFE(comprador.nickname || '')}"
+                        data-concorrente-url="${escaparHTMLNFE(linkAnunciosComprador || '')}"
+                        data-concorrente-total="${Number(comprador.total_anuncios || 0)}"
+                        data-concorrente-power-seller="${comprador.power_seller ? 'true' : 'false'}"
+                        data-concorrente-venda-id="${escaparHTMLNFE(dados.venda_id)}"
+                        onclick="window.marcarNaoConcorrenteNFE(this)"
+                    >
+                        <i class="fas fa-check"></i>
+                        Não é concorrente
                     </button>
                 </div>
             </div>
@@ -55013,6 +55138,101 @@ window.desmarcarClienteConcorrenteNFE = async function (botao) {
 
         console.error('❌ [Concorrente] Erro ao desmarcar:', error);
         window.showToast?.('❌ Erro ao desmarcar cliente: ' + error.message, 'error');
+        botao.disabled = false;
+    }
+};
+
+// "Não é concorrente": some o aviso de possível concorrente pra
+// sempre desse buyer_id (ver _buyerIdsDescartadosConcorrenteNFE).
+window.marcarNaoConcorrenteNFE = async function (botao) {
+
+    const buyerId = botao?.dataset?.concorrenteBuyerId;
+    const vendaId = botao?.dataset?.concorrenteVendaId;
+
+    if (!buyerId) return;
+
+    botao.disabled = true;
+
+    try {
+
+        const total = Number(botao.dataset.concorrenteTotal || 0);
+        const powerSeller = botao.dataset.concorrentePowerSeller === 'true';
+
+        const { error } = await window.supabaseClient
+            .from('compradores_perfil_ml')
+            .upsert(
+                [{
+                    buyer_id: String(buyerId),
+                    nickname: botao.dataset.concorrenteNickname || null,
+                    url_perfil: botao.dataset.concorrenteUrl || null,
+                    tem_historico_vendedor: false,
+                    // mantém o registro de que ele vende — é o que
+                    // diferencia "descartado" de "nunca vendeu"
+                    total_vendas_vendedor: total > 0 || powerSeller ? total : 1,
+                    power_seller: powerSeller,
+                    verificado_em: new Date().toISOString()
+                }],
+                { onConflict: 'buyer_id' }
+            );
+
+        if (error) throw error;
+
+        window._buyerIdsDescartadosConcorrenteNFE.add(String(buyerId));
+        window._buyerIdsPossiveisConcorrentesNFE.delete(String(buyerId));
+
+        window.showToast?.('✅ Marcado como não concorrente — o aviso não aparece mais pra este cliente.', 'success');
+
+        if (typeof atualizarListaNFE === 'function') {
+            atualizarListaNFE();
+        }
+
+        if (vendaId) {
+            await abrirDetalhesVendaNFE(vendaId, true);
+        }
+
+    } catch (error) {
+
+        console.error('❌ [Concorrente] Erro ao marcar não concorrente:', error);
+        window.showToast?.('❌ Erro ao salvar: ' + error.message, 'error');
+        botao.disabled = false;
+    }
+};
+
+window.desfazerNaoConcorrenteNFE = async function (botao) {
+
+    const buyerId = botao?.dataset?.concorrenteBuyerId;
+    const vendaId = botao?.dataset?.concorrenteVendaId;
+
+    if (!buyerId) return;
+
+    botao.disabled = true;
+
+    try {
+
+        const { error } = await window.supabaseClient
+            .from('compradores_perfil_ml')
+            .update({ tem_historico_vendedor: true })
+            .eq('buyer_id', String(buyerId));
+
+        if (error) throw error;
+
+        window._buyerIdsDescartadosConcorrenteNFE.delete(String(buyerId));
+        window._buyerIdsPossiveisConcorrentesNFE.add(String(buyerId));
+
+        window.showToast?.('Aviso de possível concorrente reativado.', 'info');
+
+        if (typeof atualizarListaNFE === 'function') {
+            atualizarListaNFE();
+        }
+
+        if (vendaId) {
+            await abrirDetalhesVendaNFE(vendaId, true);
+        }
+
+    } catch (error) {
+
+        console.error('❌ [Concorrente] Erro ao desfazer não concorrente:', error);
+        window.showToast?.('❌ Erro ao desfazer: ' + error.message, 'error');
         botao.disabled = false;
     }
 };

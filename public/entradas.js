@@ -2242,17 +2242,17 @@ async function renderizarEntradas() {
 
                             <button
                                 class="btn btn-sm btn-primary"
-                                onclick="abrirCadastroRapido(
+                                onclick="abrirOSNovaEntrada(
                                     '${card.id}',
                                     ${item.id}
                                 )"
-                                title="Cadastrar novo produto"
+                                title="Criar OS a partir do SKU de um produto já cadastrado"
                             >
                                 <i
                                     class="fas fa-plus-circle"
                                 ></i>
 
-                                Cadastrar
+                                OS nova
                             </button>
 
                             <button
@@ -2928,67 +2928,7 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
     }
 
     try {
-        if (!window.supabaseClient) throw new Error('Supabase não conectado');
-
-        // ===== SALVA O MAPEAMENTO PRIMEIRO =====
-        const cdFornecedor = item.cd_fornecedor || '';
-        const skuFornecedor = item.sku_original || '';
-        const fornecedorNome = item.fornecedor_nome || '';
-
-        // Verifica se já existe mapeamento
-        const { data: existing, error: errExists } = await window.supabaseClient
-            .from('fornecedores')
-            .select('id')
-            .eq('cd_fornecedor', cdFornecedor)
-            .eq('sku_fornecedor', skuFornecedor)
-            .maybeSingle();
-
-        if (errExists) throw errExists;
-
-        if (!existing) {
-            const fornecedorData = {
-                cd_fornecedor: cdFornecedor || '',
-                nome_fornecedor: fornecedorNome || '',
-                sku_fornecedor: skuFornecedor || '',
-                sku_sistema: produtoExistente.sku,
-                descricao_produto: produtoExistente.nome
-            };
-            const { error: errFornecedor } = await window.supabaseClient
-                .from('fornecedores')
-                .insert([fornecedorData]);
-            if (errFornecedor) throw errFornecedor;
-            console.log(`✅ Mapeamento criado: ${cdFornecedor} → ${produtoExistente.sku}`);
-            showToast(`✅ Mapeamento criado: SKU do fornecedor "${skuFornecedor}" → SKU do sistema "${produtoExistente.sku}"`, 'success');
-        } else {
-            // Atualiza o mapeamento existente
-            const { error: errUpdateFornecedor } = await window.supabaseClient
-                .from('fornecedores')
-                .update({
-                    sku_sistema: produtoExistente.sku,
-                    descricao_produto: produtoExistente.nome,
-                    nome_fornecedor: fornecedorNome || ''
-                })
-                .eq('id', existing.id);
-            if (errUpdateFornecedor) throw errUpdateFornecedor;
-            showToast(`✅ Mapeamento atualizado: ${skuFornecedor} → ${produtoExistente.sku}`, 'success');
-        }
-
-        // ===== ATUALIZA O ITEM DA ENTRADA =====
-        // Mantém status como 'pendente' para permitir dar entrada
-        // Preenche produto_id e sku_match para o sistema reconhecer
-        const { error: errItem } = await window.supabaseClient
-            .from('entrada_items')
-            .update({
-                produto_id: produtoExistente.id,
-                sku_match: produtoExistente.sku,
-                status: 'pendente',  // <- MANTÉM PENDENTE para permitir dar entrada
-                acao: 'cadastro',    // <- valor válido
-                responsavel: currentUser.name,
-                data_acao: new Date().toISOString()
-            })
-            .eq('id', itemId);
-
-        if (errItem) throw errItem;
+        await vincularItemEntradaAoProduto(item, itemId, produtoExistente);
 
         // Não atualiza o card para finalizado, pois o item ainda está pendente
         // O card permanece pendente até que todos os itens sejam processados
@@ -3002,6 +2942,397 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
     } catch (error) {
         console.error('❌ Erro ao vincular produto:', error);
         showToast('❌ Erro ao vincular: ' + error.message, 'error');
+    }
+};
+
+// ============================================
+// VINCULAR ITEM DA ENTRADA A UM PRODUTO DO ESTOQUE
+// Salva o mapeamento fornecedor → SKU do sistema e deixa o
+// item pendente com produto_id/sku_match, liberando "Dar Entrada".
+// ============================================
+async function vincularItemEntradaAoProduto(item, itemId, produtoExistente) {
+    if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+    // ===== SALVA O MAPEAMENTO PRIMEIRO =====
+    const cdFornecedor = item.cd_fornecedor || '';
+    const skuFornecedor = item.sku_original || '';
+    const fornecedorNome = item.fornecedor_nome || '';
+
+    // Verifica se já existe mapeamento
+    const { data: existing, error: errExists } = await window.supabaseClient
+        .from('fornecedores')
+        .select('id')
+        .eq('cd_fornecedor', cdFornecedor)
+        .eq('sku_fornecedor', skuFornecedor)
+        .maybeSingle();
+
+    if (errExists) throw errExists;
+
+    if (!existing) {
+        const fornecedorData = {
+            cd_fornecedor: cdFornecedor || '',
+            nome_fornecedor: fornecedorNome || '',
+            sku_fornecedor: skuFornecedor || '',
+            sku_sistema: produtoExistente.sku,
+            descricao_produto: produtoExistente.nome
+        };
+        const { error: errFornecedor } = await window.supabaseClient
+            .from('fornecedores')
+            .insert([fornecedorData]);
+        if (errFornecedor) throw errFornecedor;
+        console.log(`✅ Mapeamento criado: ${cdFornecedor} → ${produtoExistente.sku}`);
+        showToast(`✅ Mapeamento criado: SKU do fornecedor "${skuFornecedor}" → SKU do sistema "${produtoExistente.sku}"`, 'success');
+    } else {
+        // Atualiza o mapeamento existente
+        const { error: errUpdateFornecedor } = await window.supabaseClient
+            .from('fornecedores')
+            .update({
+                sku_sistema: produtoExistente.sku,
+                descricao_produto: produtoExistente.nome,
+                nome_fornecedor: fornecedorNome || ''
+            })
+            .eq('id', existing.id);
+        if (errUpdateFornecedor) throw errUpdateFornecedor;
+        showToast(`✅ Mapeamento atualizado: ${skuFornecedor} → ${produtoExistente.sku}`, 'success');
+    }
+
+    // ===== ATUALIZA O ITEM DA ENTRADA =====
+    // Mantém status como 'pendente' para permitir dar entrada
+    // Preenche produto_id e sku_match para o sistema reconhecer
+    const { error: errItem } = await window.supabaseClient
+        .from('entrada_items')
+        .update({
+            produto_id: produtoExistente.id,
+            sku_match: produtoExistente.sku,
+            status: 'pendente',  // <- MANTÉM PENDENTE para permitir dar entrada
+            acao: 'cadastro',    // <- valor válido
+            responsavel: currentUser.name,
+            data_acao: new Date().toISOString()
+        })
+        .eq('id', itemId);
+
+    if (errItem) throw errItem;
+}
+
+// ============================================
+// OS NOVA (a partir do SKU de um produto já cadastrado)
+// Pergunta o SKU, abre o formulário da OS pré-preenchido e,
+// ao salvar, cria a OS e vincula o item da entrada ao produto.
+// ============================================
+let osNovaEntradaContexto = null;
+
+window.abrirOSNovaEntrada = function(cardId, itemId) {
+    if (!cardId || !itemId) {
+        showToast('Erro: dados incompletos', 'error');
+        return;
+    }
+
+    const card = entradasCards.find(c => c.id == cardId);
+    if (!card) {
+        showToast('Card não encontrado', 'error');
+        return;
+    }
+    const item = card.itens.find(i => i.id == itemId);
+    if (!item) {
+        showToast('Item não encontrado', 'error');
+        return;
+    }
+
+    if (item.status !== 'pendente') {
+        showToast('Este item já foi processado', 'warning');
+        return;
+    }
+
+    const skuDigitado = (prompt('Cole o SKU do produto cadastrado:') || '').trim();
+    if (!skuDigitado) {
+        showToast('Operação cancelada', 'info');
+        return;
+    }
+
+    const produto = verificarSKUExistente(skuDigitado);
+    if (!produto) {
+        showToast(`❌ Produto com SKU "${skuDigitado}" não encontrado no estoque.`, 'error');
+        return;
+    }
+
+    osNovaEntradaContexto = { cardId, itemId, item, produto };
+
+    let modal = document.getElementById('modalOSNovaEntrada');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalOSNovaEntrada';
+        modal.className = 'modal hidden';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
+                    <h3 style="margin: 0; color: #00ADEE;">
+                        <i class="fas fa-plus-circle"></i> OS nova
+                    </h3>
+                    <button onclick="fecharOSNovaEntrada()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
+                        &times;
+                    </button>
+                </div>
+
+                <div class="form-group">
+                    <label for="osNovaProduto"><i class="fas fa-box"></i> Nome do Produto *</label>
+                    <input type="text" id="osNovaProduto" class="form-control" maxlength="200">
+                </div>
+
+                <div class="d-flex flex-wrap gap-3">
+                    <div class="form-group" style="flex: 1; min-width: 200px;">
+                        <label for="osNovaUrgencia"><i class="fas fa-exclamation-triangle"></i> Urgência *</label>
+                        <select id="osNovaUrgencia" class="form-control">
+                            <option value="baixa">Baixa</option>
+                            <option value="normal">Normal</option>
+                            <option value="alta">Alta</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 200px;">
+                        <label for="osNovaResponsavel"><i class="fas fa-user-check"></i> Responsável *</label>
+                        <select id="osNovaResponsavel" class="form-control">
+                            <option value="Elaine">Elaine</option>
+                            <option value="Arthur">Arthur</option>
+                            <option value="Laura">Laura</option>
+                            <option value="Ronald">Ronald</option>
+                            <option value="Bruna">Bruna</option>
+                            <option value="Andressa">Andressa</option>
+                            <option value="Thalyta">Thalyta</option>
+                            <option value="Leticia">Leticia</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-3">
+                    <div class="form-group" style="flex: 1; min-width: 200px;">
+                        <label for="osNovaTipo"><i class="fas fa-exchange-alt"></i> Tipo de OS *</label>
+                        <select id="osNovaTipo" class="form-control">
+                            <option value="normal">Normal</option>
+                            <option value="devolucao">Devolução</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 200px;">
+                        <label for="osNovaServico"><i class="fas fa-camera"></i> Serviço(s)</label>
+                        <select id="osNovaServico" class="form-control">
+                            <option value="edicao">Apenas edição</option>
+                            <option value="criar_anuncio">Criar anúncio</option>
+                            <option value="replicar_anuncio">Replicar anúncio</option>
+                            <option value="fotos_para_atualizar">Fotos para atualizar</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-3">
+                    <div class="form-group" style="flex: 1; min-width: 200px;">
+                        <label for="osNovaLocalFoto"><i class="fas fa-location-dot"></i> Local da foto *</label>
+                        <select id="osNovaLocalFoto" class="form-control">
+                            <option value="">Selecione...</option>
+                            <option value="studio">Stúdio</option>
+                            <option value="externa">Externa</option>
+                            <option value="ambos">Ambos</option>
+                            <option value="sem_foto">Sem foto</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 200px;">
+                        <label for="osNovaVideo"><i class="fas fa-video"></i> Vídeo?</label>
+                        <select id="osNovaVideo" class="form-control">
+                            <option value="nao">Não</option>
+                            <option value="sim">Sim</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="osNovaSku"><i class="fas fa-barcode"></i> SKU</label>
+                    <input type="text" id="osNovaSku" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label for="osNovaObservacoes"><i class="fas fa-comment"></i> Observações</label>
+                    <textarea id="osNovaObservacoes" class="form-control" rows="3" style="resize: vertical;"></textarea>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid #f1f3f5; padding-top: 20px;">
+                    <button class="btn btn-secondary" onclick="fecharOSNovaEntrada()">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                    <button id="osNovaSalvarBtn" class="btn btn-success" onclick="salvarOSNovaEntrada()">
+                        <i class="fas fa-save"></i> Salvar
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    // Pré-preenchimento
+    document.getElementById('osNovaProduto').value = produto.nome || '';
+    document.getElementById('osNovaUrgencia').value = 'normal';
+    document.getElementById('osNovaResponsavel').value = 'Elaine';
+    document.getElementById('osNovaTipo').value = 'normal';
+    document.getElementById('osNovaServico').value = 'criar_anuncio';
+    document.getElementById('osNovaLocalFoto').value = '';
+    document.getElementById('osNovaVideo').value = 'nao';
+    document.getElementById('osNovaSku').value = produto.sku || '';
+    document.getElementById('osNovaObservacoes').value = '';
+
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+    modal.style.zIndex = '10000';
+
+    setTimeout(() => document.getElementById('osNovaLocalFoto')?.focus(), 100);
+};
+
+window.fecharOSNovaEntrada = function() {
+    const modal = document.getElementById('modalOSNovaEntrada');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+    osNovaEntradaContexto = null;
+};
+
+window.salvarOSNovaEntrada = async function() {
+    if (!osNovaEntradaContexto) {
+        showToast('❌ Nenhum item de entrada selecionado.', 'error');
+        return;
+    }
+
+    const { itemId, item, produto } = osNovaEntradaContexto;
+
+    const productName = document.getElementById('osNovaProduto').value.trim();
+    const urgency = document.getElementById('osNovaUrgencia').value;
+    const responsibleName = document.getElementById('osNovaResponsavel').value;
+    const osType = document.getElementById('osNovaTipo').value;
+    const photoType = document.getElementById('osNovaServico').value;
+    const localFoto = document.getElementById('osNovaLocalFoto').value;
+    const video = document.getElementById('osNovaVideo').value;
+    const skus = document.getElementById('osNovaSku').value
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+    const observations = document.getElementById('osNovaObservacoes').value.trim();
+
+    if (!productName || !responsibleName) {
+        showToast('⚠️ Preencha produto e responsável', 'warning');
+        return;
+    }
+
+    if (!localFoto) {
+        showToast('⚠️ Escolha o local da foto', 'warning');
+        document.getElementById('osNovaLocalFoto')?.focus();
+        return;
+    }
+
+    const salvarBtn = document.getElementById('osNovaSalvarBtn');
+    if (salvarBtn) {
+        salvarBtn.disabled = true;
+        salvarBtn.innerHTML = '<span class="spinner"></span> Salvando...';
+    }
+
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        const agora = new Date().toISOString();
+        const criadoPor = currentUser.name || currentUser.username || '';
+
+        // Mesmo padrão do formulário de OS (prazo padrão 48h úteis)
+        const prazoHoras = 48;
+        const prazoEsperado = typeof window.calcularPrazoPorPrioridade === 'function'
+            ? window.calcularPrazoPorPrioridade(new Date(), null, prazoHoras)
+            : null;
+
+        const normalizar = v => String(v || '').trim().toLowerCase();
+        const isAnuncio = photoType === 'criar_anuncio' || photoType === 'replicar_anuncio';
+
+        const osData = {
+            codigo: window.generateOSCode ? window.generateOSCode() : `OS-${Date.now().toString().slice(-6)}`,
+            produto_nome: productName,
+            responsavel: responsibleName,
+            // Notifica o responsável (a menos que seja quem está criando)
+            user_notified: normalizar(responsibleName) === normalizar(criadoPor),
+            fluxo_renovacao: false,
+            etapa_fluxo: null,
+            destinatario_final: responsibleName,
+            etapa_atualizada_em: agora,
+            etapa_atualizada_por: criadoPor,
+            link_anuncio: '',
+            criado_por: criadoPor,
+            urgencia: urgency,
+            tipo_os: osType,
+            status: 'pendente',
+            tipo_foto: photoType,
+            local_foto: localFoto,
+            tem_video: video === 'sim',
+            observacoes: observations,
+            skus: skus,
+            fotos: [],
+            tem_fotos: false,
+            quantidade_fotos: 0,
+            qtd_fotos: 0,
+            qtd_edicoes: 0,
+            conferido: false,
+            conferido_por: null,
+            data_conferencia: null,
+            valor_anuncio: 0,
+            descricao_anuncio: '',
+            link_novo_anuncio: '',
+            precisa_foto: 'nao',
+            data_criacao: agora,
+            data_conclusao: null,
+            data_inicio: null,
+            ultima_atualizacao: agora,
+            prazo_horas: prazoHoras,
+            prazo_esperado: prazoEsperado,
+            anuncio_criado: isAnuncio ? false : null,
+            anuncio_criado_por: null,
+            anuncio_criado_data: null
+        };
+
+        const { error: errOS } = await window.supabaseClient
+            .from('ordens_service')
+            .insert([osData])
+            .select();
+
+        if (errOS) throw errOS;
+
+        showToast(`✅ OS "${productName}" criada para ${responsibleName}`, 'success');
+
+        const modal = document.getElementById('modalOSNovaEntrada');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }
+        osNovaEntradaContexto = null;
+
+        // Vincula o item ao produto → libera "Dar Entrada"
+        try {
+            await vincularItemEntradaAoProduto(item, itemId, produto);
+            await carregarFornecedores();
+            await carregarEntradas();
+            showToast(`✅ Item vinculado a "${produto.nome}". Agora clique em "Dar Entrada".`, 'success');
+        } catch (errVinculo) {
+            console.error('❌ OS criada, mas erro ao vincular item:', errVinculo);
+            showToast('⚠️ OS criada, mas não foi possível vincular o item: ' + errVinculo.message + '. Use "Já existe" para vincular.', 'warning');
+        }
+
+        // Atualiza a lista de OS / sino, se a tela de OS estiver carregada
+        try {
+            if (typeof loadOrders === 'function') await loadOrders(true);
+            if (typeof updateOSNotificationBell === 'function') await updateOSNotificationBell();
+        } catch (errAtualizar) {
+            console.warn('⚠️ Não foi possível atualizar a lista de OS:', errAtualizar);
+        }
+
+    } catch (error) {
+        console.error('❌ Erro ao criar OS nova:', error);
+        showToast('❌ Erro ao criar OS: ' + (error.message || error), 'error');
+    } finally {
+        if (salvarBtn) {
+            salvarBtn.disabled = false;
+            salvarBtn.innerHTML = '<i class="fas fa-save"></i> Salvar';
+        }
     }
 };
 

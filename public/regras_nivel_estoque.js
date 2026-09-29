@@ -353,6 +353,9 @@
                     // da faixa) e deixa pendente de confirmação do admin.
                     const estoqueSubiu = estado && qtd > (Number(estado.estoque_no_disparo) || 0);
                     if (estoqueSubiu) {
+                        // já está pendente pro mesmo estoque: nada novo pra gravar
+                        if (estado.reset_pendente && Number(estado.reset_estoque_novo) === qtd) continue;
+                        if (await estadoMudouNoBanco(cli, estado)) continue;
                         if (!token) token = await obterTokenML();
                         const mlbs = mlbsDoProduto(p);
                         const base = estado.precos_base || {};
@@ -378,6 +381,9 @@
                     // --- acima do gatilho: volta ao normal (sem ter sido por reposição de estoque) ---
                     if (nivelAlvo == null) {
                         if (estado) {
+                            // já aguardando decisão pra "voltar ao original": não regrava a cada ciclo
+                            if (estado.promocao_pendente && estado.promocao_nivel_recomendado == null) continue;
+                            if (await estadoMudouNoBanco(cli, estado)) continue;
                             if (!token) token = await obterTokenML();
                             const base = estado.precos_base || {};
                             const mlbsAlvo = Object.keys(base);
@@ -417,6 +423,7 @@
 
                     // --- dentro da escada ---
                     if (estado && estado.nivel_atual === nivelAlvo) continue;
+                    if (estado && await estadoMudouNoBanco(cli, estado)) continue;
 
                     const mlbs = mlbsDoProduto(p);
                     if (!mlbs.length) {
@@ -499,6 +506,20 @@
         } finally {
             avaliando = false;
         }
+    }
+
+    // O motor lê os estados no começo do ciclo; se nesse meio tempo o
+    // admin decidiu algo em Disparos (ou outra aba/usuário gravou), o
+    // registro no banco mudou — nesse caso o motor NÃO grava por cima
+    // e deixa pro próximo ciclo, que já parte da decisão tomada.
+    async function estadoMudouNoBanco(cli, estado) {
+        try {
+            const { data: atual, error } = await cli.from('regras_nivel_disparos').select('*').eq('id', estado.id).maybeSingle();
+            if (error) return false;
+            if (!atual) return true;
+            return ['atualizado_em', 'nivel_atual', 'estoque_no_disparo', 'reset_pendente', 'promocao_pendente']
+                .some(k => String(atual[k]) !== String(estado[k]));
+        } catch (e) { return false; }
     }
 
     async function upsertEstado(cli, r, p, qtd, nivel, base, log, estadoExistente) {
@@ -1437,17 +1458,26 @@
         if (!cli) return;
         const { data: estado } = await cli.from('regras_nivel_disparos').select('*').eq('id', id).maybeSingle();
         if (!estado) return;
-        // Mantém o preço atual, mas atualiza a base de comparação pro
-        // estoque de agora — senão o aviso voltaria sozinho no próximo
-        // ciclo mesmo sem o estoque ter mudado de novo.
-        await cli.from('regras_nivel_disparos').update({
-            estoque_no_disparo: estado.reset_estoque_novo != null ? estado.reset_estoque_novo : estado.estoque_no_disparo,
-            reset_pendente: false,
-            reset_precos: null,
-            reset_nivel_recomendado: null,
-            reset_estoque_novo: null,
-            reset_detectado_em: null
-        }).eq('id', id);
+        if (estado.reset_pendente && estado.reset_nivel_recomendado == null) {
+            // Saiu da faixa do gatilho e o admin quis manter o preço:
+            // remove o registro — se ficasse, o motor "voltaria ao
+            // preço original" sozinho no próximo ciclo.
+            await cli.from('regras_nivel_disparos').delete().eq('id', id);
+        } else {
+            // Mantém o preço atual, mas marca o nível recomendado como
+            // já resolvido e atualiza a base de estoque — senão o motor
+            // aplicaria o preço desse nível sozinho no próximo ciclo.
+            await cli.from('regras_nivel_disparos').update({
+                nivel_atual: estado.reset_nivel_recomendado != null ? estado.reset_nivel_recomendado : estado.nivel_atual,
+                estoque_no_disparo: estado.reset_estoque_novo != null ? estado.reset_estoque_novo : estado.estoque_no_disparo,
+                reset_pendente: false,
+                reset_precos: null,
+                reset_nivel_recomendado: null,
+                reset_estoque_novo: null,
+                reset_detectado_em: null,
+                atualizado_em: new Date().toISOString()
+            }).eq('id', id);
+        }
         toast('Ok, preço mantido como está.', 'info');
     }
 

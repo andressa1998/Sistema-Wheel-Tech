@@ -9604,6 +9604,10 @@ Alterado por: ${
 
                 }
 
+                // libera o sistema (ou passa pro próximo chamado
+                // vencido, se tiver mais de um)
+                await verificarBloqueioTesteChamados();
+
             } catch (
                 e
             ) {
@@ -9876,7 +9880,8 @@ Alterado por: ${
     async function verificarChamadosAguardandoTeste() {
 
         if (
-            chamadoTesteModalAberto
+            chamadoTesteModalAberto ||
+            chamadoBloqueioTeste
         ) {
             return;
         }
@@ -10051,6 +10056,487 @@ Alterado por: ${
             );
 
         };
+
+    // ========================================================
+    // BLOQUEIO: CHAMADO AGUARDANDO TESTE HÁ MAIS DE 24H
+    //
+    // Se quem abriu o chamado não testar em 24h desde que ele
+    // foi pra "Aguardando teste", o sistema trava: só a aba de
+    // Chamados funciona (com o chamado aberto) até a pessoa
+    // clicar em Funcionou / Não funcionou. Admin não é travado.
+    //
+    // O início das 24h vem da notificação "Novo status:
+    // Aguardando teste" enviada pra pessoa; sem ela, usa o
+    // atualizado_em do chamado.
+    // ========================================================
+
+    const PRAZO_TESTE_CHAMADO_MS =
+        24 * 60 * 60 * 1000;
+
+    let chamadoBloqueioTeste =
+        null;
+
+    let ultimaReaberturaBloqueioTeste =
+        0;
+
+    async function obterInicioAguardandoTeste(sb, chamado, username) {
+
+        try {
+
+            const { data } =
+                await sb
+                    .from('chamados_notificacoes')
+                    .select('criado_em')
+                    .eq('chamado_id', Number(chamado.id))
+                    .eq('destinatario_username', username)
+                    .eq('tipo', 'status')
+                    .ilike('mensagem', `%Novo status: ${STATUS_CHAMADOS.aguardando_teste.texto}%`)
+                    .order('criado_em', { ascending: false })
+                    .limit(1);
+
+            if (
+                Array.isArray(data) &&
+                data.length &&
+                data[0].criado_em
+            ) {
+                return new Date(data[0].criado_em).getTime();
+            }
+
+        } catch (e) {}
+
+        return chamado.atualizado_em
+            ? new Date(chamado.atualizado_em).getTime()
+            : Date.now();
+
+    }
+
+    async function verificarBloqueioTesteChamados() {
+
+        const sb =
+            sbChamados();
+
+        const username =
+            usernameChamados();
+
+        if (
+            !sb ||
+            !username ||
+            ehAdminChamados()
+        ) {
+            definirBloqueioTesteChamados(null);
+            return;
+        }
+
+        try {
+
+            const {
+                data,
+                error
+            } =
+                await sb
+                    .from(CFG_CHAMADOS.tabelaChamados)
+                    .select('id, titulo, modulo, atualizado_em')
+                    .eq('status', 'aguardando_teste')
+                    .eq('criado_por_username', username)
+                    .is('resultado_teste', null)
+                    .order('atualizado_em', { ascending: true });
+
+            if (error) {
+                throw error;
+            }
+
+            let vencido =
+                null;
+
+            for (const chamado of (data || [])) {
+
+                const inicio =
+                    await obterInicioAguardandoTeste(sb, chamado, username);
+
+                if (
+                    Date.now() - inicio >=
+                    PRAZO_TESTE_CHAMADO_MS
+                ) {
+                    vencido = chamado;
+                    break;
+                }
+
+            }
+
+            definirBloqueioTesteChamados(vencido);
+
+        } catch (error) {
+
+            // na dúvida (erro de rede), mantém o estado atual
+            console.warn(
+                '⚠️ Falha ao checar bloqueio de chamados aguardando teste:',
+                error
+            );
+
+        }
+
+    }
+    window.verificarBloqueioTesteChamados =
+        verificarBloqueioTesteChamados;
+
+    function definirBloqueioTesteChamados(chamado) {
+
+        const anterior =
+            chamadoBloqueioTeste;
+
+        chamadoBloqueioTeste =
+            chamado || null;
+
+        if (
+            !chamadoBloqueioTeste ||
+            !anterior ||
+            anterior.id !== chamadoBloqueioTeste.id
+        ) {
+            sistemasLiberadosTeste.clear();
+        }
+
+        let faixa =
+            document.getElementById('chFaixaBloqueioTeste');
+
+        if (!chamadoBloqueioTeste) {
+
+            faixa?.remove();
+
+            if (anterior) {
+                toastChamados(
+                    '🔓 Sistema liberado. Obrigado por testar!',
+                    'success'
+                );
+            }
+
+            return;
+
+        }
+
+        window.fecharModalLembreteTeste();
+
+        if (!faixa) {
+
+            faixa =
+                document.createElement('div');
+
+            faixa.id =
+                'chFaixaBloqueioTeste';
+
+            faixa.style.cssText = `
+                position:fixed;
+                left:0;
+                right:0;
+                bottom:0;
+                z-index:100000;
+                background:#b02a37;
+                color:#fff;
+                padding:10px 16px;
+                font-size:14px;
+                font-weight:600;
+                text-align:center;
+                box-shadow:0 -4px 14px rgba(0,0,0,.2);
+                cursor:pointer;
+            `;
+
+            faixa.onclick =
+                () => abrirChamadoBloqueioTeste(true);
+
+            document.body.appendChild(faixa);
+
+        }
+
+        faixa.innerHTML = chaveAbaTesteBloqueio()
+            ? `
+                🔒 Sistema bloqueado: o chamado #${escChamados(numeroChamado(chamadoBloqueioTeste.id))}
+                "${escChamados(chamadoBloqueioTeste.titulo || '')}" está aguardando seu teste há mais de 24h.
+                Só as abas Chamados e ${escChamados(chamadoBloqueioTeste.modulo)} estão liberadas.
+                Teste e clique em <u>Funcionou</u> ou <u>Não funcionou</u> pra liberar.
+            `
+            : `
+                ⚠️ O chamado #${escChamados(numeroChamado(chamadoBloqueioTeste.id))}
+                "${escChamados(chamadoBloqueioTeste.titulo || '')}" está aguardando seu teste há mais de 24h.
+                Teste e clique em <u>Funcionou</u> ou <u>Não funcionou</u> no chamado.
+            `;
+
+        if (
+            !anterior ||
+            anterior.id !== chamadoBloqueioTeste.id
+        ) {
+            abrirChamadoBloqueioTeste(true);
+        } else {
+            garantirTelaBloqueioTeste();
+        }
+
+    }
+
+    function abrirChamadoBloqueioTeste(forcar) {
+
+        if (!chamadoBloqueioTeste) {
+            return;
+        }
+
+        const agora =
+            Date.now();
+
+        if (
+            !forcar &&
+            agora - ultimaReaberturaBloqueioTeste < 4000
+        ) {
+            return;
+        }
+
+        ultimaReaberturaBloqueioTeste =
+            agora;
+
+        window.irTestarChamado(
+            chamadoBloqueioTeste.id
+        );
+
+    }
+
+    // Módulo do chamado -> chave do item de menu
+    // (data-menu-visual-key) da aba onde a pessoa testa.
+    // Módulo sem aba própria ("Outro", "Login / Usuários")
+    // não trava as abas: fica só a faixa + o redirecionamento
+    // pro chamado ao logar / quando o bloqueio começa.
+    const ABA_TESTE_POR_MODULO = {
+        'Ordem de Serviço': 'ordem_de_servico',
+        'Calendario': 'calendario_de_folgas',
+        'Folgas': 'calendario_de_folgas',
+        'Vendas': 'vendas_ml',
+        'NF-e': 'emissao_nf_e',
+        'Entradas': 'entradas',
+        'Gestão de Estoque': 'gestao_de_estoque',
+        'Estoque': 'gestao_de_estoque',
+        'Histórico de acessos': 'historico_de_acessos',
+        'Meta Ronald': 'meta_ronald',
+        'Promoções': 'promocoes_em_lote',
+        'Perguntas': 'perguntas_ml',
+        'Avaliações': 'avaliacoes',
+        'Fretes': 'gerenciar_frete',
+        'Caixa': 'conferencia_caixa',
+        'Precificação': 'precificacao',
+        'Reclamações': 'reclamacoes',
+        'Reclamações de Clientes': 'reclamacoes_clientes',
+        'Regra de alertas': 'regras_alerta_estoque',
+        'Feedback': 'feedback',
+        'FULL': 'gerenciamento_de_anuncios',
+        'Gerenciamento de Anúncios': 'gerenciamento_de_anuncios'
+    };
+
+    // ids das telas (*System) que abriram a partir da aba
+    // liberada — descobertos na hora, ao clicar no item do menu.
+    const sistemasLiberadosTeste =
+        new Set();
+
+    let aberturaAbaTesteEm =
+        0;
+
+    function chaveAbaTesteBloqueio() {
+
+        return chamadoBloqueioTeste
+            ? ABA_TESTE_POR_MODULO[chamadoBloqueioTeste.modulo] || null
+            : null;
+
+    }
+
+    function sistemaPermitidoDuranteBloqueio(id) {
+
+        return (
+            id === 'chamadosSystem' ||
+            id === 'menuSystem' ||
+            sistemasLiberadosTeste.has(id)
+        );
+
+    }
+
+    // Se a pessoa foi parar numa tela que não é Chamados nem a
+    // aba do teste, traz de volta pro chamado.
+    function garantirTelaBloqueioTeste() {
+
+        if (
+            !chamadoBloqueioTeste ||
+            !usuarioChamados() ||
+            !chaveAbaTesteBloqueio()
+        ) {
+            return;
+        }
+
+        const visiveis =
+            Array.from(
+                document.querySelectorAll('[id$="System"]')
+            ).filter(
+                el => !el.classList.contains('hidden') &&
+                    el.getClientRects().length > 0
+            );
+
+        // acabou de clicar na aba liberada: registra a(s) tela(s)
+        // que abriram como permitidas
+        if (
+            Date.now() - aberturaAbaTesteEm < 5000
+        ) {
+            visiveis.forEach(el => {
+                if (el.id !== 'menuSystem') {
+                    sistemasLiberadosTeste.add(el.id);
+                }
+            });
+            return;
+        }
+
+        if (
+            visiveis.some(
+                el => !sistemaPermitidoDuranteBloqueio(el.id)
+            )
+        ) {
+            toastChamados(
+                '🔒 Essa aba está bloqueada até você testar o chamado pendente.',
+                'warning'
+            );
+            abrirChamadoBloqueioTeste(true);
+        }
+
+    }
+
+    // Barra cliques que levam pra outras abas. Libera: a aba de
+    // Chamados e os modais dela, a aba do módulo do chamado (e
+    // tudo dentro dela), o botão Sair e a tela de login.
+    function cliquePermitidoDuranteBloqueio(alvo) {
+
+        if (
+            !alvo ||
+            !alvo.closest ||
+            !chaveAbaTesteBloqueio()
+        ) {
+            return true;
+        }
+
+        if (
+            alvo.closest(
+                '#chFaixaBloqueioTeste, .wt-logout, #loginScreen'
+            )
+        ) {
+            return true;
+        }
+
+        // itens de menu / cards que abrem uma aba
+        const itemAba =
+            alvo.closest(
+                '[data-menu-visual-key], [data-menu-visual-depends]'
+            );
+
+        if (itemAba) {
+
+            const chave =
+                itemAba.getAttribute('data-menu-visual-key') ||
+                itemAba.getAttribute('data-menu-visual-depends');
+
+            if (chave === 'chamados') {
+                return true;
+            }
+
+            if (
+                chave &&
+                chave === chaveAbaTesteBloqueio()
+            ) {
+                aberturaAbaTesteEm = Date.now();
+                return true;
+            }
+
+            return false;
+
+        }
+
+        // "voltar ao menu" dentro das abas: deixa voltar pro
+        // início (as abas de lá continuam barradas)
+        const onclick =
+            alvo.closest('[onclick]')?.getAttribute('onclick') || '';
+
+        if (
+            /voltarParaMenu|voltarMenu/.test(onclick)
+        ) {
+            return true;
+        }
+
+        // dentro de uma tela (*System): só as permitidas
+        const sistema =
+            alvo.closest('[id$="System"]');
+
+        if (sistema) {
+            return sistemaPermitidoDuranteBloqueio(sistema.id);
+        }
+
+        // modais/popups soltos no body: só abrem a partir de uma
+        // aba permitida, então não precisa barrar
+        return true;
+
+    }
+
+    if (!window.__bloqueioTesteChamadosAtivo) {
+
+        window.__bloqueioTesteChamadosAtivo = true;
+
+        document.addEventListener(
+            'click',
+            event => {
+
+                if (
+                    !chamadoBloqueioTeste ||
+                    !usuarioChamados() ||
+                    cliquePermitidoDuranteBloqueio(event.target)
+                ) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+
+                toastChamados(
+                    '🔒 Teste o chamado pendente e clique em Funcionou ou Não funcionou pra liberar o sistema.',
+                    'warning'
+                );
+
+                abrirChamadoBloqueioTeste(false);
+
+            },
+            true
+        );
+
+        // espera o login e checa logo em seguida; depois a cada 2 min
+        let usuarioVisto =
+            null;
+
+        setInterval(
+            () => {
+
+                const atual =
+                    usernameChamados();
+
+                if (atual !== usuarioVisto) {
+
+                    usuarioVisto = atual;
+
+                    if (atual) {
+                        verificarBloqueioTesteChamados();
+                    } else {
+                        definirBloqueioTesteChamados(null);
+                    }
+
+                }
+
+                garantirTelaBloqueioTeste();
+
+            },
+            3000
+        );
+
+        setInterval(
+            verificarBloqueioTesteChamados,
+            2 * 60 * 1000
+        );
+
+    }
 
     if (!window.__pollChamadosAguardandoTesteAtivo) {
 
