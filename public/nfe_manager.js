@@ -58088,6 +58088,28 @@ async function salvarVendasCacheNFE(
     }
 
 
+    // Venda Full nova -> histórico do produto (sem baixar estoque).
+    // Também em segundo plano, sem atrasar o sync.
+    if (
+        registros.some(
+            registro =>
+                registro?.is_full === true &&
+                registro?.estoque_baixado !== true
+        )
+    ) {
+
+        processarHistoricoVendasFullPendentesNFE().catch(
+            error => {
+
+                console.warn(
+                    '⚠️ [FULL HISTÓRICO] Falha no registro automático:',
+                    error
+                );
+            }
+        );
+    }
+
+
     return true;
 }
 
@@ -70516,12 +70538,38 @@ async function registrarMovimentacoesProdutosBaixaNFE(
 // =========================================================
 async function registrarHistoricoVendaFullSemBaixa(
     vendaId,
-    detalhesEstoque = []
+    detalhesEstoque = [],
+    dataVenda = null
 ) {
     const detalhes = Array.isArray(detalhesEstoque) ? detalhesEstoque : [];
+    const numeroDocumento = `FULL-${vendaId}`;
 
     let registrados = 0;
+    let jaExistiam = 0;
     const erros = [];
+
+    // Produtos desta venda que já estão no histórico — a mesma venda
+    // pode ser processada de novo (retentativa, outra aba aberta) e
+    // não pode duplicar a linha.
+    const produtosJaRegistrados = new Set();
+    {
+        const { data: existentes, error: erroExistentes } = await window.supabaseClient
+            .from('estoque_movimentacoes')
+            .select('produto_id')
+            .eq('numero_documento', numeroDocumento);
+
+        if (erroExistentes) {
+            return { success: false, registrados: 0, jaExistiam: 0, erros: [erroExistentes.message] };
+        }
+
+        (existentes || []).forEach(m => produtosJaRegistrados.add(String(m.produto_id)));
+    }
+
+    // data real da venda (importante pras vendas antigas lançadas agora)
+    const dataHistorico = (() => {
+        const d = dataVenda ? new Date(dataVenda) : null;
+        return d && !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+    })();
 
     for (const item of detalhes) {
 
@@ -70529,6 +70577,11 @@ async function registrarHistoricoVendaFullSemBaixa(
 
         const quantidade = Number(item.quantidade_venda || 0);
         if (quantidade <= 0) continue;
+
+        if (produtosJaRegistrados.has(String(item.produto_id))) {
+            jaExistiam++;
+            continue;
+        }
 
         try {
 
@@ -70555,9 +70608,9 @@ async function registrarHistoricoVendaFullSemBaixa(
                     quantidade,
                     usuario: 'Sistema (venda Full)',
                     numero_movimentacao: numeroMov,
-                    numero_documento: `FULL-${vendaId}`,
+                    numero_documento: numeroDocumento,
                     tipo_entrada: 'venda',
-                    data_hora: new Date().toISOString(),
+                    data_hora: dataHistorico,
                     saldo_apos: produtoAtual ? produtoAtual.quantidade : null
                 }]);
 
@@ -70565,6 +70618,7 @@ async function registrarHistoricoVendaFullSemBaixa(
                 erros.push(`${item.sku || item.produto_id}: ${erroMov.message}`);
             } else {
                 registrados++;
+                produtosJaRegistrados.add(String(item.produto_id));
             }
 
         } catch (error) {
@@ -70572,7 +70626,178 @@ async function registrarHistoricoVendaFullSemBaixa(
         }
     }
 
-    return { success: erros.length === 0, registrados, erros };
+    return { success: erros.length === 0, registrados, jaExistiam, erros };
+}
+
+// =========================================================
+// VENDAS FULL -> HISTÓRICO AUTOMÁTICO
+//
+// Toda venda Full que entra no cache (e não foi cancelada) é
+// lançada no histórico do produto, sem baixar estoque. Roda:
+//  - logo depois de cada sync de vendas (salvarVendasCacheNFE);
+//  - ao abrir o sistema e a cada 15 min — isso também pega as
+//    vendas Full antigas que nunca foram registradas.
+// Venda com SKU não cadastrado fica pendente e é tentada de novo
+// nos próximos ciclos (depois de cadastrar o SKU, entra sozinha).
+// Respeita "Registrar histórico de movimentações" em Regras de
+// Alerta de Estoque -> Vendas Full.
+// =========================================================
+
+window._historicoVendasFullEmAndamento = false;
+window._historicoVendasFullUltimaExecucao = 0;
+
+function registroHistoricoVendasFullLigadoNFE() {
+    try {
+        const cfg = window.RegrasAlertasEstoque?.obterConfig?.();
+        return cfg?.vendas_full?.registrar_historico !== false;
+    } catch (e) {
+        return true;
+    }
+}
+
+async function processarHistoricoVendasFullPendentesNFE(opcoes = {}) {
+
+    if (
+        !window.supabaseClient ||
+        !window.currentUser ||
+        window._historicoVendasFullEmAndamento
+    ) {
+        return { processadas: 0 };
+    }
+
+    if (
+        !opcoes.forcar &&
+        Date.now() - window._historicoVendasFullUltimaExecucao < 60 * 1000
+    ) {
+        return { processadas: 0 };
+    }
+
+    try {
+        await window.RegrasAlertasEstoque?.carregar?.();
+    } catch (e) {}
+
+    if (!registroHistoricoVendasFullLigadoNFE()) {
+        return { processadas: 0, desligado: true };
+    }
+
+    window._historicoVendasFullEmAndamento = true;
+    window._historicoVendasFullUltimaExecucao = Date.now();
+
+    let processadas = 0;
+    let registrados = 0;
+    let pendentes = 0;
+
+    try {
+
+        // Busca em páginas as vendas Full ainda não registradas.
+        const POR_PAGINA = 500;
+        const LIMITE_POR_EXECUCAO = opcoes.limite || 300;
+        const vistos = new Set();
+        let inicio = 0;
+
+        while (processadas < LIMITE_POR_EXECUCAO) {
+
+            const { data, error } = await window.supabaseClient
+                .from('vendas_nfe_cache')
+                .select('id_venda_ml, venda_cancelada, ml_status')
+                .eq('is_full', true)
+                .or('estoque_baixado.is.null,estoque_baixado.eq.false')
+                .order('data_venda', { ascending: true })
+                .range(inicio, inicio + POR_PAGINA - 1);
+
+            if (error) throw error;
+            if (!data || !data.length) break;
+
+            // As vendas registradas saem desta consulta; as que
+            // continuam nela (canceladas, pendentes, erro) empurram
+            // o início da próxima página.
+            let ficaramNaConsulta = 0;
+
+            for (const venda of data) {
+
+                if (processadas >= LIMITE_POR_EXECUCAO) break;
+
+                const id = normalizarOrderIdML(venda.id_venda_ml);
+                if (!id || vistos.has(id)) {
+                    ficaramNaConsulta++;
+                    continue;
+                }
+                vistos.add(id);
+
+                const status = String(venda.ml_status || '').toLowerCase();
+                if (
+                    venda.venda_cancelada === true ||
+                    status === 'cancelled' ||
+                    status === 'canceled'
+                ) {
+                    ficaramNaConsulta++;
+                    continue;
+                }
+
+                const resultado = await garantirBaixaEstoqueVenda(id, 'full_auto');
+                processadas++;
+
+                const marcada =
+                    resultado?.full === true &&
+                    !resultado?.skipped &&
+                    !resultado?.pendente;
+
+                if (marcada) {
+                    registrados += Number(resultado.registrados || 0);
+                } else {
+                    ficaramNaConsulta++;
+                }
+
+                if (resultado?.pendente) {
+                    pendentes++;
+                }
+            }
+
+            if (data.length < POR_PAGINA) break;
+
+            inicio += ficaramNaConsulta;
+        }
+
+        if (processadas) {
+            console.log(
+                `🧾 [FULL HISTÓRICO] ${processadas} venda(s) Full processada(s): ${registrados} lançamento(s) no histórico, ${pendentes} pendente(s) (SKU não identificado/cadastrado).`
+            );
+        }
+
+    } catch (error) {
+
+        console.warn('⚠️ [FULL HISTÓRICO] Falha processando vendas Full:', error);
+
+    } finally {
+
+        window._historicoVendasFullEmAndamento = false;
+    }
+
+    return { processadas, registrados, pendentes };
+}
+
+window.processarHistoricoVendasFullPendentesNFE = processarHistoricoVendasFullPendentesNFE;
+
+if (!window.__timerHistoricoVendasFullNFE) {
+
+    window.__timerHistoricoVendasFullNFE = true;
+
+    // primeira passada ~20s depois de abrir (dá tempo do login e
+    // das regras carregarem), depois a cada 15 min
+    // (limite maior na primeira passada pra recuperar as antigas)
+    const primeiraPassadaHistoricoFull = () => {
+        if (!window.currentUser || !window.supabaseClient) {
+            setTimeout(primeiraPassadaHistoricoFull, 20 * 1000);
+            return;
+        }
+        processarHistoricoVendasFullPendentesNFE({ forcar: true, limite: 2000 }).catch(() => {});
+    };
+
+    setTimeout(primeiraPassadaHistoricoFull, 20 * 1000);
+
+    setInterval(() => {
+        processarHistoricoVendasFullPendentesNFE({ forcar: true }).catch(() => {});
+    }, 15 * 60 * 1000);
 }
 
 async function garantirBaixaEstoqueVenda(
@@ -70632,6 +70857,7 @@ async function garantirBaixaEstoqueVenda(
                     is_full,
                     venda_cancelada,
                     ml_status,
+                    data_venda,
                     estoque_baixado,
                     estoque_status,
                     estoque_baixado_em,
@@ -70725,10 +70951,33 @@ async function garantirBaixaEstoqueVenda(
 
             try {
 
+                if (!registroHistoricoVendasFullLigadoNFE()) {
+                    return {
+                        success: true,
+                        full: true,
+                        skipped: true,
+                        sincronizado: true
+                    };
+                }
+
+                // Detalhe salvo com SKU "não encontrado" pode ser de
+                // antes do cadastro do produto — nesse caso verifica
+                // de novo em vez de reaproveitar.
+                const detalhesSalvos =
+                    Array.isArray(vendaCache.estoque_detalhes)
+                        ? vendaCache.estoque_detalhes
+                        : [];
+
+                const reverificar =
+                    detalhesSalvos.length === 0 ||
+                    detalhesSalvos.some(item => item?.encontrado !== true);
+
                 const verificacaoFull =
                     await garantirDetalhesEstoqueParaBaixaNFE(
                         vendaId,
-                        vendaCache
+                        reverificar
+                            ? { ...vendaCache, estoque_detalhes: [] }
+                            : vendaCache
                     );
 
                 const detalhesFull =
@@ -70736,11 +70985,49 @@ async function garantirBaixaEstoqueVenda(
                         ? verificacaoFull.detalhes
                         : [];
 
+                const todosIdentificados =
+                    detalhesFull.length > 0 &&
+                    detalhesFull.every(item => item?.encontrado === true && item?.produto_id);
+
                 const registroFull =
                     await registrarHistoricoVendaFullSemBaixa(
                         vendaId,
-                        detalhesFull
+                        detalhesFull,
+                        vendaCache.data_venda
                     );
+
+                // Só marca como registrada quando todos os produtos
+                // entraram no histórico — senão fica pendente e é
+                // tentada de novo no próximo ciclo.
+                if (
+                    !todosIdentificados ||
+                    !registroFull.success
+                ) {
+
+                    await window.supabaseClient
+                        .from('vendas_nfe_cache')
+                        .update({
+                            estoque_status: 'full_historico_pendente',
+                            atualizado_em: new Date().toISOString()
+                        })
+                        .eq('id_venda_ml', vendaId);
+
+                    console.warn(
+                        `⚠️ [BAIXA] Venda Full ${vendaId}: histórico pendente — ${
+                            !todosIdentificados
+                                ? (verificacaoFull.error || 'SKU não identificado/cadastrado')
+                                : registroFull.erros.join('; ')
+                        }`
+                    );
+
+                    return {
+                        success: true,
+                        full: true,
+                        pendente: true,
+                        registrados: registroFull.registrados,
+                        sincronizado: true
+                    };
+                }
 
                 await window.supabaseClient
                     .from('vendas_nfe_cache')

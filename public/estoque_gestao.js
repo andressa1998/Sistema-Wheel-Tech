@@ -11624,6 +11624,21 @@ async function verHistoricoMovimentacoes(produtoId) {
             'modal';
 
 
+        // A barra lateral global fica sempre por cima de tudo
+        // (z-index máximo) — então o modal começa depois dela,
+        // senão a lateral esconde o começo do histórico.
+        const sidebarGlobal =
+            document.getElementById(
+                'wtGlobalSidebar'
+            );
+
+        const larguraSidebar =
+            sidebarGlobal &&
+            getComputedStyle(sidebarGlobal).display !== 'none'
+                ? (window.innerWidth <= 700 ? 58 : 68)
+                : 0;
+
+
         modal.style.cssText = `
             display: flex;
             align-items: center;
@@ -11632,9 +11647,12 @@ async function verHistoricoMovimentacoes(produtoId) {
             z-index: 99999;
             position: fixed;
             top: 0;
-            left: 0;
-            width: 100%;
+            left: ${larguraSidebar}px;
+            right: 0;
+            width: auto;
             height: 100%;
+            padding: 20px;
+            box-sizing: border-box;
         `;
 
 
