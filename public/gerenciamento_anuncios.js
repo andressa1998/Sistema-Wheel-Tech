@@ -59,7 +59,15 @@
 
         stockNextRequestAt: 0,
 
-        stockRequestIntervalMs: 750,
+        // Intervalo entre consultas de estoque/vendas FULL. Era fixo em
+        // 750ms (≈19 min só de espera pra 1.500 anúncios). Agora é
+        // adaptativo: começa no mínimo, dobra a cada 429 do ML e vai
+        // voltando aos poucos a cada resposta boa.
+        stockRequestIntervalMs: 150,
+
+        stockRequestIntervalMinMs: 120,
+
+        stockRequestIntervalMaxMs: 1500,
 
         databaseTable:
             'gerenciamento_anuncios_ml'
@@ -377,6 +385,30 @@
                     resolve,
                     ms
                 )
+        );
+    }
+
+
+    // Roda fn(item, indice) com no máximo `limite` chamadas ao mesmo
+    // tempo. O ritmo das requisições continua sendo controlado pelo
+    // limitador global (aguardarSlotEstoque) ou pelo mlComRetry —
+    // aqui só se evita esperar a resposta de uma pra mandar a próxima.
+    async function executarEmParaleloGA(lista, limite, fn) {
+
+        let proximo = 0;
+
+        const worker = async () => {
+            while (proximo < lista.length) {
+                const indice = proximo++;
+                await fn(lista[indice], indice);
+            }
+        };
+
+        await Promise.all(
+            Array.from(
+                { length: Math.max(1, Math.min(limite, lista.length)) },
+                worker
+            )
         );
     }
 
@@ -1886,18 +1918,37 @@
             );
 
 
+        // Lotes de 20 (limite do multiget), 4 lotes ao mesmo tempo.
+        // O resultado é montado na ordem original dos lotes.
+        const grupos =
+            [];
+
         for (
             let i = 0;
             i < ids.length;
             i += 20
         ) {
 
-            const grupo =
+            grupos.push(
                 ids.slice(
                     i,
                     i + 20
-                );
+                )
+            );
+        }
 
+
+        const porGrupo =
+            new Array(
+                grupos.length
+            );
+
+
+        let lidos =
+            0;
+
+
+        await executarEmParaleloGA(grupos, 4, async (grupo, indiceGrupo) => {
 
             const path =
 
@@ -1919,40 +1970,42 @@
                 );
 
 
-            for (
-                const resposta
-                of data ||
-                []
-            ) {
-
-                if (
-                    resposta?.code ===
-                        200 &&
-                    resposta?.body
-                ) {
-
-                    resultado.push(
-                        resposta.body
+            porGrupo[indiceGrupo] =
+                (data || [])
+                    .filter(
+                        resposta =>
+                            resposta?.code ===
+                                200 &&
+                            resposta?.body
+                    )
+                    .map(
+                        resposta =>
+                            resposta.body
                     );
-                }
-            }
+
+
+            lidos +=
+                grupo.length;
 
 
             progress(
 
                 `Lendo anúncios... ` +
 
-                `${Math.min(
-                    i + 20,
-                    ids.length
-                )}` +
+                `${lidos}` +
 
                 `/${ids.length}`
             );
+        });
 
 
-            await sleep(
-                80
+        for (
+            const itens
+            of porGrupo
+        ) {
+
+            resultado.push(
+                ...(itens || [])
             );
         }
 
@@ -2089,14 +2142,21 @@
         const statusPorItem =
             new Map();
 
+        const gruposStatus =
+            [];
+
         for (
             let i = 0;
             i < idsUnicos.length;
             i += 20
         ) {
 
-            const grupo =
-                idsUnicos.slice(i, i + 20);
+            gruposStatus.push(
+                idsUnicos.slice(i, i + 20)
+            );
+        }
+
+        await executarEmParaleloGA(gruposStatus, 4, async grupo => {
 
             try {
 
@@ -2131,9 +2191,7 @@
                     error
                 );
             }
-
-            await sleep(80);
-        }
+        });
 
         const linhasAlteradas =
             [];
@@ -4018,6 +4076,24 @@
                 Date.now() +
                 ms
             );
+
+        // Levou 429: desacelera o ritmo daqui pra frente.
+        GA.stockRequestIntervalMs =
+            Math.min(
+                GA.stockRequestIntervalMaxMs,
+                GA.stockRequestIntervalMs * 2
+            );
+    }
+
+
+    // Resposta boa: acelera de volta aos poucos até o mínimo.
+    function registrarSucessoEstoque() {
+
+        GA.stockRequestIntervalMs =
+            Math.max(
+                GA.stockRequestIntervalMinMs,
+                GA.stockRequestIntervalMs - 10
+            );
     }
 
 
@@ -4234,6 +4310,9 @@
                             );
 
 
+                            registrarSucessoEstoque();
+
+
                             return result;
 
                         } catch (error) {
@@ -4258,12 +4337,15 @@
                             }
 
 
+                            // O intervalo entre consultas também dobra
+                            // (aplicarCooldownEstoque), então a pausa em
+                            // si pode ser curta.
                             const cooldown =
                                 Math.min(
 
-                                    60000,
+                                    30000,
 
-                                    15000 *
+                                    5000 *
                                     tentativa
                                 );
 
@@ -4601,6 +4683,10 @@
             false;
 
 
+        let ultimoRedesenho =
+            Date.now();
+
+
         // ========================================================
         // SALVAR LOTES PROGRESSIVOS
         // ========================================================
@@ -4816,12 +4902,17 @@
                 );
 
 
-                // Atualizar a tabela periodicamente
+                // Atualizar a tabela periodicamente. Por tempo, não
+                // por quantidade: refiltrar/redesenhar tudo a cada 10
+                // anúncios pesava mais que as próprias consultas.
                 if (
-                    concluidos %
-                    10 ===
-                    0
+                    Date.now() -
+                    ultimoRedesenho >
+                    3000
                 ) {
+
+                    ultimoRedesenho =
+                        Date.now();
 
                     updateSummary();
 
@@ -4839,13 +4930,16 @@
 
 
         // ========================================================
-        // 3 WORKERS COM LIMITADOR GLOBAL
+        // 6 WORKERS COM LIMITADOR GLOBAL
+        //
+        // O limitador (aguardarSlotEstoque) é quem controla o ritmo;
+        // mais workers só evitam ficar parado esperando resposta.
         // ========================================================
 
         const workers =
             Math.min(
 
-                3,
+                6,
 
                 Math.max(
                     1,
@@ -4940,15 +5034,11 @@
         }
 
 
-        for (
-            let i = 0;
-            i < inventories.length;
-            i++
-        ) {
+        let inventoriesConcluidos =
+            0;
 
-            const inventoryId =
-                inventories[i];
 
+        await executarEmParaleloGA(inventories, 4, async inventoryId => {
 
             const linhas =
                 porInventory.get(
@@ -5030,17 +5120,20 @@
             }
 
 
+            inventoriesConcluidos++;
+
+
             progress(
 
                 `Atualizando estoque antigo... ` +
 
-                `${i + 1}` +
+                `${inventoriesConcluidos}` +
 
                 `/` +
 
                 `${inventories.length}`
             );
-        }
+        });
 
 
         updateSummary();
@@ -6901,9 +6994,20 @@ async function requisicaoOperacoesFull(
             }
 
 
-            return await ml(
-                path
-            );
+            const data =
+                await ml(
+                    path
+                );
+
+            if (
+                typeof registrarSucessoEstoque ===
+                'function'
+            ) {
+
+                registrarSucessoEstoque();
+            }
+
+            return data;
 
         } catch (error) {
 
@@ -6922,8 +7026,8 @@ async function requisicaoOperacoesFull(
 
             const espera =
                 Math.min(
-                    60000,
-                    10000 * tentativa
+                    30000,
+                    5000 * tentativa
                 );
 
 
@@ -7493,18 +7597,27 @@ async function atualizarMetricasVendasFull(
         0;
 
 
+    const lotes30 =
+        [];
+
     for (
         let i = 0;
         i < inventories.length;
         i += TAMANHO_LOTE
     ) {
 
-        const lote =
+        lotes30.push(
             inventories.slice(
                 i,
                 i + TAMANHO_LOTE
-            );
+            )
+        );
+    }
 
+
+    // Vários lotes ao mesmo tempo; o ritmo continua controlado pelo
+    // limitador global dentro de requisicaoOperacoesFull.
+    await executarEmParaleloGA(lotes30, 3, async lote => {
 
         try {
 
@@ -7562,7 +7675,7 @@ async function atualizarMetricasVendasFull(
             `${Math.min(processados30, inventories.length)}` +
             `/${inventories.length}`
         );
-    }
+    });
 
 
     // =========================================================
@@ -7685,18 +7798,25 @@ async function atualizarMetricasVendasFull(
             new Set();
 
 
+        const lotesJanela =
+            [];
+
         for (
             let i = 0;
             i < faltantesNestaJanela.length;
             i += TAMANHO_LOTE
         ) {
 
-            const lote =
+            lotesJanela.push(
                 faltantesNestaJanela.slice(
                     i,
                     i + TAMANHO_LOTE
-                );
+                )
+            );
+        }
 
+
+        await executarEmParaleloGA(lotesJanela, 3, async lote => {
 
             try {
 
@@ -7791,7 +7911,7 @@ async function atualizarMetricasVendasFull(
                 `Procurando última venda FULL... ` +
                 `${faltantes.size} produto(s) ainda sem venda localizada`
             );
-        }
+        });
 
 
         // Quem teve erro em uma janela não pode ser considerado
@@ -8007,6 +8127,32 @@ function gaNormalizarTexto(
 
 
 // ============================================================
+// ANÚNCIO FINALIZADO (status "closed" no ML)
+//
+// Finalizado não entra em nenhum alerta: nem 30+ dias, nem lista
+// Premium, nem estoque, nem nada. Todas as funções de alerta
+// abaixo checam isso primeiro.
+// ============================================================
+
+function gaAnuncioFinalizado(
+    row
+) {
+
+    return String(
+        row?.status || ''
+    ).toLowerCase() === 'closed';
+}
+
+
+function gaUsuarioAdministrador() {
+
+    return String(
+        window.currentUser?.role || ''
+    ).toLowerCase() === 'administrador';
+}
+
+
+// ============================================================
 // DESCOBRIR SE É CLÁSSICO
 // ============================================================
 
@@ -8069,6 +8215,16 @@ function gaMaisDe30DiasSemVender(
     row
 ) {
 
+    if (
+        gaAnuncioFinalizado(
+            row
+        )
+    ) {
+
+        return false;
+    }
+
+
     const dias =
         Number(
             row?.diasSemVender
@@ -8108,16 +8264,76 @@ function gaMaisDe30DiasSemVender(
 
 
 // ============================================================
+// ENTRA NA LISTA DE 30+ DIAS SEM VENDER?
+//
+// Uma regra só, usada no histórico de 30+ dias, na lista fixa
+// "Sempre Premium" e no alerta de tipo:
+//  - finalizado nunca entra;
+//  - variação sem estoque real no FULL não entra (não vende por
+//    falta de produto, não por falta de exposição);
+//  - de resto, 30+ dias sem vender no FULL.
+// ============================================================
+
+function gaEntraLista30Dias(
+    row
+) {
+
+    if (
+        gaAnuncioFinalizado(
+            row
+        ) ||
+        row?._fullAtivoSemEstoqueReal
+    ) {
+
+        return false;
+    }
+
+
+    return gaMaisDe30DiasSemVender(
+        row
+    );
+}
+
+
+// ============================================================
 // PRECISA CORRIGIR?
+//
+// 30+ DIAS SEM VENDER É A REGRA MAJORITÁRIA: quem está na lista
+// de 30+ precisa ser Premium, mesmo que outra regra (promoção que
+// derrubou o preço abaixo de R$150, estoque por variação, lista
+// fixa Clássico) diga o contrário.
 // ============================================================
 
 function gaPrecisaCorrigirTipo(
     row
 ) {
 
-    // Clássico DE PROPÓSITO por causa de uma promoção que derrubou o
-    // preço abaixo de R$150 (ver estoque_gestao.js) — não é "errado",
-    // não sinaliza.
+    if (
+        gaAnuncioFinalizado(
+            row
+        ) ||
+        !gaEhClassico(
+            row
+        )
+    ) {
+
+        return false;
+    }
+
+
+    if (
+        gaEntraLista30Dias(
+            row
+        )
+    ) {
+
+        return true;
+    }
+
+
+    // Fora do 30+: Clássico de propósito por causa de uma promoção
+    // que derrubou o preço abaixo de R$150 (ver estoque_gestao.js)
+    // não é "errado", não sinaliza.
     if (
         window._mlbsExposicaoPromocaoAtivaSync &&
         window._mlbsExposicaoPromocaoAtivaSync.has(row?.itemId)
@@ -8125,27 +8341,11 @@ function gaPrecisaCorrigirTipo(
         return false;
     }
 
-    // Variação zerada no full não tem como vender de qualquer jeito —
-    // "não vende há 30+ dias" não é sinal de que precisa de mais
-    // exposição, é sinal de falta de estoque (outro alerta já cobre
-    // isso). Não sugere Premium aqui.
-    if (
-        row?._fullAtivoSemEstoqueReal
-    ) {
-        return false;
-    }
 
     return (
-        (
-            gaMaisDe30DiasSemVender(
-                row
-            ) ||
-            row?._tipoRecomendadoPorVariacoes ===
-                'premium'
-        ) &&
-        gaEhClassico(
-            row
-        )
+        !row?._fullAtivoSemEstoqueReal &&
+        row?._tipoRecomendadoPorVariacoes ===
+            'premium'
     );
 }
 
@@ -8170,6 +8370,9 @@ function gaPrecisaMudarParaClassico(
 ) {
 
     if (
+        gaAnuncioFinalizado(
+            row
+        ) ||
         gaMaisDe30DiasSemVender(
             row
         )
@@ -8500,7 +8703,7 @@ function aplicarSinalizacaoCapaAnuncioGA() {
             row.capaVariacaoRecomendadaId =
                 null;
 
-            if (!row.itemId) return;
+            if (!row.itemId || gaAnuncioFinalizado(row)) return;
 
             if (!porItem.has(row.itemId)) {
                 porItem.set(row.itemId, []);
@@ -8616,7 +8819,7 @@ function aplicarAlertasPorVariacaoGA() {
             row._tipoRecomendadoPorVariacoes =
                 null;
 
-            if (!row.itemId) return;
+            if (!row.itemId || gaAnuncioFinalizado(row)) return;
 
             if (!porItem.has(row.itemId)) {
                 porItem.set(row.itemId, []);
@@ -8731,117 +8934,8 @@ function aplicarAlertasPorVariacaoGA() {
 // a mesma tela/tabela usada quando alguém edita a lista na mão).
 // ============================================================
 
-GA._mlbsVerificadosPremiumFixo =
-    GA._mlbsVerificadosPremiumFixo ||
-    new Set();
-
-function verificarEAdicionarPremiumFixoGA() {
-
-    // Roda só em sessão de admin — é uma escrita automática numa
-    // configuração compartilhada por todo mundo; evita que várias
-    // abas de usuários comuns disparem a mesma checagem à toa.
-    if (
-        !window.currentUser ||
-        String(window.currentUser.role || '').toLowerCase() !== 'administrador'
-    ) {
-        return;
-    }
-
-    if (!Array.isArray(GA.rows) || !GA.rows.length) return;
-
-    const jaVerificados = GA._mlbsVerificadosPremiumFixo;
-    const vistos = new Set();
-    const candidatos = new Set();
-
-    GA.rows.forEach(row => {
-
-        if (!row.itemId || vistos.has(row.itemId)) return;
-        vistos.add(row.itemId);
-
-        if (jaVerificados.has(row.itemId)) return;
-
-        if (gaPrecisaCorrigirTipo(row)) {
-            candidatos.add(row.itemId);
-        }
-    });
-
-    if (!candidatos.size) return;
-
-    // Marca já (otimista) pra não disparar de novo em renders
-    // seguintes enquanto a chamada assíncrona ainda está correndo.
-    candidatos.forEach(mlb => jaVerificados.add(mlb));
-
-    adicionarMLBsNaListaPremiumFixaGA([...candidatos]);
-}
-
-async function adicionarMLBsNaListaPremiumFixaGA(mlbs) {
-
-    if (
-        typeof window.carregarRegrasFixasTipoAnuncioML !== 'function' ||
-        typeof window.salvarRegrasFixasTipoAnuncioML !== 'function'
-    ) {
-        console.warn(
-            '⚠️ Funções de regras fixas de tipo (Clássico/Premium) não disponíveis — carregue a aba Gestão de Estoque ao menos uma vez.'
-        );
-        return;
-    }
-
-    try {
-
-        const atuais =
-            await window.carregarRegrasFixasTipoAnuncioML();
-
-        const classicoAtual =
-            Array.isArray(atuais?.classico) ? atuais.classico : [];
-
-        const premiumAtual =
-            Array.isArray(atuais?.premium) ? atuais.premium : [];
-
-        // Não mexe em quem já está fixo em Clássico (respeita a
-        // regra oposta) nem em quem já está em Premium.
-        const novos =
-            mlbs.filter(mlb =>
-                !classicoAtual.includes(mlb) &&
-                !premiumAtual.includes(mlb)
-            );
-
-        if (!novos.length) return;
-
-        const resultado =
-            await window.salvarRegrasFixasTipoAnuncioML({
-                classico: classicoAtual,
-                premium: [...premiumAtual, ...novos]
-            });
-
-        if (resultado?.success === false) {
-            console.warn(
-                '⚠️ Não foi possível adicionar automaticamente à lista fixa Premium:',
-                resultado.error
-            );
-            return;
-        }
-
-        console.log(
-            `✅ ${novos.length} MLB(s) com 30+ dias sem vender adicionado(s) à lista fixa "Sempre Premium":`,
-            novos
-        );
-
-        if (typeof window.showToast === 'function') {
-            window.showToast(
-                `🔵 ${novos.length} anúncio(s) com mais de 30 dias sem vender no FULL ` +
-                `foram adicionados à lista fixa "Sempre Premium".`,
-                'info'
-            );
-        }
-
-    } catch (erro) {
-
-        console.error(
-            '❌ Erro adicionando MLB(s) à lista fixa Premium:',
-            erro
-        );
-    }
-}
+// (A inclusão/remoção na lista "Sempre Premium" agora é feita por
+// sincronizarListasFixas30DiasGA, junto com o histórico de 30+ dias.)
 
 
 function render() {
@@ -8903,11 +8997,8 @@ function render() {
     sincronizarHistorico30DiasGA();
 
 
-    // =========================================================
-    // 30+ DIAS SEM VENDER -> LISTA FIXA "SEMPRE PREMIUM"
-    // =========================================================
-
-    verificarEAdicionarPremiumFixoGA();
+    // (30+ dias sem vender -> listas fixas Premium/Clássico: feito
+    // em sincronizarHistorico30DiasGA, logo acima.)
 
 
     // =========================================================
@@ -9927,6 +10018,9 @@ function gaPrecisaCorrigirEstoqueDeposito(
     // =========================================================
 
     if (
+        gaAnuncioFinalizado(
+            row
+        ) ||
         gaMaisDe30DiasSemVender(
             row
         )
@@ -10023,7 +10117,10 @@ function gaPrecisaAjustarQuantidadeExposicao(
 ) {
 
     if (
-        !row?.ativoNoFull
+        !row?.ativoNoFull ||
+        gaAnuncioFinalizado(
+            row
+        )
     ) {
 
         return false;
@@ -10262,7 +10359,10 @@ function gaEstoqueAtualDoRow(row) {
     );
 }
 
+// Só administradores veem o alerta de estoque em excesso.
 function gaEstoqueEmExcesso(row) {
+
+    if (!gaUsuarioAdministrador() || gaAnuncioFinalizado(row)) return false;
 
     const media = gaMediaVendasMensalDoRow(row);
     if (media === null) return false;
@@ -10275,13 +10375,12 @@ function gaEstoqueEmExcesso(row) {
 // HISTÓRICO DE "30+ DIAS SEM VENDER"
 //
 // Cada vez que um item (item+variação) passa a contar como 30+ dias
-// sem vender (mesma regra de gaMaisDe30DiasSemVender, ignorando
-// quem está sem estoque real no FULL — ver gaPrecisaCorrigirTipo),
-// abre um registro em full_historico_30_mais_dias. Quando ele deixa
-// de contar (vendeu de novo, ou saiu do FULL), fecha o registro com
-// a data de saída e o motivo. Só roda pra administrador (mesma
-// trava de verificarEAdicionarPremiumFixoGA) — é escrita automática
-// numa tabela compartilhada.
+// sem vender (gaEntraLista30Dias: finalizado e sem estoque real no
+// FULL não entram), abre um registro em full_historico_30_mais_dias.
+// Quando ele deixa de contar, fecha o registro com a data de saída e
+// o motivo (gaMotivoSaida30Dias). Depois sincroniza as listas fixas
+// Premium/Clássico (sincronizarListasFixas30DiasGA). Só roda pra
+// administrador — é escrita automática numa tabela compartilhada.
 // ============================================================
 
 GA._chaves30DiasAbertas = GA._chaves30DiasAbertas || null;
@@ -10332,6 +10431,11 @@ async function sincronizarHistorico30DiasGA() {
 
     if (!Array.isArray(GA.rows) || !GA.rows.length) return;
 
+    // Durante a sincronização as linhas estão sendo remontadas e as
+    // vendas ainda não foram recalculadas — decidir entradas/saídas
+    // agora fecharia registros por engano (e tiraria MLBs do Premium).
+    if (GA.loading) return;
+
     if (Date.now() - GA._ultimoSync30Dias < 30000) return;
     GA._ultimoSync30Dias = Date.now();
 
@@ -10342,8 +10446,7 @@ async function sincronizarHistorico30DiasGA() {
     GA.rows.forEach(row => {
 
         if (!row.itemId) return;
-        if (row._fullAtivoSemEstoqueReal) return;
-        if (!gaMaisDe30DiasSemVender(row)) return;
+        if (!gaEntraLista30Dias(row)) return;
 
         chavesAtuais.set(gaChave30Dias(row.itemId, row.variationId), row);
     });
@@ -10386,7 +10489,11 @@ async function sincronizarHistorico30DiasGA() {
             r => r.itemId === itemId && String(r.variationId || '') === variationId
         );
 
-        const motivo = (row && !row.ativoNoFull) ? 'saiu_do_full' : 'vendeu';
+        const motivo = gaMotivoSaida30Dias(row);
+
+        // Sem dados de venda carregados ainda: não dá pra afirmar que
+        // vendeu — deixa o registro aberto até a próxima checagem.
+        if (!motivo) continue;
 
         try {
 
@@ -10405,6 +10512,159 @@ async function sincronizarHistorico30DiasGA() {
         } catch (error) {
             console.warn('⚠️ Erro fechando registro de 30+ dias:', error);
         }
+    }
+
+    await sincronizarListasFixas30DiasGA();
+}
+
+
+// Por que um item saiu da lista de 30+ (null = ainda não dá pra saber).
+function gaMotivoSaida30Dias(row) {
+
+    if (!row || !row.ativoNoFull) return 'saiu_do_full';
+    if (gaAnuncioFinalizado(row)) return 'finalizado';
+    if (row._fullAtivoSemEstoqueReal) return 'sem_estoque_full';
+
+    const dias = Number(row.diasSemVender);
+
+    if (Number.isFinite(dias) && dias <= 30) return 'vendeu';
+
+    return null;
+}
+
+
+// ============================================================
+// 30+ DIAS SEM VENDER x LISTAS FIXAS DA GESTÃO DE ESTOQUE
+//
+// A lista de 30+ é a regra majoritária:
+//  - todo MLB aberto na lista de 30+ fica na lista fixa "Sempre
+//    Premium" e SAI da "Sempre Clássico", seja qual for o motivo
+//    de estar lá;
+//  - quando o MLB sai da lista de 30+ porque VENDEU (ou porque o
+//    anúncio foi finalizado), sai também da "Sempre Premium".
+//    Sair por falta de estoque no FULL ou por ter saído do FULL
+//    não mexe na lista.
+//
+// As saídas são lidas do histórico (full_historico_30_mais_dias)
+// a partir da última conferência, guardada em
+// configuracoes_sistema → CHAVE_CONFERENCIA_PREMIUM_30_DIAS. Na
+// primeira vez confere todo o histórico, então quem já tinha saído
+// antes desta regra existir também é limpo.
+// Só roda para administrador (escrita automática em configuração
+// compartilhada).
+// ============================================================
+
+const CHAVE_CONFERENCIA_PREMIUM_30_DIAS = 'full_30_dias_premium_conferido_ate';
+GA._sincronizandoListasFixas30Dias = false;
+
+async function sincronizarListasFixas30DiasGA() {
+
+    if (
+        GA._sincronizandoListasFixas30Dias ||
+        !gaUsuarioAdministrador() ||
+        !window.supabaseClient ||
+        !GA._chaves30DiasAbertas ||
+        typeof window.carregarRegrasFixasTipoAnuncioML !== 'function' ||
+        typeof window.salvarRegrasFixasTipoAnuncioML !== 'function'
+    ) {
+        return;
+    }
+
+    GA._sincronizandoListasFixas30Dias = true;
+
+    try {
+
+        const db = window.supabaseClient;
+        const inicioConferencia = new Date().toISOString();
+
+        const mlbsNo30 = new Set(
+            [...GA._chaves30DiasAbertas.keys()].map(chave => chave.split('|')[0])
+        );
+
+        // Última conferência das saídas.
+        const { data: config } = await db
+            .from('configuracoes_sistema')
+            .select('valor')
+            .eq('chave', CHAVE_CONFERENCIA_PREMIUM_30_DIAS)
+            .maybeSingle();
+
+        let conferidoAte = config?.valor ?? null;
+        if (conferidoAte && typeof conferidoAte === 'object') conferidoAte = conferidoAte.em || null;
+
+        let consulta = db
+            .from('full_historico_30_mais_dias')
+            .select('item_id, data_saida')
+            .in('motivo_saida', ['vendeu', 'finalizado'])
+            .not('data_saida', 'is', null)
+            .limit(10000);
+
+        if (conferidoAte) consulta = consulta.gt('data_saida', conferidoAte);
+
+        const { data: saidas, error: erroSaidas } = await consulta;
+        if (erroSaidas) throw erroSaidas;
+
+        // Saiu vendendo e não tem outra variação ainda aberta no 30+.
+        const sairDoPremium = new Set(
+            (saidas || [])
+                .map(registro => String(registro.item_id || '').toUpperCase())
+                .filter(mlb => mlb && !mlbsNo30.has(mlb))
+        );
+
+        const atuais = await window.carregarRegrasFixasTipoAnuncioML();
+        const classicoAtual = Array.isArray(atuais?.classico) ? atuais.classico : [];
+        const premiumAtual = Array.isArray(atuais?.premium) ? atuais.premium : [];
+
+        const novoClassico = classicoAtual.filter(mlb => !mlbsNo30.has(mlb));
+        const novoPremium = [
+            ...new Set([
+                ...premiumAtual.filter(mlb => !sairDoPremium.has(mlb)),
+                ...mlbsNo30
+            ])
+        ];
+
+        const tiradosDoClassico = classicoAtual.filter(mlb => mlbsNo30.has(mlb));
+        const entraramPremium = novoPremium.filter(mlb => !premiumAtual.includes(mlb));
+        const sairamPremium = premiumAtual.filter(mlb => !novoPremium.includes(mlb));
+
+        if (tiradosDoClassico.length || entraramPremium.length || sairamPremium.length) {
+
+            const resultado = await window.salvarRegrasFixasTipoAnuncioML({
+                classico: novoClassico,
+                premium: novoPremium
+            });
+
+            if (resultado?.success === false) {
+                console.warn('⚠️ [30+ dias] Não foi possível atualizar as listas fixas:', resultado.error);
+                return;
+            }
+
+            console.log('✅ [30+ dias] Listas fixas atualizadas:', {
+                entraramPremium,
+                sairamPremium,
+                tiradosDoClassico
+            });
+
+            const partes = [];
+            if (entraramPremium.length) partes.push(`${entraramPremium.length} entrou(aram) em "Sempre Premium" (30+ dias sem vender)`);
+            if (tiradosDoClassico.length) partes.push(`${tiradosDoClassico.length} saiu(íram) de "Sempre Clássico"`);
+            if (sairamPremium.length) partes.push(`${sairamPremium.length} saiu(íram) de "Sempre Premium" (voltaram a vender)`);
+            window.showToast?.(`🔵 ${partes.join(' • ')}.`, 'info');
+        }
+
+        await db
+            .from('configuracoes_sistema')
+            .upsert(
+                { chave: CHAVE_CONFERENCIA_PREMIUM_30_DIAS, valor: inicioConferencia },
+                { onConflict: 'chave' }
+            );
+
+    } catch (erro) {
+
+        console.error('❌ [30+ dias] Erro sincronizando listas fixas:', erro);
+
+    } finally {
+
+        GA._sincronizandoListasFixas30Dias = false;
     }
 }
 
@@ -10443,6 +10703,8 @@ function gaNomeMotivoSaida(motivo) {
 
     if (motivo === 'vendeu') return '✅ Voltou a vender';
     if (motivo === 'saiu_do_full') return '📤 Saiu do FULL';
+    if (motivo === 'finalizado') return '⛔ Anúncio finalizado';
+    if (motivo === 'sem_estoque_full') return '📭 Ficou sem estoque no FULL';
     return motivo || '-';
 }
 
@@ -12981,6 +13243,19 @@ function gaRenderEstoqueDeposito(
             false;
 
 
+        // Com os dados completos, confere a lista de 30+ dias e as
+        // listas fixas Premium/Clássico (ficou travado durante o sync).
+        GA._ultimoSync30Dias = 0;
+
+        sincronizarHistorico30DiasGA().catch(
+            error =>
+                console.warn(
+                    '⚠️ [30+ dias] Falha após sincronizar:',
+                    error
+                )
+        );
+
+
         progress(
             ''
         );
@@ -13431,6 +13706,35 @@ function exportarCSV() {
         // =====================================================
 
         reconstruirCabecalhoGA();
+
+
+        // Estoque em excesso: só administradores.
+        const opcaoExcesso =
+            document.querySelector(
+                '#gaFiltroCorrecao option[value="estoque_excesso"]'
+            );
+
+        if (opcaoExcesso) {
+
+            const admin =
+                gaUsuarioAdministrador();
+
+            opcaoExcesso.hidden =
+                !admin;
+
+            opcaoExcesso.disabled =
+                !admin;
+
+            if (
+                !admin &&
+                opcaoExcesso.selected
+            ) {
+
+                document.getElementById(
+                    'gaFiltroCorrecao'
+                ).value = '';
+            }
+        }
 
 
         // =====================================================
@@ -15738,5 +16042,22 @@ function exportarCSV() {
                 }
             }
         };
+
+    // Usado pelo full_planos.js (Planos Full).
+    window.GAInterno = {
+        GA,
+        mlComRetry,
+        getSellerId,
+        buscarOperacoesVendaFull,
+        inventoryIdDaOperacaoFull,
+        quantidadeVendidaOperacaoFull,
+        formatarDataApiFull,
+        warehouseStock,
+        skuInternoPorMlb,
+        extractSku,
+        loadInternalStock,
+        executarEmParaleloGA,
+        progress
+    };
 
 })();

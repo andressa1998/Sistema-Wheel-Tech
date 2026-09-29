@@ -43345,10 +43345,34 @@ function obterAlertasExposicaoVendaNFE(
 
 
             // =================================================
-            // REGRA FIXA TEM PRIORIDADE
+            // 30+ DIAS SEM VENDER NO FULL = PREMIUM
+            //
+            // Regra majoritária: vale acima da regra fixa e do
+            // motor de regras (ver regras_alertas_estoque.js).
             // =================================================
 
             if (
+                window.RegrasAlertasEstoque &&
+                typeof window.RegrasAlertasEstoque.mlbEm30DiasSemVender === 'function' &&
+                window.RegrasAlertasEstoque.mlbEm30DiasSemVender(mlb)
+            ) {
+
+                listingTypeEsperado =
+                    'gold_pro';
+
+                exposicaoEsperadaNome =
+                    'Premium';
+
+                origemRegra =
+                    'regra_30_dias_sem_vender';
+
+            }
+
+            // =================================================
+            // REGRA FIXA TEM PRIORIDADE
+            // =================================================
+
+            else if (
                 regraFixa?.tipo
             ) {
 

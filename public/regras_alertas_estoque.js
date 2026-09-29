@@ -214,6 +214,51 @@
     }
 
     // =====================================================
+    // 30+ DIAS SEM VENDER NO FULL — REGRA MAJORITÁRIA
+    //
+    // MLB aberto na lista de 30+ (full_historico_30_mais_dias sem
+    // data_saida, mantida pelo Full - Gerenciamento) é sempre
+    // Premium, acima de qualquer outra regra — inclusive lista fixa
+    // Clássico e "regras desativadas".
+    // =====================================================
+
+    let mlbs30Dias = new Set();
+    let mlbs30DiasCarregadoEm = 0;
+    let carregando30Dias = null;
+
+    async function carregarMlbs30Dias(forcar) {
+        if (!forcar && Date.now() - mlbs30DiasCarregadoEm < 5 * 60 * 1000) return mlbs30Dias;
+        if (!window.supabaseClient) return mlbs30Dias;
+        if (carregando30Dias) return carregando30Dias;
+
+        carregando30Dias = (async () => {
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from('full_historico_30_mais_dias')
+                    .select('item_id')
+                    .is('data_saida', null)
+                    .limit(10000);
+                if (error) throw error;
+                mlbs30Dias = new Set((data || []).map((r) => String(r.item_id || '').trim().toUpperCase()).filter(Boolean));
+                mlbs30DiasCarregadoEm = Date.now();
+            } catch (e) {
+                console.warn('⚠️ [REGRAS EXPOSIÇÃO] Não foi possível carregar a lista de 30+ dias:', e);
+            } finally {
+                carregando30Dias = null;
+            }
+            return mlbs30Dias;
+        })();
+
+        return carregando30Dias;
+    }
+
+    function mlbEm30DiasSemVender(mlb) {
+        // mantém a lista atualizada sem travar a avaliação
+        if (Date.now() - mlbs30DiasCarregadoEm > 5 * 60 * 1000) carregarMlbs30Dias().catch(() => {});
+        return mlbs30Dias.has(String(mlb || '').trim().toUpperCase());
+    }
+
+    // =====================================================
     // MOTOR
     // =====================================================
 
@@ -250,8 +295,14 @@
     }
 
     function avaliarCom(cfg, fatos) {
-        if (!cfg.ativo) return { casou: false, resultado: null, motivo: 'desativado' };
         if (!fatos) return { casou: false, resultado: null, motivo: 'sem_fatos' };
+
+        // ---- 30+ DIAS SEM VENDER: acima de tudo ----
+        if (fatos.mais_30_dias_sem_vender === true || (fatos.mlb && mlbEm30DiasSemVender(fatos.mlb))) {
+            return { casou: true, resultado: 'premium', motivo: '30_dias_sem_vender' };
+        }
+
+        if (!cfg.ativo) return { casou: false, resultado: null, motivo: 'desativado' };
 
         // ---- PRIORIDADE: MLB fixo ----
         if (
@@ -388,16 +439,20 @@
         // = regras da categoria do produto (se ela tiver regras próprias)
         obterConfig: (fatos) => fatos ? configEfetiva(config, categoriaDosFatos(fatos, config)) : config,
         categoriaDoSku,
+        mlbEm30DiasSemVender,
+        carregarMlbs30Dias,
         abrirTela
     };
 
     const iniciar = () => {
         carregar().catch(() => {});
-        // mapa SKU -> categoria (pras regras por categoria); espera o
-        // cliente do Supabase existir
+        // mapa SKU -> categoria (pras regras por categoria) e lista de
+        // 30+ dias; espera o cliente do Supabase existir
         const tentarCategorias = () => {
-            if (window.supabaseClient) carregarCategoriasProdutos().catch(() => {});
-            else setTimeout(tentarCategorias, 3000);
+            if (window.supabaseClient) {
+                carregarCategoriasProdutos().catch(() => {});
+                carregarMlbs30Dias().catch(() => {});
+            } else setTimeout(tentarCategorias, 3000);
         };
         tentarCategorias();
     };
@@ -615,6 +670,10 @@
             <!-- PRIORIDADE -->
             <div class="rex-sec">
                 <h3>Prioridade</h3><hr>
+                <div class="rex-ex" style="margin:0 0 14px">
+                    <b class="pr">30+ dias sem vender no FULL = PREMIUM</b>, acima de qualquer outra regra
+                    (inclusive MLB fixo em Clássico). Anúncio finalizado não entra nessa lista.
+                </div>
                 <label class="rex-chk">
                     <input type="checkbox" id="rexMlbFixo" ${r.prioridade.mlbs_fixos_prevalecem ? 'checked' : ''}>
                     <span>MLBs fixos sempre prevalecem</span>
