@@ -1,0 +1,493 @@
+/* ============================================================
+   VERSÃO MOBILE — camada global aplicada em TODAS as telas
+   ============================================================
+   Ativa só em telas de até 768px (celular). No computador nada
+   muda. Trabalha junto com mobile.js, que:
+     - cria a barra superior (menu ☰ / título / início);
+     - marca <html> com .wt-m-app quando o usuário está logado;
+     - corrige larguras fixas colocadas via JS pelos módulos.
+
+   Obs.: ":not(#_m)" só existe para aumentar a especificidade e
+   vencer regras antigas com #id + !important.
+   ============================================================ */
+
+#wtMobileBar,
+#wtMobileBackdrop {
+    display: none;
+}
+
+@media (max-width: 768px) {
+
+    /* ---------- Base ---------- */
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    html body:not(#_m) {
+        overflow-x: hidden;
+        overflow-x: clip;
+    }
+
+    img, video, canvas, iframe, embed, object {
+        max-width: 100%;
+    }
+
+    pre {
+        max-width: 100%;
+        overflow-x: auto;
+        white-space: pre-wrap;
+    }
+
+    /* 16px evita o zoom automático do iPhone ao tocar num campo */
+    html input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(#_m),
+    html select:not(#_m),
+    html textarea:not(#_m) {
+        font-size: 16px !important;
+        max-width: 100%;
+    }
+
+    /* ---------- Barra superior ---------- */
+    html.wt-m-app #wtMobileBar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 990; /* abaixo dos modais (1000+), que cobrem a barra */
+        height: 54px;
+        padding: 0 8px;
+        padding-top: env(safe-area-inset-top);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #fff;
+        background: linear-gradient(90deg, #001a45, #00205a);
+        box-shadow: 0 4px 16px rgba(0, 25, 72, .22);
+    }
+
+    #wtMobileBar .wt-m-btn {
+        flex: 0 0 44px;
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        color: #fff;
+        background: transparent;
+        border: 0;
+        border-radius: 10px;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    #wtMobileBar .wt-m-btn:active {
+        background: rgba(255, 255, 255, .14);
+    }
+
+    #wtMobileBar .wt-m-btn i {
+        font-size: 1.25rem !important;
+    }
+
+    #wtMobileBar .wt-m-title {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        font-size: 1rem;
+        font-weight: 700;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    html.wt-m-no-home #wtMobileHomeBtn {
+        visibility: hidden;
+    }
+
+    html.wt-m-app body:not(#_m):not(#_n):not(#_o) {
+        padding-left: 0 !important;
+        padding-top: 54px !important;
+    }
+
+    /* ---------- Menu lateral vira gaveta (drawer) ---------- */
+    html.wt-m-app #wtMobileBackdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483001;
+        display: block;
+        background: rgba(0, 12, 35, .5);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity .22s ease, visibility .22s ease;
+    }
+
+    html.wt-m-drawer-open #wtMobileBackdrop {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    html.wt-m-drawer-open body {
+        overflow: hidden !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar:not(#_m),
+    html.wt-m-app #wtGlobalSidebar:not(#_m) {
+        position: fixed !important;
+        inset: 0 auto 0 0 !important;
+        z-index: 2147483002 !important;
+        width: min(84vw, 300px) !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        padding: calc(14px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)) !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        transform: translateX(-105%);
+        visibility: hidden;
+        transition: transform .25s ease, visibility .25s ease !important;
+    }
+
+    html.wt-m-drawer-open #menuSystem > .wt-sidebar:not(#_m),
+    html.wt-m-drawer-open #wtGlobalSidebar:not(#_m) {
+        transform: none;
+        visibility: visible;
+    }
+
+    /* #menuSystem tinha z-index próprio, o que prendia a gaveta
+       abaixo do fundo escuro. A área principal ganha o seu. */
+    html.wt-m-app #menuSystem.wt-dashboard:not(#_m) {
+        z-index: auto !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-main {
+        position: relative;
+        z-index: 1;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-sidebar-brand:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-sidebar-brand:not(#_m) {
+        flex-shrink: 0 !important;
+        display: flex !important;
+        min-height: 60px !important;
+        padding: 0 8px 12px !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-sidebar-brand img:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-sidebar-brand img:not(#_m) {
+        width: 130px !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-module-nav:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-module-nav:not(#_m) {
+        flex: 1 1 auto !important;
+        flex-direction: column !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-nav-item:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-nav-item:not(#_m) {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 46px !important;
+        padding: 10px 14px !important;
+        justify-content: flex-start !important;
+        transform: none !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-nav-item span:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-nav-item span:not(#_m),
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-logout span:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-logout span:not(#_m),
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-user-chevron:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-user-chevron:not(#_m) {
+        display: inline !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-user-copy:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-user-copy:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-coleta-embed .wt-coleta-copy:not(#_m) {
+        display: block !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-sidebar-footer:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-sidebar-footer:not(#_m) {
+        flex-shrink: 0 !important;
+        display: block !important;
+        min-width: 0 !important;
+        padding: 12px 8px 0 !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-user-row:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-user-row:not(#_m) {
+        display: grid !important;
+        grid-template-columns: 40px 1fr 18px !important;
+        justify-content: stretch !important;
+    }
+
+    html.wt-m-app #menuSystem > .wt-sidebar .wt-logout:not(#_m),
+    html.wt-m-app #wtGlobalSidebar .wt-logout:not(#_m) {
+        min-width: 0 !important;
+        justify-content: flex-start !important;
+    }
+
+    /* ---------- Painel inicial (menu) ---------- */
+    html.wt-m-app #menuSystem .wt-main:not(#_m) {
+        margin-left: 0 !important;
+        padding: 14px 12px 28px !important;
+    }
+
+    #menuSystem .wt-topbar {
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+
+    #menuSystem .wt-welcome h1 {
+        font-size: 1.35rem !important;
+    }
+
+    #menuSystem .wt-welcome p {
+        font-size: .82rem;
+    }
+
+    #menuSystem .wt-date {
+        display: none;
+    }
+
+    #menuSystem .wt-dashboard-search-box {
+        flex-wrap: wrap;
+        padding: 10px 12px;
+    }
+
+    #menuSystem .wt-dashboard-search-box input {
+        flex: 1 1 160px;
+    }
+
+    #menuSystem .wt-dashboard-search-box button {
+        flex: 1 1 100%;
+        min-height: 42px;
+    }
+
+    #menuSystem .carousel-container.wt-values:not(#_m),
+    #menuSystem .wt-values .carousel-slide:not(#_m) {
+        min-height: 170px !important;
+    }
+
+    #menuSystem .wt-values .carousel-slide:not(#_m) {
+        padding: 26px 46px !important;
+    }
+
+    #menuSystem .wt-summary-grid:not(#_m) {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 10px !important;
+    }
+
+    #menuSystem .wt-summary-card {
+        min-height: 0;
+        padding: 14px 12px;
+    }
+
+    #menuSystem .wt-wide-grid:not(#_m),
+    #menuSystem .wt-bottom-grid:not(#_m),
+    #menuSystem .wt-side-stack:not(#_m) {
+        grid-template-columns: 1fr !important;
+        grid-column: auto !important;
+        gap: 10px !important;
+    }
+
+    #menuSystem .wt-wide-card {
+        padding: 14px 16px;
+    }
+
+    #menuSystem .wt-panel {
+        min-height: 0;
+    }
+
+    /* ---------- Cabeçalho das telas internas ----------
+       O título passa para a barra superior; o resto do
+       cabeçalho (se houver) continua aparecendo. */
+    html.wt-m-app .main-header:not(#_m) {
+        position: relative !important;
+        top: auto !important;
+        margin-bottom: 12px !important;
+        padding: 8px 0 !important;
+    }
+
+    html.wt-m-app .main-header h1:not(#_m),
+    html.wt-m-app .main-header .header-title:not(#_m) {
+        display: none !important;
+    }
+
+    html.wt-m-app .main-header.wt-m-vazio:not(#_m) {
+        display: none !important;
+    }
+
+    .header-content {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 0 10px;
+    }
+
+    .user-info {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    /* ---------- Conteúdo ---------- */
+    html .container:not(#_m),
+    html .container-fluid:not(#_m) {
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+    }
+
+    .card {
+        padding: 14px;
+        margin-bottom: 14px;
+    }
+
+    .card-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .card-title {
+        font-size: 16px !important;
+    }
+
+    h1, .header-title { font-size: 18px !important; }
+    h2 { font-size: 17px !important; }
+
+    /* Linhas flex quebram em vez de estourar a tela */
+    .d-flex:not(.flex-nowrap):not(.filter-group):not([style*="nowrap"]),
+    .header-content,
+    [style*="display: flex"]:not([style*="nowrap"]):not([class*="carousel"]):not([class*="slide"]):not([class*="track"]):not(button):not(.btn),
+    [style*="display:flex"]:not([style*="nowrap"]):not([class*="carousel"]):not([class*="slide"]):not([class*="track"]):not(button):not(.btn) {
+        flex-wrap: wrap;
+    }
+
+    /* Itens de linhas flex não podem ficar mais largos que a tela */
+    html .d-flex > *:not(#_m),
+    html .card-header > *:not(#_m),
+    html .header-content > *:not(#_m),
+    html [style*="display: flex"] > *:not(#_m),
+    html [style*="display:flex"] > *:not(#_m) {
+        max-width: 100%;
+    }
+
+    html .d-flex > *:not(#_m),
+    html .card-header > *:not(#_m) {
+        min-width: 0;
+    }
+
+    html .filter-group:not(#_m) {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .row {
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .row > [class*="col-"] {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    /* Botões com área de toque confortável */
+    .btn {
+        min-height: 40px;
+    }
+
+    .btn-sm {
+        min-height: 34px;
+    }
+
+    /* Grupos de abas: rolam de lado em vez de quebrar */
+    .nav-tabs,
+    [role="tablist"],
+    .filter-group {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    /* ---------- Tabelas ----------
+       Mantêm o formato de tabela e rolam para o lado dentro do
+       próprio bloco (mobile.js garante o container com rolagem). */
+    html table:not(#_m) {
+        min-width: 0 !important;
+        table-layout: auto !important;
+    }
+
+    html th:not(#_m) {
+        white-space: nowrap;
+    }
+
+    .table-responsive,
+    [class*="table-wrap"],
+    [class*="table-container"],
+    #container-vendas-ml {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .table th, .table td {
+        padding: 8px 6px !important;
+    }
+
+    /* ---------- Modais viram "folha" que sobe de baixo ---------- */
+    html .modal:not(#_m) {
+        padding: 0 !important;
+        align-items: flex-end !important;
+    }
+
+    html .modal .modal-content:not(#_m),
+    html .modal-content:not(#_m) {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        max-height: 92vh !important;
+        max-height: 92dvh !important;
+        margin: 0 !important;
+        padding: 18px 14px calc(18px + env(safe-area-inset-bottom)) !important;
+        border-radius: 18px 18px 0 0 !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .modal-content .d-flex.justify-content-end {
+        gap: 8px;
+    }
+
+    .modal-content .d-flex.justify-content-end > .btn {
+        flex: 1 1 auto;
+    }
+
+    /* ---------- Widgets flutuantes ---------- */
+    #notificacoesDropdown,
+    #notificacoesReembolsoDropdown {
+        left: 8px !important;
+        right: 8px !important;
+        width: auto !important;
+        top: 62px !important;
+    }
+
+    .toast {
+        left: 10px !important;
+        right: 10px !important;
+        max-width: none !important;
+    }
+}
+
+/* Na tela de login a barra e a gaveta nunca aparecem */
+html:not(.wt-m-app) #wtMobileBar,
+html:not(.wt-m-app) #wtMobileBackdrop {
+    display: none !important;
+}

@@ -7685,6 +7685,7 @@ body:has(#loginScreen:not(.hidden)) {
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script src="registro_funcionalidades.js?v=20260929-1"></script>
     <script src="script.js?v=20260929-3"></script>
     <script src="historico_downloads_excel.js?v=20260918-1"></script>
     <script src="sessoes_ativas.js?v=20260924-1"></script>
@@ -8565,5 +8566,9 @@ document.addEventListener('click', function(e) {
             contain-intrinsic-size: auto 130px;
         }
     </style>
+
+    <!-- Versão mobile: tem que ficar por último para valer sobre os estilos acima -->
+    <link rel="stylesheet" href="mobile.css?v=20260929-1">
+    <script src="mobile.js?v=20260929-1"></script>
 </body>
 </html>
