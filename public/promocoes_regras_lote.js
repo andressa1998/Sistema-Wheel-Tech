@@ -95,6 +95,8 @@
     let candidatos = [];
     let avaliados = [];
     const desmarcados = new Set();
+    // Andamento/erro da busca de candidatos, mostrado na tabela de resultado.
+    let mensagemResultado = null;
 
     let iniciado = false;
     let timerSalvarRegras = null;
@@ -574,6 +576,55 @@
         };
     }
 
+    const ROTULOS_STATUS = {
+        started: 'já ativos',
+        pending: 'programados',
+        candidate: 'candidatos',
+        finished: 'encerrados'
+    };
+
+    // Lê os itens da promoção. Primeiro pede só os candidatos; se o ML
+    // recusar o filtro ou não devolver nada, lê tudo e separa aqui —
+    // assim dá pra dizer o que existe na promoção quando não há candidato.
+    async function lerItensPromocao(promocao, status, token) {
+        const itens = [];
+        let searchAfter = null;
+        for (let pagina = 0; pagina < 2000; pagina++) {
+            const params = new URLSearchParams({ promotion_type: promocao.type, app_version: 'v2', limit: '50' });
+            if (status) params.set('status', status);
+            if (searchAfter) params.set('search_after', searchAfter);
+            const data = await P().mlGet(
+                `https://api.mercadolibre.com/seller-promotions/promotions/${encodeURIComponent(promocao.id)}/items?${params}`,
+                token
+            );
+            for (const item of data?.results || []) {
+                const id = item.id || item.item_id;
+                if (id) itens.push({ ...item, id });
+            }
+            searchAfter = data?.paging?.searchAfter || null;
+            if (!searchAfter || !(data?.results || []).length) break;
+        }
+        return itens;
+    }
+
+    async function lerCandidatosPromocao(promocao, token, aoProgredir) {
+        let filtrados = [];
+        try {
+            filtrados = await lerItensPromocao(promocao, 'candidate', token);
+        } catch (error) {
+            log(`Filtro de candidatos recusado (${error.message}), lendo todos os itens`, 'warning');
+        }
+        if (filtrados.length) return { itens: filtrados, outrosStatus: {} };
+
+        aoProgredir(`Conferindo todos os itens de "${promocao.name || promocao.id}"...`);
+        const todos = await lerItensPromocao(promocao, null, token);
+        const outrosStatus = {};
+        for (const item of todos) {
+            if (item.status !== 'candidate') outrosStatus[item.status || '?'] = (outrosStatus[item.status || '?'] || 0) + 1;
+        }
+        return { itens: todos.filter(item => item.status === 'candidate'), outrosStatus };
+    }
+
     window.buscarCandidatosRegrasLote = async function() {
         if (ocupado.candidatos || ocupado.ativando) return;
         const promocaoId = document.getElementById('promoRegrasPromocao')?.value;
@@ -590,12 +641,29 @@
             botao.disabled = true;
             botao.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
         }
-        const aoProgredir = texto => definirTexto('promoRegrasProgresso', texto);
+        promocaoCarregada = null;
+        candidatos = [];
+        avaliados = [];
+        const aoProgredir = texto => {
+            definirTexto('promoRegrasProgresso', texto);
+            mensagemResultado = texto;
+            renderizarResultado();
+        };
 
         try {
             const token = await P().obterToken();
-            aoProgredir(`Lendo candidatos de "${promocao.name || promocao.id}"...`);
-            const itens = await P().buscarItensPromocao(promocao, 'candidate', token);
+            aoProgredir(`Lendo candidatos de "${promocao.name || promocao.id}" no Mercado Livre...`);
+            const { itens, outrosStatus } = await lerCandidatosPromocao(promocao, token, aoProgredir);
+
+            if (!itens.length) {
+                const detalhe = Object.entries(outrosStatus).map(([status, qtd]) => `${qtd} ${ROTULOS_STATUS[status] || status}`).join(', ');
+                aoProgredir(
+                    `A promoção "${promocao.name || promocao.id}" não tem candidatos (MLBs que ainda podem entrar).` +
+                    (detalhe ? ` Nela há: ${detalhe}.` : ' O Mercado Livre não devolveu nenhum item para ela.')
+                );
+                toast('⚠️ Nenhum candidato nessa promoção', 'warning');
+                return;
+            }
 
             aoProgredir(`Lendo título e preço de ${itens.length} anúncio(s)...`);
             await completarDetalhes(itens.map(item => item.id), token, (feitos, total) =>
@@ -607,13 +675,13 @@
             promocaoCarregada = promocao;
             candidatos = itens.map(montarCandidato);
             desmarcados.clear();
-            aoProgredir(`${candidatos.length} candidato(s) em "${promocao.name || promocao.id}" • lido às ${new Date().toLocaleTimeString('pt-BR')}`);
+            definirTexto('promoRegrasProgresso', `${candidatos.length} candidato(s) em "${promocao.name || promocao.id}" • lido às ${new Date().toLocaleTimeString('pt-BR')}`);
+            mensagemResultado = null;
             renderizarCategoriasRegras();
             reavaliar();
-            if (!candidatos.length) toast('⚠️ Nenhum candidato nessa promoção', 'warning');
         } catch (error) {
             log(`Erro ao buscar candidatos: ${error.message}`, 'error');
-            aoProgredir(`Erro ao buscar candidatos: ${error.message}`);
+            aoProgredir(`❌ Erro ao buscar candidatos: ${error.message}`);
             toast(`❌ ${error.message}`, 'error');
         } finally {
             ocupado.candidatos = false;
@@ -650,7 +718,11 @@
 
     function motivosExclusao(candidato, conjuntos) {
         const motivos = [];
-        const valor = regras.descontoBase === 'vendedor' ? candidato.percentVendedor : candidato.desconto;
+        const bruto = regras.descontoBase === 'vendedor' ? candidato.percentVendedor : candidato.desconto;
+        // Compara com o valor arredondado que aparece na tela (1 casa):
+        // o desconto vem de preços em centavos, então 5% costuma virar
+        // 5,005% ou 4,998% e escapava do "maior/menor ou igual".
+        const valor = Number.isFinite(bruto) ? Math.round(bruto * 10) / 10 : bruto;
         const min = numeroOuNulo(regras.descontoMin);
         const max = numeroOuNulo(regras.descontoMax);
         const rotuloBase = regras.descontoBase === 'vendedor' ? '% do vendedor' : 'Desconto';
@@ -1023,7 +1095,7 @@
                             </tr>
                         </thead>
                         <tbody id="promoRegrasResultadoBody">
-                            <tr><td colspan="9" class="text-center text-muted py-4">Busque os candidatos de uma promoção.</td></tr>
+                            <tr><td colspan="9" class="text-center text-muted py-4">Escolha a promoção no item "1. Promoção" acima e clique em "Buscar candidatos" — a lista dos que entram aparece aqui.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1156,12 +1228,24 @@
             candidatos.length
                 ? `${candidatos.length} candidato(s) • ${entram.length} entram nas regras • ${excluidos} excluído(s) • ` +
                   `${elegiveisSelecionados().length} selecionado(s) para ativar`
-                : 'Nenhum candidato carregado.'
+                : 'Nenhum candidato carregado ainda.'
         );
 
         const lista = resultadoFiltrado();
         if (!lista.length) {
-            body.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">${candidatos.length ? 'Nenhum MLB nesse filtro.' : 'Busque os candidatos de uma promoção.'}</td></tr>`;
+            const filtro = document.getElementById('promoRegrasFiltroResultado')?.value || 'entram';
+            let mensagem;
+            if (!candidatos.length) {
+                mensagem = mensagemResultado
+                    ? esc(mensagemResultado)
+                    : 'Escolha a promoção no item "1. Promoção" acima e clique em "Buscar candidatos" — a lista dos que entram aparece aqui.';
+            } else if (filtro === 'entram' && !entram.length && !(document.getElementById('promoRegrasBusca')?.value || '').trim()) {
+                mensagem = `Todos os ${candidatos.length} candidato(s) foram barrados pelas regras. ` +
+                    'Troque o filtro para "Somente os excluídos" para ver o motivo de cada um.';
+            } else {
+                mensagem = 'Nenhum MLB nesse filtro.';
+            }
+            body.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">${mensagem}</td></tr>`;
             atualizarBotaoAtivar();
             return;
         }
