@@ -98,6 +98,7 @@
         carregarMLBsBloqueados();
         await carregarAgendamentosPromocoes();
         await verificarAvisosPromocoesAgendadas();
+        await window.iniciarPromocoesHistorico?.();
 
         showToast('📋 Gestão de Promoções em Lote carregada', 'info');
         log('Sistema carregado com sucesso', 'success');
@@ -432,6 +433,9 @@ function criarInterfaceBulk() {
                 </div>
             </div>
         </div>
+
+        <!-- MLBs NOVOS (40 DIAS) E HISTÓRICO — promocoes_historico.js -->
+        <div id="bulkPromocoesHistoricoArea"></div>
 
         <!-- CONFIGURAR ANÁLISE -->
         <div class="card mb-4">
@@ -2293,6 +2297,16 @@ async function ativarItemPromocao(
         );
 
         if (response.ok) {
+            window.registrarAtivacaoHistoricoPromocao?.({
+                mlb: itemId,
+                promotionId,
+                promotionType,
+                promotionName: opcoes.promocaoNome,
+                precoPromocao: body.deal_price,
+                precoOriginal: opcoes.precoOriginal,
+                origem: opcoes.origem
+            });
+
             return {
                 success: true,
                 status: response.status,
@@ -3131,7 +3145,12 @@ window.executarAtivacaoEmMassa = async function() {
                     destinoId,
                     promotionType,
                     dealPrice,
-                    token
+                    token,
+                    {
+                        precoOriginal: item.precoOriginalDestino,
+                        promocaoNome: promocaoDestino.name,
+                        origem: 'ativacao_em_massa'
+                    }
                 );
 
             if (resultado.success) {
@@ -5456,7 +5475,12 @@ async function processarAtivacaoAgendada(
             reservado.promotion_type,
             reservado.valor_final,
             accessToken,
-            { fim: reservado.data_desativacao }
+            {
+                fim: reservado.data_desativacao,
+                precoOriginal: precoAntesPromocao,
+                promocaoNome: reservado.promotion_name,
+                origem: 'agendamento'
+            }
         );
 
         if (!resultado?.success) {
@@ -6215,6 +6239,11 @@ async function aguardarConfirmacaoDesativacaoML(
                 'O Mercado Livre não confirmou a desativação'
             );
         }
+
+        window.encerrarHistoricoPromocao?.(
+            reservado.mlb,
+            reservado.promotion_id
+        );
 
         /*
          * Somente agora, após a confirmação do Mercado Livre,
