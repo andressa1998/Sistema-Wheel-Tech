@@ -80,8 +80,16 @@ async function carregarClientesConcorrentesConfirmadosNFE() {
 
         window._buyerIdsConcorrentesConfirmadosNFE = novoSet;
 
-        if (typeof atualizarListaNFE === 'function') {
-            atualizarListaNFE();
+        // Só redesenha a tabela com os avisos novos. Antes chamava
+        // atualizarListaNFE(), que fazia uma SINCRONIZAÇÃO COMPLETA
+        // (Mercado Livre + milhares de linhas do banco) só para
+        // mostrar o selo de concorrente.
+        if (
+            typeof renderizarListaRecarregadaNoPainelNFE === 'function' &&
+            Array.isArray(window._vendasPainelNFEBase) &&
+            window._vendasPainelNFEBase.length > 0
+        ) {
+            renderizarListaRecarregadaNoPainelNFE([]);
         }
 
     } catch (error) {
@@ -162,8 +170,13 @@ async function carregarCompradoresPossiveisConcorrentesNFE() {
 
         window._buyerIdsPossiveisConcorrentesNFE = novoSet;
 
-        if (typeof atualizarListaNFE === 'function') {
-            atualizarListaNFE();
+        // Só redesenha (ver carregarClientesConcorrentesConfirmadosNFE).
+        if (
+            typeof renderizarListaRecarregadaNoPainelNFE === 'function' &&
+            Array.isArray(window._vendasPainelNFEBase) &&
+            window._vendasPainelNFEBase.length > 0
+        ) {
+            renderizarListaRecarregadaNoPainelNFE([]);
         }
 
     } catch (error) {
@@ -10819,7 +10832,68 @@ async function buscarVendasAtualizadasRecentementeNFE(
     return vendas;
 }
 
+// =========================================================
+// CACHE CURTO DA LEITURA DE vendas_ml
+//
+// Esta leitura traz até 5.000 vendas com todas as colunas
+// (5 páginas pesadas) e era a 2ª consulta mais cara do banco
+// (Query Performance do Supabase). Ela rodava uma vez para
+// CADA DIA do período selecionado e de novo a cada atualização
+// da lista. Agora: chamadas simultâneas compartilham a mesma
+// busca e o resultado vale por 3 minutos.
+// =========================================================
+
+const CACHE_VENDAS_FONTE_BANCO_ML_MS =
+    3 * 60 * 1000;
+
+let cacheVendasFonteBancoML =
+    null;
+
+let cacheVendasFonteBancoMLEm =
+    0;
+
+let buscaVendasFonteBancoMLEmAndamento =
+    null;
+
 async function carregarVendasFonteBancoML() {
+
+    if (
+        cacheVendasFonteBancoML &&
+        Date.now() - cacheVendasFonteBancoMLEm <
+            CACHE_VENDAS_FONTE_BANCO_ML_MS
+    ) {
+        return cacheVendasFonteBancoML.slice();
+    }
+
+    if (buscaVendasFonteBancoMLEmAndamento) {
+        return buscaVendasFonteBancoMLEmAndamento;
+    }
+
+    buscaVendasFonteBancoMLEmAndamento =
+        carregarVendasFonteBancoMLSemCache()
+            .then(vendas => {
+
+                if (vendas.length > 0) {
+
+                    cacheVendasFonteBancoML =
+                        vendas;
+
+                    cacheVendasFonteBancoMLEm =
+                        Date.now();
+                }
+
+                return vendas;
+            })
+            .finally(() => {
+
+                buscaVendasFonteBancoMLEmAndamento =
+                    null;
+            });
+
+    return buscaVendasFonteBancoMLEmAndamento;
+}
+
+async function carregarVendasFonteBancoMLSemCache() {
 
     if (
         !window
@@ -73323,6 +73397,33 @@ async function carregarNFesEmitidas() {
 
 
     if (!tbody) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // SÓ BAIXA COM A SUB-ABA "NF-es EMITIDAS" ABERTA
+    //
+    // /nfe/listar-nfes traz TODAS as notas com o XML assinado
+    // de cada uma (vários MB). Era chamada após cada
+    // sincronização/emissão mesmo com a pessoa na aba de
+    // vendas — uma das maiores fontes de tráfego do banco.
+    // Ao abrir a sub-aba, mostrarAbaNFE('emitidas') chama
+    // esta função de novo, já visível.
+    // =====================================================
+
+    const abaEmitidas =
+        document.getElementById(
+            'abaEmitidas'
+        );
+
+    if (
+        abaEmitidas &&
+        abaEmitidas.classList.contains(
+            'hidden'
+        )
+    ) {
 
         return;
     }
