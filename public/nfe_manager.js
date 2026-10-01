@@ -20214,6 +20214,45 @@ function refrescarPainelNFEPreservandoFiltro(
     return atualizarPainelNFEIncremental();
 }
 
+// =========================================================
+// RENDER DE LISTAS RECARREGADAS PELAS ROTINAS ANTIGAS
+//
+// Várias rotinas antigas (atualizar período, após emitir NF-e,
+// após baixa de estoque, ao carregar a lista de concorrentes...)
+// buscavam "as vendas do período" — que só trazem liberadas /
+// não liberadas — e chamavam renderizarVendasNFETabela() direto.
+// Isso ignorava o filtro do painel: quem estava no filtro FULL
+// via as vendas aparecerem e logo depois sumirem ("Nenhuma venda
+// encontrada para esta data").
+//
+// Agora o que foi recarregado é MESCLADO na base do painel e a
+// tabela é redesenhada respeitando o filtro selecionado.
+// =========================================================
+function renderizarListaRecarregadaNoPainelNFE(
+    vendas
+) {
+
+    if (
+        Array.isArray(vendas) &&
+        vendas.length > 0
+    ) {
+
+        window._vendasPainelNFEBase =
+            mesclarVendasPainelNFE(
+                window._vendasPainelNFEBase,
+                vendas
+            );
+    }
+
+
+    return aplicarFiltroPainelNFE(
+        window._filtroPainelNFE
+    );
+}
+
+window.renderizarListaRecarregadaNoPainelNFE =
+    renderizarListaRecarregadaNoPainelNFE;
+
 function obterSkusExibidosTabelaNFE(venda) {
 
     if (!venda) {
@@ -20727,6 +20766,104 @@ function obterMaiorDataCreatedVendasNFE(
 }
 
 
+// Remove da lista as vendas cujo id_venda_ml já está em
+// vendas_nfe_cache. Em caso de erro no banco, devolve a lista
+// inteira (melhor reprocessar do que perder venda).
+async function removerVendasJaSalvasNoBancoNFE(
+    vendas
+) {
+
+    vendas =
+        Array.isArray(vendas)
+            ? vendas
+            : [];
+
+    if (
+        vendas.length === 0 ||
+        !window.supabaseClient
+    ) {
+        return vendas;
+    }
+
+
+    const ids =
+        vendas
+            .map(
+                venda =>
+                    normalizarOrderIdML(
+                        venda?.id_venda_ml ||
+                        venda?.id
+                    )
+            )
+            .filter(
+                Boolean
+            );
+
+
+    const existentes =
+        new Set();
+
+
+    try {
+
+        for (
+            let i = 0;
+            i < ids.length;
+            i += 200
+        ) {
+
+            const lote =
+                ids.slice(
+                    i,
+                    i + 200
+                );
+
+            const {
+                data,
+                error
+            } =
+                await window.supabaseClient
+                    .from('vendas_nfe_cache')
+                    .select('id_venda_ml')
+                    .in('id_venda_ml', lote);
+
+            if (error) {
+                throw error;
+            }
+
+            (data || []).forEach(
+                linha =>
+                    existentes.add(
+                        normalizarOrderIdML(
+                            linha.id_venda_ml
+                        )
+                    )
+            );
+        }
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ [NFE CURSOR] Não foi possível conferir vendas já salvas:',
+            error
+        );
+
+        return vendas;
+    }
+
+
+    return vendas.filter(
+        venda =>
+            !existentes.has(
+                normalizarOrderIdML(
+                    venda?.id_venda_ml ||
+                    venda?.id
+                )
+            )
+    );
+}
+
+
 async function buscarVendasNovasDesdeCursorNFE(
     token = null
 ) {
@@ -20792,11 +20929,66 @@ async function buscarVendasNovasDesdeCursorNFE(
     // A chave UNIQUE id_venda_ml impede duplicidade.
     // =====================================================
 
+    // Margem maior (15 min): o orders/search do ML às vezes demora
+    // vários minutos para indexar uma venda nova.
     inicio =
         new Date(
             inicio.getTime() -
-            2 * 60 * 1000
+            15 * 60 * 1000
         );
+
+
+    // =====================================================
+    // REVISÃO PERIÓDICA DOS ÚLTIMOS 3 DIAS
+    //
+    // Vendas criadas com pagamento "em processamento"
+    // (payment_in_process / payment_required) são ignoradas
+    // na hora — e, como o cursor avança, nunca mais eram
+    // buscadas depois que o pagamento era aprovado. Elas
+    // ficavam fora do sistema para sempre.
+    //
+    // A cada 20 min a busca volta 3 dias. Só as que ainda não
+    // existem no banco são processadas (ver sincronização).
+    // =====================================================
+
+    const JANELA_REVISAO_MS =
+        3 * 24 * 60 * 60 * 1000;
+
+    const INTERVALO_REVISAO_MS =
+        20 * 60 * 1000;
+
+    const ultimaRevisao =
+        Number(
+            window._nfeUltimaRevisaoJanelaVendas ||
+            0
+        );
+
+    let revisaoAmpla =
+        false;
+
+    if (
+        Date.now() - ultimaRevisao >=
+        INTERVALO_REVISAO_MS
+    ) {
+
+        const inicioRevisao =
+            new Date(
+                Date.now() -
+                JANELA_REVISAO_MS
+            );
+
+        if (
+            inicioRevisao <
+            inicio
+        ) {
+
+            inicio =
+                inicioRevisao;
+        }
+
+        revisaoAmpla =
+            true;
+    }
 
 
     const fim =
@@ -21008,9 +21200,18 @@ async function buscarVendasNovasDesdeCursorNFE(
         );
 
 
+    if (revisaoAmpla) {
+
+        window._nfeUltimaRevisaoJanelaVendas =
+            Date.now();
+    }
+
+
     return {
 
         vendas,
+
+        revisaoAmpla,
 
         cursorAnterior:
             cursor,
@@ -22025,8 +22226,20 @@ async function sincronizarPainelOperacionalNFE(
                 );
 
 
+        // A memória só tem as vendas ativas (liberadas / não
+        // liberadas). FULL, enviadas e canceladas já gravadas
+        // ficam fora dela — confere no banco para não
+        // reprocessar essas vendas a cada busca.
+        novas =
+            await removerVendasJaSalvasNoBancoNFE(
+                novas
+            );
+
+
         console.log(
-            `🆕 [NFE] Cursor retornou ${buscaNovas.vendas.length} venda(s); ${novas.length} realmente nova(s).`
+            `🆕 [NFE] Cursor retornou ${buscaNovas.vendas.length} venda(s)` +
+            `${buscaNovas.revisaoAmpla ? ' (revisão dos últimos 3 dias)' : ''}` +
+            `; ${novas.length} realmente nova(s).`
         );
 
 
@@ -23876,7 +24089,7 @@ async function atualizarVendasDataSelecionada() {
             );
 
 
-        renderizarVendasNFETabela(
+        renderizarListaRecarregadaNoPainelNFE(
             cache
         );
 
@@ -24025,7 +24238,7 @@ async function atualizarVendasDataSelecionada() {
             );
 
 
-        renderizarVendasNFETabela(
+        renderizarListaRecarregadaNoPainelNFE(
             atualizado
         );
 
@@ -42521,6 +42734,92 @@ function garantirEstiloAlertaExposicaoFullNFE() {
         }
 
         /* ==============================================
+         * CARTÃO AZUL — ANÚNCIO PAUSADO COM ESTOQUE
+         * (o cartão e a linha piscam)
+         * ============================================== */
+
+        @keyframes nfePiscarCartaoAzul {
+            0%,
+            100% {
+                opacity: 1;
+                box-shadow:
+                    0 0 0 0 rgba(13, 110, 253, 0.65);
+            }
+
+            50% {
+                opacity: 0.72;
+                box-shadow:
+                    0 0 0 6px rgba(13, 110, 253, 0);
+            }
+        }
+
+        @keyframes nfePiscarAzul {
+            0%,
+            100% {
+                background-color: #ffffff;
+                box-shadow:
+                    inset 5px 0 0 #0d6efd;
+            }
+
+            50% {
+                background-color: #b9d6ff;
+                box-shadow:
+                    inset 5px 0 0 #0d6efd;
+            }
+        }
+
+        .nfe-alerta-exposicao-full.nfe-alerta-exposicao-azul,
+        .nfe-alerta-exposicao-full.nfe-alerta-anuncio-pausado {
+            background:
+                linear-gradient(
+                    135deg,
+                    #1f7cff,
+                    #0a58ca
+                ) !important;
+
+            border:
+                1px solid
+                #0848a8;
+
+            animation:
+                nfePiscarCartaoAzul
+                1s
+                ease-in-out
+                infinite;
+        }
+
+        tr.alerta-anuncio-pausado-nfe {
+            animation:
+                nfePiscarAzul
+                1.15s
+                ease-in-out
+                infinite !important;
+        }
+
+        tr.alerta-anuncio-pausado-nfe > td {
+            background-color:
+                transparent !important;
+        }
+
+        tr.alerta-anuncio-pausado-nfe:hover {
+            animation-play-state:
+                paused !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            tr.alerta-anuncio-pausado-nfe,
+            .nfe-alerta-exposicao-full.nfe-alerta-anuncio-pausado {
+                animation:
+                    none !important;
+            }
+
+            tr.alerta-anuncio-pausado-nfe {
+                background-color:
+                    #b9d6ff !important;
+            }
+        }
+
+        /* ==============================================
          * TÍTULO
          * ============================================== */
 
@@ -43352,6 +43651,143 @@ function obterAlertasExposicaoVendaNFE(
 
 
             // =================================================
+            // PRIORIDADE 0 — ANÚNCIO PAUSADO COM ESTOQUE
+            //
+            // Anúncio pausado (inclusive pausa automática do ML
+            // por falta de estoque) enquanto ainda existe estoque
+            // no anúncio, no FULL ou no estoque interno. Anúncio
+            // parado muito tempo prejudica o algoritmo do ML, então
+            // precisa ser reativado o quanto antes.
+            //
+            // Não encerra a análise: os demais alertas deste MLB
+            // continuam sendo avaliados.
+            // =================================================
+
+            const statusAnuncioAtual =
+                String(
+                    snapshot
+                        ?.status_anuncio ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase();
+
+            const capacidadeInternaAnuncio =
+                capacidadeInterna?.todos_cadastrados === true
+                    ? Number(
+                        capacidadeInterna.capacidade_anuncio ||
+                        0
+                    )
+                    : 0;
+
+            const estoqueDisponivelPausado =
+                Math.max(
+                    Number(estoqueTotalAnuncio || 0),
+                    Number(estoqueVariacaoAnuncio || 0),
+                    Number(estoqueTotalFull || 0),
+                    capacidadeInternaAnuncio
+                );
+
+            const estoqueNoML =
+                Math.max(
+                    Number(estoqueTotalAnuncio || 0),
+                    Number(estoqueVariacaoAnuncio || 0),
+                    Number(estoqueTotalFull || 0)
+                );
+
+            // Ao vender a última unidade o ML pausa o anúncio
+            // logo em seguida — a captura feita na hora da venda
+            // pode ainda mostrar "active" com 0 un. Anúncio fora
+            // do FULL, zerado no ML e com estoque interno = vai
+            // ficar pausado.
+            // Com variações, usa a soma de TODAS (uma variação
+            // zerada não pausa o anúncio).
+            const estoqueTodasVariacoes =
+                converterNumero(
+                    snapshot
+                        ?.estoque_anuncio_total_todas_variacoes
+                );
+
+            const anuncioZeradoComEstoqueInterno =
+                ['active', ''].includes(statusAnuncioAtual) &&
+                snapshot?.oferecendo_full !== true &&
+                estoqueTotalAnuncio !== null &&
+                estoqueNoML === 0 &&
+                (
+                    estoqueTodasVariacoes === null
+                        ? snapshot?.tem_variacoes_anuncio !== true
+                        : estoqueTodasVariacoes === 0
+                ) &&
+                capacidadeInternaAnuncio > 0;
+
+            if (
+                (
+                    statusAnuncioAtual === 'paused' &&
+                    estoqueDisponivelPausado > 0
+                ) ||
+                anuncioZeradoComEstoqueInterno
+            ) {
+
+                alertas.push({
+
+                    chave:
+                        `${mlb}|TOTAL|anuncio_pausado`,
+
+                    tipo:
+                        'anuncio_pausado',
+
+                    prioridade:
+                        0,
+
+                    cor:
+                        'azul',
+
+                    mlb,
+
+                    indice_snapshot:
+                        indice,
+
+                    variation_id:
+                        snapshot
+                            ?.variation_id ??
+                        null,
+
+                    sku:
+                        snapshot
+                            ?.sku ||
+                        null,
+
+                    titulo:
+                        'ANÚNCIO PAUSADO COM ESTOQUE',
+
+                    mensagem:
+                        estoqueNoML > 0
+                            ? 'O anúncio está pausado mas ainda tem estoque. Reative o anúncio para não perder relevância no Mercado Livre.'
+                            : 'O anúncio ficou sem estoque no ML e é pausado, mas há estoque interno. Adicione estoque e reative o anúncio para não perder relevância.',
+
+                    listing_type_atual:
+                        listingTypeAtual,
+
+                    exposicao_atual_nome:
+                        exposicaoAtualNome,
+
+                    estoque_anuncio:
+                        estoqueTotalAnuncio ??
+                        estoqueVariacaoAnuncio,
+
+                    estoque_full:
+                        estoqueTotalFull,
+
+                    capacidade_anuncio:
+                        capacidadeInternaAnuncio,
+
+                    regra_fixa:
+                        null
+                });
+            }
+
+
+            // =================================================
             // PRIORIDADE 1 — FULL ZERADO
             //
             // SÓ SE O MLB INTEIRO ZEROU.
@@ -44072,9 +44508,81 @@ function montarAvisosExposicaoVendaNFE(
         '';
 
     /*
-     * FULL ZERADO
+     * ANÚNCIO PAUSADO COM ESTOQUE
      */
     if (
+        alerta.tipo ===
+        'anuncio_pausado'
+    ) {
+        classeAlerta =
+            'nfe-alerta-anuncio-pausado ' +
+            'nfe-alerta-exposicao-azul';
+
+        icone =
+            '⏸';
+
+        detalhes = `
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Estoque no anúncio:
+
+                <strong>
+                    ${Number(
+                        alerta
+                            .estoque_anuncio ||
+                        0
+                    )}
+                    un.
+                </strong>
+            </div>
+
+            ${
+                Number(alerta.estoque_full || 0) > 0
+                    ? `
+                        <div
+                            class="
+                                nfe-alerta-exposicao-detalhes
+                            "
+                        >
+                            Estoque FULL:
+
+                            <strong>
+                                ${Number(
+                                    alerta.estoque_full
+                                )}
+                                un.
+                            </strong>
+                        </div>
+                    `
+                    : ''
+            }
+
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Capacidade pelo estoque interno:
+
+                <strong>
+                    ${Number(
+                        alerta
+                            .capacidade_anuncio ||
+                        0
+                    )}
+                    un.
+                </strong>
+            </div>
+        `;
+    }
+
+    /*
+     * FULL ZERADO
+     */
+    else if (
         alerta.tipo ===
         'full_zero'
     ) {
@@ -44755,6 +45263,12 @@ async function confirmarAjusteExposicaoNFE(
             ) {
                 explicacao =
                     `A exposição continua como ${alertaOriginalContinua.exposicao_atual_nome}. O esperado é ${alertaOriginalContinua.exposicao_esperada_nome}.`;
+            } else if (
+                alertaOriginalContinua.tipo ===
+                'anuncio_pausado'
+            ) {
+                explicacao =
+                    'O Mercado Livre ainda informa o anúncio pausado (ou sem estoque) enquanto há estoque disponível.';
             }
 
             alert(
@@ -44792,6 +45306,12 @@ async function confirmarAjusteExposicaoNFE(
         ) {
             mensagemSucesso +=
                 'A quantidade atual do anúncio está correta. A linha foi atualizada e o alerta roxo foi removido.';
+        } else if (
+            tipoAlertaOriginal ===
+            'anuncio_pausado'
+        ) {
+            mensagemSucesso +=
+                'O anúncio está ativo novamente. A linha foi atualizada e o alerta azul foi removido.';
         } else {
             const snapshotAtual =
                 snapshotsAtualizados[0];
@@ -47632,6 +48152,121 @@ function renderizarVendasNFETabela(vendas) {
                     }
 
 
+                    // =================================================
+                    // UNIDADES VENDIDAS
+                    //
+                    // Antes a tabela só mostrava o estoque do anúncio;
+                    // a quantidade comprada não aparecia em lugar
+                    // nenhum (ex.: 3 rolamentos numa venda só).
+                    // =================================================
+
+                    const qtdPorSkuVendida =
+                        new Map();
+
+                    let qtdTotalVendida =
+                        0;
+
+                    if (
+                        Array.isArray(
+                            venda.order_items
+                        ) &&
+                        venda.order_items.length > 0
+                    ) {
+
+                        venda.order_items.forEach(
+                            item => {
+
+                                const qtd =
+                                    Number(
+                                        item?.quantity ||
+                                        0
+                                    );
+
+                                if (
+                                    !Number.isFinite(qtd) ||
+                                    qtd <= 0
+                                ) {
+                                    return;
+                                }
+
+                                qtdTotalVendida +=
+                                    qtd;
+
+                                const sku =
+                                    item?.item?.seller_sku;
+
+                                if (sku) {
+
+                                    qtdPorSkuVendida.set(
+                                        sku,
+                                        (qtdPorSkuVendida.get(sku) || 0) +
+                                            qtd
+                                    );
+                                }
+                            }
+                        );
+                    }
+
+                    if (
+                        qtdTotalVendida <= 0
+                    ) {
+
+                        qtdTotalVendida =
+                            Number(
+                                venda.quantidade ||
+                                venda.quantity ||
+                                0
+                            ) ||
+                            0;
+                    }
+
+
+                    const montarQtdVendidaNFE =
+                        qtd => {
+
+                            if (
+                                !qtd ||
+                                qtd <= 0
+                            ) {
+                                return '';
+                            }
+
+                            const multipla =
+                                qtd > 1;
+
+                            return `
+                                <span
+                                    style="
+                                        display:inline-block;
+                                        margin-left:4px;
+                                        padding:1px 6px;
+                                        border-radius:10px;
+                                        font-size:11px;
+                                        font-weight:700;
+                                        white-space:nowrap;
+                                        background:${multipla ? '#fd7e14' : '#e9ecef'};
+                                        color:${multipla ? '#fff' : '#495057'};
+                                    "
+                                    title="Unidades vendidas nesta venda"
+                                >
+                                    ${qtd} un.${multipla ? ' vendidas' : ''}
+                                </span>
+                            `;
+                        };
+
+
+                    // Quantidade por SKU quando dá pra separar;
+                    // senão, a quantidade total da venda uma vez só.
+                    const qtdPorLinhaSku =
+                        !venda.eh_kit &&
+                        skus.every(
+                            sku =>
+                                qtdPorSkuVendida.has(
+                                    sku
+                                )
+                        );
+
+
                     const skuHtml =
                         skus
                             .map(
@@ -47642,12 +48277,28 @@ function renderizarVendasNFETabela(vendas) {
                                                 sku
                                             )}
                                         </code>
+                                        ${
+                                            qtdPorLinhaSku
+                                                ? montarQtdVendidaNFE(
+                                                    qtdPorSkuVendida.get(
+                                                        sku
+                                                    )
+                                                )
+                                                : ''
+                                        }
                                     </div>
                                 `
                             )
                             .join(
                                 ''
-                            );
+                            ) +
+                        (
+                            qtdPorLinhaSku
+                                ? ''
+                                : montarQtdVendidaNFE(
+                                    qtdTotalVendida
+                                )
+                        );
 
 
                     // =================================================
@@ -47719,11 +48370,27 @@ function renderizarVendasNFETabela(vendas) {
                         0;
 
 
+                    const temAlertaAnuncioPausado =
+                        alertasVenda.some(
+                            alerta =>
+                                alerta.tipo ===
+                                'anuncio_pausado'
+                        );
+
+
                     let classeAlertaExposicao =
                         '';
 
 
                     if (
+                        temAlertaAnuncioPausado
+                    ) {
+
+                        classeAlertaExposicao =
+                            'alerta-anuncio-pausado-nfe';
+
+
+                    } else if (
                         temAlertaFullZero
                     ) {
 
@@ -56735,7 +57402,7 @@ async function atualizarTabelaVendasNFEPosEstoque() {
                     : data
             );
 
-        renderizarVendasNFETabela(
+        renderizarListaRecarregadaNoPainelNFE(
             vendas
         );
 
@@ -64655,7 +65322,7 @@ async function sincronizarVendasPendentesML(
         }
 
 
-        renderizarVendasNFETabela(
+        renderizarListaRecarregadaNoPainelNFE(
             telaFinal
         );
 
@@ -70831,7 +71498,7 @@ console.log(
                     : data
             );
 
-        renderizarVendasNFETabela(
+        renderizarListaRecarregadaNoPainelNFE(
             vendas
         );
 
@@ -78955,7 +79622,7 @@ async function atualizarListaNFE() {
             await carregarVendasCacheNFE(
                 null
             );
-        renderizarVendasNFETabela(
+        renderizarListaRecarregadaNoPainelNFE(
             vendas
         );
         return;
