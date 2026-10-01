@@ -85,18 +85,6 @@ const regrasEstoquePadrao = {
             { operador: 'padrao', estoque_maximo: 10 }
         ]
     },
-    'Arruelas': {
-        condicoes: [
-            { operador: 'maior_que', valor: 100, estoque_maximo: 2 },
-            { operador: 'padrao', estoque_maximo: 10 }
-        ]
-    },
-    'Porcas': {
-        condicoes: [
-            { operador: 'maior_que', valor: 100, estoque_maximo: 2 },
-            { operador: 'padrao', estoque_maximo: 10 }
-        ]
-    },
     'CapacetesEPartes': {
         condicoes: [
             { operador: 'maior_que', valor: 100, estoque_maximo: 2 },
@@ -2484,11 +2472,6 @@ function atualizarSelectCategorias() {
         {
             value: 'CapacetesEPartes',
             label: 'Capacetes e Partes'
-        },
-
-        {
-            value: 'Porcas',
-            label: 'Porcas'
         }
 
     ];
@@ -10307,8 +10290,6 @@ function preencherSelectCategoriaMassa(
         'Parafusos',
         'Rolamentos',
         'Raios',
-        'Arruelas',
-        'Porcas',
         'CapacetesEPartes',
         'outros'
     ];
@@ -17680,15 +17661,7 @@ const camposPorCategoria = {
         { nome: "cabeçaraio", label: "Cabeça do Raio", tipo: "select", opcoes: ["SP", "J", "T-head"] },
         { nome: "tamanhoraio", label: "Tamanho Raio", tipo: "number", placeholder: "Ex: 284"},
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
-    ],
-    Porcas: [
-        { nome: "tamanho", label: "Tamanho", tipo: "text", placeholder: "Ex: 1mm ou 2mm" },
-        { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],  
-    Arruelas: [
-        { nome: "tamanho", label: "Tamanho", tipo: "text", placeholder: "Ex: 1mm ou 2mm" },
-        { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
-    ],   
     CapacetesEPartes: [
         { nome: "tamanhopadrao", label: "Tamanho Padrão", tipo: "select", opcoes: ["P", "M", "G", "P/M", "M/G", "U"] },
         { nome: "tamanhonumerico", label: "Tamanho Númerico", tipo: "number" },
@@ -28425,8 +28398,6 @@ function preencherModalRegras() {
         'Parafusos': 'Parafusos',
         'Rolamentos': 'Rolamentos',
         'Raios': 'Raios',
-        'Arruelas': 'Arruelas',
-        'Porcas': 'Porcas',
         'CapacetesEPartes': 'Capacetes e Partes'
     };
     
@@ -36918,8 +36889,6 @@ function salvarNovaCategoria() {
         'Parafusos',
         'Rolamentos',
         'Raios',
-        'Arruelas',
-        'Porcas',
         'CapacetesEPartes',
         'outros'
 
@@ -42955,8 +42924,6 @@ function abrirModalEscolherCategoriaImportacao(
         'Parafusos',
         'Rolamentos',
         'Raios',
-        'Arruelas',
-        'Porcas',
         'CapacetesEPartes'
     ];
 

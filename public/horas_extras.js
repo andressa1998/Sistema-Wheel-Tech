@@ -18,6 +18,15 @@
     const CHAVE_TOKEN = 'wheeltech_he_token';
     const VALIDADE_TOKEN_MS = 12 * 60 * 60 * 1000 - 5 * 60 * 1000; // um pouco antes do banco
     const ERRO_SESSAO = 'SESSAO_HE_INVALIDA';
+    // Divisor do salário-hora (art. 64 CLT, Súmula 431 TST):
+    // 30 dias × (jornada semanal ÷ 6 dias). Os 30 dias incluem os
+    // domingos porque o salário mensal já paga o repouso (Lei 605/49,
+    // art. 7º §2º) — 44h → 220, 40h → 200, 36h → 180.
+    const JORNADAS = [44, 40, 36, 30, 20];
+    function divisorLegalHe(jornadaSemanal) { return jornadaSemanal / 6 * 30; }
+    function jornadaDoDivisorHe(divisor) { return Math.round(divisor / 30 * 6 * 10) / 10; }
+    function fmtNumHe(n) { return Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 }); }
+
     const PERCENTUAIS = [
         { valor: 50, texto: '50% — dia útil' },
         { valor: 100, texto: '100% — domingo / feriado' }
@@ -29,6 +38,7 @@
     let filtroMesHe = '';
     let pessoaAbertaHe = null;
     let lancamentosPessoaHe = [];
+    let feriadosHe = [];
 
     // ============================================================
     // HELPERS
@@ -171,7 +181,9 @@
 
         try {
             resumoHe = await rpcHe('he_meu_resumo');
+            // Admin não costuma ter hora extra: abre direto na equipe
             if (!resumoHe.eh_admin) abaHe = 'minhas';
+            else if (!adminTemHorasProprias()) abaHe = 'equipe';
             if (abaHe === 'equipe') painelHe = await rpcHe('he_admin_painel');
             renderizarHe();
         } catch (e) {
@@ -226,10 +238,14 @@
     // TELA
     // ============================================================
 
+    function adminTemHorasProprias() {
+        return !!(resumoHe?.salario || (resumoHe?.lancamentos || []).length);
+    }
+
     function renderizarHe() {
         const abas = document.getElementById('heAbas');
         if (abas) {
-            abas.classList.toggle('hidden', !resumoHe?.eh_admin);
+            abas.classList.toggle('hidden', !resumoHe?.eh_admin || !adminTemHorasProprias());
             abas.querySelectorAll('[data-he-aba]').forEach(b => {
                 b.classList.toggle('active', b.dataset.heAba === abaHe);
             });
@@ -250,11 +266,12 @@
         const sal = resumoHe?.salario;
         const lanc = resumoHe?.lancamentos || [];
 
-        const aReceber = lanc.filter(l => !l.pago).reduce((s, l) => s + Number(l.valor), 0);
-        const minPendentes = lanc.filter(l => !l.pago).reduce((s, l) => s + Number(l.minutos), 0);
-        const recebido = lanc.filter(l => l.pago).reduce((s, l) => s + Number(l.valor), 0);
-        const valorHora = sal ? Number(sal.salario_base) / Number(sal.carga_horaria_mensal) : 0;
-
+        const pendentes = lanc.filter(l => !l.pago);
+        const heAReceber = somaHe(pendentes, 'valor');
+        const dsrAReceber = somaHe(pendentes, 'valor_dsr');
+        const minPendentes = somaHe(pendentes, 'minutos');
+        const recebidos = lanc.filter(l => l.pago);
+        const recebido = somaHe(recebidos, 'valor') + somaHe(recebidos, 'valor_dsr');
         const meses = [...new Set(lanc.map(l => String(l.data).slice(0, 7)))].sort().reverse();
         if (filtroMesHe && !meses.includes(filtroMesHe)) filtroMesHe = '';
         const filtrados = filtroMesHe ? lanc.filter(l => String(l.data).startsWith(filtroMesHe)) : lanc;
@@ -269,24 +286,16 @@
             <div class="he-cards">
                 <div class="he-card he-card-destaque">
                     <div class="he-card-rotulo">A receber</div>
-                    <div class="he-card-valor">${brl(aReceber)}</div>
-                    <div class="he-card-sub">${fmtMinutos(minPendentes)} em horas extras</div>
+                    <div class="he-card-valor">${brl(heAReceber + dsrAReceber)}</div>
+                    <div class="he-card-sub">${fmtMinutos(minPendentes)} · ${brl(heAReceber)} horas extras + ${brl(dsrAReceber)} DSR</div>
                 </div>
                 <div class="he-card">
                     <div class="he-card-rotulo">Já recebido</div>
                     <div class="he-card-valor">${brl(recebido)}</div>
                 </div>
-                <div class="he-card">
-                    <div class="he-card-rotulo">Salário base</div>
-                    <div class="he-card-valor">${sal ? brl(sal.salario_base) : '—'}</div>
-                    <div class="he-card-sub">${sal ? `${Number(sal.carga_horaria_mensal)}h por mês` : ''}</div>
-                </div>
-                <div class="he-card">
-                    <div class="he-card-rotulo">Valor da sua hora</div>
-                    <div class="he-card-valor">${sal ? brl(valorHora) : '—'}</div>
-                    <div class="he-card-sub">${sal ? `Hora extra 50%: ${brl(valorHora * 1.5)}` : ''}</div>
-                </div>
             </div>
+
+            ${valoresReferenciaHe(sal, resumoHe?.mes_atual, lanc)}
 
             <div class="card">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
@@ -298,7 +307,88 @@
                         </select>
                     ` : ''}
                 </div>
+                ${resumoMesesHe(resumoHe?.meses || [], filtrados)}
                 ${tabelaLancamentosHe(filtrados, false)}
+            </div>
+        `;
+    }
+
+    // Salário, hora normal/50%/100% e os dois DSR do mês corrente.
+    // DSR normal = salário-dia (salário ÷ 30, art. 64 CLT) × domingos/feriados
+    // — já vem embutido no salário mensal; aparece só como referência.
+    function valoresReferenciaHe(sal, mesAtual, lancamentos) {
+        if (!sal) return '';
+        const salario = Number(sal.salario_base);
+        const vh = salario / Number(sal.carga_horaria_mensal);
+        const mes = mesAtual?.mes;
+        const doMes = mes ? lancamentos.filter(l => String(l.data).startsWith(mes)) : [];
+        const heMes = somaHe(doMes, 'valor');
+        const dsrHeMes = somaHe(doMes, 'valor_dsr');
+        const diaria = salario / 30;
+
+        const item = (rotulo, valor, sub) => `
+            <div class="he-ref">
+                <div class="he-ref-rotulo">${rotulo}</div>
+                <div class="he-ref-valor">${valor}</div>
+                ${sub ? `<div class="he-ref-sub">${sub}</div>` : ''}
+            </div>
+        `;
+
+        return `
+            <div class="card mb-3">
+                <h3 style="margin-top:0;"><i class="fas fa-calculator"></i> Valores de referência${mes ? ` — ${escHe(nomeMes(mes))}` : ''}</h3>
+                <div class="he-refs">
+                    ${item('Salário base', brl(salario), `${Number(sal.carga_horaria_mensal)}h por mês`)}
+                    ${item('Hora normal', brl(vh), `salário ÷ ${fmtNumHe(sal.carga_horaria_mensal)}h (${fmtNumHe(jornadaDoDivisorHe(Number(sal.carga_horaria_mensal)))}h semanais ÷ 6 × 30 — art. 64 CLT)`)}
+                    ${item('Hora extra 50%', brl(vh * 1.5), 'dia útil')}
+                    ${item('Hora extra 100%', brl(vh * 2), 'domingo / feriado')}
+                    ${mesAtual
+                        ? item('DSR normal', brl(diaria * mesAtual.dias_descanso),
+                            `${brl(diaria)} por dia × ${mesAtual.dias_descanso} domingos/feriados · já incluso no salário`)
+                        : item('DSR normal', '—', 'aguardando atualização do banco')}
+                    ${mesAtual
+                        ? item('DSR das horas extras', brl(dsrHeMes),
+                            `${brl(heMes)} ÷ ${mesAtual.dias_uteis} dias úteis × ${mesAtual.dias_descanso}`)
+                        : item('DSR das horas extras', '—', 'aguardando atualização do banco')}
+                </div>
+            </div>
+        `;
+    }
+
+    function somaHe(lista, campo) {
+        return lista.reduce((s, l) => s + (Number(l[campo]) || 0), 0);
+    }
+
+    // Um bloco por mês: horas extras + DSR e de onde saiu o DSR
+    function resumoMesesHe(meses, lancamentos) {
+        const porMes = {};
+        lancamentos.forEach(l => {
+            const m = String(l.data).slice(0, 7);
+            (porMes[m] = porMes[m] || []).push(l);
+        });
+        const lista = meses.filter(m => porMes[m.mes]);
+        if (!lista.length) return '';
+
+        return `
+            <div class="he-meses">
+                ${lista.map(m => {
+                    const ls = porMes[m.mes];
+                    const he = somaHe(ls, 'valor');
+                    const dsr = somaHe(ls, 'valor_dsr');
+                    const feriados = (m.feriados || []).map(f => `${fmtData(f.data).slice(0, 5)} ${f.nome}`).join(', ');
+                    return `
+                        <div class="he-mes">
+                            <div class="he-mes-topo">
+                                <strong>${escHe(nomeMes(m.mes))}</strong>
+                                <span>${brl(he)} + ${brl(dsr)} DSR = <strong>${brl(he + dsr)}</strong></span>
+                            </div>
+                            <div class="he-mes-sub">
+                                DSR = ${brl(he)} ÷ ${m.dias_uteis} dias úteis × ${m.dias_descanso} domingos/feriados
+                                ${feriados ? `<br>Feriados: ${escHe(feriados)}` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
             </div>
         `;
     }
@@ -313,8 +403,9 @@
             return `<div class="text-center py-4 text-muted"><i class="fas fa-business-time fa-2x mb-2" style="opacity:.4;"></i><br>Nenhuma hora extra lançada.</div>`;
         }
 
-        const totalMin = lista.reduce((s, l) => s + Number(l.minutos), 0);
-        const totalValor = lista.reduce((s, l) => s + Number(l.valor), 0);
+        const totalMin = somaHe(lista, 'minutos');
+        const totalValor = somaHe(lista, 'valor');
+        const totalDsr = somaHe(lista, 'valor_dsr');
 
         return `
             <div class="he-tabela-wrap">
@@ -326,6 +417,8 @@
                             <th>Horas</th>
                             <th>Adicional</th>
                             <th>Valor</th>
+                            <th>DSR</th>
+                            <th>Total</th>
                             <th>Status</th>
                             <th>Observação</th>
                             ${modoAdmin ? '<th></th>' : ''}
@@ -338,7 +431,9 @@
                                 <td>${fmtData(l.data)}</td>
                                 <td>${fmtMinutos(l.minutos)}</td>
                                 <td>${Number(l.percentual)}%</td>
-                                <td><strong>${brl(l.valor)}</strong></td>
+                                <td>${brl(l.valor)}</td>
+                                <td>${brl(l.valor_dsr)}</td>
+                                <td><strong>${brl(Number(l.valor) + Number(l.valor_dsr || 0))}</strong></td>
                                 <td>${l.pago
                                     ? `<span class="he-badge he-badge-pago" title="${l.pago_em ? 'Pago em ' + escHe(new Date(l.pago_em).toLocaleDateString('pt-BR')) : ''}">Pago</span>`
                                     : '<span class="he-badge he-badge-pendente">A receber</span>'}</td>
@@ -353,7 +448,9 @@
                             <td>Total</td>
                             <td>${fmtMinutos(totalMin)}</td>
                             <td></td>
-                            <td><strong>${brl(totalValor)}</strong></td>
+                            <td>${brl(totalValor)}</td>
+                            <td>${brl(totalDsr)}</td>
+                            <td><strong>${brl(totalValor + totalDsr)}</strong></td>
                             <td colspan="${modoAdmin ? 3 : 2}"></td>
                         </tr>
                     </tfoot>
@@ -366,14 +463,24 @@
 
     function renderizarEquipeHe() {
         const alvo = document.getElementById('heConteudo');
-        const totalAReceber = painelHe.reduce((s, p) => s + Number(p.a_receber), 0);
+        const totalHe = somaHe(painelHe, 'a_receber');
+        const totalDsr = somaHe(painelHe, 'dsr_a_receber');
         const semSalario = painelHe.filter(p => p.salario_base == null).length;
+        // Banco com o SQL antigo (antes do DSR) não manda dsr_a_receber
+        const sqlDesatualizado = painelHe.length && !('dsr_a_receber' in painelHe[0]);
 
         alvo.innerHTML = `
+            ${sqlDesatualizado ? `
+                <div class="card he-aviso">
+                    <i class="fas fa-exclamation-triangle"></i> O banco está com a versão antiga do módulo (sem DSR).
+                    Rode o arquivo <strong>horas_extras.sql</strong> atualizado no SQL Editor do Supabase.
+                </div>
+            ` : ''}
             <div class="he-cards">
                 <div class="he-card he-card-destaque">
                     <div class="he-card-rotulo">Total a pagar (equipe)</div>
-                    <div class="he-card-valor">${brl(totalAReceber)}</div>
+                    <div class="he-card-valor">${brl(totalHe + totalDsr)}</div>
+                    <div class="he-card-sub">${brl(totalHe)} horas extras + ${brl(totalDsr)} DSR</div>
                 </div>
                 <div class="he-card">
                     <div class="he-card-rotulo">Pessoas sem salário cadastrado</div>
@@ -382,7 +489,10 @@
             </div>
 
             <div class="card">
-                <h3 style="margin-top:0;"><i class="fas fa-users"></i> Equipe</h3>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                    <h3 style="margin:0;"><i class="fas fa-users"></i> Equipe</h3>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.abrirFeriadosHorasExtras()"><i class="fas fa-calendar-day"></i> Feriados locais (DSR)</button>
+                </div>
                 <div class="he-tabela-wrap">
                     <table class="he-tabela">
                         <thead>
@@ -391,6 +501,8 @@
                                 <th>Salário base</th>
                                 <th>Valor hora</th>
                                 <th>Horas a receber</th>
+                                <th>Valor das horas</th>
+                                <th>DSR</th>
                                 <th>A receber</th>
                                 <th></th>
                             </tr>
@@ -406,7 +518,9 @@
                                         <td>${temSal ? brl(p.salario_base) : '<span class="text-muted">não cadastrado</span>'}</td>
                                         <td>${temSal ? brl(vh) : '—'}</td>
                                         <td>${fmtMinutos(p.minutos_pendentes)}</td>
-                                        <td><strong>${brl(p.a_receber)}</strong></td>
+                                        <td>${brl(p.a_receber)}</td>
+                                        <td>${brl(p.dsr_a_receber)}</td>
+                                        <td><strong>${brl(somaHe([p], 'a_receber') + somaHe([p], 'dsr_a_receber'))}</strong></td>
                                         <td class="he-acoes">
                                             <button class="btn btn-sm btn-outline-primary" onclick="window.abrirSalarioHorasExtras('${u}')"><i class="fas fa-money-bill"></i> Salário</button>
                                             <button class="btn btn-sm btn-success" ${temSal ? '' : 'disabled title="Cadastre o salário primeiro"'} onclick="window.abrirLancamentoHorasExtras('${u}')"><i class="fas fa-plus"></i> Lançar horas</button>
@@ -442,15 +556,22 @@
         const p = pessoaHe(username);
         if (!p) return;
 
-        abrirModalHe('heModalSalario', 440, `
+        const jornadaAtual = p.carga_horaria_mensal != null ? jornadaDoDivisorHe(Number(p.carga_horaria_mensal)) : 44;
+
+        abrirModalHe('heModalSalario', 460, `
             <h3 style="margin-top:0;"><i class="fas fa-money-bill"></i> Salário base — ${escHe(p.nome)}</h3>
             <div class="form-group">
                 <label>Salário base (R$) *</label>
                 <input type="text" id="heSalValor" class="form-control" inputmode="decimal" placeholder="Ex.: 2500,00" value="${p.salario_base != null ? String(Number(p.salario_base).toFixed(2)).replace('.', ',') : ''}">
             </div>
             <div class="form-group">
-                <label>Horas por mês <small class="text-muted">(220 = 44h semanais, padrão CLT)</small></label>
-                <input type="number" id="heSalCarga" class="form-control" min="1" step="1" value="${p.carga_horaria_mensal != null ? Number(p.carga_horaria_mensal) : 220}">
+                <label>Jornada semanal (contrato)</label>
+                <select id="heSalJornada" class="form-control" onchange="window.atualizarDivisorHorasExtras()">
+                    ${JORNADAS.map(j => `<option value="${j}" ${j === jornadaAtual ? 'selected' : ''}>${j}h por semana</option>`).join('')}
+                    <option value="outra" ${JORNADAS.includes(jornadaAtual) ? '' : 'selected'}>Outra…</option>
+                </select>
+                <input type="number" id="heSalJornadaOutra" class="form-control mt-1 ${JORNADAS.includes(jornadaAtual) ? 'hidden' : ''}" min="1" max="44" step="0.5" placeholder="Horas por semana" value="${JORNADAS.includes(jornadaAtual) ? '' : jornadaAtual}" oninput="window.atualizarDivisorHorasExtras()">
+                <div id="heSalDivisor" class="he-previa mt-1"></div>
             </div>
             <div class="text-muted" style="font-size:12px;">Mudar o salário vale para as próximas horas lançadas. As que já foram lançadas mantêm o valor da época.</div>
             <div class="d-flex justify-content-end gap-2 mt-3">
@@ -458,7 +579,24 @@
                 <button class="btn btn-primary" id="heBtnSalvarSal" onclick="window.salvarSalarioHorasExtras('${escHe(p.username)}')"><i class="fas fa-save"></i> Salvar</button>
             </div>
         `);
+        window.atualizarDivisorHorasExtras();
         setTimeout(() => document.getElementById('heSalValor')?.focus(), 50);
+    };
+
+    function jornadaSalarioHe() {
+        const sel = document.getElementById('heSalJornada');
+        const outra = document.getElementById('heSalJornadaOutra');
+        outra.classList.toggle('hidden', sel.value !== 'outra');
+        return sel.value === 'outra' ? Number(String(outra.value).replace(',', '.')) : Number(sel.value);
+    }
+
+    window.atualizarDivisorHorasExtras = function () {
+        const alvo = document.getElementById('heSalDivisor');
+        if (!alvo) return;
+        const j = jornadaSalarioHe();
+        alvo.innerHTML = j > 0
+            ? `Divisor: ${fmtNumHe(j)}h ÷ 6 dias × 30 dias = <strong>${fmtNumHe(divisorLegalHe(j))}h</strong> · hora normal = salário ÷ ${fmtNumHe(divisorLegalHe(j))}`
+            : '';
     };
 
     function lerValorBR(texto) {
@@ -470,9 +608,10 @@
 
     window.salvarSalarioHorasExtras = async function (username) {
         const salario = lerValorBR(document.getElementById('heSalValor').value);
-        const carga = Number(document.getElementById('heSalCarga').value);
+        const jornada = jornadaSalarioHe();
         if (!(salario > 0)) { toastHe('Informe um salário válido.', 'warning'); return; }
-        if (!(carga > 0)) { toastHe('Informe as horas por mês.', 'warning'); return; }
+        if (!(jornada > 0 && jornada <= 44)) { toastHe('Informe a jornada semanal (até 44h).', 'warning'); return; }
+        const carga = Math.round(divisorLegalHe(jornada) * 100) / 100;
 
         const btn = document.getElementById('heBtnSalvarSal');
         btn.disabled = true;
@@ -548,7 +687,7 @@
         }
         const vh = Number(p.salario_base) / Number(p.carga_horaria_mensal);
         const valor = minutos / 60 * vh * (1 + perc / 100);
-        previa.innerHTML = `${fmtMinutos(minutos)} × ${brl(vh)} + ${perc}% = <strong>${brl(valor)}</strong>`;
+        previa.innerHTML = `${fmtMinutos(minutos)} × ${brl(vh)} + ${perc}% = <strong>${brl(valor)}</strong><br><small class="text-muted">+ DSR do mês, calculado automaticamente</small>`;
     };
 
     window.salvarLancamentoHorasExtras = async function (username) {
@@ -591,13 +730,20 @@
     async function recarregarPessoaHe() {
         const alvo = document.getElementById('hePessoaConteudo');
         if (!alvo || !pessoaAbertaHe) return;
+        let meses = [];
+        let mesAtual = null;
         try {
-            lancamentosPessoaHe = await rpcHe('he_admin_lancamentos', { p_username: pessoaAbertaHe.username });
+            const dados = await rpcHe('he_admin_lancamentos', { p_username: pessoaAbertaHe.username });
+            // SQL antigo devolvia só a lista
+            lancamentosPessoaHe = Array.isArray(dados) ? dados : (dados?.lancamentos || []);
+            meses = dados?.meses || [];
+            mesAtual = dados?.mes_atual || null;
         } catch (e) {
             tratarErroHe(e, 'carregar os lançamentos');
             return;
         }
-        const aReceber = lancamentosPessoaHe.filter(l => !l.pago).reduce((s, l) => s + Number(l.valor), 0);
+        const pendentes = lancamentosPessoaHe.filter(l => !l.pago);
+        const aReceber = somaHe(pendentes, 'valor') + somaHe(pendentes, 'valor_dsr');
 
         alvo.innerHTML = `
             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
@@ -607,15 +753,90 @@
                 </div>
                 <button class="btn btn-secondary btn-sm" onclick="document.getElementById('heModalPessoa').remove()">Fechar</button>
             </div>
+            ${valoresReferenciaHe(pessoaAbertaHe.salario_base != null ? pessoaAbertaHe : null, mesAtual, lancamentosPessoaHe)}
             ${lancamentosPessoaHe.length ? `
                 <div class="d-flex gap-2 flex-wrap mb-2">
                     <button class="btn btn-sm btn-success" onclick="window.marcarPagoHorasExtras(true)"><i class="fas fa-check"></i> Marcar selecionados como pagos</button>
                     <button class="btn btn-sm btn-outline-secondary" onclick="window.marcarPagoHorasExtras(false)"><i class="fas fa-undo"></i> Voltar para "a receber"</button>
                 </div>
             ` : ''}
+            ${resumoMesesHe(meses, lancamentosPessoaHe)}
             ${tabelaLancamentosHe(lancamentosPessoaHe, true)}
         `;
     }
+
+    // ---------- FERIADOS LOCAIS (DSR) ----------
+
+    window.abrirFeriadosHorasExtras = async function () {
+        abrirModalHe('heModalFeriados', 520, `<div id="heFeriadosConteudo"><div class="text-center py-4 text-muted"><div class="spinner"></div> Carregando...</div></div>`);
+        await recarregarFeriadosHe();
+    };
+
+    async function recarregarFeriadosHe() {
+        const alvo = document.getElementById('heFeriadosConteudo');
+        if (!alvo) return;
+        try {
+            feriadosHe = await rpcHe('he_admin_feriados');
+        } catch (e) {
+            tratarErroHe(e, 'carregar os feriados');
+            return;
+        }
+
+        alvo.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <h3 style="margin:0;"><i class="fas fa-calendar-day"></i> Feriados locais</h3>
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('heModalFeriados').remove()">Fechar</button>
+            </div>
+            <p class="text-muted" style="font-size:13px;">
+                Feriados nacionais já entram sozinhos no DSR. Cadastre aqui só os municipais e estaduais.
+                O DSR dos meses afetados é recalculado na hora.
+            </p>
+            <div class="d-flex gap-2 flex-wrap mb-3">
+                <input type="date" id="heFerData" class="form-control" style="width:170px;">
+                <input type="text" id="heFerNome" class="form-control" style="flex:1; min-width:180px;" placeholder="Nome — ex.: Aniversário da cidade">
+                <button class="btn btn-success" onclick="window.salvarFeriadoHorasExtras()"><i class="fas fa-plus"></i> Adicionar</button>
+            </div>
+            ${feriadosHe.length ? `
+                <table class="he-tabela">
+                    <tbody>
+                        ${feriadosHe.map(f => `
+                            <tr>
+                                <td style="width:110px;">${fmtData(f.data)}</td>
+                                <td>${escHe(f.descricao)}</td>
+                                <td style="text-align:right;"><button class="btn btn-sm btn-outline-danger" onclick="window.excluirFeriadoHorasExtras('${escHe(f.data)}')"><i class="fas fa-trash"></i></button></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            ` : '<div class="text-center text-muted py-3">Nenhum feriado local cadastrado.</div>'}
+        `;
+    }
+
+    window.salvarFeriadoHorasExtras = async function () {
+        const data = document.getElementById('heFerData').value;
+        const nome = document.getElementById('heFerNome').value.trim();
+        if (!data || !nome) { toastHe('Informe a data e o nome do feriado.', 'warning'); return; }
+        try {
+            await rpcHe('he_admin_salvar_feriado', { p_data: data, p_descricao: nome });
+            toastHe('✅ Feriado salvo.', 'success');
+            await recarregarFeriadosHe();
+            await carregarHe();
+        } catch (e) {
+            tratarErroHe(e, 'salvar o feriado');
+        }
+    };
+
+    window.excluirFeriadoHorasExtras = async function (data) {
+        if (!confirm(`Remover o feriado de ${fmtData(data)}?`)) return;
+        try {
+            await rpcHe('he_admin_excluir_feriado', { p_data: data });
+            toastHe('🗑️ Feriado removido.', 'success');
+            await recarregarFeriadosHe();
+            await carregarHe();
+        } catch (e) {
+            tratarErroHe(e, 'remover o feriado');
+        }
+    };
 
     window.selecionarTodosHorasExtras = function (marcado) {
         document.querySelectorAll('#hePessoaConteudo .he-sel').forEach(c => { c.checked = marcado; });
@@ -650,7 +871,7 @@
 
     function tratarErroHe(e, acao) {
         if (e.message === ERRO_SESSAO) {
-            document.querySelectorAll('#heModalSalario, #heModalLancamento, #heModalPessoa').forEach(m => m.remove());
+            document.querySelectorAll('#heModalSalario, #heModalLancamento, #heModalPessoa, #heModalFeriados').forEach(m => m.remove());
             toastHe('🔒 Sua sessão do módulo expirou. Confirme a senha.', 'warning');
             renderizarDesbloqueioHe();
             return;
@@ -692,6 +913,15 @@
             .he-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
             .he-badge-pendente { background: #fff3cd; color: #856404; }
             .he-badge-pago { background: #d1e7dd; color: #0f5132; }
+            .he-refs { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+            .he-ref { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; }
+            .he-ref-rotulo { font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: .03em; }
+            .he-ref-valor { font-size: 18px; font-weight: 700; color: #082b5b; margin-top: 2px; font-variant-numeric: tabular-nums; }
+            .he-ref-sub { font-size: 11px; color: #6c757d; margin-top: 2px; }
+            .he-meses { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+            .he-mes { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; }
+            .he-mes-topo { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+            .he-mes-sub { font-size: 12px; color: #6c757d; margin-top: 4px; }
             .he-previa { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; font-size: 13px; min-height: 18px; }
             .he-previa:empty { display: none; }
             .he-desbloqueio { max-width: 380px; margin: 40px auto; text-align: center; }

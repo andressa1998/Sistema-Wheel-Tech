@@ -159,8 +159,8 @@ as $$
            count(*) filter (where descanso)::int
       from (
             select extract(dow from d) = 0 or he_feriado(d::date) is not null as descanso
-              from generate_series(date_trunc('month', p_data),
-                                   date_trunc('month', p_data) + interval '1 month - 1 day',
+              from generate_series(date_trunc('month', p_data::timestamp),
+                                   date_trunc('month', p_data::timestamp) + interval '1 month - 1 day',
                                    interval '1 day') d
       ) x;
 $$;
@@ -207,7 +207,7 @@ as $$
                'dias_descanso', dm.dias_descanso,
                'feriados', (
                     select coalesce(jsonb_agg(jsonb_build_object('data', d::date, 'nome', he_feriado(d::date)) order by d), '[]'::jsonb)
-                      from generate_series(m.mes, m.mes + interval '1 month - 1 day', interval '1 day') d
+                      from generate_series(m.mes::timestamp, m.mes::timestamp + interval '1 month - 1 day', interval '1 day') d
                      where he_feriado(d::date) is not null
                )
            ) order by m.mes desc), '[]'::jsonb)
@@ -215,6 +215,24 @@ as $$
       cross join lateral he_dias_mes(m.mes) dm;
 $$;
 
+-- Dias do mês corrente (horário de Brasília), para os valores de referência
+create or replace function public.he_mes_atual_json()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+    select jsonb_build_object(
+               'mes', to_char(hoje, 'YYYY-MM'),
+               'dias_uteis', dm.dias_uteis,
+               'dias_descanso', dm.dias_descanso
+           )
+      from (select (now() at time zone 'America/Sao_Paulo')::date as hoje) h
+      cross join lateral he_dias_mes(h.hoje) dm;
+$$;
+
+revoke execute on function public.he_mes_atual_json()         from public, anon, authenticated;
 revoke execute on function public.he_feriado(date)            from public, anon, authenticated;
 revoke execute on function public.he_dias_mes(date)           from public, anon, authenticated;
 revoke execute on function public.he_fator_dsr(date)          from public, anon, authenticated;
@@ -329,11 +347,9 @@ begin
               from he_salarios s
              where s.username = v_user
         ),
-        'lancamentos', coalesce((
-            select jsonb_agg(to_jsonb(l) order by l.data desc, l.id desc)
-              from he_lancamentos l
-             where l.username = v_user
-        ), '[]'::jsonb)
+        'lancamentos', he_lancamentos_json(v_user),
+        'meses', he_meses_json(v_user),
+        'mes_atual', he_mes_atual_json()
     );
 end;
 $$;
@@ -357,19 +373,27 @@ begin
                    'carga_horaria_mensal', s.carga_horaria_mensal,
                    'minutos_pendentes', coalesce(t.minutos_pendentes, 0),
                    'a_receber', coalesce(t.a_receber, 0),
+                   'dsr_a_receber', coalesce(t.dsr_a_receber, 0),
                    'pago', coalesce(t.pago, 0)
                ) order by coalesce(u.nome, u.username))
           from usuarios u
           left join he_salarios s on s.username = lower(u.username)
           left join (
                 select username,
-                       sum(minutos) filter (where not pago) as minutos_pendentes,
-                       sum(valor)   filter (where not pago) as a_receber,
-                       sum(valor)   filter (where pago)     as pago
-                  from he_lancamentos
+                       sum(minutos)   filter (where not pago) as minutos_pendentes,
+                       sum(valor)     filter (where not pago) as a_receber,
+                       sum(valor_dsr) filter (where not pago) as dsr_a_receber,
+                       sum(valor + valor_dsr) filter (where pago) as pago
+                  from (
+                        select l.*, round(l.valor * he_fator_dsr(l.data), 2) as valor_dsr
+                          from he_lancamentos l
+                  ) l
                  group by username
           ) t on t.username = lower(u.username)
          where coalesce(u.status, 'ativo') = 'ativo'
+           -- admins não fazem hora extra; aparecem só se já tiverem salário ou lançamento
+           and (lower(u.username) not in (select username from he_admins)
+                or s.username is not null or t.username is not null)
     ), '[]'::jsonb);
 end;
 $$;
@@ -383,11 +407,56 @@ as $$
 begin
     perform he_exigir_admin(p_token);
 
+    return jsonb_build_object(
+        'lancamentos', he_lancamentos_json(lower(trim(p_username))),
+        'meses', he_meses_json(lower(trim(p_username))),
+        'mes_atual', he_mes_atual_json()
+    );
+end;
+$$;
+
+-- ---------- ADMIN: FERIADOS LOCAIS ----------
+
+create or replace function public.he_admin_feriados(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+    perform he_exigir_admin(p_token);
     return coalesce((
-        select jsonb_agg(to_jsonb(l) order by l.data desc, l.id desc)
-          from he_lancamentos l
-         where l.username = lower(trim(p_username))
+        select jsonb_agg(jsonb_build_object('data', data, 'descricao', descricao) order by data desc)
+          from he_feriados
     ), '[]'::jsonb);
+end;
+$$;
+
+create or replace function public.he_admin_salvar_feriado(p_token text, p_data date, p_descricao text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+    perform he_exigir_admin(p_token);
+    if p_data is null or nullif(trim(p_descricao), '') is null then
+        raise exception 'Informe a data e o nome do feriado.';
+    end if;
+    insert into he_feriados (data, descricao) values (p_data, trim(p_descricao))
+    on conflict (data) do update set descricao = excluded.descricao;
+end;
+$$;
+
+create or replace function public.he_admin_excluir_feriado(p_token text, p_data date)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+    perform he_exigir_admin(p_token);
+    delete from he_feriados where data = p_data;
 end;
 $$;
 
@@ -502,5 +571,8 @@ grant execute on function public.he_admin_definir_salario(text, text, numeric, n
 grant execute on function public.he_admin_lancar(text, text, date, integer, numeric, text)     to anon, authenticated;
 grant execute on function public.he_admin_excluir_lancamento(text, bigint)                     to anon, authenticated;
 grant execute on function public.he_admin_marcar_pago(text, bigint[], boolean)                 to anon, authenticated;
+grant execute on function public.he_admin_feriados(text)                                       to anon, authenticated;
+grant execute on function public.he_admin_salvar_feriado(text, date, text)                     to anon, authenticated;
+grant execute on function public.he_admin_excluir_feriado(text, date)                          to anon, authenticated;
 
 notify pgrst, 'reload schema';
