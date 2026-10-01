@@ -699,9 +699,14 @@ function renderizarAgendaSemanal(){
     const diasParaMostrar=[0,1,2,3,4,5,7,8,9,10,11,12];
     let html=''; for(const i of diasParaMostrar){ const d=new Date(ini); d.setDate(ini.getDate()+i); const iso=agendaDataISO(d);
 
-        const itensAgenda=agendaEventos.filter(e=>e.data_inicio<=iso&&(e.data_fim||e.data_inicio)>=iso).map(e=>{
+        // Itens marcados como importantes pelo usuário sobem pro topo do dia
+        // (sort estável: mantém a ordem por horário dentro de cada grupo).
+        const ehImportante=e=>typeof window.agendaTituloImportante==='function'&&window.agendaTituloImportante(e.titulo);
+        const itensAgenda=agendaEventos.filter(e=>e.data_inicio<=iso&&(e.data_fim||e.data_inicio)>=iso)
+            .map(e=>({e,importante:ehImportante(e)}))
+            .sort((a,b)=>Number(b.importante)-Number(a.importante))
+            .map(({e,importante})=>{
             const hora=e.dia_inteiro?'Dia inteiro':([e.hora_inicio?.slice(0,5),e.hora_fim?.slice(0,5)].filter(Boolean).join(' às ')||'Sem horário'), extra=[hora,e.responsavel].filter(Boolean).join(' • ');
-            const importante=typeof window.agendaTituloImportante==='function'&&window.agendaTituloImportante(e.titulo);
             return `<div class="agenda-item${importante?' agenda-item-importante':''}" style="--agenda-cor:${agendaEscape(e.cor||'#0875ee')};${e.destaque?'background:#fff8dc;':''}" onclick="abrirDetalhesAgenda('${e.id}')"><strong>${agendaEscape(e.titulo)}</strong><small>${agendaEscape(AGENDA_TIPOS[e.tipo]||e.tipo)} • ${agendaEscape(extra)}</small></div>`;
         });
 

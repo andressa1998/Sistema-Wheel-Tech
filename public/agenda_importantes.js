@@ -27,6 +27,21 @@
     }
     function sb() { return window.supabaseClient || null; }
 
+    // Quem pode definir os importantes de outra pessoa: { editor: [usuários-alvo] }
+    const PODE_EDITAR_DE = {
+        leticia: [{ username: 'ronald', nome: 'Ronald' }]
+    };
+    function alvosEditaveis() {
+        return PODE_EDITAR_DE[username()] || [];
+    }
+
+    async function lerTitulosDe(u) {
+        const { data, error } = await sb().from(TABELA).select('titulos').eq('username', u).maybeSingle();
+        if (error) throw error;
+        const lista = Array.isArray(data?.titulos) ? data.titulos : [];
+        return new Set(lista.map(norm).filter(Boolean));
+    }
+
     // usado por folgas.js na hora de desenhar cada item da agenda
     window.agendaTituloImportante = function (titulo) {
         return importantes.size > 0 && importantes.has(norm(titulo));
@@ -50,10 +65,7 @@
         const u = username();
         if (!u || !sb()) return;
         try {
-            const { data, error } = await sb().from(TABELA).select('titulos').eq('username', u).maybeSingle();
-            if (error) throw error;
-            const lista = Array.isArray(data?.titulos) ? data.titulos : [];
-            importantes = new Set(lista.map(norm).filter(Boolean));
+            importantes = await lerTitulosDe(u);
             usuarioCarregado = u;
             repintarAgenda();
         } catch (e) {
@@ -95,7 +107,7 @@
     }
 
     // ---------- títulos existentes no calendário ----------
-    async function buscarTitulos() {
+    async function buscarTitulos(marcados) {
         const mapa = new Map(); // norm -> { titulo, qtd }
         for (let inicio = 0; inicio < 6000; inicio += 1000) {
             const { data, error } = await sb().from('agenda_eventos')
@@ -114,7 +126,7 @@
             if (!data || data.length < 1000) break;
         }
         // títulos já marcados que não aparecem mais no calendário continuam na lista
-        importantes.forEach(k => { if (!mapa.has(k)) mapa.set(k, { titulo: k, qtd: 0 }); });
+        marcados.forEach(k => { if (!mapa.has(k)) mapa.set(k, { titulo: k, qtd: 0 }); });
         return Array.from(mapa.entries())
             .map(([k, v]) => ({ chave: k, ...v }))
             .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR', { sensitivity: 'base' }));
@@ -129,10 +141,14 @@
         m.className = 'modal hidden';
         m.innerHTML = `
             <div class="modal-content" style="max-width:520px;">
-                <h3 style="margin-top:0;"><i class="fas fa-star" style="color:#7c3aed;"></i> Atividades importantes pra mim</h3>
+                <h3 style="margin-top:0;"><i class="fas fa-star" style="color:#7c3aed;"></i> <span id="aimpTitulo">Atividades importantes pra mim</span></h3>
                 <p style="font-size:13px;color:#64748b;margin:0 0 10px;">
-                    Marque os títulos que são importantes pra você. Na sua agenda, todos os itens com esses títulos ficam destacados.
+                    Marque os títulos importantes. Na agenda da pessoa, todos os itens com esses títulos ficam destacados e no topo do dia.
                 </p>
+                <div id="aimpParaLinha" style="display:none;margin-bottom:8px;">
+                    <label for="aimpPara" style="font-size:13px;font-weight:600;margin-bottom:4px;display:block;">Definir importantes para:</label>
+                    <select id="aimpPara" class="form-control"></select>
+                </div>
                 <input type="text" id="aimpBusca" class="form-control" placeholder="🔍 Buscar título..." style="margin-bottom:8px;">
                 <div id="aimpLista" style="max-height:340px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:4px;"></div>
                 <div class="d-flex justify-content-between align-items-center mt-3">
@@ -157,20 +173,46 @@
         garantirEstilo();
         const m = garantirModal();
         const lista = m.querySelector('#aimpLista');
-        lista.innerHTML = '<div class="text-center text-muted" style="padding:20px;">Carregando…</div>';
-        m.classList.remove('hidden');
-
-        let titulos;
-        try { titulos = await buscarTitulos(); }
-        catch (e) {
-            lista.innerHTML = '<div class="text-center text-muted" style="padding:20px;">Não foi possível carregar os títulos.</div>';
-            return;
-        }
-
-        const selecionados = new Set(importantes);
         const busca = m.querySelector('#aimpBusca');
         const contagem = m.querySelector('#aimpContagem');
+        const paraLinha = m.querySelector('#aimpParaLinha');
+        const paraSel = m.querySelector('#aimpPara');
+        const tituloEl = m.querySelector('#aimpTitulo');
+        const btnSalvar = m.querySelector('#aimpSalvar');
         busca.value = '';
+        m.classList.remove('hidden');
+
+        // Seletor "para quem" — só aparece pra quem pode editar de outra pessoa
+        const alvos = alvosEditaveis();
+        paraLinha.style.display = alvos.length ? 'block' : 'none';
+        paraSel.innerHTML = `<option value="${esc(username())}">Eu mesma(o)</option>` +
+            alvos.map(a => `<option value="${esc(a.username)}">${esc(a.nome)}</option>`).join('');
+        paraSel.value = username();
+
+        let alvo = username();
+        let titulos = [];
+        let selecionados = new Set();
+
+        async function carregarAlvo() {
+            alvo = paraSel.value || username();
+            const ehEu = alvo === username();
+            const nomeAlvo = alvos.find(a => a.username === alvo)?.nome || alvo;
+            tituloEl.textContent = ehEu ? 'Atividades importantes pra mim' : `Atividades importantes para ${nomeAlvo}`;
+            lista.innerHTML = '<div class="text-center text-muted" style="padding:20px;">Carregando…</div>';
+            btnSalvar.disabled = true;
+            try {
+                const marcados = ehEu ? new Set(importantes) : await lerTitulosDe(alvo);
+                titulos = await buscarTitulos(marcados);
+                selecionados = marcados;
+                btnSalvar.disabled = false;
+                desenhar();
+                atualizarContagem();
+            } catch (e) {
+                console.error('[agenda-importantes] carregar:', e);
+                lista.innerHTML = '<div class="text-center text-muted" style="padding:20px;">Não foi possível carregar os títulos.</div>';
+            }
+        }
+        paraSel.onchange = carregarAlvo;
 
         function atualizarContagem() {
             contagem.textContent = `${selecionados.size} selecionado(s)`;
@@ -193,20 +235,23 @@
             atualizarContagem();
         };
         busca.oninput = desenhar;
-        m.querySelector('#aimpSalvar').onclick = async () => {
-            const btn = m.querySelector('#aimpSalvar');
+        btnSalvar.onclick = async () => {
+            const btn = btnSalvar;
+            const ehEu = alvo === username();
+            if (!ehEu && !alvos.some(a => a.username === alvo)) return;
             btn.disabled = true;
             try {
                 const { error } = await sb().from(TABELA).upsert({
-                    username: username(),
+                    username: alvo,
                     titulos: Array.from(selecionados),
                     atualizado_em: new Date().toISOString()
                 }, { onConflict: 'username' });
                 if (error) throw error;
-                importantes = new Set(selecionados);
+                if (ehEu) importantes = new Set(selecionados);
                 fecharModal();
                 repintarAgenda();
-                window.showToast?.('⭐ Importantes salvos!', 'success');
+                const nomeAlvo = alvos.find(a => a.username === alvo)?.nome;
+                window.showToast?.(ehEu ? '⭐ Importantes salvos!' : `⭐ Importantes de ${nomeAlvo} salvos!`, 'success');
             } catch (err) {
                 console.error('[agenda-importantes] salvar:', err);
                 window.showToast?.('Erro ao salvar: ' + (err.message || err), 'error');
@@ -215,8 +260,7 @@
             }
         };
 
-        desenhar();
-        atualizarContagem();
+        await carregarAlvo();
     }
     window.abrirImportantesAgenda = abrirModal;
 
