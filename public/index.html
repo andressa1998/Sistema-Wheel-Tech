@@ -1824,6 +1824,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="wt-nav-item" data-menu-visual-key="gestao_de_estoque" type="button" onclick="abrirGestaoEstoque()"><i class="fas fa-box"></i><span>Gestão de Estoque</span></button>
             <button class="wt-nav-item" data-menu-visual-key="regras_alerta_estoque" type="button" onclick="window.RegrasAlertasEstoque && window.RegrasAlertasEstoque.abrirTela()"><i class="fas fa-sliders-h"></i><span>Regras de Alerta de Estoque</span></button>
             <button class="wt-nav-item" data-menu-visual-key="historico_de_acessos" type="button" onclick="abrirHistoricoAcessos()"><i class="fas fa-history"></i><span>Histórico de Acessos</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="horas_extras" type="button" onclick="abrirSistemaHorasExtras()"><i class="fas fa-business-time"></i><span>Horas Extras</span></button>
             <button class="wt-nav-item" data-menu-visual-key="meta_ronald" type="button" onclick="abrirPainelMetaRonald()"><i class="fas fa-user-shield"></i><span>Meta Ronald</span></button>
             <button class="wt-nav-item" data-menu-visual-key="ordem_de_servico" type="button" onclick="abrirSistemaOS()"><i class="fas fa-clipboard-list"></i><span>Ordem de Serviço</span></button>
             <button class="wt-nav-item" data-menu-visual-key="patrimonios_wt" type="button" onclick="abrirSistemaPatrimonios()"><i class="fas fa-boxes-stacked"></i><span>Patrimônios WT</span></button>
@@ -1836,6 +1837,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="wt-nav-item" data-menu-visual-key="reclamacoes_clientes" type="button" onclick="abrirSistemaReclamacoesClientes()"><i class="fas fa-user-shield"></i><span>Reclamações de Clientes</span></button>
             <button class="wt-nav-item" data-menu-visual-key="sugestoes_melhoria" type="button" onclick="abrirSistemaSugestoes()"><i class="fas fa-lightbulb"></i><span>Sugestões de Melhoria</span></button>
             <button class="wt-nav-item" data-menu-visual-key="vendas_ml" type="button" onclick="abrirSistemaVendas()"><i class="fas fa-store"></i><span>Vendas ML</span></button>
+            <button class="wt-nav-item" data-menu-visual-key="vendas_vendedores" type="button" onclick="abrirSistemaVendasVendedores()"><i class="fas fa-hand-holding-usd"></i><span>Vendas Vendedores</span></button>
         </nav>
         <div class="wt-sidebar-footer">
             <div class="wt-user-row"><div class="user-avatar">U</div><div class="wt-user-copy"><div>Usuário</div><div class="wt-user-role"></div></div><i class="fas fa-chevron-right wt-user-chevron"></i></div>
@@ -1863,6 +1865,7 @@ body:has(#loginScreen:not(.hidden)) {
                 <button class="wt-nav-item" data-menu-visual-key="gestao_de_estoque" type="button" onclick="abrirGestaoEstoque()"><i class="fas fa-box"></i><span>Gestão de Estoque</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="regras_alerta_estoque" type="button" onclick="window.RegrasAlertasEstoque && window.RegrasAlertasEstoque.abrirTela()"><i class="fas fa-sliders-h"></i><span>Regras de Alerta de Estoque</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="historico_de_acessos" id="historicoMenuCard" type="button" onclick="abrirHistoricoAcessos()"><i class="fas fa-history"></i><span>Histórico de Acessos</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="horas_extras" type="button" onclick="abrirSistemaHorasExtras()"><i class="fas fa-business-time"></i><span>Horas Extras</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="meta_ronald" id="metaRonaldMenuCard" type="button" onclick="abrirPainelMetaRonald()"><i class="fas fa-user-shield"></i><span>Meta Ronald</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="ordem_de_servico" type="button" onclick="abrirSistemaOS()"><i class="fas fa-clipboard-list"></i><span>Ordem de Serviço</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="patrimonios_wt" type="button" onclick="abrirSistemaPatrimonios()"><i class="fas fa-boxes-stacked"></i><span>Patrimônios WT</span></button>
@@ -1875,6 +1878,7 @@ body:has(#loginScreen:not(.hidden)) {
             <button class="wt-nav-item" data-menu-visual-key="reclamacoes_clientes" type="button" onclick="abrirSistemaReclamacoesClientes()"><i class="fas fa-user-shield"></i><span>Reclamações de Clientes</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="sugestoes_melhoria" type="button" onclick="abrirSistemaSugestoes()"><i class="fas fa-lightbulb"></i><span>Sugestões de Melhoria</span></button>
                 <button class="wt-nav-item" data-menu-visual-key="vendas_ml" type="button" onclick="abrirSistemaVendas()"><i class="fas fa-store"></i><span>Vendas ML</span></button>
+                <button class="wt-nav-item" data-menu-visual-key="vendas_vendedores" type="button" onclick="abrirSistemaVendasVendedores()"><i class="fas fa-hand-holding-usd"></i><span>Vendas Vendedores</span></button>
             </nav>
             <div class="wt-sidebar-footer">
                 <div class="wt-user-row">
@@ -7699,9 +7703,9 @@ body:has(#loginScreen:not(.hidden)) {
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script src="registro_funcionalidades.js?v=20260929-1"></script>
-    <script src="script.js?v=20260929-4"></script>
-    <script src="historico_downloads_excel.js?v=20260918-1"></script>
+    <script src="registro_funcionalidades.js?v=20261001-2"></script>
+    <script src="script.js?v=20261001-2"></script>
+    <script src="historico_downloads_excel.js?v=20261001-2"></script>
     <script src="sessoes_ativas.js?v=20260929-1"></script>
     <script src="ml_token_manager.js"></script>
     <script src="folgas.js?v=20260924-1"></script>
@@ -7734,7 +7738,9 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="patrimonios.js?v=20260917-1"></script>
     <script src="pedidos.js?v=20261001-1"></script>
     <script src="sugestoes.js?v=20260929-1"></script>
-    <script src="reclamacoes_clientes.js?v=20260928-3"></script>
+    <script src="horas_extras.js?v=20261001-1"></script>
+    <script src="reclamacoes_clientes.js?v=20261001-1"></script>
+    <script src="vendas_vendedores.js?v=20261001-2"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>
     <script src="menu_favoritos.js?v=20260916-1"></script>
     <script src="notificacoes_chamados.js"></script>

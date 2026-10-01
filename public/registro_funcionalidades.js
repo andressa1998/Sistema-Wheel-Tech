@@ -62,6 +62,8 @@
         patrimoniosSystem: 'Patrimônios WT',
         pedidosSystem: 'Pedidos',
         sugestoesSystem: 'Sugestões de Melhoria',
+        horasExtrasSystem: 'Horas Extras',
+        vendasVendedoresSystem: 'Vendas Vendedores',
         regrasAlertaEstoqueSystem: 'Regras de Alerta de Estoque'
     };
 

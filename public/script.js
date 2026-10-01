@@ -119,6 +119,12 @@ async function handleLogin(e) {
         currentUser = foundUser;
         window.currentUser = currentUser;
 
+        // Horas Extras: a senha só existe aqui, então já abre o acesso
+        // ao módulo (evita pedir a senha de novo ao entrar nele).
+        if (typeof window.horasExtrasAbrirSessao === 'function') {
+            window.horasExtrasAbrirSessao(foundUser.username, password).catch(() => {});
+        }
+
         document.body.classList.remove('login-active');
 
         atualizarVisibilidadeMenu();
@@ -5630,6 +5636,7 @@ function clearSessionStorage() {
     localStorage.removeItem('wheeltech_session');
     localStorage.removeItem('wheeltech_user');
     localStorage.removeItem('wheeltech_orders');
+    if (typeof window.horasExtrasEncerrarSessao === 'function') window.horasExtrasEncerrarSessao();
     console.log('🧹 Sessão limpa do localStorage');
 }
 
@@ -31173,7 +31180,8 @@ if (typeof verificarVendaAtual === 'function') window.verificarVendaAtual = veri
         'fullSystem', 'estoqueGestaoSystem', 'gerenciamentoAnunciosSystem',
         'promocoesSystem', 'chamadosSystem', 'reclamacoesSystem',
         'historicoAcessosScreen', 'metaRonaldSystem', 'devolucoesSystem',
-        'reclamacoesClientesSystem', 'atividadesSystem', 'projetosSystem', 'patrimoniosSystem', 'pedidosSystem', 'sugestoesSystem'
+        'reclamacoesClientesSystem', 'atividadesSystem', 'projetosSystem', 'patrimoniosSystem', 'pedidosSystem', 'sugestoesSystem',
+        'vendasVendedoresSystem', 'horasExtrasSystem'
     ];
 
     function elementoVisivel(el) {

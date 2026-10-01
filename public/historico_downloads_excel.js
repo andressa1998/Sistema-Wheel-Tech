@@ -38,7 +38,9 @@
         projetosSystem: 'Projetos/Tarefas',
         patrimoniosSystem: 'Patrimônios WT',
         pedidosSystem: 'Pedidos',
-        sugestoesSystem: 'Sugestões de Melhoria'
+        sugestoesSystem: 'Sugestões de Melhoria',
+        horasExtrasSystem: 'Horas Extras',
+        vendasVendedoresSystem: 'Vendas Vendedores'
     };
 
     function elementoVisivel(el) {

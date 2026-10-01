@@ -726,7 +726,53 @@
             if (!data || data.length < 1000) continuar = false;
             else inicio += 1000;
         }
+
+        // Envios por correio das Vendas Vendedores (vendas_vendedores.js)
+        // entram como uma terceira categoria. Lidos direto da tabela da
+        // venda — sem cópia — para o frete preenchido depois na venda já
+        // aparecer aqui. Sem data de postagem, vale a data da venda.
+        try {
+            let inicioVV = 0;
+            while (true) {
+                const { data, error } = await cli
+                    .from('vendas_vendedores')
+                    .select('id, criado_em, data_postagem, valor_frete, codigo_rastreio, nome_destinatario, cliente_nome')
+                    .eq('forma_entrega', 'correio')
+                    .neq('status', 'cancelada')
+                    .range(inicioVV, inicioVV + 999);
+                if (error) throw error;
+                (data || []).forEach(v => {
+                    const criado = v.criado_em ? new Date(v.criado_em) : null;
+                    const dataVenda = criado && !isNaN(criado.getTime())
+                        ? `${criado.getFullYear()}-${String(criado.getMonth() + 1).padStart(2, '0')}-${String(criado.getDate()).padStart(2, '0')}`
+                        : null;
+                    todos.push({
+                        origem: 'venda_vendedor',
+                        venda_vendedor_id: v.id,
+                        data_postagem: v.data_postagem || dataVenda,
+                        valor_frete: v.valor_frete,
+                        codigo_rastreio: v.codigo_rastreio,
+                        nome_cliente: v.nome_destinatario || v.cliente_nome
+                    });
+                });
+                if (!data || data.length < 1000) break;
+                inicioVV += 1000;
+            }
+        } catch (error) {
+            console.warn('⚠️ [Reclamações Clientes] Envios das Vendas Vendedores não carregados:', error);
+        }
+
         dadosEnviosCorreioRC = todos;
+    }
+
+    // Chamado pelo módulo Vendas Vendedores ao salvar/editar/cancelar
+    // uma venda com envio por correio.
+    window.invalidarRelatorioEnviosCorreioRC = function () {
+        dadosEnviosCorreioRC = null;
+    };
+
+    function ehEnvioVendaRC(e) {
+        return e.origem === 'venda_vendedor';
     }
 
     window.gerarRelatorioEnviosCorreioRC = async function () {
@@ -744,7 +790,7 @@
         }
 
         if (!dadosEnviosCorreioRC.length) {
-            corpo.innerHTML = `<div class="text-center text-muted py-5">Nenhum envio de correio registrado ainda nas reclamações.</div>`;
+            corpo.innerHTML = `<div class="text-center text-muted py-5">Nenhum envio de correio registrado ainda (reclamações ou vendas vendedores).</div>`;
             relatorioEnviosCorreioRC = { porMes: [], anoSelecionado: null, totalErro: 0, totalAcerto: 0 };
             return;
         }
@@ -778,23 +824,30 @@
             const doMes = doAno.filter(e => new Date(e.data_postagem + 'T00:00').getMonth() === idx);
             const comFrete = doMes.filter(e => e.valor_frete != null);
             const erro = comFrete
-                .filter(e => e.reclamacoes_clientes?.erro_nosso === true)
+                .filter(e => !ehEnvioVendaRC(e) && e.reclamacoes_clientes?.erro_nosso === true)
                 .reduce((s, e) => s + Number(e.valor_frete), 0);
             const acerto = comFrete
-                .filter(e => e.reclamacoes_clientes?.erro_nosso !== true)
+                .filter(e => !ehEnvioVendaRC(e) && e.reclamacoes_clientes?.erro_nosso !== true)
                 .reduce((s, e) => s + Number(e.valor_frete), 0);
-            return { mes: nome, qtd: doMes.length, erro, acerto, total: erro + acerto, semFrete: doMes.length - comFrete.length };
+            const vendas = comFrete
+                .filter(ehEnvioVendaRC)
+                .reduce((s, e) => s + Number(e.valor_frete), 0);
+            return {
+                mes: nome, qtd: doMes.length, qtdVendas: doMes.filter(ehEnvioVendaRC).length,
+                erro, acerto, vendas, total: erro + acerto + vendas, semFrete: doMes.length - comFrete.length
+            };
         });
 
         const totalErro = porMes.reduce((s, m) => s + m.erro, 0);
         const totalAcerto = porMes.reduce((s, m) => s + m.acerto, 0);
+        const totalVendas = porMes.reduce((s, m) => s + m.vendas, 0);
         const totalSemFrete = porMes.reduce((s, m) => s + m.semFrete, 0);
 
-        relatorioEnviosCorreioRC = { porMes, anoSelecionado, totalErro, totalAcerto };
+        relatorioEnviosCorreioRC = { porMes, anoSelecionado, totalErro, totalAcerto, totalVendas };
 
         corpo.innerHTML = `
             <div class="d-flex justify-content-between align-items-center mb-3" style="gap:10px;">
-                <div style="font-size:12px;color:#6c757d;max-width:520px;">Custo dos envios pelo correio feitos por causa de reclamações, separado entre reclamações com erro nosso e as demais (erro externo ou ainda não definido).</div>
+                <div style="font-size:12px;color:#6c757d;max-width:520px;">Custo dos envios pelo correio: os feitos por causa de reclamações (separados entre erro nosso e as demais — erro externo ou ainda não definido) e os das Vendas Vendedores.</div>
                 <div class="d-flex gap-2 align-items-center">
                     <label style="font-size:12px;margin:0;">Ano:</label>
                     <select id="rcEnvioAno" class="form-control form-control-sm" style="width:auto;" onchange="window.gerarRelatorioEnviosCorreioRC()">
@@ -807,7 +860,8 @@
                 <div class="rc-rel-card"><small>Envios no ano</small><strong>${doAno.length}</strong></div>
                 <div class="rc-rel-card" style="background:#fff0f0;border-color:#f1b0b0;"><small>Gasto com erro nosso</small><strong style="color:#a61b29;">R$ ${totalErro.toFixed(2)}</strong></div>
                 <div class="rc-rel-card" style="background:#e3f7e8;border-color:#b7e4c7;"><small>Gasto com acerto</small><strong style="color:#1c7a34;">R$ ${totalAcerto.toFixed(2)}</strong></div>
-                <div class="rc-rel-card"><small>Total gasto no ano</small><strong>R$ ${(totalErro + totalAcerto).toFixed(2)}</strong></div>
+                <div class="rc-rel-card" style="background:#eaf2ff;border-color:#b6d0f7;"><small>Gasto com vendas vendedores</small><strong style="color:#0d6efd;">R$ ${totalVendas.toFixed(2)}</strong></div>
+                <div class="rc-rel-card"><small>Total gasto no ano</small><strong>R$ ${(totalErro + totalAcerto + totalVendas).toFixed(2)}</strong></div>
                 ${totalSemFrete ? `<div class="rc-rel-card" style="background:#fff8e1;border-color:#ffe0a3;"><small>Frete ainda não preenchido</small><strong style="color:#8a6d00;">${totalSemFrete}</strong></div>` : ''}
             </div>
 
@@ -817,14 +871,15 @@
 
             <div class="table-responsive">
                 <table class="rc-rel-tabela">
-                    <thead><tr><th>Mês</th><th style="text-align:right;">Envios</th><th style="text-align:right;">Erro nosso</th><th style="text-align:right;">Acerto</th><th style="text-align:right;">Total</th></tr></thead>
+                    <thead><tr><th>Mês</th><th style="text-align:right;">Envios</th><th style="text-align:right;">Erro nosso</th><th style="text-align:right;">Acerto</th><th style="text-align:right;">Vendas vendedores</th><th style="text-align:right;">Total</th></tr></thead>
                     <tbody>
                         ${porMes.map(m => `
                             <tr>
                                 <td>${m.mes}</td>
-                                <td style="text-align:right;">${m.qtd}</td>
+                                <td style="text-align:right;">${m.qtd}${m.qtdVendas ? ` <small style="color:#64748b;">(${m.qtdVendas} de vendas)</small>` : ''}</td>
                                 <td style="text-align:right;color:#a61b29;">${m.erro ? 'R$ ' + m.erro.toFixed(2) : '—'}</td>
                                 <td style="text-align:right;color:#1c7a34;">${m.acerto ? 'R$ ' + m.acerto.toFixed(2) : '—'}</td>
+                                <td style="text-align:right;color:#0d6efd;">${m.vendas ? 'R$ ' + m.vendas.toFixed(2) : '—'}</td>
                                 <td style="text-align:right;font-weight:700;">R$ ${m.total.toFixed(2)}</td>
                             </tr>
                         `).join('')}
@@ -851,7 +906,8 @@
                 labels: porMes.map(m => m.mes),
                 datasets: [
                     { label: 'Erro nosso', data: porMes.map(m => m.erro), backgroundColor: '#dc3545', borderRadius: 4 },
-                    { label: 'Acerto', data: porMes.map(m => m.acerto), backgroundColor: '#198754', borderRadius: 4 }
+                    { label: 'Acerto', data: porMes.map(m => m.acerto), backgroundColor: '#198754', borderRadius: 4 },
+                    { label: 'Vendas vendedores', data: porMes.map(m => m.vendas), backgroundColor: '#0d6efd', borderRadius: 4 }
                 ]
             },
             options: {
@@ -876,6 +932,8 @@
             'Envios': m.qtd,
             'Gasto com erro nosso': m.erro,
             'Gasto com acerto': m.acerto,
+            'Envios de vendas vendedores': m.qtdVendas,
+            'Gasto com vendas vendedores': m.vendas,
             'Total': m.total,
             'Sem frete preenchido': m.semFrete
         }));
