@@ -24061,9 +24061,19 @@ async function salvarRegrasFixasTipoAnuncioML(
 // SINCRONIZAR ESTOQUE COM MERCADO LIVRE - VERSÃO CORRIGIDA
 // =========================================================
 
-async function sincronizarEstoqueML(produto) {
+// opcoes.somenteConferir = true → MODO CONFERÊNCIA (estoque_conferencia.js):
+// calcula a quantidade que cada anúncio/variação deveria ter (mesmas regras
+// da sincronização) e só COMPARA com o que está no ML. Não envia nada,
+// não mexe em Clássico/Premium, ignora anúncios FULL e não mostra toast
+// nem o modal de FULL. Cada comparação volta em results como
+// { conferencia: true, codigo, variation_id, sku_anuncio, esperado, no_ml }.
+// opcoes.silencioso = true → sincroniza de verdade, mas sem toasts e sem
+// o modal de FULL (usado no "Sincronizar todos" em segundo plano).
+async function sincronizarEstoqueML(produto, opcoes = {}) {
+    const somenteConferir = opcoes && opcoes.somenteConferir === true;
+    const silencioso = opcoes && opcoes.silencioso === true;
     console.log('🚀 [sincronizarEstoqueML] INICIANDO para produto:', produto.sku);
-    
+
     let mlbCodes = produto.dados_extra?.mlb_codes;
     if (!mlbCodes || (Array.isArray(mlbCodes) && mlbCodes.length === 0)) {
         console.log('ℹ️ Produto sem MLB cadastrado.');
@@ -24074,7 +24084,7 @@ async function sincronizarEstoqueML(produto) {
 
     let token = localStorage.getItem('ml_access_token');
     if (!token) {
-        showToast('❌ Token ML não encontrado.', 'error');
+        if (!somenteConferir && !silencioso) showToast('❌ Token ML não encontrado.', 'error');
         return { success: false, error: 'Token não disponível' };
     }
 
@@ -25012,6 +25022,10 @@ function calcularQuantidadeComRegras(
     variacaoAlvo = null
 ) {
 
+    // motivo de não ter conseguido atualizar pelo estoque do user product
+    // (vai na mensagem de erro — o fallback abaixo não resolve FULL)
+    let motivoUP = '';
+
     try {
 
         console.log(
@@ -25052,6 +25066,62 @@ function calcularQuantidadeComRegras(
                         `https://api.mercadolibre.com/user-products/${encodeURIComponent(
                             userProductId
                         )}/stock`;
+
+
+                    // 1º: direto no ML (o worker não devolve o header
+                    // x-version, que o ML exige para alterar o depósito)
+                    try {
+
+                        const direto =
+                            await fetch(
+                                stockUrl,
+                                {
+                                    headers: {
+                                        'Authorization':
+                                            `Bearer ${token}`
+                                    },
+                                    cache:
+                                        'no-store'
+                                }
+                            );
+
+
+                        const xVersionDireto =
+                            direto.headers.get(
+                                'x-version'
+                            );
+
+
+                        if (
+                            direto.ok &&
+                            xVersionDireto
+                        ) {
+
+                            return {
+
+                                data:
+                                    await direto.json(),
+
+                                xVersion:
+                                    xVersionDireto,
+
+                                direto:
+                                    true
+                            };
+                        }
+
+
+                        console.warn(
+                            `⚠️ Stock UP direto no ML: HTTP ${direto.status}, x-version ${xVersionDireto ? 'ok' : 'ausente'} — tentando pelo worker.`
+                        );
+
+                    } catch (erroDireto) {
+
+                        console.warn(
+                            '⚠️ Stock UP direto no ML falhou — tentando pelo worker:',
+                            erroDireto
+                        );
+                    }
 
 
                     const proxy =
@@ -25131,7 +25201,7 @@ function calcularQuantidadeComRegras(
                                     false,
 
                                 error:
-                                    'Mercado Livre não retornou x-version do estoque.'
+                                    'Mercado Livre não retornou x-version do estoque (nem direto, nem pelo worker).'
                             };
                         }
 
@@ -25150,8 +25220,35 @@ function calcularQuantidadeComRegras(
                             `&token=${encodeURIComponent(token)}`;
 
 
+                        // Se a versão veio direto do ML, altera direto
+                        // também (o worker pode não repassar o x-version).
                         const response =
-                            await fetch(
+                            stockAtual.direto
+                                ? await fetch(
+                                    url,
+                                    {
+                                        method:
+                                            'PUT',
+
+                                        headers: {
+
+                                            'Authorization':
+                                                `Bearer ${token}`,
+
+                                            'Content-Type':
+                                                'application/json',
+
+                                            'x-version':
+                                                stockAtual.xVersion
+                                        },
+
+                                        body:
+                                            JSON.stringify(
+                                                body
+                                            )
+                                    }
+                                )
+                                : await fetch(
                                 proxy,
                                 {
 
@@ -25364,6 +25461,9 @@ function calcularQuantidadeComRegras(
                         `⚠️ seller_warehouse falhou:`,
                         resultado
                     );
+
+                    motivoUP =
+                        `depósito próprio recusou: ${resultado.error || resultado.status || ''}`;
                 }
 
 
@@ -25454,6 +25554,20 @@ function calcularQuantidadeComRegras(
                         `⚠️ selling_address falhou:`,
                         resultado
                     );
+
+                    motivoUP =
+                        `endereço de venda recusou: ${resultado.error || resultado.status || ''}`;
+                }
+
+
+                if (
+                    !motivoUP &&
+                    !warehouses.length &&
+                    !sellingAddress
+                ) {
+
+                    motivoUP =
+                        'o ML não mostra estoque próprio neste anúncio (só o do armazém FULL)';
                 }
 
 
@@ -25465,6 +25579,9 @@ function calcularQuantidadeComRegras(
                     `⚠️ User Product ${userProductId}:`,
                     erroUserProduct
                 );
+
+                motivoUP =
+                    `erro no estoque do user product: ${erroUserProduct.message || erroUserProduct}`;
             }
         }
 
@@ -25533,10 +25650,18 @@ function calcularQuantidadeComRegras(
                     );
 
 
+                    // O ML aceita o PUT, mas em anúncio FULL ignora o
+                    // available_quantity — então NÃO conta como sucesso.
                     return {
 
                         success:
-                            true,
+                            false,
+
+                        tipo:
+                            'full_convivio',
+
+                        error:
+                            `estoque próprio não atualizado (${motivoUP || 'sem estoque próprio editável'})`,
 
                         method:
                             'variation_available_quantity',
@@ -25626,10 +25751,18 @@ function calcularQuantidadeComRegras(
                     );
 
 
+                    // O ML aceita o PUT, mas em anúncio FULL ignora o
+                    // available_quantity — então NÃO conta como sucesso.
                     return {
 
                         success:
-                            true,
+                            false,
+
+                        tipo:
+                            'full_convivio',
+
+                        error:
+                            `estoque próprio não atualizado (${motivoUP || 'sem estoque próprio editável'})`,
 
                         method:
                             'item_available_quantity',
@@ -25674,7 +25807,7 @@ function calcularQuantidadeComRegras(
                 'full_sem_estoque_local_editavel',
 
             error:
-                'Não foi possível disponibilizar estoque local para este anúncio FULL.'
+                `Não foi possível atualizar o estoque próprio deste anúncio FULL${motivoUP ? ` (${motivoUP})` : ''}.`
         };
 
 
@@ -25786,7 +25919,7 @@ function calcularQuantidadeComRegras(
 // AJUSTAR CLÁSSICO / PREMIUM CONFORME ESTOQUE
 // =========================================================
 
-try {
+if (!somenteConferir) try {
 
     const resultadoTipoAnuncio =
         await ajustarTipoAnuncioPorEstoqueML(
@@ -25819,10 +25952,53 @@ try {
                                   item.logistic_type === 'fulfillment' ||
                                   item.tags?.includes('fulfillment');
 
-            const hasSelfService = item.tags?.includes('self_service_in') || 
+            let hasSelfService = item.tags?.includes('self_service_in') ||
                                    item.shipping?.tags?.includes('self_service_in');
 
+            // FULL sem a etiqueta de Flex ainda pode ter estoque PRÓPRIO
+            // (estoque multiorigem / depósito do vendedor). Pergunta ao ML
+            // onde está o estoque do anúncio: se tiver selling_address ou
+            // seller_warehouse, trata como convivência (atualiza a parte própria).
+            if (isFulfillment && !hasSelfService) {
+                const variacaoUP = item.variations && item.variations.length > 0
+                    ? (encontrarVariacaoPorSKU(item, skuProduto) || item.variations.find(v => v.user_product_id))
+                    : null;
+                const upId = variacaoUP?.user_product_id || item.user_product_id || null;
+                if (upId) {
+                    try {
+                        const stockUrl = `https://api.mercadolibre.com/user-products/${encodeURIComponent(upId)}/stock`;
+                        const stockRes = await fetch(
+                            `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`,
+                            { cache: 'no-store' }
+                        );
+                        if (stockRes.ok) {
+                            const stock = await stockRes.json();
+                            const temLocal = (Array.isArray(stock?.locations) ? stock.locations : []).some(l =>
+                                ['selling_address', 'seller_warehouse'].includes(String(l?.type || '').toLowerCase()));
+                            if (temLocal) {
+                                hasSelfService = true;
+                                console.log(`📦 Item ${itemId}: FULL com estoque próprio (detectado pelo stock do user product ${upId})`);
+                            }
+                        } else {
+                            console.warn(`⚠️ Item ${itemId}: não deu para ler o stock do user product ${upId} (HTTP ${stockRes.status})`);
+                        }
+                    } catch (erroStockUP) {
+                        console.warn(`⚠️ Item ${itemId}: erro lendo stock do user product:`, erroStockUP);
+                    }
+                } else {
+                    console.warn(`⚠️ Item ${itemId}: FULL sem user_product_id — não dá para saber se tem estoque próprio.`);
+                }
+            }
+
             console.log(`📦 Item ${itemId}: isFulfillment=${isFulfillment}, hasSelfService=${hasSelfService}`);
+
+            // Conferência ignora FULL puro (estoque só no armazém do ML, que
+            // não dá para mexer) e anúncios encerrados. FULL com convivência
+            // é conferido só na parte do estoque próprio (mais abaixo).
+            if (somenteConferir && ((isFulfillment && !hasSelfService) || ['closed', 'inactive'].includes(item.status))) {
+                results.push({ codigo: itemId, ignorado: true, tipo: isFulfillment ? 'full' : 'encerrado' });
+                continue;
+            }
 
             const skuAnuncio = obterSkuAnuncio(item, skuProduto);
             const skusFilhos = await carregarSkusKit(skuProduto);
@@ -25834,10 +26010,7 @@ try {
 
             // ===== FULL COM CONVIVÊNCIA =====
                 if (isFulfillment && hasSelfService) {
-                console.log(forcarLocalFullZero
-                            ? `🚨 Item ${itemId}: FULL zerou → acionando fluxo LOCAL`
-                            : `📦 Item ${itemId}: FULL com convivência`
-                            );
+                console.log(`📦 Item ${itemId}: FULL com convivência`);
                 
                 let userProductId = null;
                 
@@ -25871,7 +26044,11 @@ try {
                     skuAnuncio
                 );
 
-                console.log(`📊 [FULL] Quantidade a ser enviada: ${quantidadeParaEnviar}`);
+                // Anúncio no FULL: o estoque próprio (depósito) fica no
+                // máximo em 1 — o grosso das vendas sai do armazém do ML.
+                quantidadeParaEnviar = Math.min(quantidadeParaEnviar, 1);
+
+                console.log(`📊 [FULL] Quantidade a ser enviada (máx. 1 no depósito): ${quantidadeParaEnviar}`);
 
                 const variacaoAlvoFull =
                     item.variations &&
@@ -25882,6 +26059,47 @@ try {
                             skuProduto
                         )
                         : null;
+
+                // Conferência: compara só a parte do estoque PRÓPRIO
+                // (seller_warehouse / selling_address). A parte do armazém
+                // do ML (meli_facility) não entra — não dá para mexer nela.
+                if (somenteConferir) {
+                    try {
+                        const stockUrl = `https://api.mercadolibre.com/user-products/${encodeURIComponent(userProductId)}/stock`;
+                        const stockRes = await fetch(
+                            `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`,
+                            { cache: 'no-store' }
+                        );
+                        if (!stockRes.ok) throw new Error(`GET stock UP: HTTP ${stockRes.status}`);
+                        const stock = await stockRes.json();
+                        const locations = Array.isArray(stock?.locations) ? stock.locations : [];
+                        const tipoDe = l => String(l?.type || '').toLowerCase();
+                        const warehouses = locations.filter(l => tipoDe(l) === 'seller_warehouse');
+                        const sellingAddress = locations.find(l => tipoDe(l) === 'selling_address');
+                        // mesma prioridade da atualização; mais de um depósito
+                        // próprio a sincronização também não mexe → não confere
+                        const local = warehouses.length === 1 ? warehouses[0]
+                            : warehouses.length > 1 ? null
+                            : sellingAddress || null;
+
+                        if (local) {
+                            results.push({
+                                conferencia: true,
+                                codigo: itemId,
+                                variation_id: variacaoAlvoFull?.id || null,
+                                sku_anuncio: skuAnuncio || '',
+                                esperado: quantidadeParaEnviar,
+                                no_ml: Number(local.quantity) || 0,
+                                tipo: 'full_convivio'
+                            });
+                        } else {
+                            results.push({ codigo: itemId, ignorado: true, tipo: 'full_sem_estoque_proprio' });
+                        }
+                    } catch (erroStockConferencia) {
+                        results.push({ codigo: itemId, success: false, error: erroStockConferencia.message });
+                    }
+                    continue;
+                }
 
                 const resultado =
                     await atualizarEstoqueFullConvivio(
@@ -25943,6 +26161,7 @@ console.log(
 // ANÚNCIO COM PREÇO AUTOMÁTICO
 // =========================================================
 if (
+    !somenteConferir &&
     item.tags?.includes(
         'has_price_by_rule'
     )
@@ -26095,6 +26314,21 @@ if (
         console.log(
             `📊 ${itemId} / variação ${varId} -> estoque calculado: ${quantidadeParaEnviar}`
         );
+
+
+        if (somenteConferir) {
+
+            results.push({
+                conferencia: true,
+                codigo: itemId,
+                variation_id: varId,
+                sku_anuncio: skuVariacao,
+                esperado: quantidadeParaEnviar,
+                no_ml: Number(variacaoAlvo.available_quantity) || 0
+            });
+
+            continue;
+        }
 
 
         // =================================================
@@ -26414,6 +26648,21 @@ else {
         );
 
 
+    if (somenteConferir) {
+
+        results.push({
+            conferencia: true,
+            codigo: itemId,
+            variation_id: null,
+            sku_anuncio: skuAnuncioLocal,
+            esperado: quantidadeParaEnviar,
+            no_ml: Number(item.available_quantity) || 0
+        });
+
+        continue;
+    }
+
+
     console.log(
         `📦 Atualizando item principal ${itemId} para ${quantidadeParaEnviar}`
     );
@@ -26577,11 +26826,26 @@ else {
     }
 
     // ===== RESULTADOS FINAIS =====
+    if (somenteConferir) return { success: true, results };
+
     const sucessos = results.filter(r => r.success).length;
     const falhas = results.filter(r => !r.success).length;
-    
+
+    // Modo silencioso (ex.: "Sincronizar todos" das divergências, em
+    // segundo plano): sincroniza normalmente, mas sem toast por produto
+    // nem modal de FULL — quem chamou avisa no final.
+    if (silencioso) return { success: falhas === 0, results };
+
     if (sucessos) showToast(`✅ ${sucessos} anúncio(s) sincronizado(s)`, 'success');
     if (falhas) showToast(`⚠️ ${falhas} anúncio(s) falharam. Verifique console.`, 'warning');
+
+    // FULL com estoque próprio que não atualizou: mostra o motivo
+    results
+        .filter(r => !r.success && (r.reason === 'sem_user_product_id' || ['full_convivio', 'multiplos_warehouses', 'full_sem_estoque_local_editavel'].includes(r.tipo)))
+        .forEach(r => showToast(
+            `⚠️ FULL ${r.codigo}: parte própria não atualizada — ${r.reason === 'sem_user_product_id' ? 'anúncio sem user_product_id' : String(r.error || 'erro desconhecido').slice(0, 160)}`,
+            'warning'
+        ));
 
     const fullDetectadosLista = results.filter(r => {
         const isFull = r.tipo === 'full_puro' || 
