@@ -5152,6 +5152,24 @@ function produtoCorrespondeTermoBuscaEstoque(produto, termo) {
 
 
     // =====================================
+    // FORNECEDOR / CÓDIGO DO FORNECEDOR
+    // (estoque_colunas.js — só usuários restritos)
+    // =====================================
+
+    if (
+        window.WTEstoqueColunas &&
+        window.WTEstoqueColunas.buscaExtra(
+            produto,
+            termo
+        )
+    ) {
+
+        return true;
+
+    }
+
+
+    // =====================================
     // DADOS EXTRA
     // =====================================
 
@@ -5657,11 +5675,11 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
         isAdmin;
 
 
-    // Custo (último/médio), fornecedor, vendas, valor em estoque, projeção e
-    // "sem venda há" saíram da tabela da Gestão de Estoque: agora ficam só
-    // na aba "Precificação inteligente". O cabeçalho e as células de custo
-    // não aparecem para ninguém aqui.
-    const podeVerCusto = false;
+    // Custo (último/médio) só para andressamiotto / ronald. As demais colunas
+    // restritas (fornecedor, código do fornecedor, vendas, valor em estoque,
+    // projeção, níveis...) são injetadas pelo estoque_colunas.js.
+    const podeVerCusto =
+        ['andressamiotto', 'ronald'].includes(username);
 
 
     // Cabeçalhos "Último custo" / "Média custo" escondidos (a coluna não existe aqui).
@@ -5969,7 +5987,24 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
                 // PADRÃO
                 // =========================================
 
-                default:
+                default: {
+
+                    // colunas do estoque_colunas.js (valor de venda,
+                    // custo estimado, fornecedores, níveis...)
+                    const extra =
+                        window.WTEstoqueColunas &&
+                        window.WTEstoqueColunas.valorOrdenacao;
+
+                    if (
+                        extra &&
+                        extra(coluna, a) !== undefined
+                    ) {
+
+                        valorA = extra(coluna, a);
+                        valorB = extra(coluna, b);
+
+                        break;
+                    }
 
                     valorA =
                         a.id || 0;
@@ -5979,6 +6014,7 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
                         b.id || 0;
 
                     break;
+                }
             }
 
 

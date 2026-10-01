@@ -230,9 +230,7 @@
 
     // ---------- escopo -----------------------------------
     function lerFiltroAtual() {
-        // Na aba "Precificação inteligente" o escopo vem dos filtros/seleção dela.
-        const pi = window.PrecificacaoInteligente;
-        if (pi && typeof pi.telaAberta === 'function' && pi.telaAberta()) return pi.lerFiltro();
+        // O escopo vem dos filtros/seleção da Gestão de Estoque.
         const est = getEstadoFiltros();
         const g = id => document.getElementById(id);
         let selIds = [];
@@ -319,7 +317,11 @@
     async function avaliarRegras(opts) {
         opts = opts || {};
         if (avaliando || !ehAdmin()) return;
-        if (!opts.forcar && Date.now() - ultimaAvaliacao < 45000) return;
+        // Era 45s em toda aba aberta (regras + todos os disparos + produtos).
+        // Aba em segundo plano não avalia; movimentação de estoque continua
+        // disparando na hora (opts.forcar, ver instalarHooks).
+        if (!opts.forcar && document.visibilityState && document.visibilityState !== 'visible') return;
+        if (!opts.forcar && Date.now() - ultimaAvaliacao < 3 * 60000) return;
         const cli = sb();
         if (!cli) return;
         avaliando = true;
@@ -678,19 +680,26 @@
 
     // ---------- botão barra + sino ----------------------
     function garantirBotaoToolbar() {
-        if (document.getElementById('btnRegrasNivelToolbar')) return;
-        // O botão mora na aba "Precificação inteligente" (saiu da Gestão de Estoque).
-        const barra = document.querySelector('#precificacaoInteligenteSystem .pi-acoes');
-        if (!barra) return;
+        // O botão mora no menu "Acessibilidade" da Gestão de Estoque.
+        const atual = document.getElementById('menuAcessibilidadeEstoqueDropdown');
+        if (atual && document.getElementById('btnRegrasNivelToolbar')?.parentElement === atual) return;
+        if (typeof window.garantirMenuAcessibilidadeEstoque !== 'function') return;
+        const menu = window.garantirMenuAcessibilidadeEstoque();
+        if (!menu) return;
+        const existente = document.getElementById('btnRegrasNivelToolbar');
+        if (existente) {
+            if (existente.parentElement !== menu) menu.appendChild(existente);
+            return;
+        }
         garantirEstilo();
         const b = document.createElement('button');
         b.id = 'btnRegrasNivelToolbar';
         b.type = 'button';
-        b.className = 'btn btn-warning';
         b.title = 'Regras de nível de estoque (escada de preços)';
         b.innerHTML = `<i class="fas fa-bolt"></i> Regras de nível <span class="rn-badge" style="display:none">0</span>`;
         b.addEventListener('click', () => abrirPainel('regras'));
-        barra.insertBefore(b, barra.firstChild);
+        if (typeof window.estilizarItemMenuAcessibilidadeEstoque === 'function') window.estilizarItemMenuAcessibilidadeEstoque(b);
+        menu.appendChild(b);
     }
     function garantirSino() {
         if (document.getElementById('wtRegrasNivelNotifBtn')) return document.getElementById('wtRegrasNivelNotifBtn');
@@ -715,7 +724,8 @@
         const btn = garantirSino();
         garantirBotaoToolbar();
         if (!btn || !ehAdmin()) { if (btn) btn.style.display = 'none'; return; }
-        if (!forcar && Date.now() - ultimoSino < 30000) return;
+        if (!forcar && document.visibilityState && document.visibilityState !== 'visible') return;
+        if (!forcar && Date.now() - ultimoSino < 60000) return;
         ultimoSino = Date.now();
         const cli = sb();
         if (!cli) return;
@@ -1568,7 +1578,7 @@
             // que a pessoa esteja só na tela inicial (o throttle interno
             // de 45s evita ficar batendo no banco/ML toda hora).
             avaliarRegras();
-            const sistema = document.getElementById('precificacaoInteligenteSystem');
+            const sistema = document.getElementById('estoqueGestaoSystem');
             if (sistema && !sistema.classList.contains('hidden')) garantirBotaoToolbar();
         }, 3000);
     }

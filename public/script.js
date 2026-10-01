@@ -31189,14 +31189,28 @@ if (typeof verificarVendaAtual === 'function') window.verificarVendaAtual = veri
     function sincronizarConteudo(barra) {
         const original = document.querySelector('#menuSystem > .wt-sidebar');
         if (!barra || !original) return;
+        // Casa os botões pela CHAVE da aba (data-menu-visual-key), não pela
+        // posição: o menu do Início é reordenado (fixados primeiro,
+        // alfabético) e recebe abas dinâmicas, então o índice não bate.
+        // Também respeita a configuração "quais abas cada usuário vê"
+        // (classe menu-card-oculto-visualizacao), para as duas barras
+        // mostrarem exatamente os mesmos itens.
         const botoesOriginais = [...original.querySelectorAll('.wt-nav-item')];
+        const fontePorChave = new Map();
+        botoesOriginais.forEach(b => {
+            const chave = b.dataset.menuVisualKey;
+            if (chave) fontePorChave.set(chave, b);
+        });
         const botoesGlobais = [...barra.querySelectorAll('.wt-nav-item')];
-        botoesGlobais.forEach((botao, i) => {
-            const fonte = botoesOriginais[i];
+        botoesGlobais.forEach(botao => {
+            const chave = botao.dataset.menuVisualKey;
+            if (!chave) return; // "Início"
+            const fonte = fontePorChave.get(chave);
             if (!fonte) return;
-            const oculto = fonte.style.display === 'none' || fonte.classList.contains('hidden');
+            const oculto = fonte.style.display === 'none' ||
+                fonte.classList.contains('hidden') ||
+                fonte.classList.contains('menu-card-oculto-visualizacao');
             botao.classList.toggle('wt-menu-hidden', oculto);
-            botao.classList.toggle('active', fonte.classList.contains('active'));
         });
 
         const avatar = barra.querySelector('.user-avatar');

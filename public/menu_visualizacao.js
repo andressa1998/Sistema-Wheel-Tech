@@ -40,6 +40,66 @@
 
 
     // ========================================================
+    // ABAS NOVAS x CONFIGURAÇÃO SALVA
+    //
+    // A configuração antiga guardava SÓ as abas marcadas. Toda aba
+    // criada depois (ex.: Concorrentes, Precificação inteligente)
+    // não estava na lista e ficava escondida no Início — mas
+    // aparecia na barra lateral das outras telas.
+    //
+    // Formato novo (a partir desta versão): salva também as abas
+    // DESMARCADAS com "!" na frente + o marcador abaixo. Aba que
+    // não está em nenhuma das listas é nova => aparece.
+    //
+    // Configurações antigas (sem o marcador): as abas desta lista
+    // foram criadas depois da configuração e aparecem por padrão.
+    // ========================================================
+
+    const MARCADOR_FORMATO_V2 =
+        '__formato_v2';
+
+    const ABAS_NOVAS_VISIVEIS_CONFIG_ANTIGA =
+        new Set([
+            'concorrentes',
+            'regras_alerta_estoque',
+            'registro_funcionalidades'
+        ]);
+
+    function abaVisivelNaConfigMenu(
+        config,
+        chave
+    ) {
+
+        const lista =
+            Array.isArray(config)
+                ? config
+                : [];
+
+        if (
+            lista.includes(
+                MARCADOR_FORMATO_V2
+            )
+        ) {
+
+            return !lista.includes(
+                '!' + chave
+            );
+
+        }
+
+        return (
+            lista.includes(
+                chave
+            ) ||
+            ABAS_NOVAS_VISIVEIS_CONFIG_ANTIGA.has(
+                chave
+            )
+        );
+
+    }
+
+
+    // ========================================================
     // ESTADO
     // ========================================================
 
@@ -2042,19 +2102,24 @@
                     !!data;
 
 
+                const todasChaves =
+                    obterCardsMenu()
+                        .map(
+                            obterChaveCardMenu
+                        );
+
                 const selecionadas =
                     existeConfig
 
-                        ? Array.isArray(
-                            data.abas_visiveis
+                        ? todasChaves.filter(
+                            chave =>
+                                abaVisivelNaConfigMenu(
+                                    data.abas_visiveis,
+                                    chave
+                                )
                         )
-                            ? data.abas_visiveis
-                            : []
 
-                        : obterCardsMenu()
-                            .map(
-                                obterChaveCardMenu
-                            );
+                        : todasChaves;
 
 
                 renderizarChecklistAbasMenu(
@@ -2379,6 +2444,35 @@
                     );
 
 
+            // Formato novo: guarda também as desmarcadas ("!chave"),
+            // para que abas criadas no futuro apareçam por padrão.
+            const desmarcadas =
+                Array
+                    .from(
+                        document
+                            .querySelectorAll(
+                                '.menu-visual-aba-check:not(:checked)'
+                            )
+                    )
+                    .map(
+                        input =>
+                            input.value
+                    )
+                    .filter(
+                        Boolean
+                    );
+
+            const abasParaSalvar =
+                [
+                    ...selecionadas,
+                    ...desmarcadas.map(
+                        chave =>
+                            '!' + chave
+                    ),
+                    MARCADOR_FORMATO_V2
+                ];
+
+
             const btn =
                 document.getElementById(
                     'btnSalvarMenuVisual'
@@ -2436,7 +2530,7 @@
                                         .username,
 
                                 abas_visiveis:
-                                    selecionadas,
+                                    abasParaSalvar,
 
                                 atualizado_por:
                                     usernameAdmin,
@@ -2726,14 +2820,12 @@
         }
 
 
-        const visiveis =
-            new Set(
-                Array.isArray(
-                    configUsuarioAtual
-                )
-                    ? configUsuarioAtual
-                    : []
-            );
+        const visivel =
+            chave =>
+                abaVisivelNaConfigMenu(
+                    configUsuarioAtual,
+                    chave
+                );
 
 
         cards.forEach(
@@ -2746,7 +2838,7 @@
 
 
                 const deveAparecer =
-                    visiveis.has(
+                    visivel(
                         chave
                     );
 
@@ -2772,7 +2864,7 @@
 
                 elemento.classList.toggle(
                     MENU_VIS_CONFIG.classeOculta,
-                    !dependencias.some(chave => visiveis.has(chave))
+                    !dependencias.some(chave => visivel(chave))
                 );
 
             }

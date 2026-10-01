@@ -30,8 +30,13 @@
             'chamados_notificacoes',
 
         // Fallback caso Realtime não esteja habilitado
+        // Era 3000 (3s): cada aba aberta fazia 2 consultas a cada 3s
+        // (~40 por minuto por aba) — um dos maiores consumidores do
+        // banco. Os chamados novos já chegam na hora pelo realtime
+        // (instalarRealtimeNotificacoesChamados); o polling só cobre
+        // as OS e eventual queda do realtime.
         intervaloAtualizacao:
-            3000,
+            60000,
 
         limiteLista:
             30
@@ -3216,6 +3221,16 @@ window.abrirNotificacaoUnificada =
             setInterval(
                 async () => {
 
+                    // Aba em segundo plano não consulta o banco.
+                    // Ao voltar para a aba, atualiza na hora
+                    // (listener de visibilitychange abaixo).
+                    if (
+                        document.visibilityState &&
+                        document.visibilityState !== 'visible'
+                    ) {
+                        return;
+                    }
+
                     try {
 
                         // Se por algum motivo o sino foi
@@ -3250,6 +3265,26 @@ window.abrirNotificacaoUnificada =
                 NOTIF_CHAMADOS_CONFIG
                     .intervaloAtualizacao
             );
+
+
+        if (!window.__notifChamadosVisibilidade) {
+
+            window.__notifChamadosVisibilidade = true;
+
+            document.addEventListener(
+                'visibilitychange',
+                () => {
+
+                    if (
+                        document.visibilityState === 'visible' &&
+                        usernameAtualNotificacao()
+                    ) {
+                        carregarNotificacoesChamados()
+                            .catch(() => {});
+                    }
+                }
+            );
+        }
 
 
         // ================================================

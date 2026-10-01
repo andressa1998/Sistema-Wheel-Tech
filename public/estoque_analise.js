@@ -507,10 +507,9 @@
         enfeitando = true;
         if (observer) observer.disconnect();
         try {
-            // As colunas de análise (fornecedor, vendas, valor em estoque,
-            // projeção, sem venda há) não aparecem mais na Gestão de Estoque:
-            // foram para a aba "Precificação inteligente", que carrega as
-            // métricas por conta própria.
+            // As colunas de análise (vendas, valor em estoque, projeção,
+            // sem venda há) são desenhadas pelo estoque_colunas.js, junto
+            // com as outras colunas restritas.
             aplicarMetricasAosProdutos();
             injetarControlesFiltro();
         } catch (e) {
@@ -666,7 +665,7 @@
     }
 
     window.WTEstoqueAnalise = {
-        // Mesmas células da tabela de Gestão (usadas na Precificação inteligente).
+        // Células usadas pelo estoque_colunas.js na tabela da Gestão.
         celulas: {
             vendas: celulaVendas,
             valor: celulaValor,

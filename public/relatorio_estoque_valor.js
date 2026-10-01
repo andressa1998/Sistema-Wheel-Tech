@@ -1,6 +1,6 @@
 /* ============================================================
    WHEEL TECH · Relatório: quanto vale o estoque (a preço de custo)
-   (SÓ andressamiotto / ronald — dentro da Precificação inteligente)
+   (SÓ andressamiotto / ronald — botão na Gestão de Estoque)
    ------------------------------------------------------------
    Valor em estoque = quantidade × custo. Visões:
      - Resumo         (totais, custo exato x estimado, por categoria)
@@ -51,7 +51,7 @@
     function num(v) { return (Number(v) || 0).toLocaleString('pt-BR'); }
     function pct(v) { return (v * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'; }
     function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-    function api() { return window.PrecificacaoInteligente && window.PrecificacaoInteligente.relatorio; }
+    function api() { return window.WTEstoqueColunas && window.WTEstoqueColunas.relatorio; }
 
     // ---------- movimentações (para posições passadas) ----------
     async function carregarMovimentos() {

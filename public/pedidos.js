@@ -102,6 +102,12 @@
         return String(valor || '').trim().toUpperCase().replace(/\s+/g, '');
     }
 
+    // Código de fornecedor "xx" é marcador de "sem código": vale como vazio.
+    function limparCodigoPed(valor) {
+        const c = String(valor || '').trim();
+        return c.toUpperCase() === 'XX' ? '' : c;
+    }
+
     function produtoPorSkuSistemaPed(sku) {
         const alvo = normSkuPed(sku);
         if (!alvo) return null;
@@ -231,7 +237,7 @@
         const ligacoes = [];
 
         mapeamentos.forEach(l => {
-            ligacoes.push({ nome: l.nome_fornecedor, produto: produtoPorSkuSistemaPed(l.sku_sistema), skuFornecedor: l.sku_fornecedor });
+            ligacoes.push({ nome: l.nome_fornecedor, produto: produtoPorSkuSistemaPed(l.sku_sistema), skuFornecedor: limparCodigoPed(l.sku_fornecedor) });
         });
 
         const fornecedorDoCard = {};
@@ -245,14 +251,14 @@
             ligacoes.push({
                 nome: it.fornecedor_nome || fornecedorDoCard[String(it.entrada_id)],
                 produto,
-                skuFornecedor: it.cd_fornecedor || it.sku_original
+                skuFornecedor: limparCodigoPed(it.cd_fornecedor) || limparCodigoPed(it.sku_original)
             });
         });
 
         produtosPed.forEach(p => {
             const extra = p.dados_extra || {};
             if (extra.fornecedor_nome) {
-                ligacoes.push({ nome: extra.fornecedor_nome, produto: p, skuFornecedor: extra.cd_fornecedor });
+                ligacoes.push({ nome: extra.fornecedor_nome, produto: p, skuFornecedor: limparCodigoPed(extra.cd_fornecedor) });
             }
         });
 

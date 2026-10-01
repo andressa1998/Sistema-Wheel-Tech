@@ -49,6 +49,12 @@
     #wtGlobalSidebar:hover .wt-sidebar-brand img,#wtGlobalSidebar:focus-within .wt-sidebar-brand img{width:145px}
     #wtGlobalSidebar .wt-module-nav{gap:3px;overflow-x:hidden;overflow-y:hidden}
     #wtGlobalSidebar:hover .wt-module-nav,#wtGlobalSidebar:focus-within .wt-module-nav{overflow-y:auto}
+    /* Anti-trepidação do menu lateral: o deslocamento de 2px no hover fazia a
+       lista vazar na horizontal (barra de rolagem aparecendo/sumindo) e o item
+       "fugia" do mouse em loop. Sem deslocamento + rolagem horizontal travada +
+       espaço da barra de rolagem sempre reservado. */
+    @media(min-width:581px){.wt-module-nav{overflow-x:hidden!important;scrollbar-gutter:stable}}
+    .wt-nav-item:hover{transform:none!important}
     #wtGlobalSidebar .wt-nav-item{min-width:252px;min-height:42px;padding:9px 14px;white-space:nowrap}
     #wtGlobalSidebar .wt-nav-item i{flex:0 0 24px;margin-right:12px}
     #wtGlobalSidebar .wt-nav-item span{opacity:0;visibility:hidden;transition:opacity .14s ease}
@@ -7706,12 +7712,12 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
     <script src="nfe_manager.js?v=20260929-5"></script>
-    <script src="estoque_gestao.js?v=20260929-3"></script>
+    <script src="estoque_gestao.js?v=20261001-1"></script>
     <script src="catalogo_produtos.js?v=20260929-1"></script>
     <script src="estoque_analise.js?v=20260924-3"></script>
-    <script src="regras_nivel_estoque.js?v=20260929-1"></script>
-    <script src="precificacao_inteligente.js?v=20260924-17"></script>
-    <script src="relatorio_estoque_valor.js?v=20260924-2"></script>
+    <script src="regras_nivel_estoque.js?v=20261001-2"></script>
+    <script src="estoque_colunas.js?v=20261001-5"></script>
+    <script src="relatorio_estoque_valor.js?v=20261001-1"></script>
     <script src="perguntas_manager.js?v=20260929-1"></script>
     <script src="feedback_manager.js"></script>
     <script src="entradas.js?v=20260929-1"></script>
@@ -7725,7 +7731,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="atividades.js?v=20260929-1"></script>
     <script src="projetos.js?v=20260917-3"></script>
     <script src="patrimonios.js?v=20260917-1"></script>
-    <script src="pedidos.js?v=20260929-4"></script>
+    <script src="pedidos.js?v=20261001-1"></script>
     <script src="sugestoes.js?v=20260929-1"></script>
     <script src="reclamacoes_clientes.js?v=20260928-3"></script>
     <script src="menu_visualizacao.js?v=20260910-1"></script>

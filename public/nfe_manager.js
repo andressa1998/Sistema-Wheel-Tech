@@ -45770,9 +45770,23 @@ function montarAvisoConcorrenteCacheNFE(
         );
 
 
-    const url =
+    // A lista _CustId_ do ML hoje cai numa busca vazia — usa a
+    // página de perfil quando sabemos o apelido.
+    const urlSalva =
         dados.url_anuncios ||
         null;
+
+    const url =
+        (
+            !urlSalva ||
+            urlSalva.includes('_CustId_')
+        )
+            ? obterLinkPerfilPublicoMLNFE(
+                dados.nickname ||
+                nickname,
+                urlSalva
+            )
+            : urlSalva;
 
 
     const titulo =
@@ -45849,6 +45863,29 @@ function montarAvisoConcorrenteCacheNFE(
         </div>
     `;
 }
+
+// Página pública de perfil do ML. Funciona mesmo quando o
+// cliente não tem anúncios ativos (mostra reputação/opiniões).
+function obterLinkPerfilPublicoMLNFE(
+    nickname,
+    fallback = null
+) {
+
+    nickname =
+        String(
+            nickname ||
+            ''
+        ).trim();
+
+    if (nickname) {
+        return `https://www.mercadolivre.com.br/perfil/${encodeURIComponent(nickname)}`;
+    }
+
+    return fallback || null;
+}
+
+window.obterLinkPerfilPublicoMLNFE =
+    obterLinkPerfilPublicoMLNFE;
 
 async function verificarAnunciosPublicosVendedorNFE(
     buyerId,
@@ -54567,13 +54604,35 @@ async function buscarDetalhesCompletosVendaNFE(
                         ?.power_seller_status
                 );
 
+            // O permalink antigo (perfil.mercadolivre.com.br) e a
+            // lista _CustId_ caem numa busca vazia ("Não encontramos
+            // resultados") quando o cliente não tem anúncio ativo.
+            // A página /perfil/APELIDO mostra a reputação e as
+            // opiniões mesmo sem anúncios.
             const linkPerfilPublico =
-                perfilComprador?.permalink ||
-                (
-                    perfilComprador?.nickname
-                        ? `https://perfil.mercadolivre.com.br/${encodeURIComponent(perfilComprador.nickname)}`
-                        : null
+                obterLinkPerfilPublicoMLNFE(
+                    perfilComprador?.nickname,
+                    perfilComprador?.permalink
                 );
+
+            const transacoesVendedor =
+                perfilComprador
+                    ?.seller_reputation
+                    ?.transactions ||
+                {};
+
+            perfilComprador._resumo_vendedor = {
+                concluidas:
+                    Number(transacoesVendedor.completed || 0),
+                canceladas:
+                    Number(transacoesVendedor.canceled || 0),
+                periodo:
+                    transacoesVendedor.period || null,
+                nivel:
+                    perfilComprador?.seller_reputation?.level_id || null,
+                cadastrado_em:
+                    perfilComprador?.registration_date || null
+            };
 
             Object.assign(
                 perfilComprador,
@@ -54850,10 +54909,15 @@ function renderizarModalDetalhesVendaNFE(
     // CLIENTE / VENDEDOR
     // =====================================================
 
+    // Sempre pelo APELIDO (ex.: /perfil/BIKEBOY3) — a busca pelo
+    // ID (_CustId_) cai em "Não encontramos resultados".
     const linkAnunciosComprador =
-        comprador?.url_anuncios ||
-        comprador?.permalink ||
-        null;
+        obterLinkPerfilPublicoMLNFE(
+            comprador?.nickname ||
+            order?.buyer?.nickname ||
+            (clienteNome !== 'Cliente' ? clienteNome : ''),
+            null
+        );
 
     let clienteHtml = `
         <div
@@ -55040,17 +55104,41 @@ function renderizarModalDetalhesVendaNFE(
                             ? '<strong>Vendedor com selo de destaque (power seller)</strong><br>'
                             : ''
                     }
-                    Vendas concluídas como vendedor:
+                    Vendas como vendedor:
                     <strong>
                         ${Number(
                             comprador.total_anuncios ||
                             0
                         )}
                     </strong>
+                    ${
+                        comprador._resumo_vendedor
+                            ? `
+                                <br>
+                                Concluídas:
+                                <strong>${Number(comprador._resumo_vendedor.concluidas || 0)}</strong>
+                                · Canceladas:
+                                <strong>${Number(comprador._resumo_vendedor.canceladas || 0)}</strong>
+                                ${
+                                    comprador._resumo_vendedor.nivel
+                                        ? `<br>Nível de reputação: <strong>${escaparHTMLNFE(comprador._resumo_vendedor.nivel)}</strong>`
+                                        : ''
+                                }
+                                ${
+                                    comprador._resumo_vendedor.cadastrado_em
+                                        ? `<br>Cadastrado no ML em: <strong>${escaparHTMLNFE(new Date(comprador._resumo_vendedor.cadastrado_em).toLocaleDateString('pt-BR'))}</strong>`
+                                        : ''
+                                }
+                            `
+                            : ''
+                    }
                 </div>
 
                 <div style="margin-top:4px;font-size:10px;color:#6c757d;">
-                    O Mercado Livre não deixa mais consultar os anúncios de outro usuário por API — clique abaixo pra ver o perfil dele e conferir manualmente.
+                    O Mercado Livre não deixa consultar os anúncios de outro usuário por API.
+                    O perfil abaixo mostra a reputação e as opiniões dele.
+                    <strong>Se o perfil não mostrar nenhum produto à venda</strong>, o cliente não tem anúncio ativo hoje —
+                    normalmente é alguém que só vendeu algo pessoal antes. Nesse caso, marque "Não é concorrente".
                 </div>
 
                 <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:7px;">

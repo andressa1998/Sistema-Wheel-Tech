@@ -636,6 +636,8 @@
 
         const cli = sb();
         if (!cli) return;
+        // aba em segundo plano não consulta o banco
+        if (document.visibilityState && document.visibilityState !== 'visible') return;
         let qtd = 0;
         try {
             const { count } = await cli
