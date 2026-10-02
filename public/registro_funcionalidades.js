@@ -128,9 +128,23 @@
         return el.getClientRects().length > 0;
     }
 
+    // Roda a cada 2 s: procurar '[id$="System"]' no documento inteiro toda
+    // vez percorria a página toda. As telas quase nunca mudam, então a
+    // lista é guardada e refeita a cada 30 s.
+    let telasCache = null;
+    let telasCacheEm = 0;
+    function telasDoSistema() {
+        if (!telasCache || Date.now() - telasCacheEm > 30000) {
+            telasCache = [...document.querySelectorAll('[id$="System"], [id$="Screen"]')];
+            telasCacheEm = Date.now();
+        }
+        return telasCache;
+    }
+
     function telaVisivel() {
         let menu = null;
-        for (const el of document.querySelectorAll('[id$="System"], [id$="Screen"]')) {
+        for (const el of telasDoSistema()) {
+            if (!el.isConnected) { telasCache = null; continue; }
             if (el.id === 'loginScreen' || !visivel(el)) continue;
             if (el.id === 'menuSystem') { menu = el; continue; }
             return el;
@@ -394,14 +408,36 @@
         }, espera);
     }
 
+    // Varre só a tela aberta, janelas abertas e a barra lateral (antes era o
+    // documento inteiro, com todas as telas escondidas, depois de cada
+    // clique). Elemento já catalogado não é analisado de novo.
+    // O catálogo é "visto por dia": na virada do dia tudo é catalogado de novo.
+    let jaCatalogados = new WeakSet();
+    let diaCatalogados = diaLocal();
+    function raizesVisiveis() {
+        const tela = telaVisivel();
+        const raizes = tela ? [tela] : [document.body];
+        for (const el of document.querySelectorAll('.modal, [role="dialog"], [id^="modal"], [id$="Modal"], .wt-sidebar, #wtGlobalSidebar')) {
+            if (raizes.some(r => r.contains(el))) continue;
+            if (visivel(el)) raizes.push(el);
+        }
+        return raizes;
+    }
+
     function varrer() {
         if (!usuario() || desativado) return;
+        if (diaCatalogados !== diaLocal()) { jaCatalogados = new WeakSet(); diaCatalogados = diaLocal(); }
         let novos = 0;
-        for (const el of document.querySelectorAll(SEL_CLIQUE + ', ' + SEL_CAMPO)) {
-            if (novos >= MAX_CATALOGO_POR_ENVIO) break;
-            if (!visivel(el)) continue;
-            const tipo = el.matches(SEL_CAMPO) ? 'campo' : 'clique';
-            if (registrarCatalogo(infoDoElemento(el, tipo))) novos++;
+        for (const raiz of raizesVisiveis()) {
+            for (const el of raiz.querySelectorAll(SEL_CLIQUE + ', ' + SEL_CAMPO)) {
+                if (novos >= MAX_CATALOGO_POR_ENVIO) return;
+                if (jaCatalogados.has(el) || !visivel(el)) continue;
+                const tipo = el.matches(SEL_CAMPO) ? 'campo' : 'clique';
+                const info = infoDoElemento(el, tipo);
+                if (!info) continue;
+                if (registrarCatalogo(info)) novos++;
+                jaCatalogados.add(el);
+            }
         }
     }
 

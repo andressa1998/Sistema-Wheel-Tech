@@ -322,9 +322,14 @@
             ancora.insertAdjacentElement('beforebegin', aviso);
         }
         const produtosDiv = new Set(divergenciasAbertas().map(d => d.produto_id)).size;
-        aviso.innerHTML = `<i class="fas fa-triangle-exclamation"></i>
+        // Chamado a cada 2 s: só mexe no DOM quando o texto muda (reescrever
+        // sempre forçava recálculo de estilo/layout da página inteira).
+        const html = `<i class="fas fa-triangle-exclamation"></i>
             <span><strong>Divergência de estoque no Mercado Livre:</strong> ${n} anúncio(s) de ${produtosDiv} produto(s) com quantidade diferente do estoque real/regras.</span>
             <button type="button" id="wtcfBtnVerDiv">Ver divergências</button>`;
+        if (aviso._wtcfHtml === html) return;
+        aviso._wtcfHtml = html;
+        aviso.innerHTML = html;
         aviso.querySelector('#wtcfBtnVerDiv').addEventListener('click', abrirModalDivergencias);
     }
 
@@ -582,6 +587,7 @@
                 }
                 ultimaVerificacao = mapa;
                 fisicoCarregado = true;
+                versaoVerificacoes++;
                 tabelaFisicoFaltando = false;
             } catch (e) {
                 tabelaFisicoFaltando = /does not exist|not find|42P01|PGRST205/i.test(String(e.message || e.code || ''));
@@ -606,17 +612,19 @@
     }
 
     function estiloBotao(b, p) {
-        b.title = tituloBotaoFisico(p);
+        const titulo = tituloBotaoFisico(p);
+        if (b.title !== titulo) b.title = titulo;
         b.classList.toggle('atrasado', fisicoCarregado && diasSemVerificar(p) >= DIAS_ALERTA_FISICO);
     }
 
     function injetarBotoesFisico() {
         const tbody = document.getElementById('produtosEstoqueBody');
         if (!tbody) return;
+        const porId = new Map(produtos().map(p => [String(p.id), p]));
         tbody.querySelectorAll('tr').forEach(tr => {
             const chk = tr.querySelector('.check-produto-massa');
             if (!chk) return;
-            const p = produtoPorId(chk.dataset.produtoId);
+            const p = porId.get(String(chk.dataset.produtoId));
             if (!p) return;
             let b = tr.querySelector('.btn-wtcf-fisico');
             if (!b) {
@@ -653,6 +661,7 @@
             }]).select('verificado_em').maybeSingle();
             if (error) throw error;
             ultimaVerificacao.set(String(p.id), { por: quem, em: (data && data.verificado_em) || new Date().toISOString() });
+            versaoVerificacoes++;
             toast(`✅ Estoque físico verificado: ${p.nome}`, 'success');
             injetarBotoesFisico();
             atualizarAvisoFisico();
@@ -664,7 +673,20 @@
         }
     }
 
+    // Roda a cada 2 s: filtrar + ordenar (localeCompare) a lista inteira de
+    // produtos toda vez pesava. Recalcula só quando a lista/verificações
+    // mudam, ou a cada 30 s (quantidade editada no lugar).
+    let versaoVerificacoes = 0;
+    let cacheAtrasados = { chave: '', lista: null, em: 0, produtos: null };
     function produtosAtrasados() {
+        const lista = produtos();
+        const chave = `${lista.length}|${versaoVerificacoes}|${fisicoCarregado}|${hojeISO()}`;
+        if (cacheAtrasados.lista && cacheAtrasados.produtos === lista && cacheAtrasados.chave === chave &&
+            Date.now() - cacheAtrasados.em < 30000) return cacheAtrasados.lista;
+        cacheAtrasados = { chave, lista: calcularAtrasados(), em: Date.now(), produtos: lista };
+        return cacheAtrasados.lista;
+    }
+    function calcularAtrasados() {
         return produtos()
             .filter(p => produtoAtivo(p) && diasSemVerificar(p) >= DIAS_ALERTA_FISICO)
             .map(p => ({ p, dias: diasSemVerificar(p), v: ultimaVerificacao.get(String(p.id)) }))
@@ -691,6 +713,11 @@
                 if (b) registrarVerificacaoFisica(b.dataset.wtcfFisico, b);
             });
         }
+        // Chamado a cada 2 s: mesma lista (cache de produtosAtrasados) e
+        // mesmo estado aberto/fechado = nada a redesenhar.
+        if (aviso._wtcfFonte === atrasados && aviso._wtcfAberta === listaFisicoAberta) return;
+        aviso._wtcfFonte = atrasados;
+        aviso._wtcfAberta = listaFisicoAberta;
         const linhas = listaFisicoAberta ? atrasados.map(({ p, dias, v }) => `<tr>
                 <td>${esc(p.nome)}</td><td><code>${esc(p.sku)}</code></td><td>${esc(p.quantidade)}</td>
                 <td>${v ? esc(fmtDataHora(v.em)) + ' · ' + esc(v.por) : '<span class="text-muted">nunca</span>'}</td>
