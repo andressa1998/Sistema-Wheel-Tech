@@ -994,20 +994,9 @@
             </div>
             <div class="card-body">
                 <h5 style="margin-bottom:8px;">1. Promoção</h5>
-                <div class="row align-items-end">
-                    <div class="col-md-9">
-                        <select id="promoRegrasPromocao" class="form-control">
-                            <option value="">Selecione a promoção...</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <button type="button" class="btn btn-primary" style="width:100%;" id="btnBuscarCandidatosRegras"
-                            onclick="buscarCandidatosRegrasLote()">
-                            <i class="fas fa-search"></i> Buscar candidatos
-                        </button>
-                    </div>
-                </div>
-                <small class="text-muted d-block mt-2" id="promoRegrasProgresso">Escolha a promoção e busque os candidatos.</small>
+                <select id="promoRegrasPromocao" class="form-control">
+                    <option value="">Selecione a promoção...</option>
+                </select>
 
                 <h5 style="margin:20px 0 8px;">2. Porcentagem elegível</h5>
                 <div class="row align-items-end">
@@ -1029,6 +1018,11 @@
                             placeholder="sem máximo" oninput="alterarRegrasLote()">
                     </div>
                 </div>
+                <button type="button" class="btn btn-primary mt-3" style="width:100%;" id="btnBuscarCandidatosRegras"
+                    onclick="buscarCandidatosRegrasLote()">
+                    <i class="fas fa-search"></i> Buscar candidatos
+                </button>
+                <small class="text-muted d-block mt-2" id="promoRegrasProgresso">Escolha a promoção e busque os candidatos.</small>
 
                 <h5 style="margin:20px 0 8px;">3. Listas de MLBs que não entram</h5>
                 <small class="text-muted d-block mb-2">
