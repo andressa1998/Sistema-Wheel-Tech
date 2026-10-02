@@ -288,17 +288,11 @@
             'font-family:inherit;font-size:.8rem;line-height:1.1;',
             'transition:color .3s,border-color .3s,background .3s}',
             '.wt-coleta-widget.wt-coleta-hidden{display:none}',
-            '.wt-coleta-widget svg{flex:0 0 auto;display:block}',
             '.wt-coleta-widget .wt-coleta-copy{display:flex;flex-direction:column;gap:2px;min-width:0}',
             '.wt-coleta-widget .wt-coleta-main{font-size:.9rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
             '.wt-coleta-widget .wt-coleta-sub{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-            '.wt-coleta-widget .wt-hg-sand-top,.wt-coleta-widget .wt-hg-sand-bot{transition:y .9s linear,height .9s linear}',
-            '.wt-coleta-widget .wt-hg-stream{opacity:0}',
-            '.wt-coleta-widget.wt-coleta-correndo .wt-hg-stream{opacity:1;animation:wtHgStream 1s linear infinite;stroke-dasharray:1 3}',
-            '@keyframes wtHgStream{to{stroke-dashoffset:-8}}',
-            '.wt-coleta-widget.wt-coleta-urgente .wt-hg-stream{animation-duration:.45s}',
-            '@keyframes wtColetaPulse{0%,100%{box-shadow:0 6px 20px rgba(210,31,31,.18)}',
-            '50%{box-shadow:0 6px 26px rgba(210,31,31,.42)}}',
+            // Sem animações infinitas (ampulheta e "piscar" vermelho): elas
+            // faziam o navegador redesenhar 60x por segundo em todo computador.
 
             /* -------- versão FIXA (fallback, sem sidebar na página) -------- */
             '.wt-coleta-widget.wt-coleta-fixed{position:fixed;bottom:18px;right:18px;z-index:99990;',
@@ -307,8 +301,7 @@
             '.wt-coleta-widget.wt-coleta-fixed .wt-coleta-sub{color:#8895ab}',
             '.wt-coleta-widget.wt-coleta-fixed.wt-coleta-ok{color:#1f9d55;border-color:#c4ead2}',
             '.wt-coleta-widget.wt-coleta-fixed.wt-coleta-atencao{color:#c77700;border-color:#f3dcae;background:#fffaf0}',
-            '.wt-coleta-widget.wt-coleta-fixed.wt-coleta-urgente{color:#d21f1f;border-color:#f2c2c2;background:#fff5f5;',
-            'animation:wtColetaPulse 1.4s ease-in-out infinite}',
+            '.wt-coleta-widget.wt-coleta-fixed.wt-coleta-urgente{color:#d21f1f;border-color:#f2c2c2;background:#fff5f5}',
             '@media(max-width:640px){.wt-coleta-widget.wt-coleta-fixed{bottom:10px;right:10px;padding:5px 9px;font-size:.72rem}',
             '.wt-coleta-widget.wt-coleta-fixed .wt-coleta-sub{display:none}}',
 
@@ -321,13 +314,12 @@
             '.wt-coleta-widget.wt-coleta-embed.wt-coleta-ok .wt-coleta-sub{color:rgba(142,230,173,.65)}',
             '.wt-coleta-widget.wt-coleta-embed.wt-coleta-atencao{color:#ffcf7a;border-color:rgba(255,207,122,.35);background:rgba(255,207,122,.1)}',
             '.wt-coleta-widget.wt-coleta-embed.wt-coleta-atencao .wt-coleta-sub{color:rgba(255,207,122,.7)}',
-            '.wt-coleta-widget.wt-coleta-embed.wt-coleta-urgente{color:#ff9d9d;border-color:rgba(255,140,140,.45);background:rgba(255,70,70,.14);',
-            'animation:wtColetaPulseEmbed 1.4s ease-in-out infinite}',
+            '.wt-coleta-widget.wt-coleta-embed.wt-coleta-urgente{color:#ff9d9d;border-color:rgba(255,140,140,.45);background:rgba(255,70,70,.2)}',
             '.wt-coleta-widget.wt-coleta-embed.wt-coleta-urgente .wt-coleta-sub{color:rgba(255,157,157,.75)}',
-            '@keyframes wtColetaPulseEmbed{0%,100%{background:rgba(255,70,70,.14)}50%{background:rgba(255,70,70,.26)}}',
-            /* a sidebar global fica só com ícones até passar o mouse — some o texto igual ao nome do usuário */
-            '#wtGlobalSidebar .wt-coleta-embed .wt-coleta-copy{opacity:0;visibility:hidden;transition:opacity .14s ease}',
-            '#wtGlobalSidebar:hover .wt-coleta-embed .wt-coleta-copy,#wtGlobalSidebar:focus-within .wt-coleta-embed .wt-coleta-copy{opacity:1;visibility:visible}',
+            /* a sidebar global fica só com ícones até passar o mouse — o horário
+               não cabe fechada, então o cartão só aparece ao abrir (igual ao nome do usuário) */
+            '#wtGlobalSidebar .wt-coleta-embed{display:none}',
+            '#wtGlobalSidebar:hover .wt-coleta-embed:not(.wt-coleta-hidden),#wtGlobalSidebar:focus-within .wt-coleta-embed:not(.wt-coleta-hidden){display:flex}',
 
             /* modal de config */
             '.wt-coleta-modal{position:fixed;inset:0;z-index:99991;display:flex;',
@@ -353,18 +345,10 @@
         document.head.appendChild(style);
     }
 
+    // Só o texto do horário (a ampulheta SVG animada foi retirada:
+    // pesava no processador de todos os computadores).
     function markupWidget() {
         return [
-            '<svg viewBox="0 0 24 34" width="26" height="36" aria-hidden="true">',
-            '  <path d="M4 2 H20 M4 32 H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-            '  <path d="M4 2 L4 5 Q4 12 12 17 Q20 12 20 5 L20 2 Z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
-            '  <path d="M4 32 L4 29 Q4 22 12 17 Q20 22 20 29 L20 32 Z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
-            '  <clipPath id="wtHgTop"><path d="M4 2 L4 5 Q4 12 12 17 Q20 12 20 5 L20 2 Z"/></clipPath>',
-            '  <clipPath id="wtHgBot"><path d="M4 32 L4 29 Q4 22 12 17 Q20 22 20 29 L20 32 Z"/></clipPath>',
-            '  <rect class="wt-hg-sand-top" x="3" y="2" width="18" height="15" clip-path="url(#wtHgTop)" fill="currentColor"/>',
-            '  <rect class="wt-hg-sand-bot" x="3" y="32" width="18" height="0" clip-path="url(#wtHgBot)" fill="currentColor"/>',
-            '  <line class="wt-hg-stream" x1="12" y1="14" x2="12" y2="22" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
-            '</svg>',
             '<span class="wt-coleta-copy">',
             '  <strong class="wt-coleta-main">--</strong>',
             '  <span class="wt-coleta-sub">coleta</span>',
