@@ -10110,6 +10110,9 @@ function gaPrecisaCorrigirEstoqueDeposito(
 // resto precisa ser mandado pro Mercado Livre e a quantidade/
 // exposição do anúncio revisada. Mais de 1 unidade parada nessa
 // situação já é motivo de alerta.
+//
+// PRIORIDADE: item 30+ dias sem vender segue a regra de zerar o
+// depósito (gaPrecisaZerarDepositoPorInatividade), não esta.
 // ============================================================
 
 function gaPrecisaAjustarQuantidadeExposicao(
@@ -10119,6 +10122,9 @@ function gaPrecisaAjustarQuantidadeExposicao(
     if (
         !row?.ativoNoFull ||
         gaAnuncioFinalizado(
+            row
+        ) ||
+        gaMaisDe30DiasSemVender(
             row
         )
     ) {

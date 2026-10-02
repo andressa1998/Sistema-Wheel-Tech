@@ -23749,6 +23749,22 @@ async function ajustarExposicaoPorPromocaoAtivada(mlb, precoOriginal, precoComPr
 
     if (!window.supabaseClient) return { aplicado: false, motivo: 'sem conexão' };
 
+    // 30+ dias sem vender está acima de qualquer regra: o anúncio fica
+    // Premium mesmo que ainda não tenha entrado na lista "Sempre Premium".
+    try {
+        const { data: aberto } = await window.supabaseClient
+            .from('full_historico_30_mais_dias')
+            .select('item_id')
+            .eq('item_id', String(mlb).toUpperCase())
+            .is('data_saida', null)
+            .limit(1);
+        if (aberto?.length) {
+            return { aplicado: false, motivo: '30+ dias sem vender — fica Premium' };
+        }
+    } catch (error) {
+        console.warn(`⚠️ [Exposição x Promoção] Não foi possível conferir 30+ dias de ${mlb}:`, error);
+    }
+
     try {
         const urlItem = `https://api.mercadolibre.com/items/${mlb}?attributes=id,listing_type_id`;
         const proxyGet = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(urlItem)}&token=${encodeURIComponent(token)}`;
