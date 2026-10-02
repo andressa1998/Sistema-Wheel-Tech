@@ -458,7 +458,11 @@
         let cor = '#6c757d';
         if (d > 60) cor = '#dc3545';
         else if (d > 30) cor = '#fd7e14';
-        return `<span style="color:${cor};font-weight:600;">${esc(humanizarDuracao(d))}</span>`;
+        // número de dias (usado pela escada automática: 10/15/30 dias);
+        // acima de 45 dias mostra também o tempo aproximado.
+        const dias = Math.floor(d);
+        const extra = d >= 45 ? `<br><small style="color:#94a3b8;">≈ ${esc(humanizarDuracao(d))}</small>` : '';
+        return `<span style="color:${cor};font-weight:600;">${dias} ${dias === 1 ? 'dia' : 'dias'}</span>${extra}`;
     }
 
     function enfeitarLinhas() {

@@ -157,6 +157,17 @@
         const c = cachePromoAtivaMLB[mlb];
         if (c && Date.now() - c.quando < 2 * 60000) return c.resultado;
         let resultado = null;
+        // Cupom do vendedor não aparece na API de promoções do ML — vem
+        // da lista manual "Anúncios em cupom" (escada_automatica.js).
+        try {
+            const ea = window.EscadaAutomatica;
+            const cupom = ea && typeof ea.cupomDoMLB === 'function' ? await ea.cupomDoMLB(mlb) : null;
+            if (cupom) {
+                resultado = { nome: cupom.nome, tipo: 'CUPOM', preco: (await precoAtualMLB(mlb, token)) || 0 };
+                cachePromoAtivaMLB[mlb] = { quando: Date.now(), resultado };
+                return resultado;
+            }
+        } catch (e) { /* segue para a API de promoções */ }
         try {
             const lista = await mlGET(`${ML_BASE}/seller-promotions/items/${mlb}?app_version=v2`, token);
             const ativa = (Array.isArray(lista) ? lista : []).find(pr => String(pr?.status || '').toLowerCase() === 'started');
@@ -1589,7 +1600,9 @@
         abrir: abrirPainel, avaliar: avaliarRegras, ehAdmin,
         regras: () => regrasCache,
         carregar: async () => { const r = await carregarRegras(); window.dispatchEvent(new Event('wt-regras-nivel-atualizadas')); return r; },
-        produtoNoEscopo
+        produtoNoEscopo,
+        // usado pela escada automática (escada_automatica.js)
+        promocaoAtiva: obterPromocaoAtivaMLB
     };
     window.abrirRegrasNivelEstoque = () => abrirPainel('regras');
 })();

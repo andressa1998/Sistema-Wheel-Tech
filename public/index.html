@@ -1932,18 +1932,6 @@ body:has(#loginScreen:not(.hidden)) {
                 <button class="carousel-btn prev" type="button">&#10094;</button><button class="carousel-btn next" type="button">&#10095;</button><div class="carousel-indicators"></div>
             </div>
 
-            <section class="wt-panel" id="wtTarefasHojeSecao" style="margin: 20px 0;">
-                <div class="wt-panel-head">
-                    <div class="wt-panel-title"><i class="fas fa-list-check"></i> Minhas tarefas de hoje</div>
-                    <button type="button" id="btnNovaTarefaPeriodica" class="wt-panel-link" style="display:none; border:none; background:none; cursor:pointer;" onclick="window.abrirModalNovaAtividade && window.abrirModalNovaAtividade()">
-                        <i class="fas fa-plus"></i> Nova tarefa
-                    </button>
-                </div>
-                <div id="wtTarefasPeriodicasHoje">
-                    <div class="wt-empty">Carregando tarefas...</div>
-                </div>
-            </section>
-
             <section class="wt-summary-grid" aria-label="Resumo operacional">
                 <article class="wt-summary-card" data-menu-visual-depends="ordem_de_servico" onclick="abrirSistemaOS()"><div class="wt-summary-icon"><i class="fas fa-clipboard-list"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountOS">—</strong><span class="wt-summary-label">OS a fazer</span></div></article>
                 <article class="wt-summary-card" data-menu-visual-depends="emissao_nf_e" onclick="abrirSistemaNFE()"><div class="wt-summary-icon"><i class="fas fa-cart-shopping"></i></div><span></span><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div><div class="wt-summary-copy"><strong class="wt-summary-number" id="wtCountSeparar">—</strong><span class="wt-summary-label">vendas a separar</span></div></article>
@@ -1957,6 +1945,18 @@ body:has(#loginScreen:not(.hidden)) {
                 <article class="wt-wide-card purple" data-menu-visual-depends="conferencia_caixa" onclick="abrirSistemaCaixa()"><div class="wt-summary-icon"><i class="fas fa-cash-register"></i></div><div><strong class="wt-wide-number" id="wtCountCaixa">—</strong><div class="wt-wide-label">conferências de caixa pendentes</div></div><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div></article>
                 <!-- só aparece quando há devolução que passou da previsão e não chegou -->
                 <article class="wt-wide-card wt-alert-red" id="wtCardDevolucoesAtrasadas" data-menu-visual-depends="emissao_nf_e" style="display:none; grid-column:1 / -1;" onclick="abrirSistemaNFE(); setTimeout(() => window.abrirModalDevolucoesNFE && window.abrirModalDevolucoesNFE(), 400);"><div class="wt-summary-icon"><i class="fas fa-truck"></i></div><div><strong class="wt-wide-number" id="wtCountDevolucoesAtrasadas">—</strong><div class="wt-wide-label">devoluções atrasadas — passaram da previsão de chegada e não chegaram</div></div><div class="wt-summary-arrow"><i class="fas fa-chevron-right"></i></div></article>
+            </section>
+
+            <section class="wt-panel" id="wtTarefasHojeSecao" style="margin: 20px 0;">
+                <div class="wt-panel-head">
+                    <div class="wt-panel-title"><i class="fas fa-list-check"></i> Minhas tarefas de hoje</div>
+                    <button type="button" id="btnNovaTarefaPeriodica" class="wt-panel-link" style="display:none; border:none; background:none; cursor:pointer;" onclick="window.abrirModalNovaAtividade && window.abrirModalNovaAtividade()">
+                        <i class="fas fa-plus"></i> Nova tarefa
+                    </button>
+                </div>
+                <div id="wtTarefasPeriodicasHoje">
+                    <div class="wt-empty">Carregando tarefas...</div>
+                </div>
             </section>
 
             <section class="wt-bottom-grid">
@@ -7717,12 +7717,13 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js?v=20260909-5"></script>
     <script src="estoque.js"></script>
-    <script src="nfe_manager.js?v=20261002-1"></script>
+    <script src="nfe_manager.js?v=20261002-2"></script>
     <script src="estoque_gestao.js?v=20261002-3"></script>
     <script src="catalogo_produtos.js?v=20260929-1"></script>
-    <script src="estoque_analise.js?v=20260924-3"></script>
-    <script src="regras_nivel_estoque.js?v=20261001-2"></script>
-    <script src="estoque_colunas.js?v=20261001-5"></script>
+    <script src="estoque_analise.js?v=20261002-1"></script>
+    <script src="regras_nivel_estoque.js?v=20261002-1"></script>
+    <script src="estoque_colunas.js?v=20261002-1"></script>
+    <script src="escada_automatica.js?v=20261002-1"></script>
     <script src="estoque_conferencia.js?v=20261002-3"></script>
     <script src="relatorio_estoque_valor.js?v=20261001-1"></script>
     <script src="perguntas_manager.js?v=20260929-1"></script>

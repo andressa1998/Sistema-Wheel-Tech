@@ -47,6 +47,7 @@
         { key: 'projecao', rotulo: 'Projeção', restrita: true, ordem: 'projecao' },
         { key: 'sem_venda', rotulo: 'Sem venda há', restrita: true, ordem: 'sem_venda' },
         { key: 'niveis', rotulo: 'Níveis de estoque', restrita: true, ordem: 'niveis' },
+        { key: 'classificacao', rotulo: 'Reposição', restrita: true, ordem: 'classificacao', dica: 'Classificação de reposição (fácil/médio/difícil) e degrau atual da escada automática' },
         { key: 'acoes', rotulo: 'Ações', base: true }
     ];
     const COLUNAS_EXTRAS = COLUNAS.filter(c => !c.base);
@@ -404,9 +405,12 @@
         return c.toUpperCase() === 'XX' ? '' : c;
     }
 
-    async function carregarFornecedores() {
+    // listaProdutos: a escada automática passa a lista dela quando a
+    // Gestão de Estoque ainda não foi aberta (produtos() vazio).
+    async function carregarFornecedores(listaProdutos) {
         if (carregandoFornecedores) return carregandoFornecedores;
         if (!window.supabaseClient) return;
+        const lista = produtos().length ? produtos() : (listaProdutos || []);
         carregandoFornecedores = (async () => {
             try {
                 const [tabela, itens, cards] = await Promise.all([
@@ -417,7 +421,7 @@
 
                 const porSku = {};
                 const porId = {};
-                produtos().forEach(p => {
+                lista.forEach(p => {
                     porId[String(p.id)] = p;
                     const s = normSku(p.sku);
                     if (!s) return;
@@ -446,8 +450,8 @@
                         codigo: limparCodigo(it.cd_fornecedor) || limparCodigo(it.sku_original)
                     });
                 });
-                produtos().forEach(p => {
-                    const ex = p.dados_extra || {};
+                lista.forEach(p => {
+                    const ex = p.dados_extra || { fornecedor_nome: p.fornecedor_nome, cd_fornecedor: p.cd_fornecedor };
                     if (ex.fornecedor_nome) ligacoes.push({ nome: ex.fornecedor_nome, produto: p, codigo: ex.cd_fornecedor });
                 });
 
@@ -654,7 +658,12 @@
         valor_estoque: p => celulaAnalise('valor', p),
         projecao: p => celulaAnalise('projecao', p),
         sem_venda: p => celulaAnalise('semVenda', p),
-        niveis: htmlNiveis
+        niveis: htmlNiveis,
+        classificacao: p => {
+            const e = window.EscadaAutomatica;
+            if (!e || typeof e.htmlCelula !== 'function') return VAZIO;
+            try { return e.htmlCelula(p); } catch (err) { return VAZIO; }
+        }
     };
 
     // Chamado pelo sort de renderizarTabelaProdutos (estoque_gestao.js) para
@@ -670,6 +679,11 @@
                 const aplic = regrasDoProduto(p);
                 if (!aplic || !aplic.length) return SEM_VALOR;
                 return Math.min(...aplic.map(g => Number(g.gatilho_qtd) || 0));
+            }
+            case 'classificacao': {
+                const e = window.EscadaAutomatica;
+                const c = e && typeof e.classificacaoDoProduto === 'function' ? e.classificacaoDoProduto(p) : null;
+                return c ? ({ facil: 1, medio: 2, dificil: 3 }[c] || SEM_VALOR) : SEM_VALOR;
             }
             default: return undefined;
         }
@@ -1303,6 +1317,14 @@
         buscaExtra,
         abrirFornecedores: abrirModalFornecedores,
         fornecedoresDoProduto,
+        // usados pela escada automática (escada_automatica.js)
+        garantirFornecedores: async function (listaProdutos) {
+            if (!fornecedoresCarregados) await carregarFornecedores(listaProdutos);
+            return fornecedoresCarregados;
+        },
+        chaveFornecedor,
+        nomesFornecedores: () => nomesFornecedores.slice(),
+        atualizarCelulas,
         // usado pelo relatório de valor em estoque (relatorio_estoque_valor.js)
         relatorio: {
             produtos,

@@ -163,6 +163,29 @@
             /* Na barra lateral global colapsada (68px, só ícones) o
                alfinete fica escondido — só aparece quando a barra
                expande no hover, igual ao texto dos itens. */
+            /* Início + fixados "congelados" no topo do menu (igual
+               congelar linha no Excel): a lista rola por baixo deles.
+               O fundo opaco esconde os itens que passam por trás; a
+               sombra de 3px cobre o vão (gap) entre um e outro. */
+            .wt-module-nav > .wt-nav-item.wt-congelado {
+                position: sticky;
+                z-index: 3;
+                background-color: #001a45;
+                box-shadow: 0 -3px 0 #001a45;
+            }
+
+            .wt-module-nav > .wt-nav-item.wt-congelado.active {
+                box-shadow: 0 -3px 0 #001a45, 0 8px 22px rgba(0,90,240,.26);
+            }
+
+            .wt-module-nav > .wt-nav-item.wt-congelado:not(.active):hover {
+                background: linear-gradient(rgba(255,255,255,.09), rgba(255,255,255,.09)), #001a45;
+            }
+
+            .wt-module-nav > .wt-nav-item.wt-congelado-ultimo {
+                box-shadow: 0 -3px 0 #001a45, 0 3px 0 #001a45, 0 8px 10px -6px rgba(0,0,0,.55);
+            }
+
             #wtGlobalSidebar .wt-pin-btn {
                 opacity: 0 !important;
                 visibility: hidden !important;
@@ -258,6 +281,68 @@
                                 ? 'Desafixar do topo do menu'
                                 : 'Fixar no topo do menu';
 
+                    }
+
+                }
+            );
+
+    }
+
+
+    // ========================================================
+    // CONGELAR INÍCIO + FIXADOS NO TOPO DO MENU
+    //
+    // O botão Início (primeiro item, sem data-menu-visual-key) e
+    // os itens fixados ficam position:sticky dentro da lista que
+    // rola. Cada um precisa de um "top" diferente para empilhar
+    // logo abaixo do anterior, então calculamos aqui pela altura
+    // real dos itens.
+    // ========================================================
+
+    function atualizarItensCongelados() {
+
+        document
+            .querySelectorAll('#menuSystem > .wt-sidebar .wt-module-nav, #wtGlobalSidebar .wt-module-nav')
+            .forEach(
+                nav => {
+
+                    const itens =
+                        Array.from(nav.querySelectorAll(':scope > .wt-nav-item'));
+
+                    const gap =
+                        parseFloat(getComputedStyle(nav).rowGap) || 0;
+
+                    let topo = 0;
+                    let ultimo = null;
+
+                    itens.forEach(
+                        item => {
+
+                            const ehInicio =
+                                !item.dataset.menuVisualKey;
+
+                            const congelar =
+                                (ehInicio || item.classList.contains('wt-pinned')) &&
+                                item.style.display !== 'none' &&
+                                !item.classList.contains('hidden');
+
+                            item.classList.toggle('wt-congelado', congelar);
+                            item.classList.remove('wt-congelado-ultimo');
+
+                            if (!congelar) {
+                                item.style.top = '';
+                                return;
+                            }
+
+                            item.style.top = topo + 'px';
+                            topo += item.offsetHeight + gap;
+                            ultimo = item;
+
+                        }
+                    );
+
+                    if (ultimo) {
+                        ultimo.classList.add('wt-congelado-ultimo');
                     }
 
                 }
@@ -380,6 +465,7 @@
 
             atualizarClassesPinadas();
             espelharOrdemNaBarraGlobal();
+            atualizarItensCongelados();
 
         } catch (error) {
 
@@ -475,6 +561,7 @@
 
         atualizarClassesPinadas();
         espelharOrdemNaBarraGlobal();
+        atualizarItensCongelados();
         salvarFixadosUsuario();
 
     };
@@ -503,6 +590,7 @@
         injetarBotoesFixar();
         atualizarClassesPinadas();
         espelharOrdemNaBarraGlobal();
+        atualizarItensCongelados();
 
         const usernameAtual =
             obterUsername();
