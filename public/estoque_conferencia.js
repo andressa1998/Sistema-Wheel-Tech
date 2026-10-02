@@ -816,8 +816,9 @@
     }, 2000);
 
     // conferência diária: tenta a cada minuto (só roda de fato 1x por dia, até PRODUTOS_POR_DIA)
-    // Para desligar: CONFERENCIA_AUTOMATICA = false.
-    const CONFERENCIA_AUTOMATICA = true;
+    // DESLIGADA em 02/10/2026: religada com 100 produtos, o sistema voltou
+    // a ficar lento. Para religar: CONFERENCIA_AUTOMATICA = true.
+    const CONFERENCIA_AUTOMATICA = false;
     if (CONFERENCIA_AUTOMATICA) {
         setTimeout(function ciclo() {
             tentarConferenciaDiaria().finally(() => setTimeout(ciclo, 60 * 1000));
