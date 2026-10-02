@@ -2,7 +2,7 @@
    WHEEL TECH · Conferência de estoque
    ------------------------------------------------------------
    1) CONFERÊNCIA DIÁRIA COM O MERCADO LIVRE (só andressamiotto / ronald)
-      - Uma vez por dia, em segundo plano, confere 200 produtos (rodízio
+      - Uma vez por dia, em segundo plano, confere 100 produtos (rodízio
         por id: cada dia continua de onde parou o anterior).
       - Para cada anúncio/variação, calcula quanto DEVERIA estar no ML
         (mesmas regras da sincronização: SKU primo, kits, prefixo de
@@ -41,7 +41,7 @@
     'use strict';
 
     const USUARIOS_CONFERENCIA = ['andressamiotto', 'ronald'];
-    const PRODUTOS_POR_DIA = 200;
+    const PRODUTOS_POR_DIA = 100;
     const CHAVE_ESTADO = 'conferencia_estoque_ml';
     const CHAVE_DIVERGENCIAS = 'conferencia_estoque_ml_divergencias';
     const PAUSA_ENTRE_PRODUTOS_MS = 1500;
@@ -815,10 +815,9 @@
         if (telaVisivel('menuSystem')) atualizarAvisoInicio();
     }, 2000);
 
-    // conferência diária: tenta a cada minuto (só roda de fato 1x por dia, até 200 produtos)
-    // DESLIGADA em 02/10/2026 para testar se ela é a causa da lentidão
-    // nos computadores. Para religar: CONFERENCIA_AUTOMATICA = true.
-    const CONFERENCIA_AUTOMATICA = false;
+    // conferência diária: tenta a cada minuto (só roda de fato 1x por dia, até PRODUTOS_POR_DIA)
+    // Para desligar: CONFERENCIA_AUTOMATICA = false.
+    const CONFERENCIA_AUTOMATICA = true;
     if (CONFERENCIA_AUTOMATICA) {
         setTimeout(function ciclo() {
             tentarConferenciaDiaria().finally(() => setTimeout(ciclo, 60 * 1000));
