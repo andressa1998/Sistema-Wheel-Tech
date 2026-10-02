@@ -4227,11 +4227,29 @@ window.abrirGestaoEstoque = function() {
 
 
     // =====================================================
-    // IMPORTANTE:
-    // MANTER EXATAMENTE O CARREGAMENTO QUE JÁ FUNCIONAVA
+    // PRODUTOS
+    //
+    // Carregados há menos de 60s: usa o que já está em
+    // memória (cada carga completa são ~3 MB + verificações).
+    // Mais antigos: mostra na hora o que tem e atualiza em
+    // segundo plano (a carga redesenha a tabela ao terminar).
     // =====================================================
 
-    carregarProdutosEstoque();
+    const temProdutosEmMemoria =
+        Array.isArray(produtosEstoque) &&
+        produtosEstoque.length > 0;
+
+    const cargaRecente =
+        temProdutosEmMemoria &&
+        Date.now() - (window.__estoqueCarregadoEm || 0) < 60000;
+
+    if (temProdutosEmMemoria) {
+        aplicarFiltrosEOrdenacao();
+    }
+
+    if (!cargaRecente) {
+        carregarProdutosEstoque();
+    }
 
     carregarRegrasEstoque();
 
@@ -4521,7 +4539,39 @@ window.pesquisarNoEstoqueDoMenuPrincipal = function (termo) {
 // COM PAGINAÇÃO PARA NÃO PERDER REGISTROS
 // =========================================================
 
-async function carregarProdutosEstoque() {
+// Várias telas podem pedir a recarga ao mesmo tempo (cada carga são
+// ~3 MB + as verificações). Uma chamada feita durante uma carga pode
+// vir logo após uma gravação, então ela não reaproveita a carga em
+// andamento: agenda UMA carga extra para depois dela — e todas as
+// chamadas que chegarem nesse meio tempo dividem essa carga.
+let cargaProdutosEstoqueEmAndamento = null;
+let cargaProdutosEstoquePendente = null;
+
+function carregarProdutosEstoque() {
+
+    if (cargaProdutosEstoqueEmAndamento) {
+
+        if (!cargaProdutosEstoquePendente) {
+            cargaProdutosEstoquePendente = cargaProdutosEstoqueEmAndamento
+                .catch(() => {})
+                .then(() => {
+                    cargaProdutosEstoquePendente = null;
+                    return carregarProdutosEstoque();
+                });
+        }
+
+        return cargaProdutosEstoquePendente;
+    }
+
+    cargaProdutosEstoqueEmAndamento = carregarProdutosEstoqueAgora()
+        .finally(() => {
+            cargaProdutosEstoqueEmAndamento = null;
+        });
+
+    return cargaProdutosEstoqueEmAndamento;
+}
+
+async function carregarProdutosEstoqueAgora() {
 
     try {
 
@@ -4698,6 +4748,9 @@ async function carregarProdutosEstoque() {
                 produtosUnicos.values()
             );
 
+        window.__estoqueCarregadoEm =
+            Date.now();
+
 
         // =====================================================
         // ORDENAR EM MEMÓRIA POR NOME
@@ -4865,8 +4918,10 @@ async function carregarProdutosEstoque() {
         ) {
 
             recalcularTodosSkusCompostos()
-                .then(() => {
-                    if (typeof aplicarFiltrosEOrdenacao === 'function') {
+                .then(mudou => {
+                    // Só redesenha se alguma quantidade mudou — antes a
+                    // tabela piscava toda vez, mesmo sem mudança.
+                    if (mudou && typeof aplicarFiltrosEOrdenacao === 'function') {
                         aplicarFiltrosEOrdenacao();
                     }
                 })
@@ -21031,29 +21086,109 @@ async function recalcularQuantidadeSkuComposto(skuPai) {
 }
 window.recalcularQuantidadeSkuComposto = recalcularQuantidadeSkuComposto;
 
+// Busca em lotes uma lista de valores com .in() (evita URL gigante).
+async function consultarEmLotesEstoque(valores, consulta, tamanho = 150) {
+    const unicos = [...new Set((valores || []).filter(v => v !== null && v !== undefined && v !== ''))];
+    const resultado = [];
+    for (let i = 0; i < unicos.length; i += tamanho) {
+        const { data, error } = await consulta(unicos.slice(i, i + tamanho));
+        if (error) throw error;
+        resultado.push(...(data || []));
+    }
+    return resultado;
+}
+
+// Todos os SKUs Compostos, suas partes e o estoque de cada parte —
+// em 3 consultas, em vez de 2 por composto.
+async function carregarComposicoesSkuComposto() {
+    const cli = window.supabaseClient;
+
+    const { data: compostos, error } = await cli
+        .from('produtos_estoque')
+        .select('sku, quantidade')
+        .eq('eh_sku_composto', true);
+    if (error) throw error;
+    if (!Array.isArray(compostos) || compostos.length === 0) return null;
+
+    const partes = await consultarEmLotesEstoque(
+        compostos.map(c => c.sku),
+        lote => cli.from('produto_sku_composto_partes')
+            .select('sku_composto, sku_parte, quantidade')
+            .in('sku_composto', lote)
+    );
+
+    const partesPorComposto = new Map();
+    for (const parte of partes) {
+        if (!partesPorComposto.has(parte.sku_composto)) partesPorComposto.set(parte.sku_composto, []);
+        partesPorComposto.get(parte.sku_composto).push(parte);
+    }
+
+    const produtosPartes = await consultarEmLotesEstoque(
+        partes.map(p => p.sku_parte),
+        lote => cli.from('produtos_estoque').select('sku, quantidade').in('sku', lote)
+    );
+    const quantidadePorSku = new Map(produtosPartes.map(p => [p.sku, Number(p.quantidade) || 0]));
+
+    return { compostos, partesPorComposto, quantidadePorSku };
+}
+
 // Recalcula TODOS os SKUs Compostos cadastrados — chamado sempre
 // que a lista de produtos é carregada, pra manter a quantidade
 // exibida sempre correta sem depender de cada tela lembrar de
 // avisar sobre toda mudança de estoque de uma parte.
+// Mesma conta de recalcularQuantidadeSkuComposto, mas lendo tudo
+// em lote e gravando só os compostos cuja quantidade mudou.
+// Retorna true se alguma quantidade mudou (aí vale redesenhar).
 async function recalcularTodosSkusCompostos() {
-    if (!window.supabaseClient) return;
+    if (!window.supabaseClient) return false;
 
     try {
-        const { data: compostos, error } = await window.supabaseClient
-            .from('produtos_estoque')
-            .select('sku')
-            .eq('eh_sku_composto', true);
+        const dados = await carregarComposicoesSkuComposto();
+        if (!dados) return false;
+        const { compostos, partesPorComposto, quantidadePorSku } = dados;
 
-        if (error || !Array.isArray(compostos) || compostos.length === 0) return;
+        let mudou = false;
+        for (const composto of compostos) {
+            const partes = partesPorComposto.get(composto.sku) || [];
+            if (partes.length === 0) continue;
 
-        const CONCORRENCIA = 5;
-        for (let i = 0; i < compostos.length; i += CONCORRENCIA) {
-            const lote = compostos.slice(i, i + CONCORRENCIA);
-            await Promise.all(lote.map(p => recalcularQuantidadeSkuComposto(p.sku)));
+            let quantidadeComposta = Infinity;
+            for (const parte of partes) {
+                const disponivel = quantidadePorSku.get(parte.sku_parte);
+                if (disponivel == null) {
+                    // Parte não encontrada no cadastro — não dá pra montar nenhum kit.
+                    quantidadeComposta = 0;
+                    break;
+                }
+                const multiplicador = Number(parte.quantidade) || 1;
+                quantidadeComposta = Math.min(quantidadeComposta, Math.floor(disponivel / multiplicador));
+            }
+            if (!Number.isFinite(quantidadeComposta) || quantidadeComposta < 0) quantidadeComposta = 0;
+
+            if ((Number(composto.quantidade) || 0) === quantidadeComposta) continue;
+
+            const { error: errUpdate } = await window.supabaseClient
+                .from('produtos_estoque')
+                .update({ quantidade: quantidadeComposta })
+                .eq('sku', composto.sku)
+                .eq('eh_sku_composto', true);
+
+            if (errUpdate) {
+                console.warn('⚠️ [SKU Composto] Erro salvando quantidade calculada:', errUpdate);
+                continue;
+            }
+
+            mudou = true;
+            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+                const produtoLocal = produtosEstoque.find(p => p.sku === composto.sku);
+                if (produtoLocal) produtoLocal.quantidade = quantidadeComposta;
+            }
         }
+        return mudou;
 
     } catch (error) {
         console.warn('⚠️ [SKU Composto] Erro recalculando todos os compostos:', error);
+        return false;
     }
 }
 window.recalcularTodosSkusCompostos = recalcularTodosSkusCompostos;
@@ -21207,25 +21342,13 @@ async function reverterSubstituicaoSkuPrimo(substituicaoAtiva) {
     }
 }
 
-async function avaliarSubstituicaoSku(skuPrincipal, candidatosPrimos) {
+// produtoPrincipal, substituicaoAtiva e produtosPrimos já vêm lidos
+// em lote por verificarSubstituicoesSkuPrimo.
+async function avaliarSubstituicaoSku(produtoPrincipal, substituicaoAtiva, produtosPrimos) {
+    const skuPrincipal = produtoPrincipal?.sku;
     if (!window.supabaseClient || !skuPrincipal) return;
 
     try {
-        const { data: produtoPrincipal } = await window.supabaseClient
-            .from('produtos_estoque')
-            .select('sku, quantidade, dados_extra')
-            .eq('sku', skuPrincipal)
-            .maybeSingle();
-
-        if (!produtoPrincipal) return;
-
-        const { data: substituicaoAtiva } = await window.supabaseClient
-            .from('produto_substituicoes_ativas')
-            .select('*')
-            .eq('sku_principal', skuPrincipal)
-            .is('revertido_em', null)
-            .maybeSingle();
-
         const quantidadePrincipal = Number(produtoPrincipal.quantidade) || 0;
 
         // Principal voltou a ter estoque -> reverte.
@@ -21241,13 +21364,6 @@ async function avaliarSubstituicaoSku(skuPrincipal, candidatosPrimos) {
         // Zerado e sem substituição ativa -> tenta ativar pelo
         // primo com mais estoque disponível.
         if (quantidadePrincipal <= 0 && !substituicaoAtiva) {
-            if (!Array.isArray(candidatosPrimos) || candidatosPrimos.length === 0) return;
-
-            const { data: produtosPrimos } = await window.supabaseClient
-                .from('produtos_estoque')
-                .select('sku, quantidade')
-                .in('sku', candidatosPrimos);
-
             if (!Array.isArray(produtosPrimos) || produtosPrimos.length === 0) return;
 
             const melhorPrimo = produtosPrimos
@@ -21271,14 +21387,17 @@ async function verificarSubstituicoesSkuPrimo() {
 
         // Mantém o cache síncrono (usado por calcularQuantidadeComRegras,
         // que não pode esperar uma consulta ao banco) sempre em dia.
+        // Linha completa: a reversão precisa dos mlb_codes gravados.
         const { data: ativas } = await window.supabaseClient
             .from('produto_substituicoes_ativas')
-            .select('sku_principal, sku_primo_ativo')
+            .select('*')
             .is('revertido_em', null);
 
         window._substituicoesSkuPrimoAtivas = {};
+        const ativaPorPrincipal = new Map();
         (ativas || []).forEach(a => {
             window._substituicoesSkuPrimoAtivas[a.sku_principal] = a.sku_primo_ativo;
+            if (!ativaPorPrincipal.has(a.sku_principal)) ativaPorPrincipal.set(a.sku_principal, a);
         });
 
         const { data: relacoes, error } = await window.supabaseClient
@@ -21287,12 +21406,30 @@ async function verificarSubstituicoesSkuPrimo() {
 
         if (error || !Array.isArray(relacoes) || relacoes.length === 0) return;
 
+        // Estoque de todos os principais e primos de uma vez.
+        const produtos = await consultarEmLotesEstoque(
+            relacoes.flatMap(r => [r.sku_principal, r.sku_primo]),
+            lote => window.supabaseClient
+                .from('produtos_estoque')
+                .select('sku, quantidade, dados_extra')
+                .in('sku', lote)
+        );
+        const produtoPorSku = new Map(produtos.map(p => [p.sku, p]));
+
         const principaisUnicos = [...new Set(relacoes.map(r => r.sku_principal))];
 
         for (const skuPrincipal of principaisUnicos) {
+            const produtoPrincipal = produtoPorSku.get(skuPrincipal);
+            if (!produtoPrincipal) continue;
+            const produtosPrimos = relacoes
+                .filter(r => r.sku_principal === skuPrincipal)
+                .map(r => produtoPorSku.get(r.sku_primo))
+                .filter(Boolean)
+                .map(p => ({ sku: p.sku, quantidade: p.quantidade }));
             await avaliarSubstituicaoSku(
-                skuPrincipal,
-                relacoes.filter(r => r.sku_principal === skuPrincipal).map(r => r.sku_primo)
+                produtoPrincipal,
+                ativaPorPrincipal.get(skuPrincipal) || null,
+                produtosPrimos
             );
         }
 
@@ -21315,69 +21452,66 @@ async function verificarAlertasUltimaUnidade() {
     if (!window.supabaseClient) return;
 
     try {
-        const { data: compostos, error: errCompostos } = await window.supabaseClient
-            .from('produtos_estoque')
-            .select('sku')
-            .eq('eh_sku_composto', true);
+        const dados = await carregarComposicoesSkuComposto();
+        if (!dados) return;
+        const { compostos, partesPorComposto, quantidadePorSku } = dados;
 
-        if (errCompostos || !Array.isArray(compostos) || compostos.length === 0) return;
+        // Alertas pendentes atuais, numa consulta só.
+        const pendentes = await consultarEmLotesEstoque(
+            compostos.map(c => c.sku),
+            lote => window.supabaseClient
+                .from('produto_alertas_ultima_unidade')
+                .select('id, sku, sku_pai_composto')
+                .eq('status', 'pendente')
+                .in('sku_pai_composto', lote)
+        );
+        const chaveAlerta = (sku, pai) => `${sku}|${pai}`;
+        const pendentePorPar = new Map();
+        pendentes.forEach(a => {
+            const chave = chaveAlerta(a.sku, a.sku_pai_composto);
+            if (!pendentePorPar.has(chave)) pendentePorPar.set(chave, []);
+            pendentePorPar.get(chave).push(a.id);
+        });
+
+        const novos = [];
+        const idsParaApagar = [];
 
         for (const composto of compostos) {
+            const vistos = new Set();
+            for (const parte of partesPorComposto.get(composto.sku) || []) {
+                // Parte sem cadastro em produtos_estoque: ignorada (como antes).
+                if (!quantidadePorSku.has(parte.sku_parte) || vistos.has(parte.sku_parte)) continue;
+                vistos.add(parte.sku_parte);
 
-            const { data: partes } = await window.supabaseClient
-                .from('produto_sku_composto_partes')
-                .select('sku_parte')
-                .eq('sku_composto', composto.sku);
+                const existentes = pendentePorPar.get(chaveAlerta(parte.sku_parte, composto.sku)) || [];
 
-            if (!Array.isArray(partes) || partes.length === 0) continue;
-
-            const skusPartes = partes.map(p => p.sku_parte);
-
-            const { data: produtosPartes } = await window.supabaseClient
-                .from('produtos_estoque')
-                .select('sku, quantidade')
-                .in('sku', skusPartes);
-
-            if (!Array.isArray(produtosPartes)) continue;
-
-            for (const parte of produtosPartes) {
-
-                const quantidade = Number(parte.quantidade) || 0;
-
-                if (quantidade === 1) {
-
+                if (quantidadePorSku.get(parte.sku_parte) === 1) {
                     // Só cria se ainda não existir um alerta PENDENTE
                     // pra este par (peça, composto) — não duplica.
-                    const { data: existente } = await window.supabaseClient
-                        .from('produto_alertas_ultima_unidade')
-                        .select('id')
-                        .eq('sku', parte.sku)
-                        .eq('sku_pai_composto', composto.sku)
-                        .eq('status', 'pendente')
-                        .maybeSingle();
-
-                    if (!existente) {
-                        await window.supabaseClient
-                            .from('produto_alertas_ultima_unidade')
-                            .insert([{
-                                sku: parte.sku,
-                                sku_pai_composto: composto.sku,
-                                status: 'pendente'
-                            }]);
+                    if (existentes.length === 0) {
+                        novos.push({ sku: parte.sku_parte, sku_pai_composto: composto.sku, status: 'pendente' });
                     }
-
                 } else {
-
                     // Não está mais em 1 unidade — o alerta pendente
                     // (se existir) perdeu o sentido.
-                    await window.supabaseClient
-                        .from('produto_alertas_ultima_unidade')
-                        .delete()
-                        .eq('sku', parte.sku)
-                        .eq('sku_pai_composto', composto.sku)
-                        .eq('status', 'pendente');
+                    idsParaApagar.push(...existentes);
                 }
             }
+        }
+
+        if (novos.length) {
+            const { error } = await window.supabaseClient
+                .from('produto_alertas_ultima_unidade')
+                .insert(novos);
+            if (error) console.warn('⚠️ [Alerta Última Unidade] Erro criando alertas:', error);
+        }
+
+        if (idsParaApagar.length) {
+            const { error } = await window.supabaseClient
+                .from('produto_alertas_ultima_unidade')
+                .delete()
+                .in('id', idsParaApagar);
+            if (error) console.warn('⚠️ [Alerta Última Unidade] Erro limpando alertas:', error);
         }
 
         if (typeof atualizarBannerAlertaUltimaUnidade === 'function') {
