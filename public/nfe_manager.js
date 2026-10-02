@@ -46722,8 +46722,15 @@ function abrirSkuGestaoEstoqueNFE(event, sku) {
         event.stopPropagation();
     }
 
-    const termo =
+    // Os 3 primeiros caracteres do SKU do ML não fazem parte
+    // do SKU cadastrado no sistema.
+    const skuCompleto =
         String(sku || '').trim();
+
+    const termo =
+        skuCompleto.length > 3
+            ? skuCompleto.slice(3)
+            : skuCompleto;
 
     if (!termo) {
         return;
