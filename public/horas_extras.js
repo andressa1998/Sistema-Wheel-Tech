@@ -32,6 +32,14 @@
         { valor: 100, texto: '100% — domingo / feriado' }
     ];
 
+    const AVISO_PREVISAO_HE = `
+        <div class="card he-aviso">
+            <i class="fas fa-info-circle"></i> Os valores mostrados são uma <strong>projeção de pagamento</strong>
+            e estão sujeitos a alteração no fechamento da folha — por exemplo, por faltas, atrasos,
+            uso do banco de horas ou outros ajustes.
+        </div>
+    `;
+
     let resumoHe = null;      // he_meu_resumo
     let painelHe = [];        // he_admin_painel
     let abaHe = 'minhas';     // 'minhas' | 'equipe'
@@ -283,6 +291,8 @@
                 </div>
             `}
 
+            ${AVISO_PREVISAO_HE}
+
             <div class="he-cards">
                 <div class="he-card he-card-destaque">
                     <div class="he-card-rotulo">A receber</div>
@@ -476,6 +486,7 @@
                     Rode o arquivo <strong>horas_extras.sql</strong> atualizado no SQL Editor do Supabase.
                 </div>
             ` : ''}
+            ${AVISO_PREVISAO_HE}
             <div class="he-cards">
                 <div class="he-card he-card-destaque">
                     <div class="he-card-rotulo">Total a pagar (equipe)</div>
