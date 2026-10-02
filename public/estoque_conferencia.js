@@ -816,9 +816,14 @@
     }, 2000);
 
     // conferência diária: tenta a cada minuto (só roda de fato 1x por dia, até 200 produtos)
-    setTimeout(function ciclo() {
-        tentarConferenciaDiaria().finally(() => setTimeout(ciclo, 60 * 1000));
-    }, 30 * 1000);
+    // DESLIGADA em 02/10/2026 para testar se ela é a causa da lentidão
+    // nos computadores. Para religar: CONFERENCIA_AUTOMATICA = true.
+    const CONFERENCIA_AUTOMATICA = false;
+    if (CONFERENCIA_AUTOMATICA) {
+        setTimeout(function ciclo() {
+            tentarConferenciaDiaria().finally(() => setTimeout(ciclo, 60 * 1000));
+        }, 30 * 1000);
+    }
 
     window.WTConferenciaEstoque = {
         abrirDivergencias: abrirModalDivergencias,
