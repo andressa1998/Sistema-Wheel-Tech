@@ -7,7 +7,8 @@
 //    anúncio/variação, com SKU, MLB e inventory_id. A quantidade
 //    no plano é exatamente o que vendeu.
 //    - Fonte: busca de pedidos do ML (/orders/search), exata por
-//      data/hora. O período começa na data inicial ou, se escolhida,
+//      data/hora da CONFIRMAÇÃO da venda (date_closed — a data do
+//      painel de vendas do ML), não da criação do pedido. O período começa na data inicial ou, se escolhida,
 //      a partir de uma venda específica desse dia.
 //    - Canceladas e devoluções ficam de fora: o ML marca as duas
 //      como status "cancelled".
@@ -21,13 +22,14 @@
 //      eram pulados (vendas faltando) e as tentativas deixavam tudo
 //      lento. Além disso ela não desconta cancelamentos.
 //
-// 2) NOVOS ITENS:
-//    - todos os MLBs criados no período;
-//    - produtos que vendem no LOCAL (fora do FULL) com pelo menos
-//      N vendas somadas no período e estoque interno para montar
-//      pelo menos M unidades do anúncio (kits contam pelo SKU —
-//      mesma conta da coluna "Depósito" do Full - Gerenciamento).
-//      N e M são configuráveis (padrão 2 e 5).
+// 2) NOVOS ITENS: produtos que vendem no LOCAL (fora do FULL) cuja
+//    N-ª venda desde a criação do MLB aconteceu DENTRO do período
+//    (quem já tinha N vendas antes não entra — é pra enviar pela
+//    primeira vez) e com estoque interno para montar pelo menos M
+//    unidades do anúncio (kits contam pelo SKU — mesma conta da
+//    coluna "Depósito" do Full - Gerenciamento). N e M são
+//    configuráveis (padrão 2 e 5). O histórico vem de /orders/search
+//    filtrado pelo MLB, até o início do período.
 //
 // Anúncios finalizados ficam de fora. O plano é salvo na tabela
 // `full_planos` e exportado em Excel para enviar ao ML.
@@ -148,10 +150,18 @@
         });
     }
 
+    // Data da venda = quando o ML confirmou (date_closed), a mesma que
+    // aparece no painel de vendas. O pedido pode ser criado dias antes
+    // (pagamento pendente) — usar date_created punha a venda no período
+    // errado. Sem date_closed (objetos montados aqui), usa date_created.
+    function dataVenda(pedido) {
+        return pedido?.date_closed || pedido?.date_created;
+    }
+
     // Ordem cronológica das vendas; no mesmo segundo, desempata pelo nº.
     function compararVendas(a, b) {
-        const ta = new Date(a.date_created).getTime();
-        const tb = new Date(b.date_created).getTime();
+        const ta = new Date(dataVenda(a)).getTime();
+        const tb = new Date(dataVenda(b)).getTime();
         if (ta !== tb) return ta - tb;
         return String(a.id).localeCompare(String(b.id), 'en', { numeric: true });
     }
@@ -176,8 +186,8 @@
             while (offset < total) {
                 const params = new URLSearchParams({
                     seller: String(seller),
-                    'order.date_created.from': janelaDe.toISOString(),
-                    'order.date_created.to': janelaAte.toISOString(),
+                    'order.date_closed.from': janelaDe.toISOString(),
+                    'order.date_closed.to': janelaAte.toISOString(),
                     sort: 'date_asc',
                     limit: '50',
                     offset: String(offset)
@@ -263,42 +273,34 @@
         return pedidos.filter(p => compararVendas(p, corte) >= 0);
     }
 
-    // Anúncios criados entre inicio e fim (mais novos primeiro).
-    async function anunciosCriadosNoPeriodo(inicio, fim) {
+    // Quantas vendas válidas o anúncio/variação teve ANTES do corte
+    // (desde a criação do MLB). Para de contar ao chegar em `limite`:
+    // só interessa saber se já tinha vendido `limite` vezes ou mais.
+    async function vendasAntesDoCorte(mlb, variationId, corte, limite) {
         const seller = await I().getSellerId();
-        const de = new Date(`${inicio}T00:00:00-03:00`).getTime();
-        const ate = new Date(`${fim}T23:59:59-03:00`).getTime();
-        const atributos = 'id,title,price,status,date_created,variations,attributes,seller_custom_field,seller_sku';
-        const criados = [];
-
-        for (let offset = 0; offset < 1000; offset += 100) {
-            const busca = await I().mlComRetry(
-                `/users/${seller}/items/search?orders=start_time_desc&limit=100&offset=${offset}`, 4);
-            const ids = Array.isArray(busca?.results) ? busca.results : [];
-            if (!ids.length) break;
-
-            const grupos = [];
-            for (let i = 0; i < ids.length; i += 20) grupos.push(ids.slice(i, i + 20));
-
-            let algumNoPeriodoOuDepois = false;
-            await I().executarEmParaleloGA(grupos, 4, async grupo => {
-                const data = await I().mlComRetry(
-                    `/items?ids=${grupo.join(',')}&include_attributes=all&attributes=${encodeURIComponent(atributos)}`, 4);
-                for (const resposta of data || []) {
-                    const item = resposta?.code === 200 ? resposta.body : null;
-                    if (!item?.date_created) continue;
-                    const criado = new Date(item.date_created).getTime();
-                    if (criado >= de) algumNoPeriodoOuDepois = true;
-                    if (criado >= de && criado <= ate) criados.push(item);
-                }
+        let vendas = 0;
+        for (let offset = 0; offset < 2000; offset += 50) {
+            const params = new URLSearchParams({
+                seller: String(seller),
+                q: mlb,
+                'order.status': 'paid',
+                'order.date_closed.to': new Date(corte.getTime() - 1).toISOString(),
+                sort: 'date_asc',
+                limit: '50',
+                offset: String(offset)
             });
-
-            progresso(`Procurando anúncios criados no período... ${criados.length} encontrado(s)`);
-            // Página inteira mais antiga que o início: acabou.
-            if (!algumNoPeriodoOuDepois || ids.length < 100) break;
+            const data = await I().mlComRetry(`/orders/search?${params}`, 5);
+            const resultados = data?.results || [];
+            for (const pedido of resultados) {
+                if (!pedidoValido(pedido)) continue;
+                const vendeu = (pedido.order_items || []).some(l =>
+                    l?.item?.id === mlb &&
+                    (!variationId || String(l.item.variation_id || '') === String(variationId)));
+                if (vendeu && ++vendas >= limite) return vendas;
+            }
+            if (resultados.length < 50) break;
         }
-
-        return criados;
+        return vendas;
     }
 
     // Soma as unidades por MLB+variação.
@@ -317,12 +319,14 @@
                         sku: linha.item.seller_sku || '',
                         titulo: linha.item.title || '',
                         unidades: 0,
-                        pedidos: 0
+                        pedidos: 0,
+                        idsPedidos: []
                     });
                 }
                 const venda = vendas.get(chave);
                 venda.unidades += Number(linha.quantity) || 0;
                 venda.pedidos++;
+                venda.idsPedidos.push({ id: String(pedido.id), data: dataVenda(pedido) });
             }
         }
         return vendas;
@@ -334,7 +338,7 @@
         const titulo = linhas[0]?.item?.title || '';
         return {
             id: String(pedido.id),
-            data: pedido.date_created,
+            data: dataVenda(pedido),
             unidades,
             titulo: linhas.length > 1 ? `${titulo} (+${linhas.length - 1} item(ns))` : titulo,
             full: pedidoFull(pedido)
@@ -359,10 +363,8 @@
             throw new Error('A lista do Full - Gerenciamento está vazia. Clique em "Sincronizar Agora" antes de criar o plano.');
         }
 
-        // Pedidos e anúncios criados são independentes: busca junto.
-        const [todosPedidos, criados] = await Promise.all([
+        const [todosPedidos] = await Promise.all([
             buscarPedidos(inicioDoDia(inicio), fimDoDia(fim)),
-            anunciosCriadosNoPeriodo(inicio, fim),
             GA.productBySku?.size ? null : I().loadInternalStock()
         ]);
 
@@ -401,6 +403,7 @@
                 titulo: row?.title || venda.titulo,
                 vendidos: venda.unidades,
                 pedidos: venda.pedidos,
+                idsPedidos: venda.idsPedidos,
                 estoqueFull: row && Number.isFinite(Number(row.full)) ? Number(row.full) : null,
                 quantidade: venda.unidades
             });
@@ -411,7 +414,7 @@
         // próximo plano poder continuar da venda seguinte.
         parametros.vendasFull = pedidosFull.map(pedido => ({
             pedido: String(pedido.id),
-            data: pedido.date_created,
+            data: dataVenda(pedido),
             itens: (pedido.order_items || []).map(l => ({
                 mlb: l.item?.id || '',
                 variationId: l.item?.variation_id || null,
@@ -421,7 +424,7 @@
             }))
         }));
         const ultimo = doPeriodo[doPeriodo.length - 1];
-        parametros.ultimaVenda = ultimo ? { id: String(ultimo.id), data: ultimo.date_created } : null;
+        parametros.ultimaVenda = ultimo ? { id: String(ultimo.id), data: dataVenda(ultimo) } : null;
         parametros.resumo = {
             pedidos: doPeriodo.length,
             validos: validos.length,
@@ -430,67 +433,45 @@
         };
 
         // ---------- 2) Novos itens ----------
+        // Entra quem vende no local e, DENTRO do período, chegou à
+        // N-ª venda desde que o MLB foi criado (padrão: 2ª venda). Quem
+        // já tinha N vendas antes do período não entra — vender a 5ª
+        // vez no período não conta, a 2ª sim.
         const mlbsNoFull = new Set(rowsAtivas.map(row => row.itemId));
-        const novos = new Map(); // chave mlb|variação
+        const corte = aPartirVenda?.data ? new Date(aPartirVenda.data) : inicioDoDia(inicio);
 
-        // Anúncio com variação vira uma linha por variação: a planilha
-        // do ML precisa do número da variação pra identificar o produto.
-        for (const item of criados) {
-            if (String(item.status || '').toLowerCase() === 'closed') continue;
-            const variacoes = Array.isArray(item.variations) && item.variations.length ? item.variations : [null];
-            for (const variacao of variacoes) {
-                const sku = I().extractSku(item, variacao) || I().skuInternoPorMlb(item.id);
-                novos.set(`${item.id}|${variacao?.id || ''}`, {
-                    mlb: item.id,
-                    variationId: variacao?.id || null,
-                    sku,
-                    titulo: item.title || '',
-                    motivos: ['criado'],
-                    criadoEm: item.date_created,
-                    vendasLocal: 0,
-                    estoqueMontavel: estoqueMontavel(sku, item.id),
-                    jaNoFull: mlbsNoFull.has(item.id),
-                    quantidade: 0
-                });
-            }
-        }
-
-        const vendas = somarPorAnuncio(validos);
-        // Os criados no período mostram quanto venderam (por variação).
-        for (const [chave, novo] of novos) novo.vendasLocal = vendas.get(chave)?.unidades || 0;
-
-        for (const venda of vendas.values()) {
+        const candidatos = [];
+        for (const venda of somarPorAnuncio(validos).values()) {
             // Quem já está no FULL entra pela reposição, não aqui.
             if (mlbsNoFull.has(venda.mlb)) continue;
-            if (venda.unidades < minVendasLocal) continue;
             const estoque = estoqueMontavel(venda.sku, venda.mlb);
             if (!(estoque >= minEstoque)) continue;
+            candidatos.push({ venda, estoque });
+        }
 
-            const chave = `${venda.mlb}|${venda.variationId || ''}`;
-            const existente = novos.get(chave);
-            if (existente) {
-                // Criado no período e também vende no local.
-                if (!existente.motivos.includes('vende_local')) existente.motivos.push('vende_local');
-                existente.estoqueMontavel = existente.estoqueMontavel ?? estoque;
-                existente.quantidade = Math.max(existente.quantidade, venda.unidades);
-                continue;
-            }
+        const novosItens = [];
+        let conferidos = 0;
+        await I().executarEmParaleloGA(candidatos, PARALELO_PEDIDOS, async ({ venda, estoque }) => {
+            const antes = await vendasAntesDoCorte(venda.mlb, venda.variationId, corte, minVendasLocal);
+            conferidos++;
+            progresso(`Conferindo histórico de vendas dos novos itens... ${conferidos}/${candidatos.length}`);
+            if (antes >= minVendasLocal || antes + venda.pedidos < minVendasLocal) return;
 
-            novos.set(chave, {
+            novosItens.push({
                 mlb: venda.mlb,
                 variationId: venda.variationId,
                 sku: venda.sku || I().skuInternoPorMlb(venda.mlb),
                 titulo: venda.titulo,
                 motivos: ['vende_local'],
-                criadoEm: null,
-                vendasLocal: venda.unidades,
+                vendasAntes: antes,
+                vendasLocal: venda.pedidos,
                 estoqueMontavel: estoque,
                 jaNoFull: false,
                 quantidade: venda.unidades
             });
-        }
+        });
 
-        const novosItens = [...novos.values()].sort((a, b) =>
+        novosItens.sort((a, b) =>
             b.vendasLocal - a.vendasLocal || String(a.titulo).localeCompare(String(b.titulo), 'pt-BR'));
 
         return { itens, novosItens };
@@ -684,7 +665,7 @@
                     </div>
                     <div class="row align-items-end mt-2">
                         <div class="col-md-2">
-                            <label title="Novos itens que vendem no local: mínimo de vendas somadas no período">Vendas locais mín.</label>
+                            <label title="Novos itens: entra quando a venda no período é esta (ex.: 2 = 2ª venda desde a criação do MLB)">Venda nº</label>
                             <input type="number" min="1" id="fpMinVendas" class="form-control" value="2">
                         </div>
                         <div class="col-md-2">
@@ -700,8 +681,9 @@
                     <small class="text-muted d-block mt-2">
                         Reposição = vendas FULL do período, quantidade exata vendida (SKU, MLB e quantidade somada).
                         Vendas canceladas e devolvidas ficam de fora.
-                        Novos itens = MLBs criados no período + produtos que vendem no local com as vendas e o estoque mínimos
-                        (o estoque conta os kits que dá pra montar pelo SKU). Anúncios finalizados ficam de fora.
+                        Novos itens = produtos fora do FULL cuja venda no período é a 2ª desde que o MLB foi criado
+                        (o nº vem de "Venda nº") e com o estoque mínimo (conta os kits que dá pra montar pelo SKU).
+                        Quem já tinha vendido antes disso não entra. Anúncios finalizados ficam de fora.
                     </small>
                 </div>
             </div>
@@ -888,7 +870,8 @@
                 <tr>
                     <td>${mlb}</td>
                     <td>${esc(item.sku || '—')}</td>
-                    <td>${esc(item.titulo)}</td>
+                    <td>${esc(item.titulo)}${(item.idsPedidos || []).length ? `<br><small class="text-muted">Pedido(s): ${
+                        item.idsPedidos.map(p => `#${esc(p.id)} (${esc(formatarDataHoraVenda(p.data))})`).join(', ')}</small>` : ''}</td>
                     <td><small>${esc(item.inventoryId || '—')}</small></td>
                     <td style="text-align:center;">${Number(item.vendidos) || 0}</td>
                     <td style="text-align:center;">${item.estoqueFull ?? '—'}</td>
@@ -904,7 +887,7 @@
                 <td>${esc(item.titulo)}</td>
                 <td>${(item.motivos || []).map(m => `<span class="badge badge-info" style="margin-right:4px;">${esc(ROTULOS_MOTIVO[m] || m)}</span>`).join('')}
                     ${item.jaNoFull ? '<br><small class="text-muted">já está no FULL</small>' : ''}</td>
-                <td>${item.criadoEm ? formatarDataHora(item.criadoEm) : '—'}</td>
+                <td style="text-align:center;">${item.vendasAntes ?? '—'}</td>
                 <td style="text-align:center;">${Number(item.vendasLocal) || 0}</td>
                 <td style="text-align:center;">${item.estoqueMontavel ?? '—'}</td>
                 <td style="text-align:center;">${campoQtd}</td>
@@ -974,12 +957,12 @@
                     <h2 class="card-title"><i class="fas fa-star"></i> Novos itens
                         <span class="badge badge-primary">${plano.novos_itens.length}</span></h2>
                     <small class="text-muted">${totalNovos} unidade(s) •
-                        vende no local: ≥ ${plano.parametros?.minVendasLocal ?? 2} vendas e estoque para ≥ ${plano.parametros?.minEstoque ?? 5}</small>
+                        vende no local: chegou à ${plano.parametros?.minVendasLocal ?? 2}ª venda (desde a criação do MLB) no período e estoque para ≥ ${plano.parametros?.minEstoque ?? 5}</small>
                 </div>
                 <div class="table-responsive" style="max-height:520px; overflow-y:auto;">
                     <table class="table table-striped table-hover table-sm">
                         <thead><tr>
-                            <th>MLB</th><th>SKU</th><th>Título</th><th>Por que entrou</th><th>Criado em</th>
+                            <th>MLB</th><th>SKU</th><th>Título</th><th>Por que entrou</th><th style="text-align:center;">Vendas antes do período</th>
                             <th style="text-align:center;">Vendas no período</th><th style="text-align:center;">Estoque (unid./kits)</th>
                             <th style="text-align:center;">Enviar</th><th></th>
                         </tr></thead>
@@ -1181,7 +1164,7 @@
             Variação: item.variationId || '',
             Título: item.titulo || '',
             'Por que entrou': (item.motivos || []).map(m => ROTULOS_MOTIVO[m] || m).join(' + '),
-            'Criado em': item.criadoEm ? formatarDataHora(item.criadoEm) : '',
+            'Vendas antes do período': item.vendasAntes ?? '',
             'Vendas no período': Number(item.vendasLocal) || 0,
             'Estoque (unid./kits)': item.estoqueMontavel ?? '',
             'Já no FULL': item.jaNoFull ? 'Sim' : 'Não',
