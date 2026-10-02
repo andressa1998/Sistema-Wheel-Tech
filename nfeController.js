@@ -3811,15 +3811,7 @@ async function atualizarCliente(
         // ATUALIZAR
         // =====================================================
 
-        const {
-            data,
-            error
-        } =
-            await supabase
-                .from(
-                    'clientes'
-                )
-                .update({
+        const camposAtualizar = {
 
                     nome:
                         String(
@@ -3870,13 +3862,72 @@ async function atualizarCliente(
                                 /\D/g,
                                 ''
                             )
-                })
-                .eq(
-                    'id',
-                    id
-                )
-                .select()
-                .maybeSingle();
+        };
+
+
+        // Só mexe na IE quando o front mandou o campo, para
+        // telas antigas não apagarem uma IE já cadastrada.
+        if (
+            Object.prototype.hasOwnProperty.call(
+                req.body || {},
+                'inscricao_estadual'
+            )
+        ) {
+
+            camposAtualizar.inscricao_estadual =
+                normalizarInscricaoEstadualCliente(
+                    req.body.inscricao_estadual
+                );
+        }
+
+
+        const atualizarRegistro =
+            campos =>
+                supabase
+                    .from(
+                        'clientes'
+                    )
+                    .update(
+                        campos
+                    )
+                    .eq(
+                        'id',
+                        id
+                    )
+                    .select()
+                    .maybeSingle();
+
+
+        let {
+            data,
+            error
+        } =
+            await atualizarRegistro(
+                camposAtualizar
+            );
+
+
+        if (
+            error &&
+            erroSemColunaInscricaoEstadual(
+                error
+            )
+        ) {
+
+            console.warn(
+                '⚠️ Coluna clientes.inscricao_estadual não existe — atualizando sem IE.'
+            );
+
+            delete camposAtualizar.inscricao_estadual;
+
+            ({
+                data,
+                error
+            } =
+                await atualizarRegistro(
+                    camposAtualizar
+                ));
+        }
 
 
         if (error) {
@@ -5224,9 +5275,25 @@ async function testarXmlRaw(req, res) {
     }
 }
 
+// IE do destinatário: string (zeros à esquerda), só letras/números,
+// "ISENTO" preservado. Vazio = não contribuinte.
+function normalizarInscricaoEstadualCliente(valor) {
+  const ie = String(valor || '').trim().toUpperCase();
+  if (!ie || ie === 'ISENTO') return ie;
+  return ie.replace(/[^0-9A-Z]/g, '');
+}
+
+// Enquanto a coluna clientes.inscricao_estadual não for criada no
+// Supabase (clientes_inscricao_estadual.sql), grava sem a IE em
+// vez de falhar o cadastro inteiro.
+function erroSemColunaInscricaoEstadual(error) {
+  return /inscricao_estadual/i.test(String(error?.message || ''));
+}
+
 async function cadastrarCliente(req, res) {
   try {
     const { nome, documento, logradouro, numero, bairro, cidade, uf, cep } = req.body;
+    const inscricao_estadual = normalizarInscricaoEstadualCliente(req.body?.inscricao_estadual);
     if (!nome || !documento) {
       return res.status(400).json({ success: false, error: 'Nome e documento são obrigatórios' });
     }
@@ -5243,10 +5310,21 @@ async function cadastrarCliente(req, res) {
       return res.json({ success: true, cliente: existing, message: 'Cliente já cadastrado' });
     }
 
-    const { data, error } = await supabase
+    const registro = { nome, documento, logradouro, numero, bairro, cidade, uf, cep, inscricao_estadual };
+
+    let { data, error } = await supabase
       .from('clientes')
-      .insert([{ nome, documento, logradouro, numero, bairro, cidade, uf, cep }])
+      .insert([registro])
       .select();
+
+    if (error && erroSemColunaInscricaoEstadual(error)) {
+      console.warn('⚠️ Coluna clientes.inscricao_estadual não existe — cadastrando sem IE.');
+      delete registro.inscricao_estadual;
+      ({ data, error } = await supabase
+        .from('clientes')
+        .insert([registro])
+        .select());
+    }
 
     if (error) throw error;
     res.json({ success: true, cliente: data[0] });

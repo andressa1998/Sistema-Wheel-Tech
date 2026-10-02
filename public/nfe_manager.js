@@ -36285,6 +36285,27 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                     null;
             }
 
+            // Estoque no centro FULL mesmo com o anúncio pausado.
+            // Serve só para explicar o alerta de anúncio pausado:
+            // anúncio FULL com o FULL zerado continua pausado
+            // mesmo com estoque no depósito próprio.
+            const detalhesFullBruto =
+                detalhes.filter(item =>
+                    item?.tem_meli_facility === true &&
+                    item?.estoque_full !== null &&
+                    item?.estoque_full !== undefined &&
+                    Number.isFinite(Number(item.estoque_full))
+                );
+
+            const estoqueFullBruto =
+                detalhesFullBruto.length > 0
+                    ? detalhesFullBruto.reduce(
+                        (total, item) =>
+                            total + Math.max(0, Number(item.estoque_full)),
+                        0
+                    )
+                    : null;
+
             const listingTypeId =
                 String(
                     itemML?.listing_type_id ||
@@ -36414,6 +36435,9 @@ async function buscarEstoqueAnuncioPosVendaNFE(
 
                 oferecendo_full:
                     oferecendoFull,
+
+                estoque_full_bruto:
+                    estoqueFullBruto,
 
                 item_marcado_como_full:
                     possuiLogisticaFullAtual,
@@ -43867,6 +43891,15 @@ function obterAlertasExposicaoVendaNFE(
                             ? snapshot.sub_status_anuncio
                             : null,
 
+                    logistica_full:
+                        snapshot?.item_marcado_como_full === true ||
+                        snapshot?.possui_logistica_full === true,
+
+                    estoque_full_bruto:
+                        converterNumero(
+                            snapshot?.estoque_full_bruto
+                        ),
+
                     regra_fixa:
                         null
                 });
@@ -43972,6 +44005,31 @@ function obterAlertasExposicaoVendaNFE(
                 });
 
 
+                return;
+            }
+
+
+            // =================================================
+            // ANÚNCIO ZERADO NO ML = SEM ALERTA DE EXPOSIÇÃO
+            //
+            // Anúncio sem nenhuma unidade (inativo/pausado por
+            // falta de estoque) não precisa trocar Clássico /
+            // Premium. A troca só volta a ser cobrada quando o
+            // anúncio tiver unidades (ex.: 1 un. = Clássico).
+            // Se houver estoque interno, o alerta azul de
+            // anúncio pausado acima já cobra a reposição.
+            // =================================================
+
+            const anuncioZeradoNoML =
+                quantidadeBaseExposicao !== null &&
+                Number(quantidadeBaseExposicao) === 0 &&
+                estoqueNoML === 0 &&
+                (
+                    estoqueTodasVariacoes === null ||
+                    estoqueTodasVariacoes === 0
+                );
+
+            if (anuncioZeradoNoML) {
                 return;
             }
 
@@ -44539,6 +44597,50 @@ function descreverSubStatusAnuncioNFE(
 }
 
 
+// Explica o que falta fazer num anúncio pausado, olhando o
+// motivo do ML e onde está o estoque. Evita a mensagem genérica
+// "sem estoque" quando o anúncio já recebeu unidades.
+function diagnosticarAnuncioPausadoNFE(
+    alerta
+) {
+    const subStatus =
+        Array.isArray(alerta?.sub_status)
+            ? alerta.sub_status
+            : null;
+
+    const estoqueAnuncio =
+        Number(alerta?.estoque_anuncio || 0);
+
+    const fullBruto =
+        alerta?.estoque_full_bruto;
+
+    if (
+        alerta?.logistica_full === true &&
+        fullBruto !== null &&
+        fullBruto !== undefined &&
+        Number(fullBruto) === 0
+    ) {
+        return estoqueAnuncio > 0
+            ? `Anúncio FULL com o estoque do centro FULL zerado. As ${estoqueAnuncio} un. do depósito próprio não reativam anúncio FULL: retire a oferta FULL (venda pelo depósito/Flex) ou envie estoque para o FULL.`
+            : 'Anúncio FULL com o estoque do centro FULL zerado. Retire a oferta FULL e adicione estoque no depósito, ou envie estoque para o FULL.';
+    }
+
+    if (estoqueAnuncio <= 0) {
+        return 'O anúncio está sem unidades no ML. Adicione estoque no anúncio e reative.';
+    }
+
+    if (subStatus && subStatus.length === 0) {
+        return `O anúncio já tem ${estoqueAnuncio} un., mas está pausado manualmente. Falta clicar em "Reativar" no Mercado Livre.`;
+    }
+
+    if (subStatus && subStatus.includes('out_of_stock')) {
+        return `O anúncio já tem ${estoqueAnuncio} un., mas o ML ainda não processou a reativação. Aguarde alguns minutos e verifique de novo; se continuar, clique em "Reativar" no ML.`;
+    }
+
+    return `O anúncio já tem ${estoqueAnuncio} un., mas segue pausado. Motivo no ML: ${descreverSubStatusAnuncioNFE(subStatus)}.`;
+}
+
+
 function montarAvisosExposicaoVendaNFE(
     venda
 ) {
@@ -44705,6 +44807,22 @@ function montarAvisosExposicaoVendaNFE(
                     ${escapar(
                         descreverSubStatusAnuncioNFE(
                             alerta.sub_status
+                        )
+                    )}
+                </strong>
+            </div>
+
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                O que fazer:
+
+                <strong>
+                    ${escapar(
+                        diagnosticarAnuncioPausadoNFE(
+                            alerta
                         )
                     )}
                 </strong>
@@ -45401,8 +45519,10 @@ async function confirmarAjusteExposicaoNFE(
                 'anuncio_pausado'
             ) {
                 explicacao =
-                    'O Mercado Livre ainda informa o anúncio pausado (ou sem estoque) enquanto há estoque disponível.\n' +
-                    `Motivo informado pelo ML: ${descreverSubStatusAnuncioNFE(alertaOriginalContinua.sub_status)}`;
+                    'O Mercado Livre ainda informa o anúncio como PAUSADO.\n' +
+                    `Estoque no anúncio: ${Number(alertaOriginalContinua.estoque_anuncio || 0)} un.\n` +
+                    `Motivo informado pelo ML: ${descreverSubStatusAnuncioNFE(alertaOriginalContinua.sub_status)}\n\n` +
+                    `O que fazer: ${diagnosticarAnuncioPausadoNFE(alertaOriginalContinua)}`;
             }
 
             alert(
@@ -46592,6 +46712,33 @@ window.exportarVendasNFEExcel = function() {
     XLSX.writeFile(wb, `vendas_nfe_${new Date().toISOString().slice(0, 10)}.xlsx`);
     showToast(`✅ ${dados.length} registro(s) exportado(s)!`, 'success');
 };
+
+// Clique no SKU da venda: abre a Gestão de Estoque já filtrada
+// por aquele SKU. Em venda com vários SKUs cada um tem seu
+// próprio link, então dá pra abrir qualquer um isoladamente.
+function abrirSkuGestaoEstoqueNFE(event, sku) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    const termo =
+        String(sku || '').trim();
+
+    if (!termo) {
+        return;
+    }
+
+    if (typeof window.pesquisarNoEstoqueDoMenuPrincipal !== 'function') {
+        alert('A Gestão de Estoque ainda não foi carregada. Tente novamente em instantes.');
+        return;
+    }
+
+    window.pesquisarNoEstoqueDoMenuPrincipal(termo);
+}
+
+window.abrirSkuGestaoEstoqueNFE =
+    abrirSkuGestaoEstoqueNFE;
 
 function renderizarVendasNFETabela(vendas) {
 
@@ -48443,11 +48590,17 @@ function renderizarVendasNFETabela(vendas) {
                             .map(
                                 sku => `
                                     <div>
-                                        <code>
-                                            ${escaparHTMLNFE(
-                                                sku
-                                            )}
-                                        </code>
+                                        ${
+                                            sku === 'SEM_SKU'
+                                                ? `<code>${escaparHTMLNFE(sku)}</code>`
+                                                : `<code
+                                                    class="nfe-sku-link-estoque"
+                                                    data-sku="${escaparHTMLNFE(sku)}"
+                                                    title="Abrir ${escaparHTMLNFE(sku)} na Gestão de Estoque"
+                                                    onclick="abrirSkuGestaoEstoqueNFE(event, this.dataset.sku)"
+                                                    style="cursor:pointer;text-decoration:underline dotted;color:#1d4ed8;"
+                                                >${escaparHTMLNFE(sku)}</code>`
+                                        }
                                         ${
                                             qtdPorLinhaSku
                                                 ? montarQtdVendidaNFE(
@@ -69111,6 +69264,7 @@ async function salvarClienteNoBanco(dadosCliente) {
         const payload = {
             nome: dadosCliente.nome,
             documento: documentoLimpo,
+            inscricao_estadual: dadosCliente.inscricao_estadual || '',
             logradouro: dadosCliente.endereco,
             numero: dadosCliente.numero || 'S/N',
             bairro: dadosCliente.bairro || '',
@@ -76215,6 +76369,12 @@ window.editarClienteNFE = async function editarClienteNFE(id) {
 
 
         preencher(
+            '#cadClienteInscricaoEstadual',
+            cliente.inscricao_estadual
+        );
+
+
+        preencher(
             '#cadClienteLogradouro',
             cliente.logradouro
         );
@@ -80030,6 +80190,25 @@ function abrirModalCadastroClienteNFE() {
             <div class="form-group">
 
                 <label>
+                    Inscrição Estadual
+                </label>
+
+                <input
+                    type="text"
+                    id="cadClienteInscricaoEstadual"
+                    class="form-control"
+                    maxlength="20"
+                    autocomplete="off"
+                    placeholder="Somente números, ISENTO ou vazio (não contribuinte)"
+                    style="text-transform:uppercase;"
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
                     Logradouro
                 </label>
 
@@ -80343,6 +80522,28 @@ async function salvarCadastroClienteNFE() {
             );
 
 
+    const inscricaoEstadualDigitada =
+        String(
+            document
+                .getElementById(
+                    'cadClienteInscricaoEstadual'
+                )
+                ?.value ||
+            ''
+        )
+            .trim()
+            .toUpperCase();
+
+
+    const inscricao_estadual =
+        inscricaoEstadualDigitada === 'ISENTO'
+            ? 'ISENTO'
+            : inscricaoEstadualDigitada.replace(
+                /[^0-9A-Z]/g,
+                ''
+            );
+
+
     const logradouro =
         document
             .getElementById(
@@ -80478,6 +80679,8 @@ async function salvarCadastroClienteNFE() {
 
         documento,
 
+        inscricao_estadual,
+
         logradouro,
 
         numero,
@@ -80589,6 +80792,7 @@ async function salvarCadastroClienteNFE() {
                 await salvarClienteNoBanco({
                     nome,
                     documento,
+                    inscricao_estadual,
                     logradouro,
                     endereco:
                         logradouro,
