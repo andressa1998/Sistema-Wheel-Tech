@@ -7390,13 +7390,14 @@ body:has(#loginScreen:not(.hidden)) {
             "
         ></i>
     </th>
-        <th>Nome Produto</th>
-        <th>SKU</th>
-        <th>MLB</th>
-        <th>Estoque</th>
-        <th id="thUltimoCusto">Último custo</th>
-        <th id="thCustoMedio">Média custo</th>
-        <th>Sincronizado?</th>
+        <!-- data-analise-up="1": já clicável aqui, o estoque_analise.js não liga outro clique -->
+        <th data-coluna="nome" data-analise-up="1" style="cursor: pointer;" onclick="ordenarEstoquePor('nome')">Nome Produto <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i></th>
+        <th data-coluna="sku" data-analise-up="1" style="cursor: pointer;" onclick="ordenarEstoquePor('sku')">SKU <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i></th>
+        <th data-coluna="mlb" data-analise-up="1" style="cursor: pointer;" onclick="ordenarEstoquePor('mlb')">MLB <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i></th>
+        <th data-coluna="quantidade" data-analise-up="1" style="cursor: pointer;" onclick="ordenarEstoquePor('quantidade')">Estoque <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i></th>
+        <th id="thUltimoCusto" data-coluna="preco_custo" data-analise-up="1" style="cursor: pointer;" onclick="ordenarEstoquePor('preco_custo')">Último custo <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i></th>
+        <th id="thCustoMedio" data-coluna="preco_medio" data-analise-up="1" style="cursor: pointer;" onclick="ordenarEstoquePor('preco_medio')">Média custo <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i></th>
+        <th data-coluna="sync" data-analise-up="1" style="cursor: pointer;" onclick="ordenarEstoquePor('sync')">Sincronizado? <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i></th>
         <th>Ações</th>
     </tr>
 </thead>

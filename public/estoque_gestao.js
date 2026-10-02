@@ -5887,6 +5887,40 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
 
 
                 // =========================================
+                // MLB (primeiro código; sem MLB vai pro fim)
+                // =========================================
+
+                case 'mlb': {
+
+                    const primeiroMlb = p => {
+                        const m = p.mlb_codes || p.dados_extra?.mlb_codes;
+                        const lista = Array.isArray(m) ? m : String(m || '').split(',');
+                        const c = lista.map(x => String(x).trim()).filter(Boolean)[0];
+                        return c ? c.toLowerCase() : null;
+                    };
+
+                    const ma = primeiroMlb(a);
+                    const mb = primeiroMlb(b);
+                    if (ma == null && mb == null) return 0;
+                    if (ma == null) return 1;
+                    if (mb == null) return -1;
+                    return direcao === 'asc' ? ma.localeCompare(mb) : mb.localeCompare(ma);
+                }
+
+
+                // =========================================
+                // SINCRONIZADO? (ativa antes de bloqueada)
+                // =========================================
+
+                case 'sync':
+
+                    valorA = (a.bloquear_sync_ml || a.dados_extra?.bloquear_sync_ml) ? 1 : 0;
+                    valorB = (b.bloquear_sync_ml || b.dados_extra?.bloquear_sync_ml) ? 1 : 0;
+
+                    break;
+
+
+                // =========================================
                 // QUANTIDADE
                 // =========================================
 
