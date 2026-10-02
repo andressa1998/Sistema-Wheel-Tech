@@ -72178,6 +72178,18 @@ async function registrarHistoricoVendaFullSemBaixa(
 window._historicoVendasFullEmAndamento = false;
 window._historicoVendasFullUltimaExecucao = 0;
 
+// Só roda no computador destes usuários. Antes rodava em todos ao mesmo
+// tempo: trabalho repetido em cada máquina e risco de dois computadores
+// lançarem a mesma venda no histórico no mesmo segundo (duplicata).
+// Vendas que entrarem com eles fora são lançadas na próxima vez que
+// abrirem o sistema, com a data real da venda.
+const USUARIOS_HISTORICO_VENDAS_FULL = ['andressamiotto'];
+
+function usuarioProcessaHistoricoVendasFullNFE() {
+    const username = String(window.currentUser?.username || '').trim().toLowerCase();
+    return USUARIOS_HISTORICO_VENDAS_FULL.includes(username);
+}
+
 function registroHistoricoVendasFullLigadoNFE() {
     try {
         const cfg = window.RegrasAlertasEstoque?.obterConfig?.();
@@ -72192,6 +72204,7 @@ async function processarHistoricoVendasFullPendentesNFE(opcoes = {}) {
     if (
         !window.supabaseClient ||
         !window.currentUser ||
+        !usuarioProcessaHistoricoVendasFullNFE() ||
         window._historicoVendasFullEmAndamento
     ) {
         return { processadas: 0 };
