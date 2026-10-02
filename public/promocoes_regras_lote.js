@@ -566,6 +566,7 @@
             : desconto;
         return {
             mlb: item.id,
+            offerId: item.offer_id || item.ref_id || null,
             titulo: det?.titulo || '',
             categorias: categoriasDoMlb(item.id),
             precoOriginal,
@@ -857,6 +858,7 @@
                         token,
                         {
                             precoOriginal: item.precoOriginal,
+                            offerId: item.offerId,
                             promocaoNome: promocao.name,
                             origem: 'ativacao_regras'
                         }

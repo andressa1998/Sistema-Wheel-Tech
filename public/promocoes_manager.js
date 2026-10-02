@@ -2314,6 +2314,29 @@ async function buscarDetalhesPromocao(promotionId, promotionType, token) {
 // ============================================================
 // FUNÇÃO: ATIVAR ITEM EM UMA PROMOÇÃO - ATUALIZADA
 // ============================================================
+const TIPOS_COM_OFFER_ID = new Set([
+    'SMART',
+    'PRICE_MATCHING',
+    'PRICE_MATCHING_MELI_ALL',
+    'UNHEALTHY_STOCK'
+]);
+
+// Diferente de buscarOfferIdDoItem: só aceita a oferta da própria promoção.
+async function buscarOfferIdExato(itemId, promotionId, token) {
+    try {
+        const url = `https://api.mercadolibre.com/seller-promotions/items/${itemId}?app_version=v2`;
+        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) return null;
+        const data = normalizarPromocoesItemML(await response.json());
+        const promocao = data.find(p => String(p.id) === String(promotionId));
+        return promocao?.offer_id || promocao?.ref_id || null;
+    } catch (error) {
+        log(`❌ Erro ao buscar offer_id para ${itemId}: ${error.message}`, 'warning');
+        return null;
+    }
+}
+
 async function ativarItemPromocao(
     itemId,
     promotionId,
@@ -2376,11 +2399,26 @@ async function ativarItemPromocao(
             body.finish_date = formatarDataHoraMlBrasil(fimMl);
         }
 
+        // Promoções com oferta pronta do ML (SMART, PRICE_MATCHING...) exigem
+        // offer_id e o preço vem da oferta — mandar deal_price não serve.
+        const exigeOffer = TIPOS_COM_OFFER_ID.has(String(promotionType));
+        let offerId = opcoes.offerId || null;
+        if (exigeOffer && !offerId) {
+            offerId = await buscarOfferIdExato(itemId, promotionId, token);
+        }
+        if (offerId) body.offer_id = offerId;
+        if (exigeOffer && !offerId) {
+            return {
+                success: false,
+                error: 'offer_id não encontrado para o item nessa promoção'
+            };
+        }
+
         // Algumas promoções exigem deal_price.
         // IMPORTANTE: NÃO multiplicar por 100.
         const precoNumerico = Number(dealPrice);
 
-        if (Number.isFinite(precoNumerico) && precoNumerico > 0) {
+        if (!exigeOffer && Number.isFinite(precoNumerico) && precoNumerico > 0) {
             body.deal_price = Number(precoNumerico.toFixed(2));
         }
 
@@ -2434,7 +2472,7 @@ async function ativarItemPromocao(
                 promotionId,
                 promotionType,
                 promotionName: opcoes.promocaoNome,
-                precoPromocao: body.deal_price,
+                precoPromocao: body.deal_price ?? (Number(dealPrice) || null),
                 precoOriginal: opcoes.precoOriginal,
                 origem: opcoes.origem
             });
