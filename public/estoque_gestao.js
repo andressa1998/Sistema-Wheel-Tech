@@ -6099,32 +6099,18 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
         );
 
         // =========================================================
-        // EXTENSÃO DA TABELA PARA MOSTRAR "A CAMINHO"
+        // INDICADORES "A CAMINHO" — aplicados uma vez após o render.
+        // (Antes esta função se re-embrulhava a cada chamada, e o
+        // custo crescia a cada render: depois de N renders, os
+        // indicadores eram aplicados N vezes por render.)
         // =========================================================
 
-        const _renderizarTabelaProdutosAntesACaminho =
-            renderizarTabelaProdutos;
-
-
-        renderizarTabelaProdutos =
-            function(...args) {
-
-                const retorno =
-                    _renderizarTabelaProdutosAntesACaminho
-                        .apply(
-                            this,
-                            args
-                        );
-
-
-                setTimeout(
-                    aplicarIndicadoresACaminhoTabela,
-                    0
-                );
-
-
-                return retorno;
-            };
+        clearTimeout(window.__timerIndicadoresACaminho);
+        window.__timerIndicadoresACaminho =
+            setTimeout(
+                aplicarIndicadoresACaminhoTabela,
+                0
+            );
 
 
     // =====================================================

@@ -36445,6 +36445,13 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                     statusAnuncio ||
                     null,
 
+                // Motivo da pausa informado pelo ML
+                // (ex.: out_of_stock, suspended, waiting_for_patch)
+                sub_status_anuncio:
+                    Array.isArray(itemML?.sub_status)
+                        ? itemML.sub_status
+                        : [],
+
                 anuncio_ativo:
                     anuncioAtivo,
 
@@ -43855,6 +43862,11 @@ function obterAlertasExposicaoVendaNFE(
                     capacidade_anuncio:
                         capacidadeInternaAnuncio,
 
+                    sub_status:
+                        Array.isArray(snapshot?.sub_status_anuncio)
+                            ? snapshot.sub_status_anuncio
+                            : null,
+
                     regra_fixa:
                         null
                 });
@@ -44496,6 +44508,37 @@ function vendaFullPrecisaMudarParaClassicoNFE(
 }
 
 
+// Traduz o sub_status do item no ML (motivo da pausa).
+// null = captura antiga, feita antes de o sistema guardar o motivo.
+function descreverSubStatusAnuncioNFE(
+    subStatus
+) {
+    if (!Array.isArray(subStatus)) {
+        return 'não capturado ainda — clique em verificar para atualizar';
+    }
+
+    if (subStatus.length === 0) {
+        return 'nenhum motivo informado (pausa manual ou feita por integração)';
+    }
+
+    const nomes = {
+        out_of_stock: 'sem estoque disponível para venda (no FULL, conta o estoque do centro de distribuição)',
+        suspended: 'suspenso pelo Mercado Livre',
+        freezed: 'congelado pelo Mercado Livre',
+        held: 'retido pelo Mercado Livre',
+        waiting_for_patch: 'aguardando correção de dados do anúncio',
+        forbidden: 'bloqueado por infração de política',
+        picture_download_pending: 'aguardando processamento das fotos',
+        warning: 'com advertência do Mercado Livre',
+        deleted: 'excluído'
+    };
+
+    return subStatus
+        .map(s => nomes[s] || s)
+        .join('; ');
+}
+
+
 function montarAvisosExposicaoVendaNFE(
     venda
 ) {
@@ -44648,6 +44691,22 @@ function montarAvisosExposicaoVendaNFE(
                         0
                     )}
                     un.
+                </strong>
+            </div>
+
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Motivo no ML:
+
+                <strong>
+                    ${escapar(
+                        descreverSubStatusAnuncioNFE(
+                            alerta.sub_status
+                        )
+                    )}
                 </strong>
             </div>
         `;
@@ -45342,7 +45401,8 @@ async function confirmarAjusteExposicaoNFE(
                 'anuncio_pausado'
             ) {
                 explicacao =
-                    'O Mercado Livre ainda informa o anúncio pausado (ou sem estoque) enquanto há estoque disponível.';
+                    'O Mercado Livre ainda informa o anúncio pausado (ou sem estoque) enquanto há estoque disponível.\n' +
+                    `Motivo informado pelo ML: ${descreverSubStatusAnuncioNFE(alertaOriginalContinua.sub_status)}`;
             }
 
             alert(

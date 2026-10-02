@@ -31245,20 +31245,36 @@ if (typeof verificarVendaAtual === 'function') window.verificarVendaAtual = veri
         if (telaInternaAberta) sincronizarConteudo(barra);
     }
 
+    // atualizarBarra usa getComputedStyle (força recálculo de estilo da
+    // página inteira). O observer abaixo dispara a cada troca de classe em
+    // qualquer elemento, então agrupamos tudo em no máximo uma execução
+    // por frame, depois que o render terminou.
+    let barraAgendada = false;
+    function agendarAtualizarBarra() {
+        if (barraAgendada) return;
+        barraAgendada = true;
+        requestAnimationFrame(() => {
+            barraAgendada = false;
+            atualizarBarra();
+        });
+    }
+
     function iniciar() {
         instalarEstilos();
         criarBarra();
         atualizarBarra();
-        new MutationObserver(atualizarBarra).observe(document.body, {
+        new MutationObserver(agendarAtualizarBarra).observe(document.body, {
             subtree: true,
             attributes: true,
             attributeFilter: ['class']
         });
-        window.addEventListener('wheeltech:user-ready', atualizarBarra);
-        window.addEventListener('resize', atualizarBarra);
+        window.addEventListener('wheeltech:user-ready', agendarAtualizarBarra);
+        window.addEventListener('resize', agendarAtualizarBarra);
         // Alguns módulos são abertos por arquivos JS separados e alteram estilos
         // sem trocar classes. Esta verificação garante a barra em todos eles.
-        window.setInterval(atualizarBarra, 700);
+        window.setInterval(() => {
+            if (document.visibilityState === 'visible') agendarAtualizarBarra();
+        }, 700);
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
