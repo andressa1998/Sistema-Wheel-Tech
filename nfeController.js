@@ -1138,11 +1138,42 @@ async function emitirNFe(req, res) {
                         .maybeSingle();
 
 
+                // Piso: maior número já emitido nesta série
+                // (protege contra reset do controle_nfe → rejeição 539)
+                const {
+                    data:
+                        ultimaEmitida
+                } =
+                    await supabase
+                        .from(
+                            'nfe_emitidas'
+                        )
+                        .select(
+                            'numero_nf'
+                        )
+                        .like(
+                            'chave_acesso',
+                            '_'.repeat(22) +
+                            String(serie).padStart(3, '0') +
+                            '%'
+                        )
+                        .order(
+                            'numero_nf',
+                            { ascending: false }
+                        )
+                        .limit(1)
+                        .maybeSingle();
+
+
                 const proximo =
-                    (
+                    Math.max(
                         controle
                             ?.ultimo_numero ||
-                        50000
+                        50000,
+                        parseInt(
+                            ultimaEmitida
+                                ?.numero_nf
+                        ) || 0
                     ) +
                     1;
 
